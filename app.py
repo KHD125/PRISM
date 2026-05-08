@@ -163,6 +163,19 @@ if min_quality > 0:
 
 
 # ═══════════════════════════════════════════════════════════════
+# BANNER (above tabs — always visible)
+# ═══════════════════════════════════════════════════════════════
+render_hero_banner(total, gate_passed, tier1)
+render_metric_strip([
+    (f"{total}", "Universe", "m-blue"),
+    (f"{gate_passed}", "Gate Passed", "m-green"),
+    (f"{tier1}", "Crown Jewels", "m-gold"),
+    (f"{tier2}", "Strong", "m-green"),
+    (f"{tsunami_count}", "Tsunami", "m-purple"),
+    (f"{avg_quality:.0f}", "Avg Quality", "m-blue"),
+])
+
+# ═══════════════════════════════════════════════════════════════
 # TABS
 # ═══════════════════════════════════════════════════════════════
 tabs = st.tabs(["🏠 Discovery", "🔍 Scanner", "🛡️ Forensic", "📊 X-Ray", "🌊 Tsunami", "🏛️ QGLP Compounders", "📈 Sectors", "⚙️ Config"])
@@ -171,16 +184,6 @@ tabs = st.tabs(["🏠 Discovery", "🔍 Scanner", "🛡️ Forensic", "📊 X-Ra
 # TAB 1: DISCOVERY DASHBOARD
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tabs[0]:
-    render_hero_banner(total, gate_passed, tier1)
-    render_metric_strip([
-        (f"{total}", "Universe", "m-blue"),
-        (f"{gate_passed}", "Gate Passed", "m-green"),
-        (f"{tier1}", "Crown Jewels", "m-gold"),
-        (f"{tier2}", "Strong", "m-green"),
-        (f"{tsunami_count}", "Tsunami", "m-purple"),
-        (f"{avg_quality:.0f}", "Avg Quality", "m-blue"),
-    ])
-
     st.markdown(f"<div class='sec-head'>📋 Conviction Tier Overview</div>", unsafe_allow_html=True)
     render_tier_summary(df)
 
