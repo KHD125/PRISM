@@ -1,8 +1,8 @@
 """
-Multibagger Discovery System — Quantum Elite UI Components
-=========================================================
-State-of-the-art Glassmorphism design system.
-Fused Inter & Outfit typography with Aurora gradients.
+Multibagger Discovery System — UI Components
+=============================================
+Reusable Streamlit UI widgets, cards, and charts.
+Premium dark-mode design system.
 """
 
 import streamlit as st
@@ -14,247 +14,316 @@ from config import COLORS, TIER_COLORS, CONVICTION_TIERS, UI
 
 
 def inject_css():
-    """Inject the Quantum Elite Design System."""
+    """Inject the premium dark-mode CSS design system."""
     st.markdown(f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Outfit:wght@300;700;900&display=swap');
+    @import url('{UI["font_url"]}');
 
-    /* ── Core Reset ── */
+    /* ── Global ── */
     html, body, [data-testid="stAppViewContainer"] {{
-        font-family: 'Inter', sans-serif;
-        background-color: #050505;
-        color: #E2E8F0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }}
 
-    h1, h2, h3, .hero-title, .sb-brand-title {{
-        font-family: 'Outfit', sans-serif !important;
+    /* ── Responsive Layout ── */
+    section[data-testid="stMain"] > div.block-container {{
+        max-width: 100%; overflow-x: hidden; box-sizing: border-box;
+        padding-top: 1rem;
     }}
 
-    /* ── Glassmorphism Utility ── */
-    .glass-card {{
-        background: rgba(23, 23, 23, 0.7);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 16px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    }}
-
-    /* ── Hero Banner (Elite Aurora) ── */
+    /* ── Hero Banner ── */
     .hero-banner {{
-        text-align: center; padding: 3.5rem 2rem;
-        background: radial-gradient(circle at 0% 0%, rgba(228,179,65,0.15) 0%, transparent 40%),
-                    radial-gradient(circle at 100% 100%, rgba(139,92,246,0.15) 0%, transparent 40%),
-                    linear-gradient(135deg, #0A0A0A 0%, #171717 100%);
-        border: 1px solid rgba(255,215,0,0.2);
-        border-radius: 24px; margin-bottom: 2rem;
+        text-align: center; padding: 2rem 1.5rem 1.8rem;
+        background: linear-gradient(135deg, {COLORS['gradient_start']} 0%,
+                    {COLORS['gradient_mid']} 40%, {COLORS['gradient_end']} 100%);
+        border: 1px solid rgba(88,166,255,0.15);
+        border-radius: 16px; margin-bottom: 1.5rem;
         position: relative; overflow: hidden;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
     }}
-    .hero-banner::after {{
-        content: ''; position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
-        animation: shine 8s infinite;
+    .hero-banner::before {{
+        content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: radial-gradient(ellipse at 30% 20%, rgba(228,179,65,0.08) 0%, transparent 50%),
+                    radial-gradient(ellipse at 70% 80%, rgba(139,92,246,0.06) 0%, transparent 50%);
+        pointer-events: none;
     }}
-    @keyframes shine {{ 0% {{ left: -100%; }} 20% {{ left: 100%; }} 100% {{ left: 100%; }} }}
-
-    .hero-icon {{ font-size: 4rem; margin-bottom: 1rem; filter: drop-shadow(0 0 20px rgba(228,179,65,0.4)); }}
+    .hero-icon {{ font-size: 3rem; line-height: 1; position: relative;
+        filter: drop-shadow(0 0 14px rgba(255,215,0,0.5)); margin-bottom: 6px; }}
     .hero-title {{
-        font-size: 3.5rem; font-weight: 900; letter-spacing: -1px; line-height: 1;
-        background: linear-gradient(to right, #FFFFFF 0%, #94A3B8 100%);
+        font-size: 2.4rem; font-weight: 900; position: relative;
+        background: linear-gradient(120deg, {COLORS['gold']} 0%, {COLORS['blue']} 50%, {COLORS['green']} 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
+        letter-spacing: 1.5px; line-height: 1.15; margin: 0;
     }}
     .hero-sub {{
-        font-size: 1rem; color: #94A3B8; letter-spacing: 4px; text-transform: uppercase;
-        font-weight: 600; margin-bottom: 1.5rem;
+        font-size: 0.85rem; font-weight: 500; color: {COLORS['text_secondary']};
+        letter-spacing: 2.5px; text-transform: uppercase;
+        position: relative; margin-top: 8px;
+    }}
+    .hero-badge {{
+        display: inline-block; font-size: 0.65rem; font-weight: 700;
+        color: {COLORS['gold']}; background: rgba(228,179,65,0.10);
+        border: 1px solid rgba(228,179,65,0.25); padding: 4px 16px;
+        border-radius: 12px; margin-top: 12px; position: relative;
+        letter-spacing: 1px;
     }}
 
-    /* ── Metric Cockpit ── */
-    .m-strip {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 2rem; }}
+    /* ── Metric Strip ── */
+    .m-strip {{ display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }}
     .m-chip {{
-        background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 16px; padding: 20px 10px; text-align: center;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        background: {COLORS['bg_secondary']}; border: 1px solid {COLORS['border']};
+        border-radius: 12px; padding: 14px 0; text-align: center; flex: 1; min-width: 100px;
+        transition: all 0.2s ease;
     }}
-    .m-chip:hover {{ 
-        background: rgba(255,255,255,0.06); 
-        border-color: rgba(255,255,255,0.2);
-        transform: translateY(-4px) scale(1.02);
-    }}
-    .m-val {{ font-family: 'Outfit'; font-size: 2rem; font-weight: 800; line-height: 1; margin-bottom: 6px; }}
-    .m-lbl {{ font-size: 0.7rem; color: #64748B; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }}
-    
-    .m-gold {{ border-bottom: 4px solid {COLORS['gold']}; }}
-    .m-green {{ border-bottom: 4px solid {COLORS['green']}; }}
-    .m-blue {{ border-bottom: 4px solid {COLORS['blue']}; }}
-    .m-purple {{ border-bottom: 4px solid {COLORS['purple']}; }}
+    .m-chip:hover {{ border-color: {COLORS['border_hover']}; transform: translateY(-1px); }}
+    .m-val {{ font-size: 1.5rem; font-weight: 700; color: {COLORS['text_primary']}; line-height: 1; }}
+    .m-lbl {{ font-size: 0.65rem; color: {COLORS['text_secondary']}; text-transform: uppercase;
+              letter-spacing: 0.6px; margin-top: 4px; }}
+    .m-green .m-val {{ color: {COLORS['green']}; }}
+    .m-red .m-val {{ color: {COLORS['red']}; }}
+    .m-gold .m-val {{ color: {COLORS['gold']}; }}
+    .m-blue .m-val {{ color: {COLORS['blue']}; }}
+    .m-purple .m-val {{ color: {COLORS['purple']}; }}
 
-    /* ── Stock Cards (Glass-Evolution) ── */
+    /* ── Stock Cards ── */
     .stock-card {{
-        background: rgba(30, 30, 30, 0.4);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255,255,255,0.05);
-        border-radius: 18px; padding: 24px; margin-bottom: 12px;
-        transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
-        position: relative; overflow: hidden;
+        background: {COLORS['bg_secondary']}; border: 1px solid {COLORS['border']};
+        border-radius: 14px; padding: 18px 20px; margin-bottom: 10px;
+        transition: all 0.2s ease; cursor: default;
     }}
     .stock-card:hover {{
-        background: rgba(40, 40, 40, 0.6);
-        border-color: rgba(255,255,255,0.15);
-        box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-        transform: translateX(8px);
+        border-color: {COLORS['border_hover']};
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     }}
-    .stock-card::before {{
-        content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 4px;
-        background: var(--card-accent);
+    .stock-card-gold {{ border-left: 3px solid {COLORS['gold']}; }}
+    .stock-card-green {{ border-left: 3px solid {COLORS['green']}; }}
+    .stock-card-blue {{ border-left: 3px solid {COLORS['blue']}; }}
+
+    /* ── Score Bar ── */
+    .score-bar-wrap {{
+        background: {COLORS['bg_tertiary']}; border-radius: 4px; height: 6px;
+        margin-top: 4px; overflow: hidden;
+    }}
+    .score-bar {{
+        height: 6px; border-radius: 4px; transition: width 0.5s ease;
     }}
 
-    /* ── Custom Sidebar ── */
-    section[data-testid="stSidebar"] {{
-        background-color: #0A0A0A !important;
-        border-right: 1px solid rgba(255,255,255,0.05);
+    /* ── Pill Tags ── */
+    .pill {{
+        display: inline-block; padding: 3px 10px; border-radius: 10px;
+        font-size: 0.7rem; font-weight: 600; margin: 2px 3px; border: 1px solid;
     }}
-    .sb-brand {{
-        padding: 30px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05);
-        margin-bottom: 20px;
+    .pill-green {{ color: {COLORS['green']}; border-color: rgba(63,185,80,0.3);
+                   background: rgba(63,185,80,0.08); }}
+    .pill-red {{ color: {COLORS['red']}; border-color: rgba(248,81,73,0.3);
+                 background: rgba(248,81,73,0.08); }}
+    .pill-gold {{ color: {COLORS['gold']}; border-color: rgba(228,179,65,0.3);
+                  background: rgba(228,179,65,0.08); }}
+    .pill-blue {{ color: {COLORS['blue']}; border-color: rgba(88,166,255,0.3);
+                  background: rgba(88,166,255,0.08); }}
+    .pill-purple {{ color: {COLORS['purple']}; border-color: rgba(139,92,246,0.3);
+                    background: rgba(139,92,246,0.08); }}
+
+    /* ── Tier Card ── */
+    .tier-card {{
+        border-radius: 12px; padding: 16px 20px; margin-bottom: 10px;
+        transition: all 0.2s ease;
     }}
-    .sb-brand-title {{
-        font-size: 1.4rem; font-weight: 900; 
-        background: linear-gradient(120deg, #FFFFFF, #64748B);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    .tier-card:hover {{ transform: translateY(-1px); }}
+    .tier-header {{
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 8px;
+    }}
+    .tier-name {{ font-weight: 800; font-size: 1rem; }}
+    .tier-count {{
+        font-size: 0.75rem; font-weight: 600; padding: 3px 10px;
+        border-radius: 8px; background: rgba(255,255,255,0.08);
     }}
 
-    /* ── Progress Bars ── */
-    div[data-testid="stProgress"] > div > div > div > div {{
-        background-image: linear-gradient(90deg, {COLORS['blue']}, {COLORS['green']});
-        border-radius: 10px;
+    /* ── Section Headers ── */
+    .sec-head {{
+        font-size: 0.9rem; font-weight: 700; color: {COLORS['text_primary']};
+        letter-spacing: 0.3px; margin: 24px 0 10px 0;
+        display: flex; align-items: center; gap: 8px;
     }}
+    .sec-cap {{
+        font-size: 0.72rem; color: {COLORS['text_muted']};
+        margin-top: -6px; margin-bottom: 12px;
+    }}
+
+    /* ── DataFrames ── */
+    div[data-testid="stDataFrame"] > div {{ border-radius: 10px; overflow: hidden; }}
 
     /* ── Tabs ── */
     .stTabs [data-baseweb="tab-list"] {{
-        background-color: transparent;
-        gap: 8px;
+        gap: 4px;
+        background: {COLORS['bg_secondary']};
+        border-radius: 12px 12px 0 0;
+        padding: 6px 6px 0 6px;
+        border-bottom: 2px solid {COLORS['border']};
     }}
     .stTabs [data-baseweb="tab"] {{
-        background-color: rgba(255,255,255,0.03);
-        border-radius: 12px;
-        padding: 12px 24px;
-        border: 1px solid rgba(255,255,255,0.05);
+        padding: 10px 20px;
         font-weight: 600;
-        transition: all 0.3s;
+        border-radius: 10px 10px 0 0;
+        font-size: 0.85rem;
+        color: {COLORS['text_secondary']} !important;
+        background: transparent;
+        border: 1px solid transparent;
+        transition: all 0.2s ease;
+    }}
+    .stTabs [data-baseweb="tab"]:hover {{
+        color: {COLORS['text_primary']} !important;
+        background: rgba(255,255,255,0.05);
     }}
     .stTabs [aria-selected="true"] {{
-        background-color: rgba(255,215,0,0.1) !important;
-        border-color: rgba(255,215,0,0.3) !important;
         color: {COLORS['gold']} !important;
+        background: rgba(228,179,65,0.08) !important;
+        border-color: rgba(228,179,65,0.3) !important;
+        border-bottom-color: transparent !important;
     }}
 
-    /* ── Pills ── */
-    .pill {{
-        padding: 4px 12px; border-radius: 20px; font-size: 0.65rem; font-weight: 800;
-        text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid transparent;
+    /* ── Sidebar ── */
+    .sb-brand {{
+        background: linear-gradient(135deg, rgba(139,92,246,0.08) 0%,
+                    rgba(228,179,65,0.10) 50%, rgba(63,185,80,0.08) 100%);
+        border: 1px solid rgba(228,179,65,0.3); border-radius: 16px;
+        padding: 20px 14px 14px; text-align: center; margin-bottom: 16px;
+        position: relative; overflow: hidden;
     }}
-    .pill-tsunami {{ background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.4); color: #C084FC; }}
-    .pill-alpha {{ background: rgba(228,179,65,0.15); border-color: rgba(228,179,65,0.4); color: {COLORS['gold']}; }}
+    .sb-brand::before {{
+        content: ''; position: absolute; top: -40%; left: -40%;
+        width: 180%; height: 180%;
+        background: radial-gradient(circle, rgba(228,179,65,0.08) 0%, transparent 70%);
+        animation: sb-pulse 6s ease-in-out infinite;
+    }}
+    @keyframes sb-pulse {{ 0%,100% {{ opacity: 0.4; }} 50% {{ opacity: 1; }} }}
+    .sb-brand-icon {{ font-size: 2.2rem; position: relative; line-height: 1;
+        filter: drop-shadow(0 0 8px rgba(228,179,65,0.4)); margin-bottom: 4px; }}
+    .sb-brand-title {{
+        font-size: 1.15rem; font-weight: 800; position: relative;
+        background: linear-gradient(120deg, {COLORS['gold']} 0%, {COLORS['purple']} 50%, {COLORS['green']} 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }}
+    .sb-brand-ver {{
+        display: inline-block; font-size: 0.6rem; font-weight: 700;
+        color: {COLORS['gold']}; background: rgba(228,179,65,0.10);
+        border: 1px solid rgba(228,179,65,0.3); padding: 2px 10px;
+        border-radius: 10px; margin-top: 6px; position: relative;
+    }}
+
+    /* ── Tsunami Card ── */
+    .tsunami-card {{
+        background: linear-gradient(135deg, #12095C 0%, #3C3489 100%);
+        border: 1px solid rgba(139,92,246,0.4); border-radius: 14px;
+        padding: 18px 20px; margin-bottom: 10px;
+        box-shadow: 0 4px 20px rgba(139,92,246,0.15);
+    }}
+    .tsunami-card:hover {{ box-shadow: 0 8px 32px rgba(139,92,246,0.25); }}
+
+    /* ── Forensic Risk Badge ── */
+    .risk-clean {{ color: {COLORS['green']}; background: rgba(63,185,80,0.1);
+                   border: 1px solid rgba(63,185,80,0.3); }}
+    .risk-watch {{ color: {COLORS['gold']}; background: rgba(228,179,65,0.1);
+                   border: 1px solid rgba(228,179,65,0.3); }}
+    .risk-caution {{ color: {COLORS['orange']}; background: rgba(255,107,53,0.1);
+                     border: 1px solid rgba(255,107,53,0.3); }}
+    .risk-high {{ color: {COLORS['red']}; background: rgba(248,81,73,0.1);
+                  border: 1px solid rgba(248,81,73,0.3); }}
     </style>
     """, unsafe_allow_html=True)
 
 
 def render_hero_banner(total_stocks: int, gate_passed: int, tier1_count: int):
-    """Render the Quantum Elite hero banner."""
+    """Render the main hero banner."""
     st.markdown(f"""
     <div class="hero-banner">
-        <div class="hero-icon">💎</div>
-        <h1 class="hero-title">SYSTEMATIC ARCHITECT</h1>
-        <p class="hero-sub">The Quantamental Discovery Workstation</p>
-        <div style="display:flex; justify-content:center; gap:10px;">
-            <span class="pill pill-alpha">v{UI['version']}</span>
-            <span class="pill pill-alpha" style="background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.1); color:#94A3B8;">
-                {total_stocks} STOCKS AUDITED
-            </span>
-        </div>
+        <div class="hero-icon">🏆</div>
+        <h1 class="hero-title">{UI['app_title']}</h1>
+        <p class="hero-sub">{UI['app_subtitle']}</p>
+        <div class="hero-badge">v{UI['version']} · {total_stocks} STOCKS SCANNED · {gate_passed} QUALIFIED · {tier1_count} CROWN JEWELS</div>
     </div>
     """, unsafe_allow_html=True)
 
 
 def render_metric_strip(metrics: list):
-    """Render a cockpit-style metric strip."""
+    """Render a horizontal metric strip. Each metric: (value, label, color_class)."""
     chips = ""
     for val, label, cls in metrics:
         chips += f'<div class="m-chip {cls}"><div class="m-val">{val}</div><div class="m-lbl">{label}</div></div>'
     st.markdown(f'<div class="m-strip">{chips}</div>', unsafe_allow_html=True)
 
 
+def render_score_bar(score: float, color: str = "#3fb950", label: str = ""):
+    """Render a horizontal score bar."""
+    html = f"""
+    <div style="display:flex; align-items:center; gap:8px; margin:2px 0;">
+        <span style="font-size:0.7rem; color:{COLORS['text_secondary']}; min-width:50px;">{label}</span>
+        <div class="score-bar-wrap" style="flex:1;">
+            <div class="score-bar" style="width:{score}%; background:{color};"></div>
+        </div>
+        <span style="font-size:0.75rem; font-weight:700; color:{color}; min-width:30px;">{score:.0f}</span>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def render_stock_card(row: pd.Series, show_scores: bool = True):
-    """Render an Elite stock card with glassmorphism."""
+    """Render a premium stock card."""
     tier = int(row.get("conviction_tier", 5))
     tc = TIER_COLORS.get(tier, TIER_COLORS[5])
-    accent = tc['text']
+
+    gate_status = "✅ All gates passed" if row.get("gate_pass", 0) == 1 else f"❌ {int(row.get('gates_failed', 0))} gates failed"
 
     pills = ""
-    if row.get("tsunami_signal", 0) == 1:
-        pills += '<span class="pill pill-tsunami">🌊 TSUNAMI SIGNAL</span>'
     if row.get("promoter_buying", 0) == 1:
-        pills += '<span class="pill pill-alpha">PROMOTER BUYING</span>'
-    
+        pills += '<span class="pill pill-green">Promoter Buying</span>'
+    if row.get("inst_convergence", 0) == 1:
+        pills += '<span class="pill pill-blue">FII+DII Convergence</span>'
+    if row.get("vstop_green", 0) == 1:
+        pills += '<span class="pill pill-purple">VSTOP Green</span>'
+    if row.get("tsunami_signal", 0) == 1:
+        pills += '<span class="pill pill-gold">🌊 Tsunami</span>'
+    if row.get("net_debt_negative", 0) == 1:
+        pills += '<span class="pill pill-green">Net Cash</span>'
+
     card_html = f"""
-    <div class="stock-card" style="--card-accent: {accent};">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="stock-card" style="border-left: 3px solid {tc['border']};">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
             <div>
-                <div style="font-family:'Outfit'; font-weight:800; font-size:1.4rem; color:#FFF;">
-                    #{int(row.get('rank', 0))} · {row.get('name', 'N/A')}
+                <div style="font-weight:800; font-size:1.05rem; color:{COLORS['text_primary']};">
+                    {row.get('tier_emoji', '')} #{int(row.get('rank', 0))} · {row.get('name', 'N/A')}
                 </div>
-                <div style="font-size:0.8rem; color:#64748B; margin-top:4px; font-weight:500;">
-                    {row.get('sector', '')} | {row.get('industry', '')} | ₹{row.get('market_cap', 0):,.0f} Cr
+                <div style="font-size:0.75rem; color:{COLORS['text_secondary']}; margin-top:2px;">
+                    {row.get('sector', '')} · {row.get('industry', '')} · ₹{row.get('market_cap', 0):,.0f} Cr · {row.get('market_category', '')}
                 </div>
             </div>
             <div style="text-align:right;">
-                <div style="font-family:'Outfit'; font-size:2.4rem; font-weight:900; color:{accent}; line-height:1;">
-                    {row.get('composite_score', 0):.0f}
-                </div>
-                <div style="font-size:0.65rem; color:#64748B; font-weight:800; letter-spacing:1px;">SCORE</div>
+                <div style="font-size:1.8rem; font-weight:900; color:{tc['text']};">{row.get('composite_score', 0):.0f}</div>
+                <div style="font-size:0.65rem; color:{COLORS['text_muted']};">COMPOSITE</div>
             </div>
         </div>
-        <div style="margin-top:16px; display:flex; gap:8px;">{pills}</div>
+        <div style="margin-top:8px;">{pills}</div>
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
 
-
-def render_tier_summary(df: pd.DataFrame):
-    """Render premium tier cards."""
-    cols = st.columns(len(CONVICTION_TIERS))
-    for col, tier_cfg in zip(cols, CONVICTION_TIERS):
-        tier_num = tier_cfg["tier"]
-        count = (df["conviction_tier"] == tier_num).sum()
-        tc = TIER_COLORS[tier_num]
-        
-        with col:
-            st.markdown(f"""
-            <div class="m-chip" style="border-bottom: 4px solid {tc['text']}; min-height:120px;">
-                <div style="font-size:1.5rem; margin-bottom:8px;">{tier_cfg['emoji']}</div>
-                <div class="m-val" style="color:{tc['text']};">{count}</div>
-                <div class="m-lbl">{tier_cfg['label']}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    if show_scores:
+        cols = st.columns(5)
+        scores = [
+            ("Moat", row.get("moat_score", 0), COLORS["purple"]),
+            ("Growth", row.get("growth_score", 0), COLORS["green"]),
+            ("Cash", row.get("cash_score", 0), COLORS["blue"]),
+            ("Momentum", row.get("momentum_score", 0), COLORS["orange"]),
+            ("Governance", row.get("governance_bonus", 0), COLORS["gold"]),
+        ]
+        for col, (label, score, color) in zip(cols, scores):
+            with col:
+                render_score_bar(score, color, label)
 
 
-def render_sidebar_brand():
-    """Render the elite sidebar brand."""
-    st.markdown(f"""
-    <div class="sb-brand">
-        <div style="font-size:2.5rem; margin-bottom:10px;">🛡️</div>
-        <div class="sb-brand-title">SYSTEMATIC<br>ARCHITECT</div>
-        <div style="font-size:0.6rem; color:#64748B; letter-spacing:2px; font-weight:800; margin-top:10px;">
-            ALPHA DISCOVERY ENGINE
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def render_radar_chart(row: pd.Series, title: str = "Quality Spectrum") -> go.Figure:
-    """Create a high-contrast radar chart."""
-    categories = ['Moat', 'Growth', 'Cash', 'Margin', 'Balance Sheet']
+def render_radar_chart(row: pd.Series, title: str = "Quality Radar") -> go.Figure:
+    """Create a radar chart for a stock's quality sub-scores."""
+    categories = ['Moat', 'Growth', 'Cash Quality', 'Margins', 'Balance Sheet']
     values = [
         row.get("moat_score", 0),
         row.get("growth_score", 0),
@@ -262,27 +331,65 @@ def render_radar_chart(row: pd.Series, title: str = "Quality Spectrum") -> go.Fi
         row.get("margin_score", 0),
         row.get("balance_sheet_score", 0),
     ]
-    
+    values += [values[0]]  # close the polygon
+    categories += [categories[0]]
+
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
-        r=values + [values[0]],
-        theta=categories + [categories[0]],
+        r=values, theta=categories,
         fill='toself',
-        fillcolor='rgba(255, 215, 0, 0.05)',
-        line=dict(color=COLORS['gold'], width=2),
-        marker=dict(size=4)
+        fillcolor='rgba(139,92,246,0.15)',
+        line=dict(color=COLORS['purple'], width=2),
+        marker=dict(size=6, color=COLORS['purple']),
     ))
-    
     fig.update_layout(
         polar=dict(
-            bgcolor='rgba(0,0,0,0)',
-            radialaxis=dict(visible=True, range=[0, 100], gridcolor='rgba(255,255,255,0.1)', showticklabels=False),
-            angularaxis=dict(gridcolor='rgba(255,255,255,0.1)', tickfont=dict(size=10, color='#94A3B8'))
+            bgcolor=COLORS['bg_secondary'],
+            radialaxis=dict(visible=True, range=[0, 100], showticklabels=True,
+                          tickfont=dict(size=9, color=COLORS['text_muted']),
+                          gridcolor=COLORS['border']),
+            angularaxis=dict(tickfont=dict(size=11, color=COLORS['text_primary']),
+                           gridcolor=COLORS['border']),
         ),
         showlegend=False,
+        title=dict(text=title, font=dict(size=14, color=COLORS['text_primary'])),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(t=30, b=30, l=30, r=30),
-        height=300
+        margin=dict(t=50, b=30, l=60, r=60),
+        height=350,
     )
     return fig
+
+
+def render_tier_summary(df: pd.DataFrame):
+    """Render conviction tier summary cards."""
+    for tier_cfg in CONVICTION_TIERS:
+        tier_num = tier_cfg["tier"]
+        count = (df["conviction_tier"] == tier_num).sum()
+        gate_passed = ((df["conviction_tier"] == tier_num) & (df["gate_pass"] == 1)).sum()
+        tc = TIER_COLORS[tier_num]
+
+        st.markdown(f"""
+        <div class="tier-card" style="background:{tc['bg']}; border: 1px solid {tc['border']};">
+            <div class="tier-header">
+                <span class="tier-name" style="color:{tc['text']};">
+                    {tier_cfg['emoji']} Tier {tier_num} — {tier_cfg['label']}
+                </span>
+                <span class="tier-count" style="color:{tc['text']};">{count} stocks</span>
+            </div>
+            <div style="font-size:0.75rem; color:{COLORS['text_secondary']};">
+                {tier_cfg['description']} · {gate_passed} gate-qualified
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def render_sidebar_brand():
+    """Render the sidebar brand card."""
+    st.markdown(f"""
+    <div class="sb-brand">
+        <div class="sb-brand-icon">🏆</div>
+        <div class="sb-brand-title">Multibagger<br>Discovery</div>
+        <div class="sb-brand-ver">v{UI['version']} · QUANTAMENTAL ENGINE</div>
+    </div>
+    """, unsafe_allow_html=True)
