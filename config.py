@@ -1,453 +1,508 @@
 """
-Multibagger Discovery System — Configuration
-=============================================
-All thresholds, weights, gate conditions, and scoring parameters.
-Single source of truth — every magic number lives here.
+Multibagger Discovery System v1.0
+==================================
+Quantamental Compounding Engine — 7-Tab Streamlit Application
 """
-
-# ═══════════════════════════════════════════════════════════════
-# 1. DATA PATHS
-# ═══════════════════════════════════════════════════════════════
 import os
+os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+import streamlit as st
+st.set_page_config(page_title="Multibagger Discovery System", page_icon="🏆", layout="wide", initial_sidebar_state="expanded")
 
-def _get_actual_path(base, folder_name, file_name):
-    # Case-insensitive resolution for Linux (Streamlit Cloud)
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
+import time
+import warnings
+warnings.filterwarnings('ignore')
+
+from data_engine import build_master_dataframe
+from scoring_engine import run_full_scoring
+from forensic_engine import run_forensic_analysis
+from ui_components import (inject_css, render_hero_banner, render_metric_strip,
+                           render_stock_card, render_radar_chart, render_tier_summary,
+                           render_score_bar, render_sidebar_brand)
+from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
+                    QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
+                    VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
+                    BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES)
+
+
+# ═══════════════════════════════════════════════════════════════
+# DATA LOADING (cached)
+# ═══════════════════════════════════════════════════════════════
+@st.cache_data(show_spinner=False)
+def load_and_score(data_source="local", uploaded_files=None, sheet_id=None):
+    t0 = time.time()
+    df = build_master_dataframe(data_source, uploaded_files, sheet_id)
+    df = run_full_scoring(df)
+    df = run_forensic_analysis(df)
+    elapsed = time.time() - t0
+    return df, elapsed
+
+inject_css()
+
+# Data Source UI
+if "data_source" not in st.session_state:
+    st.session_state.data_source = "sheet"
+
+with st.sidebar:
+    render_sidebar_brand()
+    
+    st.markdown("### 📂 Data Source")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📊 Google Sheets", type="primary" if st.session_state.data_source == "sheet" else "secondary", use_container_width=True):
+            st.session_state.data_source = "sheet"
+            st.rerun()
+    with col2:
+        if st.button("📁 Upload CSV", type="primary" if st.session_state.data_source == "upload" else "secondary", use_container_width=True):
+            st.session_state.data_source = "upload"
+            st.rerun()
+
+    sheet_id = None
+    uploaded_dict = None
+    data_ready = False
+
+    if st.session_state.data_source == "sheet":
+        sheet_id = st.text_input("Google Sheets URL or ID", placeholder="Enter Google Sheet ID...")
+        if sheet_id:
+            data_ready = True
+    elif st.session_state.data_source == "upload":
+        uploaded_files = st.file_uploader("Upload CSV files (Ratio, Income, Balance, Cashflow, Shareholding, Tech)", type="csv", accept_multiple_files=True)
+        if uploaded_files and len(uploaded_files) > 0:
+            uploaded_dict = {}
+            for f in uploaded_files:
+                name = f.name.lower()
+                if "ratio" in name: uploaded_dict["ratio"] = f
+                elif "income" in name: uploaded_dict["income"] = f
+                elif "balance" in name: uploaded_dict["balance"] = f
+                elif "cashflow" in name: uploaded_dict["cashflow"] = f
+                elif "shareholding" in name: uploaded_dict["shareholding"] = f
+                elif "technical" in name: uploaded_dict["technical"] = f
+            
+            if len(uploaded_dict) >= 1: 
+                data_ready = True
+
+if not data_ready:
+    st.info("👋 Welcome! Please select a data source from the sidebar (Google Sheets or Upload CSV) to begin scanning.")
+    st.stop()
+
+with st.spinner("🔄 Loading & scoring 2,100+ stocks..."):
     try:
-        # Find folder
-        actual_folder = folder_name
-        for item in os.listdir(base):
-            if item.lower() == folder_name.lower() and os.path.isdir(os.path.join(base, item)):
-                actual_folder = item
-                break
+        df, load_time = load_and_score(st.session_state.data_source, uploaded_dict, sheet_id)
+    except Exception as e:
+        st.error(f"❌ Error loading data: {e}")
+        st.stop()
+
+# Key metrics
+total = len(df)
+gate_passed = int(df["gate_pass"].sum())
+tier1 = int((df["conviction_tier"] == 1).sum())
+tier2 = int((df["conviction_tier"] == 2).sum())
+tsunami_count = int(df["tsunami_signal"].sum())
+avg_quality = df["quality_score"].mean()
+qualified = df[df["gate_pass"] == 1]
+
+
+# ═══════════════════════════════════════════════════════════════
+# SIDEBAR
+# ═══════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.markdown(f"""
+    <div style="background:{COLORS['bg_secondary']}; border:1px solid {COLORS['border']};
+                border-radius:12px; padding:12px 14px; margin:10px 0;">
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['text_primary']}; padding:3px 0;">
+            <span>📊 Universe</span><span style="font-weight:700;">{total}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['green']}; padding:3px 0;">
+            <span>✅ Gate Passed</span><span style="font-weight:700;">{gate_passed}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['gold']}; padding:3px 0;">
+            <span>🏆 Crown Jewels</span><span style="font-weight:700;">{tier1}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['purple']}; padding:3px 0;">
+            <span>🌊 Tsunami</span><span style="font-weight:700;">{tsunami_count}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['text_muted']}; padding:3px 0;">
+            <span>⏱️ Load Time</span><span style="font-weight:700;">{load_time:.1f}s</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
+    regime_color = COLORS['green'] if regime == "BULL" else COLORS['red'] if regime == "BEAR" else COLORS['gold']
+    st.markdown(f"""
+    <div style="background:{COLORS['bg_tertiary']}; border-left:4px solid {regime_color}; padding:8px 12px; margin-bottom:15px; border-radius:4px;">
+        <div style="font-size:0.75rem; color:{COLORS['text_muted']}; text-transform:uppercase; letter-spacing:1px;">Detected Regime</div>
+        <div style="font-size:1.1rem; font-weight:800; color:{regime_color};">{regime} MARKET</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"<div class='sec-head'>🎯 Filters</div>", unsafe_allow_html=True)
+    sectors = ["All"] + sorted(df["sector"].dropna().unique().tolist())
+    sel_sector = st.selectbox("Sector", sectors, key="sb_sector")
+    sel_tier = st.multiselect("Conviction Tier", [1,2,3,4,5], default=[1,2,3], key="sb_tier")
+    sel_mcap = st.multiselect("Market Cap", ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], default=["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], key="sb_mcap")
+    gate_only = st.checkbox("Gate-passed only", value=True, key="sb_gate")
+    min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
+
+# Apply filters
+filt = df.copy()
+if sel_sector != "All":
+    filt = filt[filt["sector"] == sel_sector]
+if sel_tier:
+    filt = filt[filt["conviction_tier"].isin(sel_tier)]
+if sel_mcap:
+    filt = filt[filt["mcap_tier"].isin(sel_mcap)]
+if gate_only:
+    filt = filt[filt["gate_pass"] == 1]
+if min_quality > 0:
+    filt = filt[filt["quality_score"] >= min_quality]
+
+
+# ═══════════════════════════════════════════════════════════════
+# BANNER (above tabs — always visible)
+# ═══════════════════════════════════════════════════════════════
+render_hero_banner(total, gate_passed, tier1)
+render_metric_strip([
+    (f"{total}", "Universe", "m-blue"),
+    (f"{gate_passed}", "Gate Passed", "m-green"),
+    (f"{tier1}", "Crown Jewels", "m-gold"),
+    (f"{tier2}", "Strong", "m-green"),
+    (f"{tsunami_count}", "Tsunami", "m-purple"),
+    (f"{avg_quality:.0f}", "Avg Quality", "m-blue"),
+])
+
+# ═══════════════════════════════════════════════════════════════
+# TABS
+# ═══════════════════════════════════════════════════════════════
+tabs = st.tabs(["🏠 Discovery", "🔍 Scanner", "🛡️ Forensic", "📊 X-Ray", "🌊 Tsunami", "🏛️ QGLP Compounders", "📈 Sectors", "⚙️ Config"])
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 1: DISCOVERY DASHBOARD
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[0]:
+    st.markdown(f"<div class='sec-head'>📋 Conviction Tier Overview</div>", unsafe_allow_html=True)
+    render_tier_summary(df)
+
+    st.markdown(f"<div class='sec-head'>🏆 Top Conviction Stocks ({len(filt)} filtered)</div>", unsafe_allow_html=True)
+    for _, row in filt.head(20).iterrows():
+        render_stock_card(row, show_scores=True)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 2: DEEP SCANNER
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[1]:
+    st.markdown(f"<div class='sec-head'>🔍 Deep Scanner — {len(filt)} Stocks</div>", unsafe_allow_html=True)
+    display_cols = ["rank","name","sector","industry","mcap_tier","market_cap","composite_score",
+                    "quality_score","valuation_score","moat_score","growth_score","cash_score","momentum_score",
+                    "governance_bonus","piotroski_fscore","forensic_label","tier_label",
+                    "mean_reversion_risk","sell_alert_any",
+                    "gate_pass","gates_failed","close_price","roe_med_10y","roce_med_10y",
+                    "cfo_to_pat","pat_gr_5y","rev_gr_5y","debt_to_equity","peg","pledged_percentage",
+                    "promoter_holdings","crs_50d","ret_vs_industry_1y"]
+    available = [c for c in display_cols if c in filt.columns]
+    st.dataframe(
+        filt[available].reset_index(drop=True),
+        use_container_width=True, height=600,
+        column_config={
+            "composite_score": st.column_config.ProgressColumn("Composite", min_value=0, max_value=100, format="%.0f"),
+            "quality_score": st.column_config.ProgressColumn("Quality", min_value=0, max_value=100, format="%.0f"),
+            "momentum_score": st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
+            "market_cap": st.column_config.NumberColumn("MCap ₹Cr", format="%.0f"),
+        }
+    )
+    csv_data = filt[available].to_csv(index=False)
+    st.download_button("📥 Export CSV", csv_data, "multibagger_scan.csv", "text/csv")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 3: FORENSIC AUDIT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[2]:
+    st.markdown(f"<div class='sec-head'>🛡️ Forensic Audit Dashboard</div>", unsafe_allow_html=True)
+    forensic_df = filt[filt["conviction_tier"].isin([1,2,3])].copy()
+
+    c1, c2, c3, c4 = st.columns(4)
+    clean = int((forensic_df["forensic_label"] == "🟢 Clean").sum())
+    watch = int((forensic_df["forensic_label"] == "🟡 Watch").sum())
+    caution = int((forensic_df["forensic_label"] == "🟠 Caution").sum())
+    high_risk = int((forensic_df["forensic_label"] == "🔴 High Risk").sum())
+    c1.metric("🟢 Clean", clean)
+    c2.metric("🟡 Watch", watch)
+    c3.metric("🟠 Caution", caution)
+    c4.metric("🔴 High Risk", high_risk)
+
+    # F-Score histogram
+    if len(forensic_df) > 0:
+        fig_f = px.histogram(forensic_df, x="piotroski_fscore", nbins=10, color_discrete_sequence=[COLORS['purple']])
+        fig_f.update_layout(title="Piotroski F-Score Distribution", xaxis_title="F-Score (0-9)",
+                           yaxis_title="Count", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                           font=dict(color=COLORS['text_primary']), height=300)
+        st.plotly_chart(fig_f, use_container_width=True)
+
+    forensic_cols = ["rank","name","tier_label","composite_score","piotroski_fscore","piotroski_label",
+                     "forensic_score","forensic_label","red_flag_count","red_flag_list","cf_triangle"]
+    avail_f = [c for c in forensic_cols if c in forensic_df.columns]
+    st.dataframe(forensic_df[avail_f].reset_index(drop=True), use_container_width=True, height=400)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 4: STOCK X-RAY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[3]:
+    st.markdown(f"<div class='sec-head'>📊 Stock X-Ray — Deep Dive Analysis</div>", unsafe_allow_html=True)
+    stock_names = filt["name"].dropna().tolist()
+    if stock_names:
+        selected = st.selectbox("Select Stock", stock_names, key="xray_stock")
+        stock = filt[filt["name"] == selected].iloc[0]
+
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            render_stock_card(stock, show_scores=True)
+            st.markdown(f"**Gate Status:** {'✅ All gates passed' if stock.get('gate_pass',0)==1 else '❌ Failed: ' + str(stock.get('failed_gates',''))}")
+            st.markdown(f"**Forensic:** {stock.get('forensic_label','')} · F-Score: {stock.get('piotroski_fscore','N/A')}/9")
+            st.markdown(f"**Smart Money Flow:** {stock.get('smart_money_flow', '⚪ Neutral')}")
+            st.markdown(f"**Cashflow Triangle:** {stock.get('cf_triangle','')}")
+            if stock.get('red_flag_count', 0) > 0:
+                st.warning(f"🚨 Red Flags: {stock.get('red_flag_list','')}")
+        with c2:
+            fig = render_radar_chart(stock, f"{selected} — Quality Profile")
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown(f"<div class='sec-head'>📋 Key Financials</div>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("ROCE Med 10Y", f"{stock.get('roce_med_10y', 0):.1f}%")
+        c2.metric("ROE Med 10Y", f"{stock.get('roe_med_10y', 0):.1f}%")
+        c3.metric("CFO/PAT", f"{stock.get('cfo_to_pat', 0):.1f}%")
+        c4.metric("D/E Ratio", f"{stock.get('debt_to_equity', 0):.2f}")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("PAT Gr 5Y", f"{stock.get('pat_gr_5y', 0):.1f}%")
+        c2.metric("Rev Gr 5Y", f"{stock.get('rev_gr_5y', 0):.1f}%")
+        c3.metric("NPM Med 5Y", f"{stock.get('npm_med_5y', 0):.1f}%")
+        c4.metric("PEG", f"{stock.get('peg', 0):.2f}")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Promoter %", f"{stock.get('promoter_holdings', 0):.1f}%")
+        c2.metric("Pledge %", f"{stock.get('pledged_percentage', 0):.1f}%")
+        c3.metric("FII %", f"{stock.get('fii_holdings', 0):.1f}%")
+        c4.metric("CRS 50D", f"{stock.get('crs_50d', 0):.0f}")
+
+        # ── SELL ALERTS (Baid's 3 Triggers) ──
+        has_sell_alert = stock.get('sell_alert_any', 0) == 1
+        if has_sell_alert:
+            st.markdown(f"<div class='sec-head' style='color:#f85149;'>🚨 BAID SELL TRIGGERS ACTIVE</div>", unsafe_allow_html=True)
+            triggers = []
+            if stock.get('sell_alert_thesis_broken', 0) == 1:
+                triggers.append("**Thesis Broken:** ROCE trajectory declining structurally")
+            if stock.get('sell_alert_mgmt_deteriorated', 0) == 1:
+                triggers.append("**Management Deteriorated:** Pledge rising + promoter selling + D/E rising")
+            if stock.get('sell_alert_cash_collapse', 0) == 1:
+                triggers.append("**Cash Quality Collapse:** CFO/PAT dropped below 0.5")
+            for t in triggers:
+                st.error(t)
+
+        # ── MEAN REVERSION WARNING (Marks) ──
+        if stock.get('mean_reversion_risk', 0) == 1:
+            st.warning("⚠️ **Marks Mean Reversion Risk:** Current margins are significantly above 5Y median — cyclical peak risk detected. Quality score penalized by 15%.")
+
+        # ── VALUATION ATTRACTIVENESS ──
+        st.markdown(f"<div class='sec-head'>💰 Valuation Attractiveness (Marks + Baid)</div>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Valuation Score", f"{stock.get('valuation_score', 0):.0f}/100")
+        c2.metric("PE Discount vs 10Y", f"{stock.get('pe_discount', 0):.1f}%")
+        c3.metric("EV Compression", f"{stock.get('ev_compression', 0):.1f}")
+        c4.metric("FCF Yield", f"{stock.get('fcf_yield', 0):.1f}%")
+    else:
+        st.info("No stocks match current filters.")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 5: TSUNAMI SIGNALS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[4]:
+    st.markdown(f"<div class='sec-head'>🌊 Tsunami Signals — Maximum Conviction Setups</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-cap'>Stocks where ALL conviction layers fire simultaneously: Quality + Momentum + Governance + Technical</div>", unsafe_allow_html=True)
+
+    tsunami_df = df[df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
+
+    if len(tsunami_df) == 0:
+        st.info("🌊 No tsunami signals detected in current market conditions. This is rare and by design — these are the highest-conviction setups.")
+    else:
+        render_metric_strip([
+            (str(len(tsunami_df)), "Tsunami Signals", "m-purple"),
+            (str(int(tsunami_df["tsunami_undiscovered"].sum())), "Undiscovered (Tier C)", "m-gold"),
+            (f"{tsunami_df['composite_score'].mean():.0f}", "Avg Score", "m-green"),
+        ])
+        for _, row in tsunami_df.iterrows():
+            st.markdown(f"""<div class="tsunami-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="font-weight:800; font-size:1.1rem; color:#E8E3FF;">
+                            🌊 {row['name']}
+                        </div>
+                        <div style="font-size:0.75rem; color:#A8A3D8; margin-top:2px;">
+                            {row.get('sector','')} · ₹{row.get('market_cap',0):,.0f} Cr · {row.get('mcap_tier','')}
+                        </div>
+                    </div>
+                    <div style="font-size:2rem; font-weight:900; color:#FFD700;">{row['composite_score']:.0f}</div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+            render_stock_card(row, show_scores=True)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 6: QGLP COMPOUNDERS (MOTILAL OSWAL)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[5]:
+    st.markdown(f"<div class='sec-head'>🏛️ QGLP Compounders (Motilal Oswal Framework)</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-cap'>Quality + Growth + Longevity + Price. Exclusive to strictly vetted compounders with ROCE > 15%, EPS/PAT Growth > 15%, and reasonable valuations.</div>", unsafe_allow_html=True)
+    
+    qglp_df = filt[filt["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
+    
+    if len(qglp_df) == 0:
+        st.info("No stocks pass the strict QGLP gates right now.")
+    else:
+        render_metric_strip([
+            (str(len(qglp_df)), "QGLP Stocks", "m-gold"),
+            (f"{qglp_df['qglp_score'].mean():.0f}", "Avg QGLP Score", "m-blue"),
+        ])
         
-        folder_path = os.path.join(base, actual_folder)
-        
-        # Find file
-        actual_file = file_name
-        for item in os.listdir(folder_path):
-            if item.lower() == file_name.lower():
-                actual_file = item
-                break
-                
-        return os.path.join(folder_path, actual_file)
-    except Exception:
-        return os.path.join(base, folder_name, file_name)
-
-DATA_DIR_NAME = "CSV Data"
-
-CSV_FILES = {
-    "ratio":         _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Ratio.csv"),
-    "income":        _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Income Statement.csv"),
-    "balance":       _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Balance Sheet.csv"),
-    "cashflow":      _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Cashflow.csv"),
-    "shareholding":  _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Shareholdings.csv"),
-    "technical":     _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Technicals.csv"),
-}
-
-# Google Sheets Configuration
-DEFAULT_SHEET_ID = ""
-DEFAULT_GIDS = {
-    "ratio": "1823439984",
-    "income": "1179123585",
-    "balance": "492995744",
-    "cashflow": "458676223",
-    "shareholding": "1334428374",
-    "technical": "1818626554"
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 2. MARKET CAP TIERS  (₹ Crores)
-# ═══════════════════════════════════════════════════════════════
-MCAP_TIERS = {
-    "Tier A": {"label": "Mega/Large Cap", "min": 20_000, "emoji": "🏛️"},
-    "Tier B": {"label": "Mid Cap",        "min": 5_000,  "emoji": "🏢"},
-    "Tier C": {"label": "Small/Micro Cap", "min": 0,     "emoji": "🔬"},
-}
-
-MCAP_MIN_FLOOR = 200  # ₹ Crores — exclude below this (penny stock filter)
-
-# ═══════════════════════════════════════════════════════════════
-# 3. HARD GATES — Binary Pass/Fail (Layer 1)
-# ═══════════════════════════════════════════════════════════════
-# Every stock must pass ALL gates before scoring begins.
-# Source frameworks tagged for audit trail.
-
-HARD_GATES = {
-    "debt_safety": {
-        "column": "debt_to_equity",
-        "operator": "<=",
-        "threshold": 1.0,
-        "penalty": -0.20,
-        "source": "Coffee Can / Forensic / Baid",
-        "description": "D/E ≤ 1.0 — balance sheet risk gate (Baid prefers ≤0.5)",
-    },
-    "current_ratio": {
-        "column": "current_ratio",
-        "operator": ">=",
-        "threshold": 1.0,
-        "source": "Forensic Shenanigans",
-        "description": "CR ≥ 1.0 — liquidity safety gate",
-    },
-    "pledge_safety": {
-        "column": "pledged_percentage",
-        "operator": "<=",
-        "threshold": 20.0,
-        "source": "Fisher Point 15 / SQGLP",
-        "description": "Pledged % ≤ 20% — promoter collateral risk",
-    },
-    "pledge_direction": {
-        "column": "pledge_rising",  # derived: pledged > pledged_1qb
-        "operator": "==",
-        "threshold": 0,
-        "source": "Forensic Shenanigans",
-        "description": "Pledge not increasing QoQ",
-    },
-    "promoter_alignment": {
-        "column": "promoter_holdings",
-        "operator": ">=",
-        "threshold": 30.0,
-        "source": "Fisher / SQGLP",
-        "description": "Promoter holdings ≥ 30% — skin in the game",
-    },
-    "cash_quality": {
-        "column": "cfo_to_pat",
-        "operator": ">=",
-        "threshold": 0.7,
-        "source": "Coffee Can Clean Accounts",
-        "description": "CFO/PAT ≥ 0.7 — earnings are real cash",
-    },
-    "trend_filter": {
-        "column": "above_sma200",  # derived: close_price > sma_200d
-        "operator": "==",
-        "threshold": 1,
-        "source": "CAN-SLIM Market Direction",
-        "description": "Price > SMA 200D — long-term uptrend only",
-    },
-    "no_dilution": {
-        "column": "dilution_flag",  # derived
-        "operator": "==",
-        "threshold": 0,
-        "source": "Fisher Point 13",
-        "description": "No share dilution YoY — EPS protection",
-    },
-    "positive_ocf": {
-        "column": "operating_cash_flow",
-        "operator": ">",
-        "threshold": 0,
-        "source": "Forensic Shenanigans",
-        "description": "Operating cash flow must be positive",
-    },
-}
-
-# Financial sector stocks get a separate gate set
-FINANCIAL_SECTORS = [
-    "Banking", "NBFC", "Insurance", "Financial Services",
-    "Banks - Private Sector", "Banks - Public Sector",
-    "Finance - NBFC", "Finance - Housing Finance",
-    "Life Insurance", "General Insurance",
-]
-
-# ═══════════════════════════════════════════════════════════════
-# 4. QUALITY SCORE WEIGHTS (Layer 2) — 0 to 100
-# ═══════════════════════════════════════════════════════════════
-QUALITY_WEIGHTS = {
-    "moat":          0.22,   # ROCE trajectory, ROE — SQGLP Quality
-    "growth":        0.22,   # Revenue/PAT/EPS CAGR — SQGLP Growth
-    "cash":          0.20,   # CFO/PAT, FCF yield, self-funding — Coffee Can
-    "margin":        0.13,   # NPM, OPM, GPM medians + acceleration — Fisher
-    "balance_sheet": 0.13,   # Net debt, reserves growth, CWIP — Baid/Marks
-    "valuation":     0.10,   # PE discount, PEG, FCF yield — Marks/Baid Entry Price
-}
-
-# Moat sub-signals and their weights within the moat bucket
-MOAT_SIGNALS = {
-    "roce_med_10y":     0.35,
-    "roce_trajectory":  0.15,  # roce_med_7y - roce_med_10y
-    "roe_med_10y":      0.25,
-    "roe_trajectory":   0.10,
-    "roce_current_vs_med": 0.15,  # roce - roce_med_10y (inflection)
-}
-
-GROWTH_SIGNALS = {
-    "pat_gr_5y":        0.20,
-    "pat_gr_10y":       0.10,
-    "rev_gr_5y":        0.20,
-    "rev_gr_10y":       0.10,
-    "eps_gr_5y":        0.15,
-    "ebitda_gr_5y":     0.10,
-    "pat_acceleration": 0.08,  # pat_gr_3y - pat_gr_5y
-    "rev_acceleration": 0.07,  # rev_gr_3y - rev_gr_5y
-}
-
-CASH_SIGNALS = {
-    "cfo_to_pat":       0.25,
-    "cfo_to_ebitda":    0.15,
-    "fcf_yield":        0.20,
-    "fcf_consistency":  0.15,
-    "capex_coverage":   0.10,
-    "self_funding":     0.15,
-}
-
-MARGIN_SIGNALS = {
-    "npm_med_5y":       0.30,
-    "opm_med_5y":       0.25,
-    "gpm_med_5y":       0.15,
-    "npm_acceleration": 0.15,  # npm_lq - npm_1yb
-    "opm_acceleration": 0.15,  # opm_lq - opm_1yb
-}
-
-BALANCE_SHEET_SIGNALS = {
-    "net_debt_negative":  0.25,  # negative net_debt = fortress
-    "debt_slope_3y":      0.20,  # negative = deleveraging
-    "reserves_growth":    0.20,
-    "cwip_conversion":    0.15,  # positive = capacity coming online
-    "cash_change":        0.20,  # positive = building cash
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 4b. VALUATION SCORE SIGNALS (Marks + Baid Entry Price Discipline)
-# ═══════════════════════════════════════════════════════════════
-VALUATION_SIGNALS = {
-    "pe_discount":     0.25,   # PE vs 10Y median — higher discount = better
-    "peg_ratio":       0.30,   # PEG < 1.0 = cheap, > 2.5 = expensive
-    "ev_compression":  0.15,   # EV/EBITDA falling = value creation
-    "fcf_yield_val":   0.20,   # FCF Yield > 3% = attractive
-    "de_fortress":     0.10,   # D/E < 0.5 (Baid's fortress gate) = bonus
-}
-
-# PEG zone scoring (Baid + Marks)
-PEG_ZONES = {
-    "deep_value":  {"min": 0,   "max": 0.8,  "score": 100},
-    "undervalued": {"min": 0.8, "max": 1.2,  "score": 85},
-    "fair":        {"min": 1.2, "max": 1.5,  "score": 70},
-    "full":        {"min": 1.5, "max": 2.0,  "score": 45},
-    "expensive":   {"min": 2.0, "max": 2.5,  "score": 20},
-    "extreme":     {"min": 2.5, "max": 999,  "score": 5},
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 4c. MEAN REVERSION RISK (Marks: "Extremes revert")
-# ═══════════════════════════════════════════════════════════════
-# Flag stocks where current margins >> 5Y median as cyclical peak risk
-MEAN_REVERSION = {
-    "opm_spike_threshold": 1.3,    # if OPM_LQ / OPM_Med_5Y > 1.3 = cyclical peak risk
-    "npm_spike_threshold": 1.3,    # if NPM_LQ / NPM_Med_5Y > 1.3 = cyclical peak risk
-    "penalty_factor":      0.85,   # multiply quality score by this if cyclical peak
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 5. MOMENTUM SCORE WEIGHTS (Layer 3) — 0 to 100
-# ═══════════════════════════════════════════════════════════════
-MOMENTUM_WEIGHTS = {
-    "relative_strength": 0.30,
-    "trend_quality":     0.25,
-    "breakout_proximity":0.20,
-    "volume_confirm":    0.10,
-    "sector_leadership": 0.15,
-}
-
-RS_SIGNALS = {
-    "crs_50d":          0.40,
-    "crs_52w":          0.30,
-    "crs_26w":          0.30,
-}
-
-TREND_SIGNALS = {
-    "vstop_green":      0.30,   # VSTOP 14W 2.5 = green
-    "vstop_fresh":      0.25,   # last change ≤ 30 days
-    "adx_strong":       0.20,   # ADX 14W > 25
-    "rsi_zone":         0.15,   # RSI 55-70 sweet spot
-    "golden_cross":     0.10,   # recent golden cross
-}
-
-BREAKOUT_SIGNALS = {
-    "52wh_distance":    0.30,
-    "13wh_distance":    0.25,
-    "breakout_window":  0.25,
-    "ath_distance":     0.20,
-}
-
-SECTOR_SIGNALS = {
-    "ret_vs_industry_1y":  0.55,
-    "ret_vs_industry_3m":  0.45,
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 6. COMPOSITE SCORE BLEND (Layer 4)
-# ═══════════════════════════════════════════════════════════════
-COMPOSITE_WEIGHTS = {
-    "quality":    0.55,
-    "momentum":   0.30,
-    "governance": 0.15,
-}
-
-# Governance bonus components (0–100 total possible)
-GOVERNANCE_BONUS = {
-    "promoter_buying":         20,  # promoter increased holding this Q
-    "fii_accumulating":        15,  # FII buying this Q
-    "dii_accumulating":        10,  # DII buying this Q
-    "inst_convergence":        15,  # FII + DII both buying same Q
-    "insider_trading_present": 15,  # directors buying
-    "pledge_falling_1y":       10,  # pledge reduced over 1 year
-    "undiscovered_alpha":      15,  # low FII + Tier C mcap
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 7. CONVICTION TIERS
-# ═══════════════════════════════════════════════════════════════
-CONVICTION_TIERS = [
-    {"min": 85, "tier": 1, "label": "Crown Jewels",       "emoji": "🏆", "color": "#FFD700",
-     "description": "Highest conviction compounders — deep-dive and build position"},
-    {"min": 70, "tier": 2, "label": "Strong Compounders",  "emoji": "🥇", "color": "#3fb950",
-     "description": "Quality with momentum confirmation — watchlist priority"},
-    {"min": 55, "tier": 3, "label": "Emerging Quality",    "emoji": "🥈", "color": "#58a6ff",
-     "description": "Quality building, momentum developing — monitor for upgrade"},
-    {"min": 40, "tier": 4, "label": "On Radar",            "emoji": "🥉", "color": "#d29922",
-     "description": "Some quality signals, needs time — early watchlist"},
-    {"min": 0,  "tier": 5, "label": "Not Ready",           "emoji": "❌", "color": "#f85149",
-     "description": "Insufficient quality or momentum — ignore"},
-]
-
-# ═══════════════════════════════════════════════════════════════
-# 7b. MARKS CYCLE TEMPERATURE GAUGE
-# ═══════════════════════════════════════════════════════════════
-# 5-Dimension market temperature (scored 1-5 each, total 5-25)
-# This is a MANUAL input updated quarterly — system provides the framework.
-MARKS_CYCLE = {
-    "posture_aggressive": {"max_score": 10, "label": "🟢 Aggressive",
-                           "action": "Deploy capital into quality. Fat pitch territory."},
-    "posture_neutral":    {"max_score": 18, "label": "🟡 Neutral",
-                           "action": "Maintain portfolio, selective additions only."},
-    "posture_defensive":  {"max_score": 25, "label": "🔴 Defensive",
-                           "action": "Reduce equity, accumulate dry powder, wait."},
-}
-# Default temperature (user adjusts via Config tab)
-DEFAULT_CYCLE_TEMPERATURE = {
-    "valuations": 3,         # 1=cold (PE<17) to 5=hot (PE>25)
-    "credit_conditions": 3,  # 1=tight to 5=loose
-    "investor_psychology": 3, # 1=fear to 5=greed
-    "capital_markets": 3,    # 1=no IPOs to 5=IPO mania
-    "market_quality": 3,     # 1=quality leads to 5=junk leads
-}
-
-# Baid's 3 Sell Triggers (alert system)
-BAID_SELL_TRIGGERS = {
-    "thesis_broken": {
-        "description": "ROCE declining structurally (3Y trajectory negative)",
-        "check": "roce_trajectory < -3",
-    },
-    "management_deteriorated": {
-        "description": "Pledge rising + promoter selling + D/E rising",
-        "check": "pledge_rising AND change_promoter_lq < 0 AND de_slope_3y > 0",
-    },
-    "cash_quality_collapse": {
-        "description": "CFO/PAT dropped below 0.5 (was above 0.7)",
-        "check": "cfo_to_pat < 0.5",
-    },
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 7c. MOTILAL OSWAL QGLP FRAMEWORK (Wealth Creation Studies)
-# ═══════════════════════════════════════════════════════════════
-QGLP_FRAMEWORK = {
-    "quality_weight": 0.35,  # ROCE > 15%, Mgmt Quality
-    "growth_weight":  0.35,  # PAT/EPS Growth > 15%
-    "longevity_weight": 0.15, # ROE 10Y Consistency (Moat)
-    "price_weight":   0.15,  # PEG < 1.5
-    "roce_hard_gate": 15.0,  # Strict Cost of Capital spread
-    "growth_gate": 15.0,     # Strict earnings growth
-    "peg_gate": 1.0,         # Growth at a Reasonable Price (23rd Study: PEG < 1x)
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 7d. WAVE DETECTION ANALYTICS (Institutional Smart Money)
-# ═══════════════════════════════════════════════════════════════
-WAVE_DETECTION = {
-    "vqs_liquidity": 0.50,    # VQS: Volume Strength
-    "vqs_smart_money": 0.20,  # VQS: Smart Money Flow
-    "vqs_consistency": 0.20,  # VQS: Pattern Consistency
-    "vqs_efficiency": 0.10,   # VQS: Price Efficiency
-}
-
-MARKET_REGIMES = {
-    "bull": {"boost_momentum": 1.05, "boost_breakout": 1.05},
-    "bear": {"boost_value": 1.10, "deep_value_threshold": 20}, # Near 52W low
-}
+        display_cols = ["rank","name","sector","market_cap","qglp_score","qglp_quality","qglp_growth", "qglp_longevity", "qglp_price", "smart_money_flow"]
+        avail_cols = [c for c in display_cols if c in qglp_df.columns]
+        st.dataframe(qglp_df[avail_cols].reset_index(drop=True), use_container_width=True, height=500,
+                     column_config={
+                         "qglp_score": st.column_config.ProgressColumn("QGLP", min_value=0, max_value=100, format="%.0f"),
+                         "qglp_quality": st.column_config.ProgressColumn("Quality", min_value=0, max_value=100, format="%.0f"),
+                         "qglp_growth": st.column_config.ProgressColumn("Growth", min_value=0, max_value=100, format="%.0f"),
+                         "qglp_price": st.column_config.ProgressColumn("Price (PEG)", min_value=0, max_value=100, format="%.0f"),
+                     })
 
 
-# ═══════════════════════════════════════════════════════════════
-# 8. FORENSIC ENGINE THRESHOLDS
-# ═══════════════════════════════════════════════════════════════
-FORENSIC = {
-    "cfo_pat_alert":         0.7,   # below this = Level 1 red flag
-    "receivable_rise_days":  15,    # DSO rising more than this = flag
-    "inventory_vs_revenue":  True,  # inv growth > rev growth = flag
-    "capex_depr_ratio_max":  3.0,   # capex/depr > 3 without rev jump
-    "pledge_watch":          10.0,  # above this = watch
-    "pledge_critical":       20.0,  # above this = critical
-    "expense_ratio_rising":  True,  # rising expense ratio = flag
-}
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 7: SECTOR INTELLIGENCE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[6]:
+    st.markdown(f"<div class='sec-head'>📈 Sector Intelligence</div>", unsafe_allow_html=True)
+    qual_df = df[df["gate_pass"] == 1]
 
-# Piotroski F-Score thresholds
-PIOTROSKI = {
-    "strong": 7,    # F-Score ≥ 7 = strong
-    "moderate": 5,  # F-Score 5-6 = moderate
-    "weak": 0,      # F-Score ≤ 4 = weak
-}
+    if len(qual_df) > 0:
+        sector_stats = qual_df.groupby("sector").agg(
+            count=("name", "count"),
+            avg_quality=("quality_score", "mean"),
+            avg_momentum=("momentum_score", "mean"),
+            avg_composite=("composite_score", "mean"),
+            best_stock=("composite_score", "idxmax"),
+            tier1_count=("conviction_tier", lambda x: (x == 1).sum()),
+        ).sort_values("avg_composite", ascending=False).head(20)
 
-# ═══════════════════════════════════════════════════════════════
-# 9. RSI ZONE SCORING
-# ═══════════════════════════════════════════════════════════════
-RSI_ZONES = {
-    "overbought":   {"min": 80, "max": 100, "score": 10},
-    "strong_trend":  {"min": 70, "max": 80,  "score": 60},
-    "sweet_spot":    {"min": 55, "max": 70,  "score": 100},
-    "neutral":       {"min": 45, "max": 55,  "score": 50},
-    "weak":          {"min": 30, "max": 45,  "score": 20},
-    "oversold":      {"min": 0,  "max": 30,  "score": 40},  # mean-reversion potential
-}
+        # Get best stock names
+        sector_stats["top_stock"] = sector_stats["best_stock"].map(df["name"])
+        sector_stats = sector_stats.drop(columns=["best_stock"])
 
-# ═══════════════════════════════════════════════════════════════
-# 10. UI CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-UI = {
-    "app_title": "Multibagger Discovery System",
-    "app_icon": "🏆",
-    "app_subtitle": "Quantamental Compounding Engine",
-    "version": "1.0.0",
-    "max_display_default": 100,
-    "font_url": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap",
-}
+        st.dataframe(sector_stats.reset_index(), use_container_width=True, height=500,
+                     column_config={
+                         "avg_quality": st.column_config.ProgressColumn("Avg Quality", min_value=0, max_value=100, format="%.0f"),
+                         "avg_composite": st.column_config.ProgressColumn("Avg Composite", min_value=0, max_value=100, format="%.0f"),
+                     })
 
-# Color palette
-COLORS = {
-    "bg_primary":    "#0d1117",
-    "bg_secondary":  "#161b22",
-    "bg_tertiary":   "#21262d",
-    "border":        "#30363d",
-    "border_hover":  "#484f58",
-    "text_primary":  "#e6edf3",
-    "text_secondary":"#8b949e",
-    "text_muted":    "#6e7681",
-    "gold":          "#e3b341",
-    "green":         "#3fb950",
-    "blue":          "#58a6ff",
-    "red":           "#f85149",
-    "purple":        "#8b5cf6",
-    "orange":        "#FF6B35",
-    "cyan":          "#00CED1",
-    "gradient_start":"#1a1a2e",
-    "gradient_mid":  "#16213e",
-    "gradient_end":  "#0f3460",
-}
+        fig_sec = px.bar(sector_stats.head(15).reset_index(), x="sector", y="avg_composite",
+                        color="avg_quality", color_continuous_scale="Viridis",
+                        title="Top 15 Sectors by Average Composite Score")
+        fig_sec.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                             font=dict(color=COLORS['text_primary']), height=400,
+                             xaxis_tickangle=-45)
+        st.plotly_chart(fig_sec, use_container_width=True)
 
-# Tier-specific colors for the conviction table
-TIER_COLORS = {
-    1: {"bg": "rgba(255,215,0,0.06)",  "border": "rgba(255,215,0,0.3)",  "text": "#FFD700"},
-    2: {"bg": "rgba(63,185,80,0.06)",  "border": "rgba(63,185,80,0.3)",  "text": "#3fb950"},
-    3: {"bg": "rgba(88,166,255,0.06)", "border": "rgba(88,166,255,0.3)", "text": "#58a6ff"},
-    4: {"bg": "rgba(210,153,34,0.06)", "border": "rgba(210,153,34,0.3)", "text": "#d29922"},
-    5: {"bg": "rgba(248,81,73,0.06)",  "border": "rgba(248,81,73,0.3)",  "text": "#f85149"},
-}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 8: CONFIGURATION
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[7]:
+    st.markdown(f"<div class='sec-head'>⚙️ System Configuration</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-cap'>Current scoring weights and gate thresholds. Modify config.py to adjust.</div>", unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Composite Blend Weights**")
+        for k, v in COMPOSITE_WEIGHTS.items():
+            st.markdown(f"- {k.title()}: **{v*100:.0f}%**")
+        st.markdown("**Quality Sub-Weights (6 Layers)**")
+        for k, v in QUALITY_WEIGHTS.items():
+            src = {"moat": "SQGLP", "growth": "SQGLP", "cash": "Coffee Can",
+                   "margin": "Fisher", "balance_sheet": "Baid", "valuation": "Marks+Baid"}
+            st.markdown(f"- {k.replace('_',' ').title()} ({src.get(k,'')}): **{v*100:.0f}%**")
+    with c2:
+        st.markdown("**Hard Gates (7 Frameworks)**")
+        for name, cfg in HARD_GATES.items():
+            st.markdown(f"- {cfg['description']}")
+        st.markdown("**Momentum Sub-Weights (CAN-SLIM)**")
+        for k, v in MOMENTUM_WEIGHTS.items():
+            st.markdown(f"- {k.replace('_',' ').title()}: **{v*100:.0f}%**")
+
+    # ── MARKS CYCLE TEMPERATURE GAUGE ──
+    st.markdown("---")
+    st.markdown(f"<div class='sec-head'>🌡️ Marks Cycle Temperature Gauge</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-cap'>Howard Marks' 5-Dimension Market Cycle Assessment. "
+                f"Score each dimension 1 (cold/fear) to 5 (hot/greed). Total 5-25.</div>", unsafe_allow_html=True)
+
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        t_val = st.slider("📊 Valuations (1=PE<17, 5=PE>25)", 1, 5,
+                          DEFAULT_CYCLE_TEMPERATURE["valuations"], key="ct_val")
+        t_credit = st.slider("🏦 Credit Conditions (1=tight, 5=loose)", 1, 5,
+                             DEFAULT_CYCLE_TEMPERATURE["credit_conditions"], key="ct_credit")
+        t_psych = st.slider("🧠 Investor Psychology (1=fear, 5=greed)", 1, 5,
+                            DEFAULT_CYCLE_TEMPERATURE["investor_psychology"], key="ct_psych")
+    with tc2:
+        t_cap = st.slider("📈 Capital Markets (1=no IPOs, 5=IPO mania)", 1, 5,
+                          DEFAULT_CYCLE_TEMPERATURE["capital_markets"], key="ct_cap")
+        t_qual = st.slider("⚖️ Market Quality (1=quality leads, 5=junk leads)", 1, 5,
+                           DEFAULT_CYCLE_TEMPERATURE["market_quality"], key="ct_qual")
+
+    cycle_total = t_val + t_credit + t_psych + t_cap + t_qual
+    if cycle_total <= MARKS_CYCLE["posture_aggressive"]["max_score"]:
+        posture = MARKS_CYCLE["posture_aggressive"]
+    elif cycle_total <= MARKS_CYCLE["posture_neutral"]["max_score"]:
+        posture = MARKS_CYCLE["posture_neutral"]
+    else:
+        posture = MARKS_CYCLE["posture_defensive"]
+
+    posture_color = "#3fb950" if "Aggressive" in posture["label"] else "#d29922" if "Neutral" in posture["label"] else "#f85149"
+    st.markdown(f"""
+    <div style="background:{COLORS['bg_secondary']}; border:2px solid {posture_color};
+                border-radius:12px; padding:20px; margin:10px 0; text-align:center;">
+        <div style="font-size:2.5rem; font-weight:900; color:{posture_color};">{cycle_total}/25</div>
+        <div style="font-size:1.3rem; font-weight:700; color:{posture_color}; margin-top:4px;">{posture["label"]}</div>
+        <div style="font-size:0.85rem; color:{COLORS['text_muted']}; margin-top:8px;">{posture["action"]}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── BAID SELL TRIGGERS INFO ──
+    st.markdown("---")
+    st.markdown(f"<div class='sec-head'>🚨 Baid Sell Trigger Rules</div>", unsafe_allow_html=True)
+    sell_alert_count = int(df.get("sell_alert_any", pd.Series(0)).sum())
+    st.info(f"**{sell_alert_count}** stocks currently have active sell alerts.")
+    for trigger_name, trigger_cfg in BAID_SELL_TRIGGERS.items():
+        st.markdown(f"- **{trigger_name.replace('_', ' ').title()}:** {trigger_cfg['description']}")
+
+    # ── MEAN REVERSION INFO ──
+    st.markdown("---")
+    st.markdown(f"<div class='sec-head'>📉 Mean Reversion Risk (Marks)</div>", unsafe_allow_html=True)
+    mr_count = int(df.get("mean_reversion_risk", pd.Series(0)).sum())
+    st.info(f"**{mr_count}** stocks flagged with cyclical peak margins (OPM or NPM > {MEAN_REVERSION['opm_spike_threshold']}× their 5Y median).")
+    st.markdown(f"Quality score penalty: **{(1-MEAN_REVERSION['penalty_factor'])*100:.0f}%** reduction for flagged stocks.")
+
+    st.markdown("---")
+    st.markdown(f"""
+    <div style="text-align:center; padding:20px; color:{COLORS['text_muted']}; font-size:0.75rem;">
+        Multibagger Discovery System v{UI['version']} · 7 Frameworks Fused<br>
+        SQGLP + Coffee Can + Fisher + CAN-SLIM + Forensic Shenanigans + Howard Marks + Compounding Codex<br>
+        {total} stocks · {len(df.columns)} signals · {load_time:.1f}s pipeline<br>
+        <strong>Marks Cycle Posture: {posture['label']}</strong>
+    </div>
+    """, unsafe_allow_html=True)
