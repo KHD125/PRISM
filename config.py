@@ -46,6 +46,17 @@ CSV_FILES = {
     "technical":     _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Technicals.csv"),
 }
 
+# Google Sheets Configuration
+DEFAULT_SHEET_ID = ""
+DEFAULT_GIDS = {
+    "ratio": "1823439984",
+    "income": "1179123585",
+    "balance": "492995744",
+    "cashflow": "458676223",
+    "shareholding": "1334428374",
+    "technical": "1818626554"
+}
+
 # ═══════════════════════════════════════════════════════════════
 # 2. MARKET CAP TIERS  (₹ Crores)
 # ═══════════════════════════════════════════════════════════════
