@@ -61,6 +61,10 @@ with st.sidebar:
             st.session_state.data_source = "upload"
             st.rerun()
 
+    if st.button("🔄 Clear Cache & Reload", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
     sheet_id = None
     uploaded_dict = None
     data_ready = False
