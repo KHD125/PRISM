@@ -33,9 +33,9 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
 # DATA LOADING (cached)
 # ═══════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
-def load_and_score():
+def load_and_score(data_source="local", uploaded_files=None, sheet_id=None):
     t0 = time.time()
-    df = build_master_dataframe()
+    df = build_master_dataframe(data_source, uploaded_files, sheet_id)
     df = run_full_scoring(df)
     df = run_forensic_analysis(df)
     elapsed = time.time() - t0
@@ -43,8 +43,60 @@ def load_and_score():
 
 inject_css()
 
+# Data Source UI
+if "data_source" not in st.session_state:
+    st.session_state.data_source = "local"
+
+with st.sidebar:
+    render_sidebar_brand()
+    
+    st.markdown("### 📂 Data Source")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📊 Google Sheets", type="primary" if st.session_state.data_source == "sheet" else "secondary", use_container_width=True):
+            st.session_state.data_source = "sheet"
+            st.rerun()
+    with col2:
+        if st.button("📁 Upload CSV", type="primary" if st.session_state.data_source == "upload" else "secondary", use_container_width=True):
+            st.session_state.data_source = "upload"
+            st.rerun()
+
+    sheet_id = None
+    uploaded_dict = None
+    data_ready = False
+
+    if st.session_state.data_source == "sheet":
+        sheet_id = st.text_input("Google Sheets URL or ID", placeholder="Enter Google Sheet ID...")
+        if sheet_id:
+            data_ready = True
+    elif st.session_state.data_source == "upload":
+        uploaded_files = st.file_uploader("Upload CSV files (Ratio, Income, Balance, Cashflow, Shareholding, Tech)", type="csv", accept_multiple_files=True)
+        if uploaded_files and len(uploaded_files) > 0:
+            uploaded_dict = {}
+            for f in uploaded_files:
+                name = f.name.lower()
+                if "ratio" in name: uploaded_dict["ratio"] = f
+                elif "income" in name: uploaded_dict["income"] = f
+                elif "balance" in name: uploaded_dict["balance"] = f
+                elif "cashflow" in name: uploaded_dict["cashflow"] = f
+                elif "shareholding" in name: uploaded_dict["shareholding"] = f
+                elif "technical" in name: uploaded_dict["technical"] = f
+            
+            if len(uploaded_dict) >= 1: 
+                data_ready = True
+    else:
+        data_ready = True
+
+if not data_ready:
+    st.info("👋 Welcome! Please select a data source from the sidebar (Google Sheets or Upload CSV) to begin scanning.")
+    st.stop()
+
 with st.spinner("🔄 Loading & scoring 2,100+ stocks..."):
-    df, load_time = load_and_score()
+    try:
+        df, load_time = load_and_score(st.session_state.data_source, uploaded_dict, sheet_id)
+    except Exception as e:
+        st.error(f"❌ Error loading data: {e}")
+        st.stop()
 
 # Key metrics
 total = len(df)
@@ -60,7 +112,6 @@ qualified = df[df["gate_pass"] == 1]
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════
 with st.sidebar:
-    render_sidebar_brand()
     st.markdown(f"""
     <div style="background:{COLORS['bg_secondary']}; border:1px solid {COLORS['border']};
                 border-radius:12px; padding:12px 14px; margin:10px 0;">
