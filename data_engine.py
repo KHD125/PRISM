@@ -288,13 +288,12 @@ def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
 
     # For subsequent merges, only bring in sheet-specific columns + company_id
     common_col_values = set(COMMON_COLS.values())
-
     for name in ["income", "balance", "cashflow", "shareholding", "technical"]:
         df = datasets[name]
         # Columns unique to this sheet (not in common)
-        unique_cols = [c for c in df.columns if c not in common_col_values or c == "company_id"]
-        # Remove duplicates with master (except company_id)
-        existing = set(master.columns) - {"company_id"}
+        unique_cols = [c for c in df.columns if c != "company_id"]
+        # Remove duplicates with master
+        existing = set(master.columns)
         bring_cols = ["company_id"] + [c for c in unique_cols if c not in existing]
 
         master = master.merge(
