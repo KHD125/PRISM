@@ -441,6 +441,24 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["free_cash_flow"] / df["pat"].abs(),
         np.nan
     )
+    
+    # ── ALPHA VECTOR: ACCRUAL ANOMALY (Cash Machine Rank) ──
+    # Academic research proves companies where Cash > Profit beat the market.
+    # We rank stocks based on their CFO/PAT conversion and FCF Yield.
+    df["cash_machine_score"] = np.where(
+        (df["cfo_to_pat"].fillna(0) > 100) & (df["fcf_yield"].fillna(0) > 2),
+        100,  # Gold standard: Converting all profit to cash AND generating >2% FCF
+        np.where(
+            df["cfo_to_pat"].fillna(0) > 80,
+            50,   # Acceptable
+            0     # Paper profits
+        )
+    )
+    df["cash_machine_label"] = np.select(
+        [df["cash_machine_score"] == 100, df["cash_machine_score"] == 50],
+        ["💰 Cash Machine", "✅ Solid"],
+        default="📄 Paper Profits"
+    )
 
     # ── BALANCE SHEET DERIVED ──
     df["net_debt"] = df["debt"] - df["cash_equivalents"]
@@ -532,6 +550,27 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             "❌ Distribution"
         ],
         default="⚪ Neutral"
+    )
+
+    # ── ALPHA VECTOR: ACTIONABILITY / BUY ZONE ──
+    # Tells the user WHEN to buy based on risk-reward distance to Volatility Stop.
+    df["dist_to_vstop"] = np.where(
+        df["vstop_value"].notna() & (df["vstop_value"] > 0),
+        ((df["close_price"] - df["vstop_value"]) / df["vstop_value"]) * 100,
+        np.nan
+    )
+    df["buy_zone_label"] = np.select(
+        [
+            df["dist_to_vstop"] <= 5,   # Within 5% of stop loss (Asymmetric Risk/Reward)
+            df["dist_to_vstop"] <= 12,  # Normal volatility buffer
+            df["dist_to_vstop"] > 25    # Extended far beyond 50DMA/VSTOP
+        ],
+        [
+            "🟢 Perfect Entry (Low Risk)",
+            "🟡 Standard Zone",
+            "🔴 Extended (Wait for Pullback)"
+        ],
+        default="⚪ Uncharted"
     )
 
     # ── MARKET CAP TIER (mirrors Google Sheet ARRAYFORMULA exactly) ──
