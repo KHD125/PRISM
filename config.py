@@ -129,11 +129,11 @@ HARD_GATES = {
         "description": "Price > SMA 200D — long-term uptrend only",
     },
     "no_dilution": {
-        "column": "dilution_flag",  # derived
-        "operator": "==",
-        "threshold": 0,
-        "source": "Fisher Point 13",
-        "description": "No share dilution YoY — EPS protection",
+        "column": "dilution_flag",   # 0=Clean, 1=ESOP-level, 2=Meaningful, 3=Predatory QIP
+        "operator": "<",
+        "threshold": 3,
+        "source": "Fisher Point 13 — Materiality-adjusted",
+        "description": "Dilution <10% tolerated (ESOPs pass). Hard reject only predatory QIP >10%.",
     },
     "positive_ocf": {
         "column": "operating_cash_flow",
