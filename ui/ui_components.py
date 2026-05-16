@@ -296,6 +296,32 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
         pills += '<span class="pill pill-gold">🌊 Tsunami</span>'
     if row.get("net_debt_negative", 0) == 1:
         pills += '<span class="pill pill-green">Net Cash</span>'
+        
+    # ── ALPHA VECTORS ──
+    # 1. Moat Growth Matrix
+    mg_quad = row.get("moat_growth_quad", "")
+    if "Wealth Creator" in mg_quad:
+        pills += f'<span class="pill pill-green">{mg_quad}</span>'
+    elif "Quality Trap" in mg_quad:
+        pills += f'<span class="pill pill-gold">{mg_quad}</span>'
+    elif "Growth Trap" in mg_quad:
+        pills += f'<span class="pill pill-blue">{mg_quad}</span>'
+    elif "Destroyer" in mg_quad:
+        pills += f'<span class="pill pill-red">{mg_quad}</span>'
+        
+    # 2. Cash Machine (Accrual Anomaly)
+    cm_label = row.get("cash_machine_label", "")
+    if "Cash Machine" in cm_label:
+        pills += f'<span class="pill pill-green">{cm_label}</span>'
+    elif "Paper Profits" in cm_label:
+        pills += f'<span class="pill pill-red">{cm_label}</span>'
+        
+    # 3. Buy Zone (Actionability)
+    bz_label = row.get("buy_zone_label", "")
+    if "Perfect Entry" in bz_label:
+        pills += f'<span class="pill pill-green">{bz_label}</span>'
+    elif "Extended" in bz_label:
+        pills += f'<span class="pill pill-red">{bz_label}</span>'
 
     card_html = f"""
     <div class="stock-card" style="border-left: 3px solid {tc['border']};">
