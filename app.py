@@ -211,6 +211,11 @@ with st.sidebar:
     sel_sector = st.selectbox("Sector", sectors, key="sb_sector")
     sel_tier = st.multiselect("Conviction Tier", [1,2,3,4,5], default=[1,2,3], key="sb_tier")
     sel_mcap = st.multiselect("Market Category", ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], default=["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], key="sb_mcap")
+    
+    # The All-Time Best Filter: Moat-Growth Matrix
+    moat_options = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
+    sel_moat = st.multiselect("Moat", moat_options, default=["⭐ Wealth Creator"], key="sb_moat")
+    
     gate_only = st.checkbox("Gate-passed only", value=True, key="sb_gate")
     min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
 
@@ -222,6 +227,8 @@ if sel_tier:
     filt = filt[filt["conviction_tier"].isin(sel_tier)]
 if sel_mcap:
     filt = filt[filt["market_category"].isin(sel_mcap)]
+if sel_moat:
+    filt = filt[filt["moat_growth_quad"].isin(sel_moat)]
 if gate_only:
     filt = filt[filt["gate_pass"] == 1]
 if min_quality > 0:
