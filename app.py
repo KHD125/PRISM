@@ -1,774 +1,643 @@
 """
-Multibagger Discovery System — Data Engine
-=============================================
-Loads 6 CSV datasets, merges into a master DataFrame,
-computes 36+ derived signals using pure vectorized Pandas.
-Zero iterrows(), zero apply(). Sub-second on 2,108 stocks.
+The Systematic Architect's Index v2.0
+======================================
+Adaptive Quantamental Engine — Regime-Aware, Master-Driven
+Dr. Malik + Raamdeo Agrawal + O'Neil + Mukherjea + Marks + Fisher + Lynch
 """
+import os
+os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
+
+import streamlit as st
+st.set_page_config(page_title="Systematic Architect's Index", page_icon="🏛️", layout="wide", initial_sidebar_state="expanded")
 
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
+import time
 import warnings
-from typing import Dict, Tuple, Optional
-from config import CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR, FINANCIAL_SECTORS
-
 warnings.filterwarnings('ignore')
-np.seterr(all='ignore')
+
+from data_engine import fetch_and_clean_data
+from scoring_engine import run_full_scoring
+from forensic_engine import run_forensic_analysis
+from ui_components import (inject_css, render_hero_banner, render_metric_strip,
+                           render_stock_card, render_radar_chart, render_tier_summary,
+                           render_score_bar, render_sidebar_brand)
+from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
+                    QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
+                    VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
+                    BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
+                    MASTER_PROFILES, ANALYSIS_MODES)
 
 
 # ═══════════════════════════════════════════════════════════════
-# COLUMN MAPPING — CSV header names → clean snake_case
+# 3-TIER CACHE SPLIT
+# Tier 1: fetch_and_clean_data — CACHED. Only reruns on Clear Cache or new sheet.
+# Tier 2: run_full_scoring     — NOT cached. Instant on dropdown change.
+# Tier 3: run_forensic_analysis— NOT cached. Instant.
 # ═══════════════════════════════════════════════════════════════
-
-# Common columns present in every CSV (joined on companyId)
-COMMON_COLS = {
-    "companyId": "company_id",
-    "Name": "name",
-    "Market Capitalization": "market_cap",
-    "Market Category": "market_category",
-    "Eligibity": "eligibility",
-    "Close Price": "close_price",
-    "Industry": "industry",
-    "Sector": "sector",
-}
-
-RATIO_COLS = {
-    # MOAT — ROCE
-    "ROCE Median 10 Years": "roce_med_10y",
-    "ROCE Median 7 Years": "roce_med_7y",
-    "ROCE Median 5 Years": "roce_med_5y",
-    "ROCE": "roce",
-    "ROCE 1 Year Back": "roce_1yb",
-    # CAPITAL EFFICIENCY — ROE
-    "ROE Median 10 Years": "roe_med_10y",
-    "ROE Median 7 Years": "roe_med_7y",
-    "ROE Median 5 Years": "roe_med_5y",
-    "ROE": "roe",
-    "ROE 1 Year Back": "roe_1yb",
-    # CASH QUALITY
-    "CFO To PAT": "cfo_to_pat",
-    "CFO To EBITDA": "cfo_to_ebitda",
-    # MARGINS
-    "NPM Median 5 Years": "npm_med_5y",
-    "NPM Median 3 Years": "npm_med_3y",
-    "NPM": "npm",
-    "NPM Latest Quarter": "npm_latest_q",
-    "NPM 1 Year Back": "npm_1yb",
-    "OPM Median 5 Years": "opm_med_5y",
-    "OPM Latest Quarter": "opm_latest_q",
-    "OPM 1 Year Back": "opm_1yb",
-    "GPM Median 5 Years": "gpm_med_5y",
-    # VALUATION
-    "PEG": "peg",
-    "EV To EBITDA": "ev_ebitda",
-    "EV To EBITDA 1 Year Back": "ev_ebitda_1yb",
-    "Price To Earnings Median 10 Years": "pe_med_10y",
-    "Price To Earnings": "pe",
-    "Industry PE Median": "industry_pe",
-    # EFFICIENCY
-    "Cash Conversion Cycle": "ccc",
-    "Cash Conversion Cycle 1 Year Back": "ccc_1yb",
-    "Asset Turnover": "asset_turnover",
-    "Days Receivable": "days_receivable",
-    "Inventory Turnover Ratio": "inventory_turnover",
-    "Inventory Turnover Ratio 1 Year Back": "inventory_turnover_1yb",
-    # HARD GATES
-    "Debt To Equity": "debt_to_equity",
-    "Debt To Equity 1 Year Back": "debt_to_equity_1yb",
-    "Debt To Equity 2 Years Back": "debt_to_equity_2yb",
-    "Debt To Equity 3 Years Back": "debt_to_equity_3yb",
-    "Current Ratio": "current_ratio",
-    "Current Ratio 1 Year Back": "current_ratio_1yb",
-    "ROA": "roa",
-    "Equity Shares 1 Year Back": "equity_shares_1yb",
-}
-
-INCOME_COLS = {
-    # GROWTH
-    "PAT Growth 5 Years": "pat_gr_5y",
-    "PAT Growth 10 Years": "pat_gr_10y",
-    "PAT Growth 3 Years": "pat_gr_3y",
-    "PAT Growth YoY": "pat_gr_yoy",
-    "EPS Growth 5 Years": "eps_gr_5y",
-    "EPS Growth 3 Years": "eps_gr_3y",
-    "EPS Growth YoY": "eps_gr_yoy",
-    "Revenue Growth 5 Years": "rev_gr_5y",
-    "Revenue Growth 10 Years": "rev_gr_10y",
-    "Revenue Growth 3 Years": "rev_gr_3y",
-    "Revenue Growth YoY": "rev_gr_yoy",
-    "EBITDA Growth 5 Years": "ebitda_gr_5y",
-    "EBITDA Growth 3 Years": "ebitda_gr_3y",
-    # QUARTERLY
-    "PAT Latest Quarter": "pat_lq",
-    "PAT Preceding Year Quarter": "pat_pyq",
-    "Revenue Latest Quarter": "rev_lq",
-    "Revenue Preceding Year Quarter": "rev_pyq",
-    "EBITDA Latest Quarter": "ebitda_lq",
-    "EBITDA Preceding Year Quarter": "ebitda_pyq",
-    # RAW ANNUAL
-    "PAT": "pat",
-    "PAT 1 Year Back": "pat_1yb",
-    "EBITDA": "ebitda",
-    "EBITDA 1 Year Back": "ebitda_1yb",
-    "Revenue": "revenue",
-    "Revenue 1 Year Back": "revenue_1yb",
-    "Expenses": "expenses",
-    "Expenses 1 Year Back": "expenses_1yb",
-}
-
-BALANCE_COLS = {
-    # DEBT
-    "Debt": "debt",
-    "Debt 1 Year Back": "debt_1yb",
-    "Debt 2 Years Back": "debt_2yb",
-    "Debt 3 Years Back": "debt_3yb",
-    # CASH
-    "Cash Equivalents": "cash_equivalents",
-    "Cash Equivalents 1 Year Back": "cash_equivalents_1yb",
-    # RESERVES
-    "Reserves": "reserves",
-    "Reserves 1 Year Back": "reserves_1yb",
-    # CWIP
-    "CWIP": "cwip",
-    "CWIP 1 Year Back": "cwip_1yb",
-    # FIXED ASSETS
-    "Fixed Assets": "fixed_assets",
-    "Fixed Assets 1 Year Back": "fixed_assets_1yb",
-    "Fixed Assets 2 Years Back": "fixed_assets_2yb",
-    "Fixed Assets 3 Years Back": "fixed_assets_3yb",
-    # TOTALS
-    "Total Assets": "total_assets",
-    "Total Assets 1 Year Back": "total_assets_1yb",
-    "Total Liabilities": "total_liabilities",
-    "Total Liabilities 1 Year Back": "total_liabilities_1yb",
-    # INVENTORY
-    "Inventory": "inventory",
-    "Inventory 1 Year Back": "inventory_1yb",
-    # EQUITY
-    "Equity Shares": "equity_shares",
-}
-
-CASHFLOW_COLS = {
-    "Operating Cash Flow": "operating_cash_flow",
-    "Operating Cash Flow 1 Year Back": "ocf_1yb",
-    "Free Cash Flow": "free_cash_flow",
-    "Free Cash Flow 1 Year Back": "fcf_1yb",
-    "Investing Cash Flow": "investing_cash_flow",
-    "Investing Cash Flow 1 Year Back": "icf_1yb",
-    "Financing Cash Flow": "financing_cash_flow",
-    "Financing Cash Flow 1 Year Back": "financing_cf_1yb",
-    "Net Cash Flow": "net_cash_flow",
-    "Net Cash Flow 1 Year Back": "ncf_1yb",
-}
-
-SHAREHOLDING_COLS = {
-    "Promoter Holdings": "promoter_holdings",
-    "Change In Promoter Holdings Latest Quarter": "change_promoter_lq",
-    "Change In Promoter Holdings 1 Year": "change_promoter_1y",
-    "Pledged Percentage": "pledged_percentage",
-    "Pledged Percentage 1 Quarter Back": "pledged_1qb",
-    "Pledged Percentage 1 Year Back": "pledged_1yb",
-    "FII Holdings": "fii_holdings",
-    "Change In FII Holdings Latest Quarter": "change_fii_lq",
-    "Change In FII Holdings 1 Year": "change_fii_1y",
-    "Change In DII Holdings Latest Quarter": "change_dii_lq",
-    "Change In DII Holdings 1 Year": "change_dii_1y",
-    "Insider Trading": "insider_trading",
-    "Promoter Holdings (Gate Use)": "promoter_gate",
-}
-
-TECHNICAL_COLS = {
-    "Last VSTOP Change 14W 2.5": "last_vstop_change",
-    "VSTOP 14W 2.5": "vstop_value",
-    "CRS Vs Nifty 500 50D": "crs_50d",
-    "CRS Vs Nifty 500 52W": "crs_52w",
-    "CRS Vs Nifty 500 26W": "crs_26w",
-    "ADX 14W": "adx_14w",
-    "SMA 200D": "sma_200d",
-    "RSI 14D": "rsi_14d",
-    "Returns Vs Nifty 500 3M": "ret_vs_n500_3m",
-    "Returns Vs Nifty 500 6M": "ret_vs_n500_6m",
-    "Returns Vs Industry 1Y": "ret_vs_industry_1y",
-    "52WH Distance": "dist_52wh",
-    "52WH Distance Days": "dist_52wh_days",
-    "13WH Distance": "dist_13wh",
-    "Breakout Window": "breakout_window",
-    "Volume": "volume",
-    "Volume SMA 20D": "vol_sma_20d",
-    "Last Goldencrossover 50D 200D": "golden_cross_days",
-    "All Time High Distance": "dist_ath",
-    "Returns Vs Industry 3M": "ret_vs_industry_3m",
-}
-
-
-def _safe_numeric(series: pd.Series) -> pd.Series:
-    """Convert a series to numeric, coercing errors (null strings, etc.) to NaN."""
-    return pd.to_numeric(series, errors='coerce')
-
-
-def extract_spreadsheet_id(url_or_id: str) -> str:
-    """Extracts the Google Sheets ID from a full URL."""
-    import re
-    if not url_or_id:
-        return ""
-    if '/' not in url_or_id:
-        return url_or_id.strip()
-    sheets_pattern = r'/spreadsheets/d/([a-zA-Z0-9-_]+)'
-    match = re.search(sheets_pattern, url_or_id)
-    if match:
-        return match.group(1)
-    return url_or_id.strip()
-
-def _load_single_csv(filepath: str, col_map: Dict[str, str], sheet_name: str) -> pd.DataFrame:
-    """Load a single CSV, apply column mapping, and return clean DataFrame."""
-    # Row 0 = emoji section headers, Row 1 = actual column names
-    # na_values covers: 'null', 'NULL', 'None', 'N/A', 'n/a', '#N/A', empty string
-    df = pd.read_csv(
-        filepath,
-        header=1,
-        low_memory=False,
-        na_values=["null", "NULL", "None", "N/A", "n/a", "#N/A", "#VALUE!", "#REF!", ""],
-        keep_default_na=True,
-    )
-
-    # Build the full mapping: common + sheet-specific
-    full_map = {**COMMON_COLS, **col_map}
-
-    # Keep only columns that exist in this CSV
-    available = {k: v for k, v in full_map.items() if k in df.columns}
-    missing = set(col_map.keys()) - set(df.columns)
-    if missing:
-        print(f"  ⚠️  [{sheet_name}] Missing columns: {missing}")
-
-    # Select and rename
-    df = df[list(available.keys())].rename(columns=available)
-
-    return df
-
-
-def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet_id: str = None) -> Dict[str, pd.DataFrame]:
-    """Load all 6 CSV files and return as a dict of DataFrames."""
-    print("📂 Loading CSV data...")
-    datasets = {}
-    
-    from config import DEFAULT_GIDS
-
-    sheet_configs = {
-        "ratio":        (RATIO_COLS,),
-        "income":       (INCOME_COLS,),
-        "balance":      (BALANCE_COLS,),
-        "cashflow":     (CASHFLOW_COLS,),
-        "shareholding": (SHAREHOLDING_COLS,),
-        "technical":    (TECHNICAL_COLS,),
-    }
-
-    if data_source == "upload" and uploaded_files is not None:
-        for name, (cols,) in sheet_configs.items():
-            if name in uploaded_files:
-                datasets[name] = _load_single_csv(uploaded_files[name], cols, name)
-            else:
-                raise FileNotFoundError(f"Missing uploaded file for {name}")
-    elif data_source == "sheet" and sheet_id:
-        parsed_id = extract_spreadsheet_id(sheet_id)
-        for name, (cols,) in sheet_configs.items():
-            gid = DEFAULT_GIDS.get(name, "0")
-            csv_url = f"https://docs.google.com/spreadsheets/d/{parsed_id}/export?format=csv&gid={gid}"
-            try:
-                datasets[name] = _load_single_csv(csv_url, cols, name)
-            except Exception as e:
-                raise Exception(f"Failed to load {name} from Google Sheets: {e}")
-    else:
-        for name, (cols,) in sheet_configs.items():
-            path = CSV_FILES[name]
-            datasets[name] = _load_single_csv(path, cols, name)
-            print(f"  ✅ {name}: {len(datasets[name])} rows, {len(datasets[name].columns)} cols")
-
-    return datasets
-
-
-def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Merge all 6 datasets into a single master DataFrame on company_id."""
-    print("\n🔗 Merging datasets...")
-
-    # Start with ratio as base (has all common cols)
-    master = datasets["ratio"].copy()
-
-    # For subsequent merges, only bring in sheet-specific columns + company_id
-    common_col_values = set(COMMON_COLS.values())
-    for name in ["income", "balance", "cashflow", "shareholding", "technical"]:
-        df = datasets[name]
-        # Columns unique to this sheet (not in common)
-        unique_cols = [c for c in df.columns if c != "company_id"]
-        # Remove duplicates with master
-        existing = set(master.columns)
-        bring_cols = ["company_id"] + [c for c in unique_cols if c not in existing]
-
-        master = master.merge(
-            df[bring_cols],
-            on="company_id",
-            how="left",
-            suffixes=("", f"_{name}")
-        )
-        print(f"  ✅ Merged {name}: {len(master)} rows, {len(master.columns)} cols")
-
-    print(f"\n📊 Master DataFrame: {len(master)} stocks × {len(master.columns)} columns")
-    return master
-
-
-def coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert all non-identifier columns to numeric."""
-    # Columns that should remain as strings
-    string_cols = {
-        "company_id", "name", "market_category", "eligibility",
-        "industry", "sector", "insider_trading", "promoter_gate",
-    }
-
-    for col in df.columns:
-        if col not in string_cols:
-            df[col] = _safe_numeric(df[col])
-
-    return df
-
-
-def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute all 36+ derived signals. Pure vectorized Pandas."""
-    print("\n🧮 Computing derived signals...")
-
-    # ── RATIO DERIVED ──
-    df["roce_trajectory"] = df["roce_med_7y"] - df["roce_med_10y"]
-    df["roe_trajectory"] = df["roe_med_7y"] - df["roe_med_10y"]
-    df["roce_current_vs_med"] = df["roce"] - df["roce_med_10y"]
-    df["roe_current_vs_med"] = df["roe"] - df["roe_med_10y"]
-    df["npm_acceleration"] = df["npm_latest_q"] - df["npm_1yb"]
-    df["opm_acceleration"] = df["opm_latest_q"] - df["opm_1yb"]
-    df["pe_discount"] = np.where(
-        df["pe_med_10y"].notna() & (df["pe_med_10y"] != 0),
-        (df["pe_med_10y"] - df["pe"]) / df["pe_med_10y"] * 100,
-        np.nan
-    )
-    df["ev_compression"] = df["ev_ebitda_1yb"] - df["ev_ebitda"]
-    df["de_slope_3y"] = df["debt_to_equity"] - df["debt_to_equity_3yb"]
-    df["dilution_flag"] = np.where(
-        df["equity_shares"].notna() & df["equity_shares_1yb"].notna(),
-        (df["equity_shares"] > df["equity_shares_1yb"]).astype(int),
-        0
-    )
-
-    # ── INCOME DERIVED ──
-    df["pat_acceleration"] = df["pat_gr_3y"] - df["pat_gr_5y"]
-    df["rev_acceleration"] = df["rev_gr_3y"] - df["rev_gr_5y"]
-    df["eps_vs_pat_delta"] = df["eps_gr_5y"] - df["pat_gr_5y"]
-    df["q_pat_yoy"] = np.where(
-        df["pat_pyq"].notna() & (df["pat_pyq"].abs() > 0),
-        (df["pat_lq"] - df["pat_pyq"]) / df["pat_pyq"].abs() * 100,
-        np.nan
-    )
-    df["q_rev_yoy"] = np.where(
-        df["rev_pyq"].notna() & (df["rev_pyq"].abs() > 0),
-        (df["rev_lq"] - df["rev_pyq"]) / df["rev_pyq"].abs() * 100,
-        np.nan
-    )
-    df["q_ebitda_yoy"] = np.where(
-        df["ebitda_pyq"].notna() & (df["ebitda_pyq"].abs() > 0),
-        (df["ebitda_lq"] - df["ebitda_pyq"]) / df["ebitda_pyq"].abs() * 100,
-        np.nan
-    )
-    df["expense_ratio"] = np.where(
-        df["revenue"].notna() & (df["revenue"] > 0),
-        df["expenses"] / df["revenue"],
-        np.nan
-    )
-    df["expense_ratio_1yb"] = np.where(
-        df["revenue_1yb"].notna() & (df["revenue_1yb"] > 0),
-        df["expenses_1yb"] / df["revenue_1yb"],
-        np.nan
-    )
-
-    # ── CASHFLOW DERIVED ──
-    df["fcf_yield"] = np.where(
-        df["market_cap"].notna() & (df["market_cap"] > 0),
-        df["free_cash_flow"] / df["market_cap"] * 100,  # as percentage
-        np.nan
-    )
-    df["fcf_growth"] = np.where(
-        df["fcf_1yb"].notna() & (df["fcf_1yb"].abs() > 0),
-        (df["free_cash_flow"] - df["fcf_1yb"]) / df["fcf_1yb"].abs() * 100,
-        np.nan
-    )
-    df["ocf_growth"] = np.where(
-        df["ocf_1yb"].notna() & (df["ocf_1yb"].abs() > 0),
-        (df["operating_cash_flow"] - df["ocf_1yb"]) / df["ocf_1yb"].abs() * 100,
-        np.nan
-    )
-    df["capex_coverage"] = np.where(
-        df["investing_cash_flow"].notna() & (df["investing_cash_flow"].abs() > 0),
-        df["operating_cash_flow"] / df["investing_cash_flow"].abs(),
-        np.nan
-    )
-    df["fcf_consistency"] = (
-        (df["free_cash_flow"] > 0) & (df["fcf_1yb"] > 0)
-    ).astype(int)
-    df["self_funding"] = (
-        (df["operating_cash_flow"] > 0) & (df["financing_cash_flow"] < 0)
-    ).astype(int)
-    df["ncf_trend"] = (
-        (df["net_cash_flow"] > 0) & (df["ncf_1yb"] > 0)
-    ).astype(int)
-    df["fcf_quality"] = np.where(
-        df["pat"].notna() & (df["pat"].abs() > 0),
-        df["free_cash_flow"] / df["pat"].abs(),
-        np.nan
-    )
-
-    # ── BALANCE SHEET DERIVED ──
-    df["net_debt"] = df["debt"] - df["cash_equivalents"]
-    df["debt_slope_3y"] = df["debt"] - df["debt_3yb"]
-    df["debt_change_1y"] = df["debt"] - df["debt_1yb"]
-    df["cash_change"] = df["cash_equivalents"] - df["cash_equivalents_1yb"]
-    df["reserves_growth"] = np.where(
-        df["reserves_1yb"].notna() & (df["reserves_1yb"].abs() > 0),
-        (df["reserves"] - df["reserves_1yb"]) / df["reserves_1yb"].abs() * 100,
-        np.nan
-    )
-    df["cwip_conversion"] = df["cwip_1yb"] - df["cwip"]  # positive = went live
-    df["cwip_ratio"] = np.where(
-        df["fixed_assets"].notna() & (df["fixed_assets"] > 0),
-        df["cwip"] / df["fixed_assets"] * 100,
-        np.nan
-    )
-    df["capex_3y"] = df["fixed_assets"] - df["fixed_assets_3yb"]
-    df["inv_growth"] = np.where(
-        df["inventory_1yb"].notna() & (df["inventory_1yb"] > 0),
-        (df["inventory"] - df["inventory_1yb"]) / df["inventory_1yb"] * 100,
-        np.nan
-    )
-    df["inv_vs_rev_gap"] = df["inv_growth"] - df["rev_gr_yoy"]
-    df["solvency_ratio"] = np.where(
-        df["total_assets"].notna() & (df["total_assets"] > 0),
-        df["total_liabilities"] / df["total_assets"],
-        np.nan
-    )
-
-    # ── SHAREHOLDING DERIVED ──
-    df["pledge_rising"] = np.where(
-        df["pledged_percentage"].notna() & df["pledged_1qb"].notna(),
-        (df["pledged_percentage"] > df["pledged_1qb"]).astype(int),
-        0
-    )
-    df["pledge_falling_1y"] = np.where(
-        df["pledged_1yb"].notna() & df["pledged_percentage"].notna(),
-        (df["pledged_1yb"] - df["pledged_percentage"]).clip(lower=0),
-        0
-    )
-    df["promoter_buying"] = (df["change_promoter_lq"] > 0).astype(int)
-    df["inst_convergence"] = (
-        (df["change_fii_lq"] > 0) & (df["change_dii_lq"] > 0)
-    ).astype(int)
-
-    # ── TECHNICAL DERIVED ──
-    df["vol_ratio"] = np.where(
-        df["vol_sma_20d"].notna() & (df["vol_sma_20d"] > 0),
-        df["volume"] / df["vol_sma_20d"],
-        np.nan
-    )
-    df["daily_value"] = df["volume"] * df["close_price"]  # in raw ₹
-    df["daily_value_cr"] = df["daily_value"] / 1e7  # in ₹ Crores
-    df["crs_aligned"] = (
-        (df["crs_50d"] > 0) & (df["crs_26w"] > 0) & (df["crs_52w"] > 0)
-    ).astype(int)
-    df["vstop_fresh"] = (df["last_vstop_change"] <= 30).astype(int)
-    df["above_sma200"] = (df["close_price"] > df["sma_200d"]).astype(int)
-    df["vstop_green"] = (df["close_price"] > df["vstop_value"]).astype(int)
-
-    # ── VQS & SMART MONEY FLOW (WAVE DETECTION INTEGRATION) ──
-    vqs_liquidity = np.where(df["vol_ratio"] >= 3.0, 50,
-                    np.where(df["vol_ratio"] >= 2.0, 40,
-                    np.where(df["vol_ratio"] >= 1.5, 30,
-                    np.where(df["vol_ratio"] >= 1.0, 20, 10))))
-    
-    vqs_smart = np.where(df["inst_convergence"] == 1, 20,
-                np.where((df["change_fii_lq"].fillna(0) > 0) | (df["change_dii_lq"].fillna(0) > 0), 10, 0))
-    
-    vqs_cons = np.where(df["crs_aligned"] == 1, 20, 
-               np.where((df["crs_50d"].fillna(0) > 0) & (df["crs_26w"].fillna(0) > 0), 10, 0))
-               
-    vqs_eff = np.where(df["ret_vs_n500_3m"].fillna(0) > 0, 10, 0)
-    
-    df["vqs_score"] = pd.Series(vqs_liquidity + vqs_smart + vqs_cons + vqs_eff).fillna(0)
-    
-    df["smart_money_flow"] = np.select(
-        [
-            (df["vqs_score"] >= 80) & (df["inst_convergence"] == 1),
-            (df["vqs_score"] >= 60) & ((df["change_fii_lq"].fillna(0) > 0) | (df["change_dii_lq"].fillna(0) > 0)),
-            (df["vqs_score"] >= 40),
-            (df["change_fii_lq"].fillna(0) < 0) & (df["change_dii_lq"].fillna(0) < 0) & (df["crs_50d"].fillna(0) < 0)
-        ],
-        [
-            "🌊💎 Elite Accumulation",
-            "🎯 Strong Accumulation",
-            "✅ Moderate Interest",
-            "❌ Distribution"
-        ],
-        default="⚪ Neutral"
-    )
-
-    # ── MARKET CAP TIER (mirrors Google Sheet ARRAYFORMULA exactly) ──
-    df["mcap_tier"] = np.select(
-        [
-            df["market_cap"] >= 200_000,
-            df["market_cap"] >= 20_000,
-            df["market_cap"] >= 5_000,
-            df["market_cap"] >= 500,
-            df["market_cap"] >= 100,
-        ],
-        ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap"],
-        default="Nano Cap"
-    )
-
-    # ── FINANCIAL SECTOR FLAG ──
-    df["is_financial"] = df["industry"].isin(FINANCIAL_SECTORS) | \
-                         df["sector"].str.contains("Bank|NBFC|Insurance|Finance", case=False, na=False)
-
-    # Net debt negative flag (fortress balance sheet)
-    df["net_debt_negative"] = (df["net_debt"] < 0).astype(int)
-
-    # ══════════════════════════════════════════════════════════════
-    # DR. VIJAY MALIK SIGNALS (Peaceful Investing Codex)
-    # ══════════════════════════════════════════════════════════════
-
-    # ── SSGR Approximation (Ch.2) ──
-    # SSGR = NFAT × NPM × (1 − DPR) − Dep_Rate
-    # NFAT = Revenue / Fixed Assets
-    # Dep_Rate = (FA_1YB - FA_current + Capex_est) / FA_current
-    #   Capex_est ≈ max(0, FA_current - FA_1YB) when FA grew
-    #   Depreciation ≈ FA_1YB - FA_current when FA shrunk (net depreciation)
-    # DPR approximated as 0.25 (typical Indian payout)
-    fa = df["fixed_assets"].fillna(0)
-    fa_1yb = df["fixed_assets_1yb"].fillna(0)
-    rev = df["revenue"].fillna(0)
-    npm_pct = df["npm"].fillna(0)
-
-    nfat = np.where(fa > 0, rev / fa, np.nan)
-    npm_decimal = npm_pct / 100.0
-    dpr_approx = 0.25
-
-    # Depreciation rate: approximate from fixed asset changes
-    # If FA grew: Dep ≈ (FA_1YB + Capex - FA) / FA, where Capex ≈ FA - FA_1YB + Dep
-    # Simplified: Dep_Rate ≈ avg depreciation rate for Indian cos = ~8-12% of FA
-    # Better: Dep ≈ (EBITDA - PAT) × fraction, but noisy.
-    # BEST with our data: Dep_Rate = change in FA as ratio.
-    # If FA_1YB > 0: depreciation_est = max(0, FA_1YB * 0.10) as typical 10% dep
-    dep_rate = np.where(fa > 0, 0.10, 0.0)  # 10% standard depreciation rate
-
-    ssgr_raw = nfat * npm_decimal * (1 - dpr_approx) - dep_rate
-    df["ssgr"] = pd.Series(ssgr_raw * 100, index=df.index).clip(-50, 100)
-
-    # SSGR vs actual growth — the gold standard test
-    actual_growth = df["rev_gr_5y"].fillna(df["rev_gr_3y"]).fillna(0)
-    df["ssgr_cushion"] = df["ssgr"] - actual_growth
-    df["ssgr_self_funded"] = (df["ssgr_cushion"] > 0).astype(int)
-
-    # ── Tax Rate Estimation (Malik Parameter 3) ──
-    # Tax ≈ (EBITDA - Interest - PAT) / (EBITDA - Interest)
-    # Simplified: Tax ≈ 1 - (PAT / EBITDA) when EBITDA > PAT > 0
-    df["tax_rate_est"] = np.where(
-        (df["ebitda"].fillna(0) > 0) & (df["pat"].fillna(0) > 0) &
-        (df["ebitda"].fillna(0) > df["pat"].fillna(0)),
-        (1 - df["pat"] / df["ebitda"]) * 100,
-        np.nan
-    )
-
-    # ── Interest Coverage Proxy (Malik Parameter 4) ──
-    # Interest ≈ Debt × assumed rate (10%)
-    assumed_interest_rate = 0.10
-    df["interest_expense_est"] = df["debt"].fillna(0) * assumed_interest_rate
-    df["interest_coverage"] = np.where(
-        df["interest_expense_est"] > 0,
-        df["ebitda"].fillna(0) / df["interest_expense_est"],
-        99.0  # debt-free = effectively infinite coverage
-    )
-
-    # ── Economic Profit (28th WCS) ──
-    # EP = Net Worth × (RoE − Cost of Equity)
-    # Cost of Equity ≈ 10% for India
-    # Net Worth = PAT / (ROE/100)
-    cost_of_equity = 10.0
-    roe_safe = df["roe"].fillna(0).clip(lower=1)  # avoid division by near-zero
-    net_worth = np.where(
-        (df["roe"].fillna(0) > 1) & (df["pat"].fillna(0) > 0),
-        df["pat"] / (roe_safe / 100.0),
-        df["reserves"].fillna(0).clip(lower=1)
-    )
-    df["economic_profit"] = pd.Series(net_worth, index=df.index) * (df["roe"].fillna(0) - cost_of_equity) / 100.0
-    df["economic_profit_positive"] = (df["economic_profit"] > 0).astype(int)
-
-    # ── High Cash + High Debt Flag (Malik Shenanigan 4) ──
-    df["high_cash_high_debt"] = (
-        (df["cash_equivalents"].fillna(0) > 0) &
-        (df["debt"].fillna(0) > 0) &
-        (df["cash_equivalents"].fillna(0) > df["debt"].fillna(0) * 0.3)
-    ).astype(int)
-
-    # ── Malik 8-Parameter Checklist Score (Ch.4, 0-100) ──
-    # Each parameter scored 0 or 12.5 (8 params × 12.5 = 100)
-    pw = 12.5
-
-    # P1: Sales Growth > 10% (>15% preferred) — use 10Y if available, fallback 5Y, 3Y
-    rev_growth_best = df["rev_gr_10y"].fillna(df["rev_gr_5y"]).fillna(df["rev_gr_3y"]).fillna(0)
-    malik_p1 = np.where(rev_growth_best >= 15, pw,
-               np.where(rev_growth_best >= 10, pw * 0.7, 0))
-
-    # P2: NPM > 8%, stable or improving
-    npm_stable = (df["npm"].fillna(0) >= df["npm_1yb"].fillna(0)).astype(float)
-    malik_p2 = np.where(
-        (df["npm"].fillna(0) >= 8) & (npm_stable >= 1), pw,
-        np.where(df["npm"].fillna(0) >= 8, pw * 0.8,
-        np.where(df["npm"].fillna(0) >= 5, pw * 0.5, 0)))
-
-    # P3: Tax Rate ~25-30% (now computed from actual data)
-    malik_p3 = np.where(
-        df["tax_rate_est"].notna(),
-        np.where((df["tax_rate_est"] >= 20) & (df["tax_rate_est"] <= 35), pw,
-        np.where((df["tax_rate_est"] >= 15) & (df["tax_rate_est"] <= 40), pw * 0.5, 0)),
-        pw * 0.3  # no data = small benefit of doubt
-    )
-
-    # P4: Interest Coverage > 3x
-    malik_p4 = np.where(df["interest_coverage"] >= 8, pw,
-               np.where(df["interest_coverage"] >= 3, pw * 0.7, 0))
-
-    # P5: D/E < 0.5
-    malik_p5 = np.where(df["debt_to_equity"].fillna(0) <= 0, pw,
-               np.where(df["debt_to_equity"].fillna(0) <= 0.5, pw * 0.9,
-               np.where(df["debt_to_equity"].fillna(0) <= 1.0, pw * 0.5, 0)))
-
-    # P6: Current Ratio > 1.25
-    malik_p6 = np.where(df["current_ratio"].fillna(0) >= 1.5, pw,
-               np.where(df["current_ratio"].fillna(0) >= 1.25, pw * 0.7, 0))
-
-    # P7: CFO positive (both current and 1YB for consistency)
-    ocf_curr_pos = df["operating_cash_flow"].fillna(0) > 0
-    ocf_1yb_pos = df["ocf_1yb"].fillna(0) > 0
-    malik_p7 = np.where(ocf_curr_pos & ocf_1yb_pos, pw,  # both years positive
-               np.where(ocf_curr_pos, pw * 0.7, 0))       # at least current positive
-
-    # P8: CFO/PAT ≈ 1.0 (cfo_to_pat in CSV is PERCENTAGE, e.g. 73.04%)
-    cfo_pat_pct = df["cfo_to_pat"].fillna(0)  # already in percentage
-    malik_p8 = np.where(cfo_pat_pct >= 100, pw,            # CFO ≥ PAT = gold
-               np.where(cfo_pat_pct >= 70, pw * 0.7,       # 70-100% = pass
-               np.where(cfo_pat_pct >= 50, pw * 0.3, 0)))  # 50-70% = partial
-
-    df["malik_score"] = pd.Series(
-        malik_p1 + malik_p2 + malik_p3 + malik_p4 +
-        malik_p5 + malik_p6 + malik_p7 + malik_p8,
-        index=df.index
-    ).clip(0, 100).round(1)
-
-    df["malik_label"] = np.select(
-        [df["malik_score"] >= 80, df["malik_score"] >= 60, df["malik_score"] >= 40],
-        ["🟢 Strong", "🟡 Moderate", "🟠 Weak"],
-        default="🔴 Poor"
-    )
-
-    # ══════════════════════════════════════════════════════════════
-    # MOTILAL OSWAL WEALTH CREATION SIGNALS (30 Annual Studies)
-    # ══════════════════════════════════════════════════════════════
-
-    # ── Moat-Growth Matrix (22nd WCS) ──
-    has_moat = df["roce_med_5y"].fillna(df["roce"]).fillna(0) >= 15
-    has_growth = df["pat_gr_5y"].fillna(df["pat_gr_3y"]).fillna(0) >= 15
-    df["moat_growth_quad"] = np.select(
-        [has_moat & has_growth, has_moat & ~has_growth, ~has_moat & has_growth],
-        ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap"],
-        default="💀 Wealth Destroyer"
-    )
-
-    # ── Sales→Profit Conversion (Malik Moat Test 3 + WCS) ──
-    # Profit CAGR should >= Revenue CAGR (operating leverage proof)
-    df["sales_profit_conversion"] = np.where(
-        df["rev_gr_5y"].fillna(0) > 0,
-        df["pat_gr_5y"].fillna(0) - df["rev_gr_5y"].fillna(0),
-        np.nan
-    )
-    df["operating_leverage"] = (df["sales_profit_conversion"].fillna(0) > 0).astype(int)
-
-    # ── P/E < ROE Rule (Raamdeo's 1st WCS) ──
-    # Inherent margin of safety when PE < sustainable ROE
-    df["pe_vs_roe_mos"] = np.where(
-        df["pe"].notna() & df["roe"].notna() & (df["pe"] > 0),
-        df["roe"].fillna(0) - df["pe"].fillna(0),  # positive = MoS exists
-        np.nan
-    )
-    df["pe_below_roe"] = (df["pe_vs_roe_mos"].fillna(0) > 0).astype(int)
-
-    # ── Earnings Yield (Malik Ch.9 + Marks) ──
-    # EY = 100 / PE. Must exceed G-Sec (~7%) + 3% = 10%
-    df["earnings_yield"] = np.where(
-        df["pe"].notna() & (df["pe"] > 0),
-        100.0 / df["pe"],
-        np.nan
-    )
-    df["ey_adequate"] = (df["earnings_yield"].fillna(0) >= 10).astype(int)  # EY > 10%
-
-    # ── PEG Safety with multiple tiers ──
-    df["peg_zone"] = np.select(
-        [
-            df["peg"].fillna(99) <= 0,           # negative PEG = declining earnings
-            df["peg"].fillna(99) <= 0.5,          # very cheap
-            df["peg"].fillna(99) <= 1.0,          # Lynch sweet spot
-            df["peg"].fillna(99) <= 1.5,          # fair
-            df["peg"].fillna(99) <= 2.0,          # expensive
-        ],
-        ["🔴 Declining", "💎 Deep Value", "🟢 Fair PEG", "🟡 Stretched", "🟠 Expensive"],
-        default="🔴 Overpriced"
-    )
-
-    # ── Capex Efficiency (CWIP → Revenue conversion) ──
-    # cwip_conversion already computed above. Create efficiency signal.
-    df["capex_productive"] = (
-        (df["cwip_conversion"].fillna(0) > 0) &  # CWIP converted to assets
-        (df["rev_gr_yoy"].fillna(0) > 0)           # AND revenue grew
-    ).astype(int)
-
-    n_derived = len([c for c in df.columns if c not in set(COMMON_COLS.values())])
-    print(f"  ✅ Computed all derived signals. Total columns: {len(df.columns)}")
-    return df
-
-
-
-
-def fetch_and_clean_data(data_source: str = "local", uploaded_files: dict = None, sheet_id: str = None) -> pd.DataFrame:
-    """Tier-1 Cache: Load → Merge → Coerce → Derive → Return clean master DataFrame.
-    This is the expensive operation (network/IO). Cache it aggressively.
-    The scoring engine runs separately and is NOT cached — enabling instant re-scoring.
-    """
-    datasets = load_all_csvs(data_source=data_source, uploaded_files=uploaded_files, sheet_id=sheet_id)
-    master = merge_datasets(datasets)
-    master = coerce_numeric_columns(master)
-    master = compute_derived_signals(master)
-
-    # No market cap floor filter — all 2107 stocks included.
-    # market_category from the sheet already handles classification.
-    print(f"\n✅ Clean data ready: {len(master)} stocks × {len(master.columns)} columns")
-    return master
-
-
-# Backward-compat alias
-build_master_dataframe = fetch_and_clean_data
-
-
-# ═══════════════════════════════════════════════════════════════
-# CLI Test
-# ═══════════════════════════════════════════════════════════════
-if __name__ == "__main__":
-    import time
+@st.cache_data(show_spinner=False)
+def get_clean_data(data_source, uploaded_dict, sheet_id):
+    """Tier-1: Expensive data fetch + clean. Heavily cached."""
     t0 = time.time()
-    df = fetch_and_clean_data()
+    df = fetch_and_clean_data(data_source, uploaded_dict, sheet_id)
     elapsed = time.time() - t0
-    print(f"\n⏱️  Pipeline completed in {elapsed:.2f}s")
-    print(f"\nSample columns: {list(df.columns[:20])}")
-    print(f"\nMarket category dist:\n{df['market_category'].value_counts()}")
-    print(f"\nFinancial sector: {df['is_financial'].sum()} stocks")
-    print(f"\nNaN counts (top 10):")
-    nan_counts = df.isnull().sum().sort_values(ascending=False).head(10)
-    print(nan_counts)
+    return df, elapsed
+
+def get_scored_data(clean_df, analysis_mode, scoring_profile):
+    """Tier-2+3: Instant scoring. NOT cached — runs in <0.5s on dropdowns change."""
+    df = run_full_scoring(clean_df, analysis_mode, scoring_profile)
+    df = run_forensic_analysis(df)
+    return df
+
+inject_css()
+
+# Data Source UI
+if "data_source" not in st.session_state:
+    st.session_state.data_source = "sheet"
+
+with st.sidebar:
+    render_sidebar_brand()
+
+    st.markdown("### 📂 Data Source")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📊 Google Sheets", type="primary" if st.session_state.data_source == "sheet" else "secondary", use_container_width=True):
+            st.session_state.data_source = "sheet"
+            st.rerun()
+    with col2:
+        if st.button("📁 Upload CSV", type="primary" if st.session_state.data_source == "upload" else "secondary", use_container_width=True):
+            st.session_state.data_source = "upload"
+            st.rerun()
+
+    if st.button("🔄 Clear Cache & Reload", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+    sheet_id = None
+    uploaded_dict = None
+    data_ready = False
+
+    if st.session_state.data_source == "sheet":
+        sheet_id = st.text_input("Google Sheets URL or ID", placeholder="Enter Google Sheet ID...")
+        if sheet_id:
+            data_ready = True
+    elif st.session_state.data_source == "upload":
+        uploaded_files = st.file_uploader("Upload CSV files (Ratio, Income, Balance, Cashflow, Shareholding, Tech)", type="csv", accept_multiple_files=True)
+        if uploaded_files and len(uploaded_files) > 0:
+            uploaded_dict = {}
+            for f in uploaded_files:
+                name = f.name.lower()
+                if "ratio" in name: uploaded_dict["ratio"] = f
+                elif "income" in name: uploaded_dict["income"] = f
+                elif "balance" in name: uploaded_dict["balance"] = f
+                elif "cashflow" in name: uploaded_dict["cashflow"] = f
+                elif "shareholding" in name: uploaded_dict["shareholding"] = f
+                elif "technical" in name: uploaded_dict["technical"] = f
+            if len(uploaded_dict) >= 1:
+                data_ready = True
+
+    st.markdown("---")
+    # ══ Analysis Mode ══
+    st.markdown("### 🎯 Analysis Mode")
+    analysis_mode = st.selectbox(
+        "Mode",
+        options=list(ANALYSIS_MODES.keys()),
+        index=0,
+        format_func=lambda k: ANALYSIS_MODES[k]["label"],
+        key="sel_mode",
+        label_visibility="collapsed",
+    )
+    st.caption(ANALYSIS_MODES[analysis_mode]["description"])
+
+    # ══ Scoring Profile — filtered by selected mode ══
+    allowed = ANALYSIS_MODES[analysis_mode]["allowed_profiles"]
+    st.markdown("### 📊 Scoring Profile")
+    scoring_profile = st.selectbox(
+        "Profile",
+        options=allowed,
+        index=0,
+        format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
+        key="sel_profile",
+        label_visibility="collapsed",
+    )
+    profile_cfg = MASTER_PROFILES[scoring_profile]
+    st.caption(profile_cfg["description"])
+
+if not data_ready:
+    st.info("👋 Welcome! Please select a data source from the sidebar (Google Sheets or Upload CSV) to begin scanning.")
+    st.stop()
+
+with st.spinner("🔄 Loading data..."):
+    try:
+        clean_df, load_time = get_clean_data(st.session_state.data_source, uploaded_dict, sheet_id)
+    except Exception as e:
+        st.error(f"❌ Error loading data: {e}")
+        st.stop()
+
+with st.spinner(f"🧭 Scoring with {scoring_profile} profile..."):
+    try:
+        df = get_scored_data(clean_df, analysis_mode, scoring_profile)
+    except Exception as e:
+        st.error(f"❌ Scoring error: {e}")
+        st.stop()
+
+# Show active engine weights in sidebar AFTER scoring
+adaptive_w = df.attrs.get("adaptive_weights", {})
+if adaptive_w:
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### ⚙️ Active Engine Weights")
+        regime_label = adaptive_w.get("regime_label", "🟡 Sideways")
+        st.markdown(f"**Regime:** {regime_label}")
+        w_cols = st.columns(4)
+        w_cols[0].metric("Quality", f"{adaptive_w.get('quality_w', 0):.0%}")
+        w_cols[1].metric("Growth", f"{adaptive_w.get('growth_w', 0):.0%}")
+        w_cols[2].metric("Longevity", f"{adaptive_w.get('longevity_w', 0):.0%}")
+        w_cols[3].metric("Price", f"{adaptive_w.get('price_w', 0):.0%}")
+        st.caption(
+            f"Gates: ROCE≥{adaptive_w.get('roce_gate', 15):.0f}% · "
+            f"Growth≥{adaptive_w.get('growth_gate', 15):.0f}% · "
+            f"PEG≤{adaptive_w.get('peg_gate', 1.5):.1f}"
+        )
+# Key metrics
+total = len(df)
+gate_passed = int(df["gate_pass"].sum())
+tier1 = int((df["conviction_tier"] == 1).sum())
+tier2 = int((df["conviction_tier"] == 2).sum())
+tsunami_count = int(df["tsunami_signal"].sum())
+avg_quality = df["quality_score"].mean()
+qualified = df[df["gate_pass"] == 1]
+
+
+# ═══════════════════════════════════════════════════════════════
+# SIDEBAR
+# ═══════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.markdown(f"""
+    <div style="background:{COLORS['bg_secondary']}; border:1px solid {COLORS['border']};
+                border-radius:12px; padding:12px 14px; margin:10px 0;">
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['text_primary']}; padding:3px 0;">
+            <span>📊 Universe</span><span style="font-weight:700;">{total}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['green']}; padding:3px 0;">
+            <span>✅ Gate Passed</span><span style="font-weight:700;">{gate_passed}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['gold']}; padding:3px 0;">
+            <span>🏆 Crown Jewels</span><span style="font-weight:700;">{tier1}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['purple']}; padding:3px 0;">
+            <span>🌊 Tsunami</span><span style="font-weight:700;">{tsunami_count}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['text_muted']}; padding:3px 0;">
+            <span>⏱️ Load Time</span><span style="font-weight:700;">{load_time:.1f}s</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
+    regime_color = COLORS['green'] if regime == "BULL" else COLORS['red'] if regime == "BEAR" else COLORS['gold']
+    st.markdown(f"""
+    <div style="background:{COLORS['bg_tertiary']}; border-left:4px solid {regime_color}; padding:8px 12px; margin-bottom:15px; border-radius:4px;">
+        <div style="font-size:0.75rem; color:{COLORS['text_muted']}; text-transform:uppercase; letter-spacing:1px;">Detected Regime</div>
+        <div style="font-size:1.1rem; font-weight:800; color:{regime_color};">{regime} MARKET</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"<div class='sec-head'>🎯 Filters</div>", unsafe_allow_html=True)
+    sectors = ["All"] + sorted(df["sector"].dropna().unique().tolist())
+    sel_sector = st.selectbox("Sector", sectors, key="sb_sector")
+    sel_tier = st.multiselect("Conviction Tier", [1,2,3,4,5], default=[1,2,3], key="sb_tier")
+    sel_mcap = st.multiselect("Market Category", ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], default=["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], key="sb_mcap")
+    gate_only = st.checkbox("Gate-passed only", value=True, key="sb_gate")
+    min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
+
+# Apply filters
+filt = df.copy()
+if sel_sector != "All":
+    filt = filt[filt["sector"] == sel_sector]
+if sel_tier:
+    filt = filt[filt["conviction_tier"].isin(sel_tier)]
+if sel_mcap:
+    filt = filt[filt["market_category"].isin(sel_mcap)]
+if gate_only:
+    filt = filt[filt["gate_pass"] == 1]
+if min_quality > 0:
+    filt = filt[filt["quality_score"] >= min_quality]
+
+
+# ═══════════════════════════════════════════════════════════════
+# BANNER (above tabs — always visible)
+# ═══════════════════════════════════════════════════════════════
+render_hero_banner(total, gate_passed, tier1)
+render_metric_strip([
+    (f"{total}", "Universe", "m-blue"),
+    (f"{gate_passed}", "Gate Passed", "m-green"),
+    (f"{tier1}", "Crown Jewels", "m-gold"),
+    (f"{tier2}", "Strong", "m-green"),
+    (f"{tsunami_count}", "Tsunami", "m-purple"),
+    (f"{avg_quality:.0f}", "Avg Quality", "m-blue"),
+])
+
+# ── Profile Context Badge (always visible above tabs) ──
+if adaptive_w:
+    profile_icon = MASTER_PROFILES.get(scoring_profile, {}).get('icon', '⚖️')
+    regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
+    regime_emoji = "🟢" if regime == "BULL" else "🔴" if regime == "BEAR" else "🟡"
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg, {COLORS['bg_secondary']}, {COLORS['bg_tertiary']});
+                border:1px solid {COLORS['border']}; border-radius:10px; padding:10px 18px;
+                margin:8px 0 16px 0; display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
+        <span style="font-size:0.8rem; color:{COLORS['text_muted']};">
+            <b>{profile_icon} {scoring_profile}</b> · {analysis_mode} Mode · {regime_emoji} {regime}
+        </span>
+        <span style="font-size:0.75rem; color:{COLORS['text_secondary']};">
+            Q:{adaptive_w['quality_w']:.0%} · G:{adaptive_w['growth_w']:.0%} ·
+            L:{adaptive_w['longevity_w']:.0%} · P:{adaptive_w['price_w']:.0%}
+        </span>
+        <span style="font-size:0.72rem; color:{COLORS['text_muted']};">
+            Gates: ROCE≥{adaptive_w['roce_gate']:.0f}% · Growth≥{adaptive_w['growth_gate']:.0f}% · PEG≤{adaptive_w['peg_gate']:.1f}
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════
+# TABS
+# ═══════════════════════════════════════════════════════════════
+tabs = st.tabs(["🏠 Discovery", "🔍 Scanner", "🛡️ Forensic", "📊 X-Ray", "🌊 Tsunami", "🏛️ QGLP Compounders", "📈 Sectors", "⚙️ Config"])
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 1: DISCOVERY DASHBOARD
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[0]:
+    st.markdown(f"<div class='sec-head'>📋 Conviction Tier Overview</div>", unsafe_allow_html=True)
+    render_tier_summary(df)
+
+    st.markdown(f"<div class='sec-head'>🏆 Top Conviction Stocks ({len(filt)} filtered)</div>", unsafe_allow_html=True)
+    for _, row in filt.head(20).iterrows():
+        render_stock_card(row, show_scores=True)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 2: DEEP SCANNER
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[1]:
+    st.markdown(f"<div class='sec-head'>🔍 Deep Scanner — {len(filt)} Stocks · {profile_cfg.get('icon', '⚖️')} {scoring_profile}</div>", unsafe_allow_html=True)
+
+    # Dynamic column reordering: profile priority_cols go FIRST
+    base_cols = ["rank", "name", "sector", "market_category", "market_cap", "composite_score",
+                 "quality_score", "momentum_score", "governance_bonus",
+                 "malik_score", "qglp_score", "forensic_label", "tier_label",
+                 "gate_pass", "gates_failed", "close_price",
+                 "roe_med_10y", "roce_med_10y", "cfo_to_pat", "pat_gr_5y", "rev_gr_5y",
+                 "debt_to_equity", "peg", "ssgr", "economic_profit", "moat_growth_quad",
+                 "piotroski_fscore", "pledged_percentage", "promoter_holdings",
+                 "crs_50d", "ret_vs_industry_1y", "interest_coverage",
+                 "mean_reversion_risk", "sell_alert_any"]
+    # Profile-specific priority columns go to front
+    priority = profile_cfg.get("priority_cols", [])
+    ordered = ["rank", "name"]
+    for pc in priority:
+        if pc not in ordered:
+            ordered.append(pc)
+    for bc in base_cols:
+        if bc not in ordered:
+            ordered.append(bc)
+    available = [c for c in ordered if c in filt.columns]
+
+    st.dataframe(
+        filt[available].reset_index(drop=True),
+        use_container_width=True, height=600,
+        column_config={
+            "composite_score": st.column_config.ProgressColumn("Composite", min_value=0, max_value=100, format="%.0f"),
+            "quality_score": st.column_config.ProgressColumn("Quality", min_value=0, max_value=100, format="%.0f"),
+            "momentum_score": st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
+            "malik_score": st.column_config.ProgressColumn("Malik", min_value=0, max_value=100, format="%.0f"),
+            "qglp_score": st.column_config.ProgressColumn("QGLP", min_value=0, max_value=100, format="%.0f"),
+            "market_cap": st.column_config.NumberColumn("MCap ₹Cr", format="%.0f"),
+        }
+    )
+    csv_data = filt[available].to_csv(index=False)
+    st.download_button("📥 Export CSV", csv_data, "multibagger_scan.csv", "text/csv")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 3: FORENSIC AUDIT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[2]:
+    st.markdown(f"<div class='sec-head'>🛡️ Forensic Audit Dashboard</div>", unsafe_allow_html=True)
+    forensic_df = filt[filt["conviction_tier"].isin([1,2,3])].copy()
+
+    c1, c2, c3, c4 = st.columns(4)
+    clean = int((forensic_df["forensic_label"] == "🟢 Clean").sum())
+    watch = int((forensic_df["forensic_label"] == "🟡 Watch").sum())
+    caution = int((forensic_df["forensic_label"] == "🟠 Caution").sum())
+    high_risk = int((forensic_df["forensic_label"] == "🔴 High Risk").sum())
+    c1.metric("🟢 Clean", clean)
+    c2.metric("🟡 Watch", watch)
+    c3.metric("🟠 Caution", caution)
+    c4.metric("🔴 High Risk", high_risk)
+
+    # F-Score histogram
+    if len(forensic_df) > 0:
+        fig_f = px.histogram(forensic_df, x="piotroski_fscore", nbins=10, color_discrete_sequence=[COLORS['purple']])
+        fig_f.update_layout(title="Piotroski F-Score Distribution", xaxis_title="F-Score (0-9)",
+                           yaxis_title="Count", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                           font=dict(color=COLORS['text_primary']), height=300)
+        st.plotly_chart(fig_f, use_container_width=True)
+
+    forensic_cols = ["rank","name","tier_label","composite_score","piotroski_fscore","piotroski_label",
+                     "forensic_score","forensic_label","red_flag_count","red_flag_list","cf_triangle"]
+    avail_f = [c for c in forensic_cols if c in forensic_df.columns]
+    st.dataframe(forensic_df[avail_f].reset_index(drop=True), use_container_width=True, height=400)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 4: STOCK X-RAY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[3]:
+    st.markdown(f"<div class='sec-head'>📊 Stock X-Ray — Deep Dive Analysis</div>", unsafe_allow_html=True)
+    stock_names = filt["name"].dropna().tolist()
+    if stock_names:
+        selected = st.selectbox("Select Stock", stock_names, key="xray_stock")
+        stock = filt[filt["name"] == selected].iloc[0]
+
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            render_stock_card(stock, show_scores=True)
+            st.markdown(f"**Gate Status:** {'✅ All gates passed' if stock.get('gate_pass',0)==1 else '❌ Failed: ' + str(stock.get('failed_gates',''))}")
+            st.markdown(f"**Forensic:** {stock.get('forensic_label','')} · F-Score: {stock.get('piotroski_fscore','N/A')}/9")
+            st.markdown(f"**Smart Money Flow:** {stock.get('smart_money_flow', '⚪ Neutral')}")
+            st.markdown(f"**Cashflow Triangle:** {stock.get('cf_triangle','')}")
+            st.markdown(f"**Moat-Growth:** {stock.get('moat_growth_quad', 'N/A')}")
+            if stock.get('red_flag_count', 0) > 0:
+                st.warning(f"🚨 Red Flags: {stock.get('red_flag_list','')}")
+        with c2:
+            fig = render_radar_chart(stock, f"{selected} — Quality Profile")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ── Dr. Malik + WCS Signals ──
+        st.markdown(f"<div class='sec-head'>🕉️ Peaceful Investing Signals (Dr. Malik)</div>", unsafe_allow_html=True)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Malik Score", f"{stock.get('malik_score', 0):.0f}/100", stock.get('malik_label', ''))
+        m2.metric("SSGR", f"{stock.get('ssgr', 0):.1f}%")
+        m3.metric("SSGR Cushion", f"{stock.get('ssgr_cushion', 0):.1f}%",
+                  "Self-Funded ✅" if stock.get('ssgr_self_funded', 0) == 1 else "Debt-Dependent ⚠️")
+        m4.metric("Interest Coverage", f"{stock.get('interest_coverage', 0):.1f}x")
+
+        m5, m6, m7, m8 = st.columns(4)
+        m5.metric("Tax Rate Est.", f"{stock.get('tax_rate_est', 0):.1f}%")
+        m6.metric("CFO/PAT", f"{stock.get('cfo_to_pat', 0):.1f}%")
+        m7.metric("Earnings Yield", f"{stock.get('earnings_yield', 0):.1f}%")
+        m8.metric("High Cash+Debt", "⚠️ Flagged" if stock.get('high_cash_high_debt', 0) == 1 else "Clean ✅")
+
+        st.markdown(f"<div class='sec-head'>💰 Wealth Creation Signals (MOSL WCS)</div>", unsafe_allow_html=True)
+        w1, w2, w3, w4 = st.columns(4)
+        w1.metric("Economic Profit", f"₹{stock.get('economic_profit', 0):.0f} Cr",
+                  "EP Positive ✅" if stock.get('economic_profit_positive', 0) == 1 else "EP Negative ❌")
+        w2.metric("QGLP Score", f"{stock.get('qglp_score', 0):.0f}/100")
+        w3.metric("Moat-Growth", stock.get('moat_growth_quad', 'N/A'))
+        w4.metric("Sales→Profit Conv", "✅ Positive Leverage" if stock.get('operating_leverage', 0) == 1 else "❌ Negative Leverage")
+
+        w5, w6, w7, w8 = st.columns(4)
+        pe_roe_mos = stock.get('pe_vs_roe_mos', 0)
+        w5.metric("P/E vs ROE (MoS)", f"{pe_roe_mos:.1f}", "Value Zone ✅" if pe_roe_mos > 0 else "Premium Zone ⚠️")
+        w6.metric("PEG Zone", stock.get('peg_zone', 'N/A'))
+        w7.metric("Capex Productive", "✅ Yes" if stock.get('capex_productive', 0) == 1 else "❌ No / Wait")
+        w8.metric("QGLP Pass", "✅ Yes" if stock.get('qglp_pass', 0) == 1 else "❌ No")
+
+        st.markdown(f"<div class='sec-head'>📋 Key Financials</div>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("ROCE Med 10Y", f"{stock.get('roce_med_10y', 0):.1f}%")
+        c2.metric("ROE Med 10Y", f"{stock.get('roe_med_10y', 0):.1f}%")
+        c3.metric("CFO/PAT", f"{stock.get('cfo_to_pat', 0):.1f}%")
+        c4.metric("D/E Ratio", f"{stock.get('debt_to_equity', 0):.2f}")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("PAT Gr 5Y", f"{stock.get('pat_gr_5y', 0):.1f}%")
+        c2.metric("Rev Gr 5Y", f"{stock.get('rev_gr_5y', 0):.1f}%")
+        c3.metric("NPM Med 5Y", f"{stock.get('npm_med_5y', 0):.1f}%")
+        c4.metric("PEG", f"{stock.get('peg', 0):.2f}")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Promoter %", f"{stock.get('promoter_holdings', 0):.1f}%")
+        c2.metric("Pledge %", f"{stock.get('pledged_percentage', 0):.1f}%")
+        c3.metric("FII %", f"{stock.get('fii_holdings', 0):.1f}%")
+        c4.metric("CRS 50D", f"{stock.get('crs_50d', 0):.0f}")
+
+        # ── SELL ALERTS (Baid's 3 Triggers) ──
+        has_sell_alert = stock.get('sell_alert_any', 0) == 1
+        if has_sell_alert:
+            st.markdown(f"<div class='sec-head' style='color:#f85149;'>🚨 BAID SELL TRIGGERS ACTIVE</div>", unsafe_allow_html=True)
+            triggers = []
+            if stock.get('sell_alert_thesis_broken', 0) == 1:
+                triggers.append("**Thesis Broken:** ROCE trajectory declining structurally")
+            if stock.get('sell_alert_mgmt_deteriorated', 0) == 1:
+                triggers.append("**Management Deteriorated:** Pledge rising + promoter selling + D/E rising")
+            if stock.get('sell_alert_cash_collapse', 0) == 1:
+                triggers.append("**Cash Quality Collapse:** CFO/PAT dropped below 0.5")
+            for t in triggers:
+                st.error(t)
+
+        # ── MEAN REVERSION WARNING (Marks) ──
+        if stock.get('mean_reversion_risk', 0) == 1:
+            st.warning("⚠️ **Marks Mean Reversion Risk:** Current margins are significantly above 5Y median — cyclical peak risk detected. Quality score penalized by 15%.")
+
+        # ── VALUATION ATTRACTIVENESS ──
+        st.markdown(f"<div class='sec-head'>💰 Valuation Attractiveness (Marks + Baid)</div>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Valuation Score", f"{stock.get('valuation_score', 0):.0f}/100")
+        c2.metric("PE Discount vs 10Y", f"{stock.get('pe_discount', 0):.1f}%")
+        c3.metric("EV Compression", f"{stock.get('ev_compression', 0):.1f}")
+        c4.metric("FCF Yield", f"{stock.get('fcf_yield', 0):.1f}%")
+    else:
+        st.info("No stocks match current filters.")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 5: TSUNAMI SIGNALS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[4]:
+    st.markdown(f"<div class='sec-head'>🌊 Tsunami Signals — Maximum Conviction Setups</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-cap'>Stocks where ALL conviction layers fire simultaneously: Quality + Momentum + Governance + Technical</div>", unsafe_allow_html=True)
+
+    tsunami_df = df[df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
+
+    if len(tsunami_df) == 0:
+        st.info("🌊 No tsunami signals detected in current market conditions. This is rare and by design — these are the highest-conviction setups.")
+    else:
+        render_metric_strip([
+            (str(len(tsunami_df)), "Tsunami Signals", "m-purple"),
+            (str(int(tsunami_df["tsunami_undiscovered"].sum())), "Undiscovered (Tier C)", "m-gold"),
+            (f"{tsunami_df['composite_score'].mean():.0f}", "Avg Score", "m-green"),
+        ])
+        for _, row in tsunami_df.iterrows():
+            st.markdown(f"""<div class="tsunami-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="font-weight:800; font-size:1.1rem; color:#E8E3FF;">
+                            🌊 {row['name']}
+                        </div>
+                        <div style="font-size:0.75rem; color:#A8A3D8; margin-top:2px;">
+                            {row.get('sector','')} · ₹{row.get('market_cap',0):,.0f} Cr · {row.get('market_category','')}
+                        </div>
+                    </div>
+                    <div style="font-size:2rem; font-weight:900; color:#FFD700;">{row['composite_score']:.0f}</div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+            render_stock_card(row, show_scores=True)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 6: QGLP COMPOUNDERS (MOTILAL OSWAL)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[5]:
+    st.markdown(f"<div class='sec-head'>🏛️ QGLP Compounders (Motilal Oswal Framework)</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-cap'>Quality + Growth + Longevity + Price. Exclusive to strictly vetted compounders with ROCE > 15%, EPS/PAT Growth > 15%, and reasonable valuations.</div>", unsafe_allow_html=True)
+    
+    qglp_df = filt[filt["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
+    
+    if len(qglp_df) == 0:
+        st.info("No stocks pass the strict QGLP gates right now.")
+    else:
+        render_metric_strip([
+            (str(len(qglp_df)), "QGLP Stocks", "m-gold"),
+            (f"{qglp_df['qglp_score'].mean():.0f}", "Avg QGLP Score", "m-blue"),
+        ])
+        
+        display_cols = ["rank","name","sector","market_cap","qglp_score","qglp_quality","qglp_growth", "qglp_longevity", "qglp_price", "smart_money_flow"]
+        avail_cols = [c for c in display_cols if c in qglp_df.columns]
+        st.dataframe(qglp_df[avail_cols].reset_index(drop=True), use_container_width=True, height=500,
+                     column_config={
+                         "qglp_score": st.column_config.ProgressColumn("QGLP", min_value=0, max_value=100, format="%.0f"),
+                         "qglp_quality": st.column_config.ProgressColumn("Quality", min_value=0, max_value=100, format="%.0f"),
+                         "qglp_growth": st.column_config.ProgressColumn("Growth", min_value=0, max_value=100, format="%.0f"),
+                         "qglp_price": st.column_config.ProgressColumn("Price (PEG)", min_value=0, max_value=100, format="%.0f"),
+                     })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 7: SECTOR INTELLIGENCE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[6]:
+    st.markdown(f"<div class='sec-head'>📈 Sector Intelligence</div>", unsafe_allow_html=True)
+    qual_df = df[df["gate_pass"] == 1]
+
+    if len(qual_df) > 0:
+        sector_stats = qual_df.groupby("sector").agg(
+            count=("name", "count"),
+            avg_quality=("quality_score", "mean"),
+            avg_momentum=("momentum_score", "mean"),
+            avg_composite=("composite_score", "mean"),
+            best_stock=("composite_score", "idxmax"),
+            tier1_count=("conviction_tier", lambda x: (x == 1).sum()),
+        ).sort_values("avg_composite", ascending=False).head(20)
+
+        # Get best stock names
+        sector_stats["top_stock"] = sector_stats["best_stock"].map(df["name"])
+        sector_stats = sector_stats.drop(columns=["best_stock"])
+
+        st.dataframe(sector_stats.reset_index(), use_container_width=True, height=500,
+                     column_config={
+                         "avg_quality": st.column_config.ProgressColumn("Avg Quality", min_value=0, max_value=100, format="%.0f"),
+                         "avg_composite": st.column_config.ProgressColumn("Avg Composite", min_value=0, max_value=100, format="%.0f"),
+                     })
+
+        fig_sec = px.bar(sector_stats.head(15).reset_index(), x="sector", y="avg_composite",
+                        color="avg_quality", color_continuous_scale="Viridis",
+                        title="Top 15 Sectors by Average Composite Score")
+        fig_sec.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                             font=dict(color=COLORS['text_primary']), height=400,
+                             xaxis_tickangle=-45)
+        st.plotly_chart(fig_sec, use_container_width=True)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 8: CONFIGURATION
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[7]:
+    st.markdown(f"<div class='sec-head'>⚙️ System Configuration</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-cap'>Current scoring weights and gate thresholds. Modify config.py to adjust.</div>", unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Composite Blend Weights**")
+        for k, v in COMPOSITE_WEIGHTS.items():
+            st.markdown(f"- {k.title()}: **{v*100:.0f}%**")
+        st.markdown("**Quality Sub-Weights (6 Layers)**")
+        for k, v in QUALITY_WEIGHTS.items():
+            src = {"moat": "SQGLP", "growth": "SQGLP", "cash": "Coffee Can",
+                   "margin": "Fisher", "balance_sheet": "Baid", "valuation": "Marks+Baid"}
+            st.markdown(f"- {k.replace('_',' ').title()} ({src.get(k,'')}): **{v*100:.0f}%**")
+    with c2:
+        st.markdown("**Hard Gates (7 Frameworks)**")
+        for name, cfg in HARD_GATES.items():
+            st.markdown(f"- {cfg['description']}")
+        st.markdown("**Momentum Sub-Weights (CAN-SLIM)**")
+        for k, v in MOMENTUM_WEIGHTS.items():
+            st.markdown(f"- {k.replace('_',' ').title()}: **{v*100:.0f}%**")
+
+    # ── MARKS CYCLE TEMPERATURE GAUGE ──
+    st.markdown("---")
+    st.markdown(f"<div class='sec-head'>🌡️ Marks Cycle Temperature Gauge</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-cap'>Howard Marks' 5-Dimension Market Cycle Assessment. "
+                f"Score each dimension 1 (cold/fear) to 5 (hot/greed). Total 5-25.</div>", unsafe_allow_html=True)
+
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        t_val = st.slider("📊 Valuations (1=PE<17, 5=PE>25)", 1, 5,
+                          DEFAULT_CYCLE_TEMPERATURE["valuations"], key="ct_val")
+        t_credit = st.slider("🏦 Credit Conditions (1=tight, 5=loose)", 1, 5,
+                             DEFAULT_CYCLE_TEMPERATURE["credit_conditions"], key="ct_credit")
+        t_psych = st.slider("🧠 Investor Psychology (1=fear, 5=greed)", 1, 5,
+                            DEFAULT_CYCLE_TEMPERATURE["investor_psychology"], key="ct_psych")
+    with tc2:
+        t_cap = st.slider("📈 Capital Markets (1=no IPOs, 5=IPO mania)", 1, 5,
+                          DEFAULT_CYCLE_TEMPERATURE["capital_markets"], key="ct_cap")
+        t_qual = st.slider("⚖️ Market Quality (1=quality leads, 5=junk leads)", 1, 5,
+                           DEFAULT_CYCLE_TEMPERATURE["market_quality"], key="ct_qual")
+
+    cycle_total = t_val + t_credit + t_psych + t_cap + t_qual
+    if cycle_total <= MARKS_CYCLE["posture_aggressive"]["max_score"]:
+        posture = MARKS_CYCLE["posture_aggressive"]
+    elif cycle_total <= MARKS_CYCLE["posture_neutral"]["max_score"]:
+        posture = MARKS_CYCLE["posture_neutral"]
+    else:
+        posture = MARKS_CYCLE["posture_defensive"]
+
+    posture_color = "#3fb950" if "Aggressive" in posture["label"] else "#d29922" if "Neutral" in posture["label"] else "#f85149"
+    st.markdown(f"""
+    <div style="background:{COLORS['bg_secondary']}; border:2px solid {posture_color};
+                border-radius:12px; padding:20px; margin:10px 0; text-align:center;">
+        <div style="font-size:2.5rem; font-weight:900; color:{posture_color};">{cycle_total}/25</div>
+        <div style="font-size:1.3rem; font-weight:700; color:{posture_color}; margin-top:4px;">{posture["label"]}</div>
+        <div style="font-size:0.85rem; color:{COLORS['text_muted']}; margin-top:8px;">{posture["action"]}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── BAID SELL TRIGGERS INFO ──
+    st.markdown("---")
+    st.markdown(f"<div class='sec-head'>🚨 Baid Sell Trigger Rules</div>", unsafe_allow_html=True)
+    sell_alert_count = int(df.get("sell_alert_any", pd.Series(0)).sum())
+    st.info(f"**{sell_alert_count}** stocks currently have active sell alerts.")
+    for trigger_name, trigger_cfg in BAID_SELL_TRIGGERS.items():
+        st.markdown(f"- **{trigger_name.replace('_', ' ').title()}:** {trigger_cfg['description']}")
+
+    # ── MEAN REVERSION INFO ──
+    st.markdown("---")
+    st.markdown(f"<div class='sec-head'>📉 Mean Reversion Risk (Marks)</div>", unsafe_allow_html=True)
+    mr_count = int(df.get("mean_reversion_risk", pd.Series(0)).sum())
+    st.info(f"**{mr_count}** stocks flagged with cyclical peak margins (OPM or NPM > {MEAN_REVERSION['opm_spike_threshold']}× their 5Y median).")
+    st.markdown(f"Quality score penalty: **{(1-MEAN_REVERSION['penalty_factor'])*100:.0f}%** reduction for flagged stocks.")
+
+    st.markdown("---")
+    st.markdown(f"""
+    <div style="text-align:center; padding:20px; color:{COLORS['text_muted']}; font-size:0.75rem;">
+        The Systematic Architect's Index v{UI['version']} · Adaptive Quantamental Engine<br>
+        Dr. Malik (SSGR+8 Params) · Raamdeo (QGLP) · O'Neil (CAN-SLIM) · Mukherjea (Coffee Can)<br>
+        Howard Marks (Cycles) · Philip Fisher · Peter Lynch (PEG) · Schilit (Forensics)<br>
+        {total} stocks · {len(df.columns)} signals · {load_time:.1f}s pipeline<br>
+        <strong>Marks Cycle Posture: {posture['label']}</strong>
+    </div>
+    """, unsafe_allow_html=True)
