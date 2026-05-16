@@ -110,9 +110,13 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # 1. CFO/PAT below threshold
+    # BUG FIX: cfo_to_pat in CSV is a PERCENTAGE (e.g. 73.04), not a ratio (0.73)
+    # FORENSIC["cfo_pat_alert"] = 0.7 was comparing percentage to ratio → always False
+    # Fix: multiply threshold by 100 to match the CSV unit
+    cfo_pat_threshold_pct = FORENSIC["cfo_pat_alert"] * 100  # 0.7 → 70.0
     df["rf_low_cfo_pat"] = np.where(
         df["cfo_to_pat"].notna(),
-        (df["cfo_to_pat"] < FORENSIC["cfo_pat_alert"]).astype(int),
+        (df["cfo_to_pat"] < cfo_pat_threshold_pct).astype(int),
         0
     )
 
@@ -131,9 +135,16 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # 4. D/E direction: rising debt
+    # BUG FIX: Any tiny rise (e.g. 0.01 → 0.02) was flagging clean companies.
+    # Fix: Only flag if D/E rose by >10% relative (material rise) AND is above 0.3
+    # This prevents penalizing essentially debt-free companies for rounding noise.
+    de_rose_materially = (
+        (df["debt_to_equity"] > df["debt_to_equity_1yb"] * 1.10) &  # >10% relative rise
+        (df["debt_to_equity"] > 0.30)                                 # AND D/E is meaningful
+    )
     df["rf_rising_debt"] = np.where(
         df["debt_to_equity"].notna() & df["debt_to_equity_1yb"].notna(),
-        (df["debt_to_equity"] > df["debt_to_equity_1yb"]).astype(int),
+        de_rose_materially.astype(int),
         0
     )
 
@@ -145,9 +156,12 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # 6. Expense ratio rising (operational deterioration)
+    # BUG FIX: Any marginal rise (even 0.001) was flagging healthy companies.
+    # Fix: Only flag if expense ratio rose by more than 3 percentage points.
+    # Normal quarterly/annual noise is within 1-2pp. 3pp+ signals real deterioration.
     df["rf_expense_rising"] = np.where(
         df["expense_ratio"].notna() & df["expense_ratio_1yb"].notna(),
-        (df["expense_ratio"] > df["expense_ratio_1yb"]).astype(int),
+        (df["expense_ratio"] > df["expense_ratio_1yb"] + 0.03).astype(int),  # 3pp threshold
         0
     )
 
@@ -162,10 +176,18 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     df["rf_dilution"] = df.get("dilution_flag", 0).fillna(0).astype(int)
 
     # 9. Negative free cash flow (cash burn)
+    # BUG FIX: Growth companies investing in capex naturally have negative FCF.
+    # A company with CWIP converting to fixed assets + positive OCF is NOT in danger.
+    # Fix: Only flag negative FCF when OCF itself is also negative (true cash burn).
+    # If OCF > 0 but FCF < 0, it means they are investing capex — a HEALTHY signal.
     df["rf_negative_fcf"] = np.where(
-        df["free_cash_flow"].notna(),
-        (df["free_cash_flow"] < 0).astype(int),
-        0
+        df["free_cash_flow"].notna() & df["operating_cash_flow"].notna(),
+        ((df["free_cash_flow"] < 0) & (df["operating_cash_flow"] < 0)).astype(int),
+        np.where(
+            df["free_cash_flow"].notna(),
+            (df["free_cash_flow"] < 0).astype(int),  # if OCF not available, use FCF alone
+            0
+        )
     )
 
     # 10. Revenue growing but PAT declining (margin compression)
