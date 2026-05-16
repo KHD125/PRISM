@@ -352,20 +352,107 @@ BAID_SELL_TRIGGERS = {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 7c. MOTILAL OSWAL QGLP FRAMEWORK (Wealth Creation Studies)
+# 7c. ANALYSIS MODES — Controls Fundamental vs Technical balance
 # ═══════════════════════════════════════════════════════════════
-QGLP_FRAMEWORK = {
-    "quality_weight": 0.35,  # ROCE > 15%, Mgmt Quality
-    "growth_weight":  0.35,  # PAT/EPS Growth > 15%
-    "longevity_weight": 0.15, # ROE 10Y Consistency (Moat)
-    "price_weight":   0.15,  # PEG < 1.5
-    "roce_hard_gate": 15.0,  # Strict Cost of Capital spread
-    "growth_gate": 15.0,     # Strict earnings growth
-    "peg_gate": 1.0,         # Growth at a Reasonable Price (23rd Study: PEG < 1x)
+ANALYSIS_MODES = {
+    "Hybrid": {
+        "label": "🔀 Hybrid (Quantamental)",
+        "fundamental_w": 0.70,
+        "momentum_w": 0.30,
+        "description": "Best of both — great business + institutions are buying it now",
+    },
+    "Fundamental": {
+        "label": "📚 Fundamental Only",
+        "fundamental_w": 1.00,
+        "momentum_w": 0.00,
+        "description": "Pure business quality — for long-term buy-and-hold Coffee Can investors",
+    },
+    "Technical": {
+        "label": "📈 Technical Only",
+        "fundamental_w": 0.10,
+        "momentum_w": 0.90,
+        "description": "Pure price action — follow institutional money flow with O'Neil rules",
+    },
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 7d. WAVE DETECTION ANALYTICS (Institutional Smart Money)
+# 7d. MASTER PROFILES — The Policy Engine (Config Factory Pattern)
+# Each profile carries its own QGLP weights, gate thresholds,
+# forensic sensitivity, and UI priority columns.
+# ═══════════════════════════════════════════════════════════════
+MASTER_PROFILES = {
+    "Balanced": {
+        "label": "Balanced (QGLP)",    "icon": "⚖️",
+        "description": "Raamdeo Agrawal's QGLP — balanced Quality, Growth, Longevity, Price",
+        # QGLP sub-weights (must sum to 1.0)
+        "quality_w": 0.35, "growth_w": 0.35, "longevity_w": 0.15, "price_w": 0.15,
+        # Gate overrides
+        "roce_gate": 15.0, "growth_gate": 15.0, "peg_gate": 1.5,
+        # Forensic multiplier (>1 = tighter scrutiny)
+        "forensic_boost": 1.0,
+        # Columns to highlight in the Deep Scanner table
+        "priority_cols": ["quality_score", "growth_score", "roce", "pat_gr_5y", "peg"],
+    },
+    "Value": {
+        "label": "Value (Marks / Vijay Kedia)",    "icon": "💰",
+        "description": "Beaten-down great businesses — high margin of safety, mean reversion",
+        "quality_w": 0.40, "growth_w": 0.20, "longevity_w": 0.20, "price_w": 0.20,
+        "roce_gate": 12.0, "growth_gate": 8.0, "peg_gate": 2.0,
+        "forensic_boost": 1.2,
+        "priority_cols": ["pe_discount", "ev_ebitda", "dist_52wh", "peg", "valuation_score"],
+    },
+    "Growth": {
+        "label": "Growth (Philip Fisher)",    "icon": "🚀",
+        "description": "Earnings acceleration — tolerates higher PE for 20%+ sustained growth",
+        "quality_w": 0.20, "growth_w": 0.50, "longevity_w": 0.15, "price_w": 0.15,
+        "roce_gate": 15.0, "growth_gate": 20.0, "peg_gate": 2.5,
+        "forensic_boost": 0.8,
+        "priority_cols": ["pat_gr_5y", "rev_gr_5y", "eps_gr_5y", "pat_gr_yoy", "growth_score"],
+    },
+    "Quality": {
+        "label": "Quality (Coffee Can / Buffett)",    "icon": "🛡️",
+        "description": "Pure moat — ROCE 10Y consistency, free cashflow, zero debt. Ignores noise",
+        "quality_w": 0.55, "growth_w": 0.20, "longevity_w": 0.20, "price_w": 0.05,
+        "roce_gate": 20.0, "growth_gate": 10.0, "peg_gate": 3.0,
+        "forensic_boost": 1.5,
+        "priority_cols": ["roce_med_10y", "cfo_to_pat", "npm_med_5y", "debt_to_equity", "moat_score"],
+    },
+    "Momentum": {
+        "label": "Momentum (O'Neil CAN-SLIM)",    "icon": "⚡",
+        "description": "Price + Earnings momentum — buy what FII/DII are accumulating RIGHT NOW",
+        "quality_w": 0.20, "growth_w": 0.25, "longevity_w": 0.10, "price_w": 0.15,
+        "roce_gate": 12.0, "growth_gate": 15.0, "peg_gate": 3.0,
+        "forensic_boost": 0.7,
+        "priority_cols": ["crs_50d", "ret_vs_n500_3m", "momentum_score", "rsi_14d", "dist_52wh"],
+    },
+    "GARP": {
+        "label": "GARP (Peter Lynch)",    "icon": "🎯",
+        "description": "PEG < 1.0 mandated — Growth at a Reasonable Price. Lynch's golden rule",
+        "quality_w": 0.30, "growth_w": 0.35, "longevity_w": 0.15, "price_w": 0.20,
+        "roce_gate": 15.0, "growth_gate": 15.0, "peg_gate": 1.0,
+        "forensic_boost": 1.0,
+        "priority_cols": ["peg", "pat_gr_5y", "pe", "valuation_score", "growth_score"],
+    },
+    "Turnaround": {
+        "label": "Turnaround / Special Situation",    "icon": "🔄",
+        "description": "QoQ acceleration + promoter buying + volume surge. High risk, high reward",
+        "quality_w": 0.20, "growth_w": 0.40, "longevity_w": 0.10, "price_w": 0.10,
+        "roce_gate": 8.0, "growth_gate": 0.0, "peg_gate": 5.0,
+        "forensic_boost": 1.3,
+        "priority_cols": ["pat_gr_yoy", "change_promoter_lq", "crs_50d", "volume", "pat_lq"],
+    },
+    "Defensive": {
+        "label": "Defensive / Cash Cow",    "icon": "🏰",
+        "description": "Free cash flow fortress, zero debt, capital protection mode",
+        "quality_w": 0.50, "growth_w": 0.10, "longevity_w": 0.35, "price_w": 0.05,
+        "roce_gate": 12.0, "growth_gate": 5.0, "peg_gate": 4.0,
+        "forensic_boost": 1.8,
+        "priority_cols": ["free_cash_flow", "debt_to_equity", "cfo_to_pat", "current_ratio", "moat_score"],
+    },
+}
+
+# ═══════════════════════════════════════════════════════════════
+# 7e. WAVE DETECTION ANALYTICS (Institutional Smart Money)
 # ═══════════════════════════════════════════════════════════════
 WAVE_DETECTION = {
     "vqs_liquidity": 0.50,    # VQS: Volume Strength
@@ -376,8 +463,9 @@ WAVE_DETECTION = {
 
 MARKET_REGIMES = {
     "bull": {"boost_momentum": 1.05, "boost_breakout": 1.05},
-    "bear": {"boost_value": 1.10, "deep_value_threshold": 20}, # Near 52W low
+    "bear": {"boost_value": 1.10, "deep_value_threshold": 20},
 }
+
 
 
 # ═══════════════════════════════════════════════════════════════
