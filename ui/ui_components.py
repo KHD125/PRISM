@@ -275,12 +275,23 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     gate_status = "✅ All gates passed" if row.get("gate_pass", 0) == 1 else f"❌ {int(row.get('gates_failed', 0))} gates failed"
 
     pills = ""
-    if row.get("promoter_buying", 0) == 1:
-        pills += '<span class="pill pill-green">Promoter Buying</span>'
-    if row.get("inst_convergence", 0) == 1:
-        pills += '<span class="pill pill-blue">FII+DII Convergence</span>'
-    if row.get("vstop_green", 0) == 1:
-        pills += '<span class="pill pill-purple">VSTOP Green</span>'
+    # Catalysts
+    if row.get("cat_capacity", 0) == 1:
+        pills += '<span class="pill pill-blue">🔥 Capacity Explosion</span>'
+    if row.get("cat_oplev", 0) == 1:
+        pills += '<span class="pill pill-green">🔥 OpLev Inflection</span>'
+    if row.get("cat_inst_discovery", 0) == 1:
+        pills += '<span class="pill pill-purple">🔥 Inst Discovery</span>'
+    if row.get("cat_deleveraging", 0) == 1:
+        pills += '<span class="pill pill-gold">🔥 Deleveraging Cycle</span>'
+        
+    # Frameworks
+    fw_str = row.get("frameworks_passed", "None")
+    if fw_str != "None":
+        for fw in fw_str.split(", "):
+            pills += f'<span class="pill" style="border-color:rgba(255,255,255,0.4); color:#eee; background:rgba(255,255,255,0.05);">🏛️ {fw}</span>'
+            
+    # Legacy specific tags
     if row.get("tsunami_signal", 0) == 1:
         pills += '<span class="pill pill-gold">🌊 Tsunami</span>'
     if row.get("net_debt_negative", 0) == 1:
