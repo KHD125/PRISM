@@ -175,6 +175,23 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
+    # 11. High Cash + High Debt simultaneously (Malik Shenanigan 4)
+    df["rf_high_cash_debt"] = df.get("high_cash_high_debt", pd.Series(0, index=df.index)).fillna(0).astype(int)
+
+    # 12. Declining Inventory Turnover (Malik Shenanigan 3)
+    df["rf_itr_declining"] = np.where(
+        df["inventory_turnover"].notna() & df["inventory_turnover_1yb"].notna(),
+        (df["inventory_turnover"] < df["inventory_turnover_1yb"] * 0.9).astype(int),  # 10%+ decline
+        0
+    )
+
+    # 13. SSGR < actual growth (debt-dependent growth — Malik Ch.2)
+    df["rf_ssgr_deficit"] = np.where(
+        df.get("ssgr_cushion", pd.Series(np.nan, index=df.index)).notna(),
+        (df.get("ssgr_cushion", pd.Series(0, index=df.index)) < -10).astype(int),  # SSGR trails by 10%+
+        0
+    )
+
     # Sum all red flags
     rf_cols = [c for c in df.columns if c.startswith("rf_")]
     df["red_flag_count"] = df[rf_cols].sum(axis=1)
@@ -206,7 +223,11 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_dilution": "Share dilution detected",
         "rf_negative_fcf": "Negative free cash flow",
         "rf_margin_squeeze": "Revenue up but profit down",
+        "rf_high_cash_debt": "High cash + high debt (Malik S4)",
+        "rf_itr_declining": "Inventory turnover declining (Malik S3)",
+        "rf_ssgr_deficit": "Growth exceeds SSGR (debt-dependent)",
     }
+
 
     def _build_flag_list(row):
         flags = []
