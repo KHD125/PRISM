@@ -99,32 +99,8 @@ with st.sidebar:
             if len(uploaded_dict) >= 1:
                 data_ready = True
 
-    st.markdown("---")
-    # ══ Analysis Mode ══
-    st.markdown("### 🎯 Analysis Mode")
-    analysis_mode = st.selectbox(
-        "Mode",
-        options=list(ANALYSIS_MODES.keys()),
-        index=0,
-        format_func=lambda k: ANALYSIS_MODES[k]["label"],
-        key="sel_mode",
-        label_visibility="collapsed",
-    )
-    st.caption(ANALYSIS_MODES[analysis_mode]["description"])
-
-    # ══ Scoring Profile — filtered by selected mode ══
-    allowed = ANALYSIS_MODES[analysis_mode]["allowed_profiles"]
-    st.markdown("### 📊 Scoring Profile")
-    scoring_profile = st.selectbox(
-        "Profile",
-        options=allowed,
-        index=0,
-        format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
-        key="sel_profile",
-        label_visibility="collapsed",
-    )
-    profile_cfg = MASTER_PROFILES[scoring_profile]
-    st.caption(profile_cfg["description"])
+    # ══ Sidebar Data Source Ends Here ══
+    # (Analysis Mode and Scoring Profile moved to Main Command Center)
 
 if not data_ready:
     st.info("👋 Welcome! Please select a data source from the sidebar (Google Sheets or Upload CSV) to begin scanning.")
@@ -137,6 +113,42 @@ with st.spinner("🔄 Loading data..."):
         st.error(f"❌ Error loading data: {e}")
         st.stop()
 
+# ═══════════════════════════════════════════════════════════════
+# 🏛️ THE COMMAND CENTER (Global Strategy Controls)
+# ═══════════════════════════════════════════════════════════════
+st.markdown(f"""
+<div style="background:linear-gradient(135deg, {COLORS['bg_secondary']}, #0d1117); border:1px solid {COLORS['border']}; border-radius:8px; padding:15px 20px; margin-bottom:20px;">
+    <div style="color:{COLORS['text_muted']}; font-size:0.85rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-bottom:10px;">
+        ⚙️ Quantamental Command Center
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+cc_col1, cc_col2 = st.columns([1, 1])
+
+with cc_col1:
+    analysis_mode = st.selectbox(
+        "🎯 Master Analysis Mode",
+        options=list(ANALYSIS_MODES.keys()),
+        index=0,
+        format_func=lambda k: ANALYSIS_MODES[k]["label"],
+        key="sel_mode",
+    )
+    st.caption(ANALYSIS_MODES[analysis_mode]["description"])
+
+with cc_col2:
+    allowed = ANALYSIS_MODES[analysis_mode]["allowed_profiles"]
+    scoring_profile = st.selectbox(
+        "📊 Scoring Profile (Regime Aware)",
+        options=allowed,
+        index=0,
+        format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
+        key="sel_profile",
+    )
+    st.caption(MASTER_PROFILES[scoring_profile]["description"])
+
+st.markdown("<br>", unsafe_allow_html=True)
+
 with st.spinner(f"🧭 Scoring with {scoring_profile} profile..."):
     try:
         df = get_scored_data(clean_df, analysis_mode, scoring_profile)
@@ -144,23 +156,21 @@ with st.spinner(f"🧭 Scoring with {scoring_profile} profile..."):
         st.error(f"❌ Scoring error: {e}")
         st.stop()
 
-# Show active engine weights in sidebar AFTER scoring
+# Active Engine Weights - Rendered in Expander below Command Center
 adaptive_w = df.attrs.get("adaptive_weights", {})
 if adaptive_w:
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("### ⚙️ Active Engine Weights")
+    with st.expander("🔬 View Active Engine Weights & Thresholds", expanded=False):
         regime_label = adaptive_w.get("regime_label", "🟡 Sideways")
-        st.markdown(f"**Regime:** {regime_label}")
-        w_cols = st.columns(4)
-        w_cols[0].metric("Quality", f"{adaptive_w.get('quality_w', 0):.0%}")
-        w_cols[1].metric("Growth", f"{adaptive_w.get('growth_w', 0):.0%}")
-        w_cols[2].metric("Longevity", f"{adaptive_w.get('longevity_w', 0):.0%}")
-        w_cols[3].metric("Price", f"{adaptive_w.get('price_w', 0):.0%}")
+        w_cols = st.columns(5)
+        w_cols[0].metric("Regime", regime_label)
+        w_cols[1].metric("Quality Weight", f"{adaptive_w.get('quality_w', 0):.0%}")
+        w_cols[2].metric("Growth Weight", f"{adaptive_w.get('growth_w', 0):.0%}")
+        w_cols[3].metric("Longevity Weight", f"{adaptive_w.get('longevity_w', 0):.0%}")
+        w_cols[4].metric("Price Weight", f"{adaptive_w.get('price_w', 0):.0%}")
         st.caption(
-            f"Gates: ROCE≥{adaptive_w.get('roce_gate', 15):.0f}% · "
-            f"Growth≥{adaptive_w.get('growth_gate', 15):.0f}% · "
-            f"PEG≤{adaptive_w.get('peg_gate', 1.5):.1f}"
+            f"**Active Hard Gates:** ROCE ≥ {adaptive_w.get('roce_gate', 15):.0f}% | "
+            f"Growth ≥ {adaptive_w.get('growth_gate', 15):.0f}% | "
+            f"PEG ≤ {adaptive_w.get('peg_gate', 1.5):.1f}"
         )
 # Key metrics
 total = len(df)
