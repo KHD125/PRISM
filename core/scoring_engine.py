@@ -583,39 +583,72 @@ def compute_composite_score(
 
 
 # ═══════════════════════════════════════════════════════════════
-# TSUNAMI SIGNAL DETECTION
+# TSUNAMI SIGNAL & CATALYST MATRIX DETECTION
 # ═══════════════════════════════════════════════════════════════
 
-def detect_tsunami_signals(df: pd.DataFrame) -> pd.DataFrame:
-    """Detect the highest-conviction 'tsunami' setups where all signals align."""
+def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
+    """Detect the highest-conviction setups and explicit catalyst triggers."""
     df = df.copy()
 
+    # ── 1. Tsunami Signal ──
     tsunami_conditions = (
         (df["gate_pass"] == 1) &
         (df["vstop_green"] == 1) &
         (df["vstop_fresh"] == 1) &
         (df["promoter_buying"] == 1) &
-        (df["change_fii_lq"] > 0) &
+        (df.get("change_fii_lq", pd.Series(0, index=df.index)) > 0) &
         (df["quality_score"] >= 70) &
-        (df["crs_aligned"] == 1)
+        (df.get("crs_aligned", pd.Series(0, index=df.index)) == 1)
     )
 
     df["tsunami_signal"] = tsunami_conditions.astype(int)
 
     # Tsunami with Tier C (undiscovered) is the ultimate signal
     df["tsunami_undiscovered"] = (
-        tsunami_conditions & (df["market_cap"] < 5000)
+        tsunami_conditions & (df.get("market_cap", pd.Series(0, index=df.index)) < 5000)
     ).astype(int)
+
+    # ── 2. Catalyst Matrix (The 'God Screen' Upgrade) ──
+    # Capacity Explosion (CWIP converting to fixed assets)
+    df["cat_capacity"] = (
+        (df.get("cwip_conversion", pd.Series(0, index=df.index)) > 0) &
+        (df.get("fixed_assets", pd.Series(0, index=df.index)) > df.get("fixed_assets_1yb", pd.Series(0, index=df.index)))
+    ).astype(int)
+
+    # Operating Leverage Inflection (PAT growing faster than Revenue + margin acceleration)
+    df["cat_oplev"] = (
+        (df.get("sales_profit_conversion", pd.Series(0, index=df.index)) > 5) & 
+        (df.get("opm_acceleration", pd.Series(0, index=df.index)) > 0)
+    ).astype(int)
+
+    # Institutional Discovery (Heavy volume + DII/FII buying early)
+    df["cat_inst_discovery"] = (
+        (df.get("vol_ratio", pd.Series(0, index=df.index)) >= 1.5) &
+        (df.get("inst_convergence", pd.Series(0, index=df.index)) == 1) &
+        (df.get("fii_holdings", pd.Series(100, index=df.index)) < 15)  # Room to grow
+    ).astype(int)
+    
+    # Debt Deleveraging Cycle
+    df["cat_deleveraging"] = (
+        (df.get("debt_slope_3y", pd.Series(0, index=df.index)) < 0) &
+        (df.get("debt_to_equity_1yb", pd.Series(0, index=df.index)) > 0.5) &
+        (df.get("debt_to_equity", pd.Series(1, index=df.index)) <= 0.5)
+    ).astype(int)
+
+    # Count total active catalysts
+    df["catalyst_count"] = df["cat_capacity"] + df["cat_oplev"] + df["cat_inst_discovery"] + df["cat_deleveraging"]
 
     count = df["tsunami_signal"].sum()
     undiscovered = df["tsunami_undiscovered"].sum()
+    cat_count = (df["catalyst_count"] > 0).sum()
     print(f"\n🌊 Tsunami Signals: {count} stocks ({undiscovered} undiscovered Tier C)")
+    print(f"🔥 Active Catalysts: {cat_count} stocks have at least 1 catalyst.")
 
     return df
 
 
 # ═══════════════════════════════════════════════════════════════
-# MOTILAL OSWAL QGLP FRAMEWORK
+# 8-FRAMEWORK GURU CLASSIFICATION (God Screen)
 # ═══════════════════════════════════════════════════════════════
 
 def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
@@ -627,9 +660,9 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # Q: Quality (ROCE rank + management quality)
     q_score = _pct_rank(df.get("roce", pd.Series(0, index=df.index)), ascending=True).fillna(50) * 0.7
     if "promoter_buying" in df.columns:
-        q_score += df["promoter_buying"] * 10
+        q_score += df.get("promoter_buying", pd.Series(0, index=df.index)) * 10
     if "pledge_rising" in df.columns:
-        q_score -= df["pledge_rising"] * 10
+        q_score -= df.get("pledge_rising", pd.Series(0, index=df.index)) * 10
     q_score = _safe_clip(q_score)
 
     # G: Growth (PAT + EPS CAGR)
@@ -670,6 +703,41 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (df.get("peg", pd.Series(999, index=df.index)).fillna(999) <= peg_gate) &
         (df.get("peg", pd.Series(-1, index=df.index)).fillna(-1) >= 0)
     ).astype(int)
+
+    # ── God Screen: Frame Tagging ──
+    def _build_frameworks(row):
+        fw = []
+        # 1. QGLP (Raamdeo)
+        if row.get("qglp_pass", 0) == 1:
+            fw.append("QGLP")
+            
+        # 2. Coffee Can (Saurabh) - High ROCE & Rev Growth consistency
+        roce_med = row.get("roce_med_10y", row.get("roce_med_5y", 0))
+        rev_gr = row.get("rev_gr_10y", row.get("rev_gr_5y", 0))
+        if pd.notna(roce_med) and pd.notna(rev_gr) and roce_med >= 15 and rev_gr >= 10:
+            fw.append("Coffee Can")
+            
+        # 3. Magic Formula (Greenblatt) - High Earnings Yield + High ROCE
+        ey = row.get("earnings_yield", 0)
+        roce = row.get("roce", 0)
+        if pd.notna(ey) and pd.notna(roce) and ey >= 8 and roce >= 20:
+            fw.append("Magic Formula")
+            
+        # 4. SMILE (Maheshwari) - Small, Medium Exp, Initiating, Large Asp, Extra Scale
+        mcap = row.get("market_cap", 0)
+        pat_gr = row.get("pat_gr_5y", 0)
+        if pd.notna(mcap) and pd.notna(pat_gr) and mcap < 15000 and pat_gr >= 20 and roce >= 20:
+            fw.append("SMILE")
+            
+        # 5. Lynch Dream (Peter Lynch) - PEG < 1, Fast growth, low debt
+        peg = row.get("peg", 999)
+        debt = row.get("debt_to_equity", 999)
+        if pd.notna(peg) and pd.notna(debt) and 0 < peg <= 1.0 and debt < 0.5 and pat_gr >= 15:
+            fw.append("Lynch Dream")
+            
+        return ", ".join(fw) if fw else "None"
+        
+    df["frameworks_passed"] = df.apply(_build_frameworks, axis=1)
 
     return df
 
@@ -744,8 +812,8 @@ def run_full_scoring(
     momentum_w    = mode["momentum_w"]
     df = compute_composite_score(df, fundamental_w=fundamental_w, momentum_w=momentum_w)
 
-    # ── Tsunami Detection ──
-    df = detect_tsunami_signals(df)
+    # ── Tsunami & Catalyst Detection ──
+    df = detect_catalysts_and_tsunami(df)
 
     # ── Final sort ──
     df = df.sort_values("composite_score", ascending=False).reset_index(drop=True)
