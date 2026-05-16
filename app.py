@@ -1,13 +1,14 @@
 """
-Multibagger Discovery System v1.0
-==================================
-Quantamental Compounding Engine — 7-Tab Streamlit Application
+The Systematic Architect's Index v2.0
+======================================
+Adaptive Quantamental Engine — Regime-Aware, Master-Driven
+Dr. Malik + Raamdeo Agrawal + O'Neil + Mukherjea + Marks + Fisher + Lynch
 """
 import os
 os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
 
 import streamlit as st
-st.set_page_config(page_title="Multibagger Discovery System", page_icon="🏆", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Systematic Architect's Index", page_icon="🏛️", layout="wide", initial_sidebar_state="expanded")
 
 import pandas as pd
 import numpy as np
@@ -239,6 +240,28 @@ render_metric_strip([
     (f"{avg_quality:.0f}", "Avg Quality", "m-blue"),
 ])
 
+# ── Profile Context Badge (always visible above tabs) ──
+if adaptive_w:
+    profile_icon = MASTER_PROFILES.get(scoring_profile, {}).get('icon', '⚖️')
+    regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
+    regime_emoji = "🟢" if regime == "BULL" else "🔴" if regime == "BEAR" else "🟡"
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg, {COLORS['bg_secondary']}, {COLORS['bg_tertiary']});
+                border:1px solid {COLORS['border']}; border-radius:10px; padding:10px 18px;
+                margin:8px 0 16px 0; display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
+        <span style="font-size:0.8rem; color:{COLORS['text_muted']};">
+            <b>{profile_icon} {scoring_profile}</b> · {analysis_mode} Mode · {regime_emoji} {regime}
+        </span>
+        <span style="font-size:0.75rem; color:{COLORS['text_secondary']};">
+            Q:{adaptive_w['quality_w']:.0%} · G:{adaptive_w['growth_w']:.0%} ·
+            L:{adaptive_w['longevity_w']:.0%} · P:{adaptive_w['price_w']:.0%}
+        </span>
+        <span style="font-size:0.72rem; color:{COLORS['text_muted']};">
+            Gates: ROCE≥{adaptive_w['roce_gate']:.0f}% · Growth≥{adaptive_w['growth_gate']:.0f}% · PEG≤{adaptive_w['peg_gate']:.1f}
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ═══════════════════════════════════════════════════════════════
 # TABS
 # ═══════════════════════════════════════════════════════════════
@@ -260,15 +283,29 @@ with tabs[0]:
 # TAB 2: DEEP SCANNER
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tabs[1]:
-    st.markdown(f"<div class='sec-head'>🔍 Deep Scanner — {len(filt)} Stocks</div>", unsafe_allow_html=True)
-    display_cols = ["rank","name","sector","industry","market_category","market_cap","composite_score",
-                    "quality_score","valuation_score","moat_score","growth_score","cash_score","momentum_score",
-                    "governance_bonus","piotroski_fscore","forensic_label","tier_label",
-                    "mean_reversion_risk","sell_alert_any",
-                    "gate_pass","gates_failed","close_price","roe_med_10y","roce_med_10y",
-                    "cfo_to_pat","pat_gr_5y","rev_gr_5y","debt_to_equity","peg","pledged_percentage",
-                    "promoter_holdings","crs_50d","ret_vs_industry_1y"]
-    available = [c for c in display_cols if c in filt.columns]
+    st.markdown(f"<div class='sec-head'>🔍 Deep Scanner — {len(filt)} Stocks · {profile_cfg.get('icon', '⚖️')} {scoring_profile}</div>", unsafe_allow_html=True)
+
+    # Dynamic column reordering: profile priority_cols go FIRST
+    base_cols = ["rank", "name", "sector", "market_category", "market_cap", "composite_score",
+                 "quality_score", "momentum_score", "governance_bonus",
+                 "malik_score", "qglp_score", "forensic_label", "tier_label",
+                 "gate_pass", "gates_failed", "close_price",
+                 "roe_med_10y", "roce_med_10y", "cfo_to_pat", "pat_gr_5y", "rev_gr_5y",
+                 "debt_to_equity", "peg", "ssgr", "economic_profit", "moat_growth_quad",
+                 "piotroski_fscore", "pledged_percentage", "promoter_holdings",
+                 "crs_50d", "ret_vs_industry_1y", "interest_coverage",
+                 "mean_reversion_risk", "sell_alert_any"]
+    # Profile-specific priority columns go to front
+    priority = profile_cfg.get("priority_cols", [])
+    ordered = ["rank", "name"]
+    for pc in priority:
+        if pc not in ordered:
+            ordered.append(pc)
+    for bc in base_cols:
+        if bc not in ordered:
+            ordered.append(bc)
+    available = [c for c in ordered if c in filt.columns]
+
     st.dataframe(
         filt[available].reset_index(drop=True),
         use_container_width=True, height=600,
@@ -276,6 +313,8 @@ with tabs[1]:
             "composite_score": st.column_config.ProgressColumn("Composite", min_value=0, max_value=100, format="%.0f"),
             "quality_score": st.column_config.ProgressColumn("Quality", min_value=0, max_value=100, format="%.0f"),
             "momentum_score": st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
+            "malik_score": st.column_config.ProgressColumn("Malik", min_value=0, max_value=100, format="%.0f"),
+            "qglp_score": st.column_config.ProgressColumn("QGLP", min_value=0, max_value=100, format="%.0f"),
             "market_cap": st.column_config.NumberColumn("MCap ₹Cr", format="%.0f"),
         }
     )
@@ -331,11 +370,29 @@ with tabs[3]:
             st.markdown(f"**Forensic:** {stock.get('forensic_label','')} · F-Score: {stock.get('piotroski_fscore','N/A')}/9")
             st.markdown(f"**Smart Money Flow:** {stock.get('smart_money_flow', '⚪ Neutral')}")
             st.markdown(f"**Cashflow Triangle:** {stock.get('cf_triangle','')}")
+            st.markdown(f"**Moat-Growth:** {stock.get('moat_growth_quad', 'N/A')}")
             if stock.get('red_flag_count', 0) > 0:
                 st.warning(f"🚨 Red Flags: {stock.get('red_flag_list','')}")
         with c2:
             fig = render_radar_chart(stock, f"{selected} — Quality Profile")
             st.plotly_chart(fig, use_container_width=True)
+
+        # ── Dr. Malik + WCS Signals ──
+        st.markdown(f"<div class='sec-head'>🕉️ Peaceful Investing Signals (Dr. Malik)</div>", unsafe_allow_html=True)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Malik Score", f"{stock.get('malik_score', 0):.0f}/100", stock.get('malik_label', ''))
+        m2.metric("SSGR", f"{stock.get('ssgr', 0):.1f}%")
+        m3.metric("SSGR Cushion", f"{stock.get('ssgr_cushion', 0):.1f}%",
+                  "Self-Funded ✅" if stock.get('ssgr_self_funded', 0) == 1 else "Debt-Dependent ⚠️")
+        m4.metric("Interest Coverage", f"{stock.get('interest_coverage', 0):.1f}x")
+
+        st.markdown(f"<div class='sec-head'>💰 Wealth Creation Signals (MOSL WCS)</div>", unsafe_allow_html=True)
+        w1, w2, w3, w4 = st.columns(4)
+        w1.metric("Economic Profit", f"₹{stock.get('economic_profit', 0):.0f} Cr",
+                  "EP Positive ✅" if stock.get('economic_profit_positive', 0) == 1 else "EP Negative ❌")
+        w2.metric("QGLP Score", f"{stock.get('qglp_score', 0):.0f}/100")
+        w3.metric("QGLP Pass", "✅ Yes" if stock.get('qglp_pass', 0) == 1 else "❌ No")
+        w4.metric("Moat-Growth", stock.get('moat_growth_quad', 'N/A'))
 
         st.markdown(f"<div class='sec-head'>📋 Key Financials</div>", unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
@@ -564,8 +621,9 @@ with tabs[7]:
     st.markdown("---")
     st.markdown(f"""
     <div style="text-align:center; padding:20px; color:{COLORS['text_muted']}; font-size:0.75rem;">
-        Multibagger Discovery System v{UI['version']} · 7 Frameworks Fused<br>
-        SQGLP + Coffee Can + Fisher + CAN-SLIM + Forensic Shenanigans + Howard Marks + Compounding Codex<br>
+        The Systematic Architect's Index v{UI['version']} · Adaptive Quantamental Engine<br>
+        Dr. Malik (SSGR+8 Params) · Raamdeo (QGLP) · O'Neil (CAN-SLIM) · Mukherjea (Coffee Can)<br>
+        Howard Marks (Cycles) · Philip Fisher · Peter Lynch (PEG) · Schilit (Forensics)<br>
         {total} stocks · {len(df.columns)} signals · {load_time:.1f}s pipeline<br>
         <strong>Marks Cycle Posture: {posture['label']}</strong>
     </div>
