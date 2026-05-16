@@ -227,6 +227,11 @@ with st.sidebar:
     moat_options = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
     sel_moat = st.multiselect("Moat", moat_options, default=["⭐ Wealth Creator"], key="sb_moat")
     
+    # Institutional Sweep Vector
+    st.markdown("---")
+    st.markdown("<div style='font-size:0.8rem; font-weight:700; color:#8b5cf6; margin-bottom:5px;'>🌊 ALPHA VECTORS</div>", unsafe_allow_html=True)
+    smart_sweep = st.checkbox("🎯 Smart Money Sweep (FII+DII + Breakout)", value=False, key="sb_sweep")
+    
     gate_only = st.checkbox("Gate-passed only", value=True, key="sb_gate")
     min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
 
@@ -240,6 +245,9 @@ if sel_mcap:
     filt = filt[filt["market_category"].isin(sel_mcap)]
 if sel_moat:
     filt = filt[filt["moat_growth_quad"].isin(sel_moat)]
+if smart_sweep:
+    # Requires simultaneous FII + DII buying AND a Tsunami signal
+    filt = filt[(filt["inst_convergence"] == 1) & (filt["tsunami_signal"] == 1)]
 if gate_only:
     filt = filt[filt["gate_pass"] == 1]
 if min_quality > 0:
