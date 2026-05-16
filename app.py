@@ -110,10 +110,12 @@ with st.sidebar:
     )
     st.caption(ANALYSIS_MODES[analysis_mode]["description"])
 
+    # ══ Scoring Profile — filtered by selected mode ══
+    allowed = ANALYSIS_MODES[analysis_mode]["allowed_profiles"]
     st.markdown("### 📊 Scoring Profile")
     scoring_profile = st.selectbox(
         "Profile",
-        options=list(MASTER_PROFILES.keys()),
+        options=allowed,
         index=0,
         format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
         key="sel_profile",
@@ -140,6 +142,24 @@ with st.spinner(f"🧭 Scoring with {scoring_profile} profile..."):
         st.error(f"❌ Scoring error: {e}")
         st.stop()
 
+# Show active engine weights in sidebar AFTER scoring
+adaptive_w = df.attrs.get("adaptive_weights", {})
+if adaptive_w:
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### ⚙️ Active Engine Weights")
+        regime_label = adaptive_w.get("regime_label", "🟡 Sideways")
+        st.markdown(f"**Regime:** {regime_label}")
+        w_cols = st.columns(4)
+        w_cols[0].metric("Quality", f"{adaptive_w.get('quality_w', 0):.0%}")
+        w_cols[1].metric("Growth", f"{adaptive_w.get('growth_w', 0):.0%}")
+        w_cols[2].metric("Longevity", f"{adaptive_w.get('longevity_w', 0):.0%}")
+        w_cols[3].metric("Price", f"{adaptive_w.get('price_w', 0):.0%}")
+        st.caption(
+            f"Gates: ROCE≥{adaptive_w.get('roce_gate', 15):.0f}% · "
+            f"Growth≥{adaptive_w.get('growth_gate', 15):.0f}% · "
+            f"PEG≤{adaptive_w.get('peg_gate', 1.5):.1f}"
+        )
 # Key metrics
 total = len(df)
 gate_passed = int(df["gate_pass"].sum())
