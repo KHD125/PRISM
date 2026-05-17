@@ -14,6 +14,15 @@ import numpy as np
 from typing import List, Dict
 from config import FORENSIC, PIOTROSKI
 
+# Industries with long billing cycles — DSO > 90 days is normal, not a red flag
+_SERVICE_INDUSTRIES = frozenset({
+    "Information Technology", "IT - Software", "Computers - Software",
+    "IT Services & Consulting", "BPO/KPO",
+    "Pharmaceuticals", "Pharmaceuticals - Indian - Bulk Drugs",
+    "Healthcare", "Biotechnology",
+    "Financial Services", "Banking", "NBFC", "Insurance",
+})
+
 
 # ═══════════════════════════════════════════════════════════════
 # PIOTROSKI F-SCORE (0–9)
@@ -120,10 +129,17 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    # 2. Receivables quality: Days Receivable very high (> 90 days)
+    # 2. Receivables quality: sector-aware DSO threshold
+    # Services/IT/Pharma/Financials have 60-90 day billing cycles — 120d is the alert level.
+    # Products/FMCG/Manufacturing: >75d signals collection risk.
+    if "industry" in df.columns:
+        is_service = df["industry"].isin(_SERVICE_INDUSTRIES)
+        dso_threshold = np.where(is_service, 120, 75)
+    else:
+        dso_threshold = 90  # fallback if industry column unavailable
     df["rf_high_receivables"] = np.where(
         df["days_receivable"].notna(),
-        (df["days_receivable"] > 90).astype(int),
+        (df["days_receivable"] > dso_threshold).astype(int),
         0
     )
 
@@ -217,7 +233,59 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # 13. SSGR < actual growth (debt-dependent growth — Malik Ch.2)
     df["rf_ssgr_deficit"] = np.where(
         df.get("ssgr_cushion", pd.Series(np.nan, index=df.index)).notna(),
-        (df.get("ssgr_cushion", pd.Series(0, index=df.index)) < -10).astype(int),  # SSGR trails by 10%+
+        (df.get("ssgr_cushion", pd.Series(0, index=df.index)) < -5).astype(int),  # SSGR trails by 5%+
+        0
+    )
+
+    # 14. Accrual Ratio: (PAT - OCF) / Total Assets > 5% (Beneish TATA — highest single fraud predictor)
+    # High accruals mean reported earnings are not backed by cash. Coefficient in Beneish = 4.679 (largest).
+    # Threshold: > 5% of total assets is the Beneish original cut-off for earnings manipulation.
+    df["rf_high_accruals"] = np.where(
+        df["pat"].notna() & df["operating_cash_flow"].notna() & df["total_assets"].notna() & (df["total_assets"] > 0),
+        (((df["pat"] - df["operating_cash_flow"]) / df["total_assets"]) > 0.05).astype(int),
+        0
+    )
+
+    # 15. FCF/EBITDA below threshold (Malik Shenanigan #5 — EBITDA misleads)
+    # When FCF/EBITDA < 30%, EBITDA is significantly overstating true cash earnings.
+    # FCF and EBITDA are both in Crores — ratio is dimensionless. Only flag when EBITDA > 0.
+    df["rf_low_fcf_ebitda"] = np.where(
+        df["free_cash_flow"].notna() & df["ebitda"].notna() & (df["ebitda"] > 0),
+        ((df["free_cash_flow"] / df["ebitda"]) < 0.30).astype(int),
+        0
+    )
+
+    # 16. FCF/CFO conversion low (Vijay Malik Vol 3: Bharat Rasayan / PIX Transmissions pattern)
+    # When OCF is positive yet FCF is <15% of OCF, the company is a capital trap:
+    # capex consumes nearly all operating cash, leaving nothing for debt repayment, dividends, or growth.
+    # Distinct from rf_negative_fcf (which catches OCF < 0). This catches the "false abundance" case.
+    df["rf_fcf_to_cfo_low"] = np.where(
+        df["free_cash_flow"].notna() & df["operating_cash_flow"].notna() &
+        (df["operating_cash_flow"] > 0),
+        (df["free_cash_flow"].fillna(0) / df["operating_cash_flow"] < 0.15).astype(int),
+        0
+    )
+
+    # 17. OPM highly volatile vs 5Y median (commodity trap / no pricing power)
+    # Vijay Malik Vol 3: Maithan Alloys — OPM swings 3% → 21% = pure price taker.
+    # Finolex Cables OPM stays in 7-16% band = pricing power + structural improvement.
+    # Threshold: >30% deviation from 5Y median OPM = unreliable margins.
+    df["rf_opm_volatile"] = np.where(
+        df["opm_med_5y"].notna() & (df["opm_med_5y"] > 0),
+        (
+            (df["opm_1yb"].fillna(df["opm_latest_q"]).fillna(df["opm_med_5y"]) -
+             df["opm_med_5y"]).abs() / df["opm_med_5y"] > 0.30
+        ).astype(int),
+        0
+    )
+
+    # 18. NFAT very low (extreme capital intensity — growth destroys shareholder value)
+    # Vijay Malik Vol 3: PIX Transmissions — NFAT < 2 = every rupee of growth needs heavy capex.
+    # SSGR turns negative, FCF turns negative, debt rises. Growth becomes value destruction.
+    # Only flag when fixed assets > 0 and nfat column exists.
+    df["rf_nfat_very_low"] = np.where(
+        df.get("nfat", pd.Series(np.nan, index=df.index)).notna(),
+        (df.get("nfat", pd.Series(np.nan, index=df.index)) < 1.5).astype(int),
         0
     )
 
@@ -243,7 +311,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # Human-readable flag list
     flag_descriptions = {
         "rf_low_cfo_pat": "Low CFO/PAT (<70%)",
-        "rf_high_receivables": "High receivables (>90 days)",
+        "rf_high_receivables": "High receivables (>120d services / >75d products)",
         "rf_inventory_bloat": "Inventory growing faster than revenue",
         "rf_rising_debt": "Debt-to-equity rising",
         "rf_ccc_worsening": "Cash conversion cycle worsening",
@@ -254,18 +322,22 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_margin_squeeze": "Revenue up but profit down",
         "rf_high_cash_debt": "High cash + high debt (Malik S4)",
         "rf_itr_declining": "Inventory turnover declining (Malik S3)",
-        "rf_ssgr_deficit": "Growth exceeds SSGR (debt-dependent)",
+        "rf_ssgr_deficit": "Growth exceeds SSGR by 5%+ (debt-dependent)",
+        "rf_high_accruals":   "High accruals — PAT not backed by cash (Beneish TATA >5%)",
+        "rf_low_fcf_ebitda":  "FCF/EBITDA <30% — EBITDA overstates real earnings (Malik S5)",
+        "rf_fcf_to_cfo_low":  "FCF/CFO <15% — capital trap, capex consuming all operating cash",
+        "rf_opm_volatile":    "OPM >30% off 5Y median — commodity trap, no pricing power",
+        "rf_nfat_very_low":   "NFAT <1.5 — extreme capital intensity, growth destroys value",
     }
 
 
-    def _build_flag_list(row):
-        flags = []
-        for col, desc in flag_descriptions.items():
-            if row.get(col, 0) == 1:
-                flags.append(desc)
-        return " | ".join(flags) if flags else "Clean ✅"
-
-    df["red_flag_list"] = df.apply(_build_flag_list, axis=1)
+    # Vectorized flag list — no apply(axis=1)
+    red_flag_combined = pd.Series("", index=df.index)
+    for col, desc in flag_descriptions.items():
+        if col in df.columns:
+            red_flag_combined = red_flag_combined + np.where(df[col] == 1, desc + " | ", "")
+    stripped = red_flag_combined.str.rstrip(" | ")
+    df["red_flag_list"] = np.where(stripped == "", "Clean ✅", stripped)
 
     print(f"\n🚨 Red Flag Distribution:")
     print(f"   Clean (0 flags): {(df['red_flag_count'] == 0).sum()}")
