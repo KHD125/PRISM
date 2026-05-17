@@ -117,17 +117,19 @@ HARD_GATES = {
     "cash_quality": {
         "column": "cfo_to_pat",
         "operator": ">=",
-        "threshold": 0.7,
+        "threshold": 70.0,  # cfo_to_pat is PERCENTAGE in CSV (e.g. 73.04 = 73%). Was 0.7 (ratio) — gate always passed.
         "source": "Coffee Can Clean Accounts",
-        "description": "CFO/PAT ≥ 0.7 — earnings are real cash",
+        "description": "CFO/PAT ≥ 70% — earnings are real cash",
     },
-    "trend_filter": {
-        "column": "above_sma200",  # derived: close_price > sma_200d
-        "operator": "==",
-        "threshold": 1,
-        "source": "CAN-SLIM Market Direction",
-        "description": "Price > SMA 200D — long-term uptrend only",
-    },
+    # NOTE: SMA200 was here as a hard gate. REMOVED.
+    # Rationale: Binary elimination conflicts with the fundamental philosophy.
+    # HDFC Bank, Asian Paints, Page Industries all broke below 200D SMA in March 2020.
+    # The GOD SCREEN would have eliminated them at their best buying opportunity.
+    # SMA200 is now a CONTINUOUS TREND_SIGNAL (20% of trend score) — it penalizes,
+    # not eliminates. A quality stock in a correction naturally scores lower on momentum.
+    # The human investor's conviction decides whether to act on the fundamental signal.
+    # The signal lives in TREND_SIGNALS["above_sma200"] and `d45_trend_structure`.
+
     "no_dilution": {
         "column": "dilution_flag",   # 0=Clean, 1=ESOP-level, 2=Meaningful, 3=Predatory QIP
         "operator": "<",
@@ -142,6 +144,66 @@ HARD_GATES = {
         "source": "Forensic Shenanigans",
         "description": "Operating cash flow must be positive",
     },
+    # HG-07: No loss-making companies (PAT must be positive)
+    "positive_pat": {
+        "column": "pat",
+        "operator": ">",
+        "threshold": 0,
+        "source": "Handbook HG-07 / Buffett quality",
+        "description": "Annual PAT > 0 — no loss-makers pass the screen",
+    },
+    # HG-08: Revenue floor — no revenue-negative or collapsing businesses
+    "revenue_floor": {
+        "column": "rev_gr_yoy",
+        "operator": ">=",
+        "threshold": -20.0,
+        "source": "Handbook HG-08",
+        "description": "Revenue growth YoY ≥ -20% — excludes businesses in freefall",
+    },
+}
+
+# ═══════════════════════════════════════════════════════════════
+# SSGR DEPRECIATION RATES BY INDUSTRY (approximate SLM rates)
+# Used in SSGR formula: dep_rate = asset depreciation as % of fixed assets/year
+# Source: Indian Companies Act Schedule II + industry norms
+# ═══════════════════════════════════════════════════════════════
+SSGR_DEP_RATES = {
+    # Capital-light / Software / IT
+    "Information Technology": 0.25,
+    "IT - Software": 0.25,
+    "Computers - Software": 0.25,
+    "IT Services & Consulting": 0.25,
+    "BPO/KPO": 0.25,
+    # Pharma & Biotech
+    "Pharmaceuticals": 0.15,
+    "Pharmaceuticals - Indian - Bulk Drugs": 0.15,
+    "Biotechnology": 0.15,
+    "Healthcare": 0.15,
+    # Specialty Chemicals
+    "Specialty Chemicals": 0.10,
+    "Agrochemicals": 0.10,
+    # FMCG / Consumer
+    "FMCG": 0.10,
+    "Consumer Durables": 0.10,
+    "Food - Processing": 0.10,
+    # Capital Goods / Engineering
+    "Capital Goods": 0.07,
+    "Engineering": 0.07,
+    "Industrial Machinery": 0.07,
+    # Manufacturing / Auto
+    "Automobile": 0.08,
+    "Auto Ancillaries": 0.08,
+    "Textiles": 0.07,
+    "Cement": 0.06,
+    "Steel": 0.06,
+    "Metals - Non Ferrous": 0.06,
+    # Power / Infrastructure
+    "Power": 0.04,
+    "Infrastructure": 0.04,
+    "Construction": 0.05,
+    "Telecom": 0.10,
+    # Default for unlisted / unmapped sectors
+    "_default": 0.10,
 }
 
 # Financial sector stocks get a separate gate set
@@ -213,11 +275,24 @@ BALANCE_SHEET_SIGNALS = {
 # 4b. VALUATION SCORE SIGNALS (Marks + Baid Entry Price Discipline)
 # ═══════════════════════════════════════════════════════════════
 VALUATION_SIGNALS = {
-    "pe_discount":     0.25,   # PE vs 10Y median — higher discount = better
-    "peg_ratio":       0.30,   # PEG < 1.0 = cheap, > 2.5 = expensive
+    "pe_discount":     0.20,   # PE vs 10Y median — higher discount = better
+    "peg_ratio":       0.25,   # PEG < 1.0 = cheap (confirmed in all 30 MOSL studies)
+    "payback_ratio":   0.15,   # Payback < 1x = most reliable MOSL supernormal-return signal
     "ev_compression":  0.15,   # EV/EBITDA falling = value creation
-    "fcf_yield_val":   0.20,   # FCF Yield > 3% = attractive
+    "fcf_yield_val":   0.15,   # FCF Yield > 3% = attractive
     "de_fortress":     0.10,   # D/E < 0.5 (Baid's fortress gate) = bonus
+}
+# Weights sum: 0.20+0.25+0.15+0.15+0.15+0.10 = 1.00 ✓
+
+# Payback Ratio zones (market_cap / 5Y cumulative estimated PAT)
+# < 1.0: market cap recovered within 5Y of profits = supernormal return territory (MOSL)
+# < 2.0: attractive; < 3.0: fair; > 3.0: expensive; > 5.0: very expensive
+PAYBACK_ZONES = {
+    "supernormal":  {"min": 0,   "max": 1.0, "score": 100},
+    "attractive":   {"min": 1.0, "max": 2.0, "score": 80},
+    "fair":         {"min": 2.0, "max": 3.0, "score": 60},
+    "expensive":    {"min": 3.0, "max": 5.0, "score": 35},
+    "very_exp":     {"min": 5.0, "max": 999, "score": 10},
 }
 
 # PEG zone scoring (Baid + Marks)
@@ -258,12 +333,17 @@ RS_SIGNALS = {
 }
 
 TREND_SIGNALS = {
-    "vstop_green":      0.30,   # VSTOP 14W 2.5 = green
-    "vstop_fresh":      0.25,   # last change ≤ 30 days
-    "adx_strong":       0.20,   # ADX 14W > 25
+    # above_sma200 moved FROM hard gate TO scoring signal.
+    # Penalises stocks below 200D SMA continuously (−20 pts on trend score)
+    # rather than eliminating them. Fundamental quality carries through corrections.
+    "above_sma200":     0.20,   # Price > SMA 200D — trend direction (was hard gate)
+    "vstop_green":      0.20,   # VSTOP 14W 2.5 = green (reduced: correlated with sma200)
+    "vstop_fresh":      0.15,   # last change ≤ 30 days (reduced)
+    "adx_strong":       0.20,   # ADX 14W > 25 — trend strength (independent signal)
     "rsi_zone":         0.15,   # RSI 55-70 sweet spot
-    "golden_cross":     0.10,   # recent golden cross
+    "golden_cross":     0.10,   # recent golden cross — trend recovery signal
 }
+# Weights sum: 0.20+0.20+0.15+0.20+0.15+0.10 = 1.00 ✅
 
 BREAKOUT_SIGNALS = {
     "52wh_distance":    0.30,
@@ -280,21 +360,30 @@ SECTOR_SIGNALS = {
 # ═══════════════════════════════════════════════════════════════
 # 6. COMPOSITE SCORE BLEND (Layer 4)
 # ═══════════════════════════════════════════════════════════════
+# Only governance weight lives here — quality/momentum weights are per-ANALYSIS_MODES,
+# not global constants. (Previously had "quality": 0.55 / "momentum": 0.30 here,
+# but they were never read by the scoring engine and created false documentation.)
 COMPOSITE_WEIGHTS = {
-    "quality":    0.55,
-    "momentum":   0.30,
     "governance": 0.15,
 }
 
 # Governance bonus components (0–100 total possible)
+# Dilution penalties are DEDUCTIONS applied inside compute_governance_bonus.
+# Tier 3 (>10%) never reaches scoring — hard gate eliminates it first.
+# Tier 2 (3-10%): passes gate, but loses 25 governance pts — visible, proportional.
+# Tier 1 (<3% ESOP): passes gate, -5 pts — distinguishes from zero-dilution companies.
+# Tier 0 (clean): no penalty.
 GOVERNANCE_BONUS = {
-    "promoter_buying":         20,  # promoter increased holding this Q
-    "fii_accumulating":        15,  # FII buying this Q
-    "dii_accumulating":        10,  # DII buying this Q
-    "inst_convergence":        15,  # FII + DII both buying same Q
-    "insider_trading_present": 15,  # directors buying
-    "pledge_falling_1y":       10,  # pledge reduced over 1 year
-    "undiscovered_alpha":      15,  # low FII + Tier C mcap
+    "promoter_buying":         20,   # promoter increased holding this Q
+    "fii_accumulating":        15,   # FII buying this Q
+    "dii_accumulating":        10,   # DII buying this Q
+    "inst_convergence":        15,   # FII + DII both buying same Q
+    "insider_trading_present": 15,   # directors buying
+    "pledge_falling_1y":       10,   # pledge reduced over 1 year
+    "undiscovered_alpha":      15,   # low FII + Tier C mcap
+    # Dilution penalties (negative — deducted from bonus)
+    "dilution_tier2_penalty": -25,   # 3-10% dilution: significant governance failure
+    "dilution_tier1_minor":    -5,   # <3% ESOP dilution: minor deduction vs zero-dilution
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -346,8 +435,8 @@ BAID_SELL_TRIGGERS = {
         "check": "pledge_rising AND change_promoter_lq < 0 AND de_slope_3y > 0",
     },
     "cash_quality_collapse": {
-        "description": "CFO/PAT dropped below 0.5 (was above 0.7)",
-        "check": "cfo_to_pat < 0.5",
+        "description": "CFO/PAT dropped below 50% (was above 70%) — cfo_to_pat is stored as PERCENTAGE",
+        "check": "cfo_to_pat < 50",
     },
 }
 
