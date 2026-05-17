@@ -19,7 +19,7 @@ from config import (
     BALANCE_SHEET_SIGNALS, RS_SIGNALS, TREND_SIGNALS, BREAKOUT_SIGNALS,
     SECTOR_SIGNALS, GOVERNANCE_BONUS, CONVICTION_TIERS, RSI_ZONES,
     MCAP_TIERS, MCAP_MIN_FLOOR,
-    VALUATION_SIGNALS, PEG_ZONES, MEAN_REVERSION, BAID_SELL_TRIGGERS,
+    VALUATION_SIGNALS, PEG_ZONES, PAYBACK_ZONES, MEAN_REVERSION, BAID_SELL_TRIGGERS,
     DEFAULT_CYCLE_TEMPERATURE, MARKS_CYCLE,
     MASTER_PROFILES, ANALYSIS_MODES, WAVE_DETECTION,
     REGIME_ADJUSTMENTS, get_adaptive_weights,
@@ -114,13 +114,9 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
         gate_results["debt_safety"] = gate_results["debt_safety"] | deleveraging_mask
         df["gate_debt_safety"] = gate_results["debt_safety"].astype(int)
 
-    if "return_on_capital" in gate_results and "roce" in df.columns:
-        # Approximate historical ROCE (we don't explicitly have roce_3yb, but we have 5y_med and 10y_med)
-        # If current ROCE > 5y median + 3%, they are breaking out fundamentally.
-        if "roce_med_5y" in df.columns:
-            margin_expansion_mask = (df["roce"] - df["roce_med_5y"]) > 3.0
-            gate_results["return_on_capital"] = gate_results["return_on_capital"] | margin_expansion_mask
-            df["gate_return_on_capital"] = gate_results["return_on_capital"].astype(int)
+    # NOTE: A ROCE inflection override was intended here (Peter Lynch turnarounds: if current ROCE > 5Y median + 3%,
+    # override the gate). It referenced key "return_on_capital" which never existed in HARD_GATES — dead code.
+    # Removed. The deleveraging override above (de_slope_3y < -0.15) already covers the turnaround case.
 
     # Overall pass: must pass ALL gates
     all_gates = pd.DataFrame(gate_results)
@@ -191,15 +187,19 @@ def _compute_growth_score(df: pd.DataFrame) -> pd.Series:
 
 
 def _compute_cash_score(df: pd.DataFrame) -> pd.Series:
-    """Cash quality score: CFO ratios, FCF yield, self-funding."""
+    """Cash quality score: CFO ratios, FCF yield, FCF/CFO conversion, self-funding.
+    Weights: cfo_to_pat=0.20, cfo_to_ebitda=0.15, fcf_to_cfo_pct=0.15,
+             fcf_yield=0.15, capex_coverage=0.10, fcf_consistency=0.15, self_funding=0.10
+    Sum = 1.00"""
     score = pd.Series(0.0, index=df.index)
 
     # Continuous signals (percentile ranked)
     continuous = {
-        "cfo_to_pat":    (True, 0.25),
-        "cfo_to_ebitda": (True, 0.15),
-        "fcf_yield":     (True, 0.20),
-        "capex_coverage": (True, 0.10),
+        "cfo_to_pat":     (True, 0.20),   # CFO/PAT %: higher = earnings more cash-backed
+        "cfo_to_ebitda":  (True, 0.15),   # CFO/EBITDA %: clean accounts filter
+        "fcf_to_cfo_pct": (True, 0.15),   # FCF/OCF %: Vijay Malik's capital quality ratio (Finolex=76%, PIX=negative)
+        "fcf_yield":      (True, 0.15),   # FCF/MCap: absolute attractiveness
+        "capex_coverage":  (True, 0.10),  # OCF covers capex multiple
     }
     for col, (ascending, weight) in continuous.items():
         if col in df.columns:
@@ -207,8 +207,8 @@ def _compute_cash_score(df: pd.DataFrame) -> pd.Series:
 
     # Binary signals (0 or 100)
     binary = {
-        "fcf_consistency": 0.15,
-        "self_funding":    0.15,
+        "fcf_consistency": 0.15,   # FCF positive over time
+        "self_funding":    0.10,   # SSGR ≥ actual growth (no external debt needed)
     }
     for col, weight in binary.items():
         if col in df.columns:
@@ -218,26 +218,35 @@ def _compute_cash_score(df: pd.DataFrame) -> pd.Series:
 
 
 def _compute_margin_score(df: pd.DataFrame) -> pd.Series:
-    """Margin score: pricing power via NPM, OPM, GPM medians + acceleration."""
+    """Margin score: pricing power via NPM, OPM, GPM medians + acceleration + OPM stability.
+    Vijay Malik: stable OPM = pricing power moat; volatile OPM = commodity trap.
+    Weights: npm_med_5y=0.25, opm_med_5y=0.25, gpm_med_5y=0.15,
+             npm_acceleration=0.15, opm_acceleration=0.10, opm_stable=0.10. Sum=1.00"""
     score = pd.Series(0.0, index=df.index)
 
     signals = {
-        "npm_med_5y":       (True, 0.30),
+        "npm_med_5y":       (True, 0.25),
         "opm_med_5y":       (True, 0.25),
         "gpm_med_5y":       (True, 0.15),
         "npm_acceleration": (True, 0.15),
-        "opm_acceleration": (True, 0.15),
+        "opm_acceleration": (True, 0.10),
     }
-
     for col, (ascending, weight) in signals.items():
         if col in df.columns:
             score += _pct_rank(df[col], ascending=ascending).fillna(50) * weight
+
+    # OPM stability (binary): stable OPM within ±20% of 5Y median = pricing power
+    if "opm_stable" in df.columns:
+        score += df["opm_stable"].fillna(0) * 100 * 0.10
 
     return _safe_clip(score)
 
 
 def _compute_balance_sheet_score(df: pd.DataFrame) -> pd.Series:
-    """Balance sheet score: fortress detection, deleveraging, CWIP conversion."""
+    """Balance sheet score: fortress detection, deleveraging, CWIP conversion, capital efficiency.
+    Vijay Malik: NFAT > 5 = capital-light moat (Finolex Cables). NFAT < 1.5 = capital trap.
+    Weights: net_debt_negative=0.25, debt_slope=0.20, reserves_growth=0.15,
+             cwip_conversion=0.15, cash_change=0.15, nfat=0.10. Sum=1.00"""
     score = pd.Series(0.0, index=df.index)
 
     # Net debt negative is a binary fortress signal
@@ -250,7 +259,7 @@ def _compute_balance_sheet_score(df: pd.DataFrame) -> pd.Series:
 
     # Reserves growth: higher is better
     if "reserves_growth" in df.columns:
-        score += _pct_rank(df["reserves_growth"], ascending=True).fillna(50) * 0.20
+        score += _pct_rank(df["reserves_growth"], ascending=True).fillna(50) * 0.15
 
     # CWIP conversion: positive means capacity went live
     if "cwip_conversion" in df.columns:
@@ -258,7 +267,12 @@ def _compute_balance_sheet_score(df: pd.DataFrame) -> pd.Series:
 
     # Cash change: positive is good
     if "cash_change" in df.columns:
-        score += _pct_rank(df["cash_change"], ascending=True).fillna(50) * 0.20
+        score += _pct_rank(df["cash_change"], ascending=True).fillna(50) * 0.15
+
+    # NFAT: Net Fixed Asset Turnover — capital-light moat (Vijay Malik)
+    # Higher NFAT = revenue per rupee of fixed assets = can grow without heavy capex
+    if "nfat" in df.columns:
+        score += _pct_rank(df["nfat"], ascending=True).fillna(50) * 0.10
 
     return _safe_clip(score)
 
@@ -276,7 +290,7 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
 
     # PEG zone scoring (Baid + Marks: PEG < 1.0 = cheap, > 2.5 = extreme)
     if "peg" in df.columns:
-        peg_score = _zone_score(df["peg"].clip(lower=0), PEG_ZONES)
+        peg_score = _zone_score(df["peg"].clip(lower=0, upper=998), PEG_ZONES)  # upper=998: PEG>999 was defaulting to neutral(50) instead of extreme penalty(5)
         score += peg_score.fillna(50) * VALUATION_SIGNALS["peg_ratio"]
 
     # EV/EBITDA compression: positive ev_compression = getting cheaper = good
@@ -295,6 +309,12 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
                   np.where(df["debt_to_equity"] < 1.0, 40, 10))))
         score += pd.Series(fortress, index=df.index, dtype=float) * VALUATION_SIGNALS["de_fortress"]
 
+    # Payback Ratio: MOSL's most validated supernormal-return predictor (all 30 studies)
+    # payback_ratio = market_cap / 5Y cumulative estimated PAT (growth-adjusted)
+    if "payback_ratio" in df.columns:
+        payback_score = _zone_score(df["payback_ratio"].clip(lower=0, upper=998), PAYBACK_ZONES)
+        score += payback_score.fillna(50) * VALUATION_SIGNALS["payback_ratio"]
+
     return _safe_clip(score)
 
 
@@ -304,6 +324,18 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     Applies Marks' Mean Reversion Risk penalty for cyclical peak margins.
     Detects Baid's Sell Triggers for existing holding alerts."""
     df = df.copy()
+
+    # D3: Winsorize growth CAGRs at p01-p99 before percentile ranking.
+    # Extreme outliers (e.g., IOC +528%, COFORGE +1068% YoY PAT) inflate the top
+    # of the distribution and compress every other stock's _pct_rank() score.
+    _growth_cols = [
+        "pat_gr_5y", "pat_gr_10y", "rev_gr_5y", "rev_gr_10y",
+        "eps_gr_5y", "ebitda_gr_5y", "pat_acceleration", "rev_acceleration",
+    ]
+    for _col in _growth_cols:
+        if _col in df.columns:
+            _p01, _p99 = df[_col].quantile(0.01), df[_col].quantile(0.99)
+            df[_col] = df[_col].clip(lower=_p01, upper=_p99)
 
     df["moat_score"] = _compute_moat_score(df)
     df["growth_score"] = _compute_growth_score(df)
@@ -356,7 +388,7 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
         (df.get("de_slope_3y", pd.Series(0, index=df.index)) > 0)
     ).astype(int)
     df["sell_alert_cash_collapse"] = (
-        df.get("cfo_to_pat", pd.Series(1.0, index=df.index)) < 0.5
+        df.get("cfo_to_pat", pd.Series(100.0, index=df.index)) < 50  # cfo_to_pat is PERCENTAGE (e.g. 73.04). Was < 0.5 (ratio) — never fired.
     ).astype(int)
     df["sell_alert_any"] = (
         (df["sell_alert_thesis_broken"] == 1) |
@@ -392,8 +424,17 @@ def _compute_rs_score(df: pd.DataFrame) -> pd.Series:
 
 
 def _compute_trend_score(df: pd.DataFrame) -> pd.Series:
-    """Trend quality: VSTOP, ADX, RSI zone, golden cross."""
+    """Trend quality: SMA200 direction, VSTOP, ADX, RSI zone, golden cross.
+
+    above_sma200 was a hard gate (binary eliminate). Now a continuous signal:
+    stocks below 200D SMA score 0/20 on this component instead of being eliminated.
+    A quality stock in a correction still surfaces — the human decides on timing.
+    """
     score = pd.Series(0.0, index=df.index)
+
+    # SMA200 direction — replaces hard gate with a 20-point continuous penalty
+    if "above_sma200" in df.columns:
+        score += df["above_sma200"].fillna(0) * 100 * TREND_SIGNALS["above_sma200"]
 
     # VSTOP green (binary)
     if "vstop_green" in df.columns:
@@ -415,7 +456,7 @@ def _compute_trend_score(df: pd.DataFrame) -> pd.Series:
         rsi_score = _zone_score(df["rsi_14d"], RSI_ZONES)
         score += rsi_score.fillna(50) * TREND_SIGNALS["rsi_zone"]
 
-    # Golden cross recency (lower days = better)
+    # Golden cross recency (lower days = better) — trend recovery signal
     if "golden_cross_days" in df.columns:
         gc_rank = _pct_rank(df["golden_cross_days"], ascending=False).fillna(50)
         score += gc_rank * TREND_SIGNALS["golden_cross"]
@@ -452,11 +493,12 @@ def _compute_volume_score(df: pd.DataFrame) -> pd.Series:
     score = pd.Series(50.0, index=df.index)
 
     if "vol_ratio" in df.columns:
-        # Vol ratio > 2 = institutional surge
-        vol_score = np.where(df["vol_ratio"] >= 2.0, 100,
+        # Vol ratio > 2 = institutional surge. NaN vol_ratio → neutral 50 (no data ≠ low volume).
+        vol_score = np.where(df["vol_ratio"].isna(), 50,
+                   np.where(df["vol_ratio"] >= 2.0, 100,
                    np.where(df["vol_ratio"] >= 1.5, 80,
                    np.where(df["vol_ratio"] >= 1.0, 60,
-                   np.where(df["vol_ratio"] >= 0.7, 40, 20))))
+                   np.where(df["vol_ratio"] >= 0.7, 40, 20)))))
         score = pd.Series(vol_score, index=df.index, dtype=float)
 
     return _safe_clip(score)
@@ -537,6 +579,18 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
         undiscovered = (df["fii_holdings"] < 5) & (df["market_cap"] < 5000)
         bonus += undiscovered.astype(float) * GOVERNANCE_BONUS["undiscovered_alpha"]
 
+    # Dilution penalty: Tier 3 (>10%) is hard-gated and never reaches here.
+    # Tier 2 (3-10%) = -25 pts governance; Tier 1 (<3% ESOP) = -5 pts.
+    if "dilution_flag" in df.columns:
+        dilution = df["dilution_flag"].fillna(0)
+        bonus += pd.Series(
+            np.where(
+                dilution == 2, GOVERNANCE_BONUS["dilution_tier2_penalty"],
+                np.where(dilution == 1, GOVERNANCE_BONUS["dilution_tier1_minor"], 0)
+            ),
+            index=df.index
+        )
+
     df["governance_bonus"] = _safe_clip(bonus)
     return df
 
@@ -558,7 +612,7 @@ def compute_composite_score(
     """
     df = df.copy()
 
-    # Governance is always blended at 10% regardless of mode
+    # Governance weight is fixed regardless of analysis mode — set via COMPOSITE_WEIGHTS["governance"] (currently 15%)
     gov_w = COMPOSITE_WEIGHTS.get("governance", 0.10)
     # Normalize fundamental + momentum to fill remaining 90%
     scale = 1.0 - gov_w
@@ -607,8 +661,13 @@ def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # ── 1. Tsunami Signal ──
+    # SMA200 is no longer a hard gate, but Tsunami is the rarest/highest-conviction
+    # signal and STILL requires full technical confirmation including above_sma200.
+    # (A stock in a correction with great fundamentals can score well — but to be
+    # called a TSUNAMI setup, everything must align: gates + quality + technicals.)
     tsunami_conditions = (
         (df["gate_pass"] == 1) &
+        (df.get("above_sma200", pd.Series(0, index=df.index)) == 1) &
         (df["vstop_green"] == 1) &
         (df["vstop_fresh"] == 1) &
         (df["promoter_buying"] == 1) &
@@ -625,34 +684,50 @@ def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── 2. Catalyst Matrix (The 'God Screen' Upgrade) ──
-    # Capacity Explosion (CWIP converting to fixed assets)
+
+    # CAPACITY EXPLOSION: CWIP going live + FA growing >15% CAGR (D19 > 0 AND D20 > 15%)
     df["cat_capacity"] = (
-        (df.get("cwip_conversion", pd.Series(0, index=df.index)) > 0) &
-        (df.get("fixed_assets", pd.Series(0, index=df.index)) > df.get("fixed_assets_1yb", pd.Series(0, index=df.index)))
+        (df.get("d19_cwip_conversion", pd.Series(0, index=df.index)) > 0) &
+        (df.get("d20_fa_cagr_3y", pd.Series(0, index=df.index)) > 15)
     ).astype(int)
 
-    # Operating Leverage Inflection (PAT growing faster than Revenue + margin acceleration)
+    # OPERATING LEVERAGE INFLECTION: Revenue outpacing costs AND earnings accelerating
+    # Handbook spec: D05 > 10 AND D06 > 25% (exact GOD Screen catalyst formula)
     df["cat_oplev"] = (
-        (df.get("sales_profit_conversion", pd.Series(0, index=df.index)) > 5) & 
-        (df.get("opm_acceleration", pd.Series(0, index=df.index)) > 0)
+        (df.get("d05_rev_minus_exp_gr", pd.Series(0, index=df.index)) > 10) &
+        (df.get("q_pat_yoy", pd.Series(0, index=df.index)) > 25)
     ).astype(int)
 
-    # Institutional Discovery (Heavy volume + DII/FII buying early)
+    # INSTITUTIONAL DISCOVERY: Smart money finding undercovered gem
+    # D38 > 0.5 AND D46 > 2.0 (handbook spec) + FII room to grow
     df["cat_inst_discovery"] = (
-        (df.get("vol_ratio", pd.Series(0, index=df.index)) >= 1.5) &
-        (df.get("inst_convergence", pd.Series(0, index=df.index)) == 1) &
-        (df.get("fii_holdings", pd.Series(100, index=df.index)) < 15)  # Room to grow
+        (df.get("d38_smart_money", pd.Series(0, index=df.index)) > 0.5) &
+        (df.get("vol_ratio", pd.Series(0, index=df.index)) >= 2.0) &
+        (df.get("fii_holdings", pd.Series(100, index=df.index)) < 15)
     ).astype(int)
-    
-    # Debt Deleveraging Cycle
+
+    # DEBT DELEVERAGING CYCLE: Meaningful debt reduction underway
     df["cat_deleveraging"] = (
         (df.get("debt_slope_3y", pd.Series(0, index=df.index)) < 0) &
         (df.get("debt_to_equity_1yb", pd.Series(0, index=df.index)) > 0.5) &
         (df.get("debt_to_equity", pd.Series(1, index=df.index)) <= 0.5)
     ).astype(int)
 
-    # Count total active catalysts
-    df["catalyst_count"] = df["cat_capacity"] + df["cat_oplev"] + df["cat_inst_discovery"] + df["cat_deleveraging"]
+    # LYNCH DREAM: PEG < 1 + operating leverage + earnings acceleration + ROCE improving
+    # Handbook: PEG<1 AND D05>10 AND D06>30% AND D35>0
+    df["cat_lynch_dream"] = (
+        (df.get("peg", pd.Series(999, index=df.index)).fillna(999) > 0) &
+        (df.get("peg", pd.Series(999, index=df.index)).fillna(999) < 1.0) &
+        (df.get("d05_rev_minus_exp_gr", pd.Series(0, index=df.index)) > 10) &
+        (df.get("q_pat_yoy", pd.Series(0, index=df.index)) > 30) &
+        (df.get("d35_roce_trend", pd.Series(0, index=df.index)) > 0)
+    ).astype(int)
+
+    # Count total active catalysts (now 5 types)
+    df["catalyst_count"] = (
+        df["cat_capacity"] + df["cat_oplev"] + df["cat_inst_discovery"] +
+        df["cat_deleveraging"] + df["cat_lynch_dream"]
+    )
 
     count = df["tsunami_signal"].sum()
     undiscovered = df["tsunami_undiscovered"].sum()
@@ -691,7 +766,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
 
     # P: Price (PEG zone score)
     if "peg" in df.columns:
-        p_score = _zone_score(df["peg"].clip(lower=0), PEG_ZONES).fillna(50)
+        p_score = _zone_score(df["peg"].clip(lower=0, upper=998), PEG_ZONES).fillna(50)  # upper=998: PEG>999 was defaulting to neutral(50)
     else:
         p_score = pd.Series(50.0, index=df.index)
 
@@ -720,40 +795,102 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (df.get("peg", pd.Series(-1, index=df.index)).fillna(-1) >= 0)
     ).astype(int)
 
-    # ── God Screen: Frame Tagging ──
-    def _build_frameworks(row):
-        fw = []
-        # 1. QGLP (Raamdeo)
-        if row.get("qglp_pass", 0) == 1:
-            fw.append("QGLP")
-            
-        # 2. Coffee Can (Saurabh) - High ROCE & Rev Growth consistency
-        roce_med = row.get("roce_med_10y", row.get("roce_med_5y", 0))
-        rev_gr = row.get("rev_gr_10y", row.get("rev_gr_5y", 0))
-        if pd.notna(roce_med) and pd.notna(rev_gr) and roce_med >= 15 and rev_gr >= 10:
-            fw.append("Coffee Can")
-            
-        # 3. Magic Formula (Greenblatt) - High Earnings Yield + High ROCE
-        ey = row.get("earnings_yield", 0)
-        roce = row.get("roce", 0)
-        if pd.notna(ey) and pd.notna(roce) and ey >= 8 and roce >= 20:
-            fw.append("Magic Formula")
-            
-        # 4. SMILE (Maheshwari) - Small, Medium Exp, Initiating, Large Asp, Extra Scale
-        mcap = row.get("market_cap", 0)
-        pat_gr = row.get("pat_gr_5y", 0)
-        if pd.notna(mcap) and pd.notna(pat_gr) and mcap < 15000 and pat_gr >= 20 and roce >= 20:
-            fw.append("SMILE")
-            
-        # 5. Lynch Dream (Peter Lynch) - PEG < 1, Fast growth, low debt
-        peg = row.get("peg", 999)
-        debt = row.get("debt_to_equity", 999)
-        if pd.notna(peg) and pd.notna(debt) and 0 < peg <= 1.0 and debt < 0.5 and pat_gr >= 15:
-            fw.append("Lynch Dream")
-            
-        return ", ".join(fw) if fw else "None"
-        
-    df["frameworks_passed"] = df.apply(_build_frameworks, axis=1)
+    # ── God Screen: Frame Tagging (fully vectorized — no df.apply) ──
+    # 1. QGLP (Raamdeo Agrawal)
+    fw_qglp = df.get("qglp_pass", pd.Series(0, index=df.index)).fillna(0) == 1
+
+    # 2. Coffee Can (Saurabh Mukherjea) — Three mandatory filters:
+    #    (a) ROCE median ≥ 15% (sustained capital efficiency)
+    #    (b) Revenue CAGR ≥ 10% (consistent growth)
+    #    (c) CFO/EBITDA ≥ 90% — the "Clean Accounts" filter (earnings are cash-backed)
+    #    cfo_to_ebitda in CSV is a PERCENTAGE (e.g. 73.06 = 73%), so threshold is 90 not 0.9
+    roce_med_cc    = df.get("roce_med_10y", pd.Series(np.nan, index=df.index)).fillna(
+                     df.get("roce_med_5y", pd.Series(np.nan, index=df.index)))
+    rev_gr_cc      = df.get("rev_gr_10y", pd.Series(np.nan, index=df.index)).fillna(
+                     df.get("rev_gr_5y", pd.Series(np.nan, index=df.index)))
+    cfo_ebitda_cc  = df.get("cfo_to_ebitda", pd.Series(np.nan, index=df.index))
+    fw_coffee_can = (
+        (roce_med_cc.fillna(0) >= 15) &
+        (rev_gr_cc.fillna(0) >= 10) &
+        (cfo_ebitda_cc.fillna(0) >= 90)
+    )
+
+    # 3. Magic Formula (Joel Greenblatt) — high Earnings Yield + high ROCE
+    ey_mf   = df.get("earnings_yield", pd.Series(np.nan, index=df.index)).fillna(0)
+    roce_mf = df.get("roce", pd.Series(np.nan, index=df.index)).fillna(0)
+    fw_magic_formula = (ey_mf >= 8) & (roce_mf >= 20)
+
+    # 4. SMILE (Maheshwari) — Small/mid cap + high growth + ROCE
+    mcap_sm  = df.get("market_cap", pd.Series(np.nan, index=df.index)).fillna(0)
+    pat_gr_sm = df.get("pat_gr_5y", pd.Series(np.nan, index=df.index)).fillna(0)
+    fw_smile = (mcap_sm < 15000) & (pat_gr_sm >= 20) & (roce_mf >= 20)
+
+    # 5. Lynch Dream (Peter Lynch) — PEG < 1, fast growth, low debt
+    peg_ld  = df.get("peg", pd.Series(999.0, index=df.index)).fillna(999)
+    debt_ld = df.get("debt_to_equity", pd.Series(999.0, index=df.index)).fillna(999)
+    fw_lynch = (peg_ld > 0) & (peg_ld <= 1.0) & (debt_ld < 0.5) & (pat_gr_sm >= 15)
+
+    # 6. CAN SLIM (William O'Neill) — earnings acceleration + technical leadership
+    #    C: Quarterly EPS growth ≥ 25% YoY (quarterly PAT as proxy)
+    #    A: Annual EPS multi-year momentum ≥ 20% CAGR
+    #    N: Near 52W high — within 15% (trend confirmation)
+    #    S: Supply/Demand — above-average volume (vol_ratio ≥ 1.5)
+    #    L: Leader — positive relative strength vs market (CRS 50D > 0)
+    #    I: Institutional sponsorship — FII or DII buying
+    pat_lq_cs   = df.get("pat_lq", pd.Series(np.nan, index=df.index)).fillna(np.nan)
+    pat_pyq_cs  = df.get("pat_pyq", pd.Series(np.nan, index=df.index)).fillna(np.nan)
+    eps_gr_cs   = df.get("eps_gr_5y", pd.Series(np.nan, index=df.index)).fillna(0)
+    dist_wh_cs  = df.get("dist_52wh", pd.Series(999.0, index=df.index)).fillna(999)
+    vol_r_cs    = df.get("vol_ratio", pd.Series(np.nan, index=df.index)).fillna(1.0)
+    crs_cs      = df.get("crs_50d", pd.Series(np.nan, index=df.index)).fillna(0)
+    fii_cs      = df.get("change_fii_lq", pd.Series(0.0, index=df.index)).fillna(0)
+    dii_cs      = df.get("change_dii_lq", pd.Series(0.0, index=df.index)).fillna(0)
+    # Quarterly EPS growth: (pat_lq / pat_pyq - 1) >= 0.25, guarded against zero/negative base
+    qtr_growth_ok = np.where(
+        pat_lq_cs.notna() & pat_pyq_cs.notna() & (pat_pyq_cs > 0),
+        ((pat_lq_cs / pat_pyq_cs - 1) >= 0.25),
+        False
+    )
+    fw_can_slim = (
+        qtr_growth_ok &                  # C: current earnings +25%+
+        (eps_gr_cs >= 20) &              # A: annual EPS growth ≥ 20% 5Y CAGR
+        (dist_wh_cs <= 15) &             # N: within 15% of 52W high
+        (vol_r_cs >= 1.5) &              # S: volume surging (institutional accumulation)
+        (crs_cs > 0) &                   # L: market leader (outperforming Nifty 500)
+        ((fii_cs > 0) | (dii_cs > 0))   # I: institutional buying confirmed
+    )
+
+    # 7. Bruised Blue Chip (29th MOSL Study) — quality company fallen hard + cheap vs history
+    #    Criteria: ROCE ≥ 15% sustained + PAT CAGR ≥ 10% + fallen >40% from 52W high
+    #              + current PE ≥ 25% below own 10Y median PE
+    fw_bruised_bb = df.get("bruised_blue_chip", pd.Series(0, index=df.index)).fillna(0) == 1
+
+    # 8. Economic Profit Improver (28th MOSL Study — TEM Hockey-Stick Setup)
+    #    Companies moving UP the Economic Profit Power Curve:
+    #    ROE improving + above cost of equity (10%) + Economic Profit is positive
+    fw_ep_improver = (
+        (df.get("eco_profit_improving", pd.Series(0, index=df.index)).fillna(0) == 1) &
+        (df.get("economic_profit_positive", pd.Series(0, index=df.index)).fillna(0) == 1) &
+        (df.get("d35_roce_trend", pd.Series(0, index=df.index)).fillna(0) > 0)  # ROCE also rising
+    )
+
+    # Build comma-separated framework string — fully vectorized, zero apply
+    fw_str = (
+        np.where(fw_qglp,          "QGLP|",              "") +
+        np.where(fw_coffee_can,    "Coffee Can|",        "") +
+        np.where(fw_magic_formula, "Magic Formula|",     "") +
+        np.where(fw_smile,         "SMILE|",             "") +
+        np.where(fw_lynch,         "Lynch Dream|",       "") +
+        np.where(fw_can_slim,      "CAN SLIM|",          "") +
+        np.where(fw_bruised_bb,    "Bruised Blue Chip|", "") +
+        np.where(fw_ep_improver,   "EP Improver|",       "")
+    )
+    df["frameworks_passed"] = (
+        pd.Series(fw_str, index=df.index)
+        .str.rstrip("|")
+        .str.replace("|", ", ", regex=False)
+    )
+    df["frameworks_passed"] = np.where(df["frameworks_passed"] == "", "None", df["frameworks_passed"])
 
     return df
 
