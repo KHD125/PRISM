@@ -350,12 +350,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["de_slope_3y"] = df["debt_to_equity"] - df["debt_to_equity_3yb"]
 
     # ── Ind AS 116 / Debt Restatement Guard ──
-    # Sudden debt jumps from lease capitalization (Ind AS 116, 2019+) create non-economic D/E spikes.
-    # If D/E jumped >2.5× in 1 year but has since stabilised below 2Y-back level → likely restatement.
+    # Sudden debt spikes from lease capitalization (Ind AS 116, 2019+) create non-economic D/E jumps.
+    # G5 FIX: prior condition was inverted — caught D/E DROPS not spikes.
+    # Correct: current D/E spiked >2.5× vs 1YB AND the 1YB trend was stable (< 1.2× the 2YB level).
     de_restatement = (
-        df["debt_to_equity_1yb"].notna() & df["debt_to_equity_2yb"].notna() &
-        (df["debt_to_equity_1yb"] > df["debt_to_equity"] * 2.5) &  # 1YB was >2.5× current
-        (df["debt_to_equity"] < df["debt_to_equity_2yb"])           # current < 2YB (normalised)
+        df["debt_to_equity"].notna() & df["debt_to_equity_1yb"].notna() &
+        (df["debt_to_equity"] > df["debt_to_equity_1yb"] * 2.5) &          # current spiked >2.5× vs last year
+        (df["debt_to_equity_1yb"] <= df["debt_to_equity_2yb"].fillna(df["debt_to_equity_1yb"]) * 1.2)  # prior trend was stable
     )
     df["debt_restatement_suspected"] = de_restatement.astype(int)
     df["de_slope_3y"] = np.where(de_restatement, np.nan, df["de_slope_3y"])  # neutralise spike
@@ -655,7 +656,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         sector_dep = pd.Series(default_dep, index=df.index)
     dep_rate = np.where(fa > 0, sector_dep, 0.0)
 
-    ssgr_raw = nfat * npm_decimal * (1 - dpr_approx) - dep_rate
+    # G4 FIX: removed "- dep_rate" which was double-deducting depreciation.
+    # NPM is already NET of depreciation (dep reduced profit in P&L).
+    # Vijay Malik SSGR = NPM × NFAT × (1 - DPR), no further dep adjustment.
+    ssgr_raw = nfat * npm_decimal * (1 - dpr_approx)
     df["ssgr"] = pd.Series(ssgr_raw * 100, index=df.index).clip(-50, 100)
 
     # SSGR vs actual growth — the gold standard test
@@ -677,14 +681,19 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["tax_rate_est"] = df["ebitda_to_pat_gap_pct"]  # backward-compat alias
 
     # ── Interest Coverage Proxy (Malik Parameter 4) ──
-    # Interest ≈ Debt × assumed rate. India investment-grade corporate average ~8.5% (not 10%).
+    # Use CSV-reported interest_coverage when available; synthetic estimate as fallback only.
+    # G1 FIX: was unconditionally overwriting real CSV data with synthetic 8.5% flat estimate.
     assumed_interest_rate = 0.085
     df["interest_expense_est"] = df["debt"].fillna(0) * assumed_interest_rate
-    df["interest_coverage"] = np.where(
-        df["interest_expense_est"] > 0,
-        df["ebitda"].fillna(0) / df["interest_expense_est"],
-        99.0  # debt-free = effectively infinite coverage
+    synthetic_coverage = pd.Series(
+        np.where(
+            df["interest_expense_est"] > 0,
+            df["ebitda"].fillna(0) / df["interest_expense_est"],
+            99.0  # debt-free = effectively infinite coverage
+        ),
+        index=df.index
     )
+    df["interest_coverage"] = df["interest_coverage"].fillna(synthetic_coverage)
 
     # ── Economic Profit (28th WCS) ──
     # EP = Net Worth × (RoE − Cost of Equity)
@@ -1047,9 +1056,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # Growth-adjusted: geometric sum of 5Y PAT at estimated CAGR (from pat_gr_5y)
     g_rate = (df["pat_gr_5y"].fillna(0) / 100.0).clip(lower=0, upper=0.50)
+    # G6 FIX: formula was computing sum of years 0-4 (annuity due base).
+    # Correct formula for years 1-5: (1+g) × ((1+g)^5 - 1) / g.
+    # At g=20%: was 7.44, now 8.93 — ~20% higher cumulative PAT, lower payback period.
     geo_sum = np.where(
         g_rate > 0.001,
-        ((1.0 + g_rate) ** 5 - 1.0) / g_rate,
+        (1.0 + g_rate) * ((1.0 + g_rate) ** 5 - 1.0) / g_rate,
         5.0
     )
     payback_growth = np.where(
@@ -1067,7 +1079,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     pat_decline_1y = np.where(
         df["pat_1yb"].fillna(0) > 0,
         (df["pat"].fillna(0) - df["pat_1yb"].fillna(0)) / df["pat_1yb"].abs() * 100,
-        0.0
+        np.nan  # Missing 1YB PAT → unknown, not "0% change" — preserves correct NaN downstream
     )
     df["pat_decline_1y_pct"] = pd.Series(pat_decline_1y, index=df.index)
     df["pat_no_crash_1y"] = (df["pat_decline_1y_pct"].fillna(0) > -50).astype(int)
@@ -1140,6 +1152,18 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         365.0 / df["inventory_turnover"],
         np.nan
     )
+    df["inventory_days_1yb"] = np.where(
+        df["inventory_turnover_1yb"].notna() & (df["inventory_turnover_1yb"] > 0),
+        365.0 / df["inventory_turnover_1yb"],
+        np.nan
+    )
+    # Lynch radar: rising inventory days = demand slowing before the P&L shows it.
+    # Positive = worsening (more days to sell). Used in tearsheet; rf_itr_declining covers forensic flag.
+    df["inventory_days_change"] = np.where(
+        df["inventory_days"].notna() & df["inventory_days_1yb"].notna(),
+        df["inventory_days"] - df["inventory_days_1yb"],
+        np.nan
+    )
 
     # ── OPM Stability (pricing power vs commodity trap) ──
     # Vijay Malik: Maithan Alloys OPM swings 3% → 21% = no pricing power.
@@ -1165,6 +1189,20 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (df["roce_med_5y"].fillna(df["roce"]).fillna(0) >= 15).astype(int) +          # ROCE > 15% sustained
         df["payback_lt1"].fillna(0).astype(int) +                                     # Payback < 1
         df["consistency_champion"].fillna(0).astype(int)                              # PAT consistency
+    )
+
+    # ── Lynch Category (Peter Lynch — One Up on Dalal Street) ──
+    # Classifies each stock by growth trajectory for tearsheet display.
+    # Fast Grower: Lynch's primary hunting ground for 10-100× returns.
+    df["lynch_category"] = np.select(
+        [
+            df["rev_gr_5y"].fillna(0) >= 20,
+            (df["rev_gr_5y"].fillna(0) >= 10) & (df["rev_gr_5y"].fillna(0) < 20),
+            (df["rev_gr_5y"].fillna(0) >= 0)  & (df["rev_gr_5y"].fillna(0) < 10),
+            df["rev_gr_5y"].fillna(0) < 0,
+        ],
+        ["Fast Grower", "Stalwart", "Slow Grower", "Declining"],
+        default="Unknown"
     )
 
     n_derived = len([c for c in df.columns if c not in set(COMMON_COLS.values())])
