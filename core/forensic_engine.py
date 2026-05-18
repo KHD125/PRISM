@@ -237,12 +237,14 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    # 14. Accrual Ratio: (PAT - OCF) / Total Assets > 5% (Beneish TATA — highest single fraud predictor)
+    # 14. Accrual Ratio: (PAT - OCF) / Avg_Total_Assets > 5% (Beneish TATA — highest single fraud predictor)
     # High accruals mean reported earnings are not backed by cash. Coefficient in Beneish = 4.679 (largest).
-    # Threshold: > 5% of total assets is the Beneish original cut-off for earnings manipulation.
+    # Use AVERAGE total assets (current + 1YB)/2 — Gemini G-audit fix: point-in-time denominator can be
+    # artificially inflated by late-year acquisitions, masking accrual manipulation.
+    avg_ta = (df["total_assets"].fillna(0) + df["total_assets_1yb"].fillna(df["total_assets"].fillna(0))) / 2.0
     df["rf_high_accruals"] = np.where(
-        df["pat"].notna() & df["operating_cash_flow"].notna() & df["total_assets"].notna() & (df["total_assets"] > 0),
-        (((df["pat"] - df["operating_cash_flow"]) / df["total_assets"]) > 0.05).astype(int),
+        df["pat"].notna() & df["operating_cash_flow"].notna() & (avg_ta > 0),
+        (((df["pat"] - df["operating_cash_flow"]) / avg_ta) > 0.05).astype(int),
         0
     )
 
@@ -270,22 +272,78 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # Vijay Malik Vol 3: Maithan Alloys — OPM swings 3% → 21% = pure price taker.
     # Finolex Cables OPM stays in 7-16% band = pricing power + structural improvement.
     # Threshold: >30% deviation from 5Y median OPM = unreliable margins.
+    # G7 FIX: removed opm_latest_q fallback — quarterly OPM is seasonally distorted.
+    # Indian businesses have intense seasonal cycles (festivals, monsoon, govt spending).
+    # Comparing a single quarter against a 5Y annual median generates false positives.
+    # Only compare annual OPM (opm_1yb) against annual median; if annual missing, skip the flag.
+    opm_annual_compare = df["opm_1yb"].fillna(df["opm_med_5y"])
     df["rf_opm_volatile"] = np.where(
         df["opm_med_5y"].notna() & (df["opm_med_5y"] > 0),
         (
-            (df["opm_1yb"].fillna(df["opm_latest_q"]).fillna(df["opm_med_5y"]) -
-             df["opm_med_5y"]).abs() / df["opm_med_5y"] > 0.30
+            (opm_annual_compare - df["opm_med_5y"]).abs() / df["opm_med_5y"] > 0.30
         ).astype(int),
         0
     )
 
     # 18. NFAT very low (extreme capital intensity — growth destroys shareholder value)
-    # Vijay Malik Vol 3: PIX Transmissions — NFAT < 2 = every rupee of growth needs heavy capex.
+    # Vijay Malik Vol 3: PIX Transmissions — NFAT < 1.5 = every rupee of growth needs heavy capex.
     # SSGR turns negative, FCF turns negative, debt rises. Growth becomes value destruction.
-    # Only flag when fixed assets > 0 and nfat column exists.
+    # Only flag when nfat column exists and is populated.
     df["rf_nfat_very_low"] = np.where(
         df.get("nfat", pd.Series(np.nan, index=df.index)).notna(),
         (df.get("nfat", pd.Series(np.nan, index=df.index)) < 1.5).astype(int),
+        0
+    )
+
+    # 19. Capitalizing Expenses (WorldCom / Satyam pattern)
+    # Gross CapEx > 3× Depreciation without proportional revenue growth = hiding expenses on balance sheet.
+    # WorldCom inflated profits by capitalizing ordinary line-costs as capital assets.
+    # BUG FIX: Previous version used NET FA change (= gross capex - depreciation) as the capex estimate.
+    # Threshold of 3× on net change was equivalent to requiring gross capex/dep > 4× — under-sensitive.
+    # Correct: gross capex ≈ net FA increase + estimated depreciation. Then ratio vs dep = intended 3×.
+    depr_est_wc        = df["fixed_assets_1yb"].fillna(0) * 0.10  # conservative flat 10% dep rate
+    capex_net_wc       = (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)).clip(lower=0)
+    capex_gross_est_wc = capex_net_wc + depr_est_wc               # gross capex = net change + dep
+    df["rf_capitalizing_expenses"] = np.where(
+        (depr_est_wc > 0) & df["rev_gr_yoy"].notna(),
+        (
+            (capex_gross_est_wc / depr_est_wc > FORENSIC.get("capex_depr_ratio_max", 3.0)) &
+            (df["rev_gr_yoy"] < 15)
+        ).astype(int),
+        0
+    )
+
+    # 20. Debt/EBITDA > 5× (Amtek Auto / infrastructure sector danger signal)
+    # Financial Shenanigans India Ch.6 Case 8: Amtek Auto collapsed when Debt/EBITDA exceeded 10×.
+    # Ch.7 Infrastructure section: any D/EBITDA > 5× in a non-financial company = critical warning.
+    # Excludes financial sector stocks where debt is a product, not a risk factor.
+    df["rf_debt_ebitda_high"] = np.where(
+        df["debt"].notna() & df["ebitda"].notna() & (df["ebitda"] > 0) &
+        (~df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)),
+        (df["debt"] / df["ebitda"] > 5.0).astype(int),
+        0
+    )
+
+    # 21. CWIP bloating without asset conversion (IL&FS / infrastructure capitalization trap)
+    # Financial Shenanigans Ch.2 EMS#4: CWIP as % of total assets growing YoY signals expenses
+    # being parked on the balance sheet to avoid hitting the P&L.
+    # IL&FS used CWIP inflation across 347 entities to hide losses for years.
+    # RUNTIME FIX: np.where evaluates both branches before condition check — dividing by
+    # cwip_pct_1yb=0 caused RuntimeWarning even when guarded. Use safe denominator instead.
+    cwip_pct_current = np.where(
+        df["total_assets"].fillna(0) > 0,
+        df["cwip"].fillna(0) / df["total_assets"],
+        np.nan
+    )
+    cwip_pct_1yb = np.where(
+        df["total_assets_1yb"].fillna(0) > 0,
+        df["cwip_1yb"].fillna(0) / df["total_assets_1yb"],
+        np.nan
+    )
+    safe_cwip_1yb = np.where(cwip_pct_1yb > 0, cwip_pct_1yb, 1.0)  # safe denominator: 1.0 when 0 or NaN
+    df["rf_cwip_bloat"] = np.where(
+        pd.notna(cwip_pct_current) & pd.notna(cwip_pct_1yb) & (cwip_pct_1yb > 0),
+        ((cwip_pct_current / safe_cwip_1yb) > 1.5).astype(int),  # CWIP share of assets grew >50% YoY
         0
     )
 
@@ -325,9 +383,12 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_ssgr_deficit": "Growth exceeds SSGR by 5%+ (debt-dependent)",
         "rf_high_accruals":   "High accruals — PAT not backed by cash (Beneish TATA >5%)",
         "rf_low_fcf_ebitda":  "FCF/EBITDA <30% — EBITDA overstates real earnings (Malik S5)",
-        "rf_fcf_to_cfo_low":  "FCF/CFO <15% — capital trap, capex consuming all operating cash",
-        "rf_opm_volatile":    "OPM >30% off 5Y median — commodity trap, no pricing power",
-        "rf_nfat_very_low":   "NFAT <1.5 — extreme capital intensity, growth destroys value",
+        "rf_fcf_to_cfo_low":           "FCF/CFO <15% — capital trap, capex consuming all operating cash",
+        "rf_opm_volatile":             "OPM >30% off 5Y median — commodity trap, no pricing power",
+        "rf_nfat_very_low":            "NFAT <1.5 — extreme capital intensity, growth destroys value",
+        "rf_capitalizing_expenses":    "CapEx >3× Depreciation without rev growth — WorldCom expense-hiding pattern",
+        "rf_debt_ebitda_high":         "Debt/EBITDA >5× — Amtek Auto collapse pattern, critical for infra/real estate",
+        "rf_cwip_bloat":               "CWIP share of assets grew >50% YoY — IL&FS-style balance sheet parking",
     }
 
 
