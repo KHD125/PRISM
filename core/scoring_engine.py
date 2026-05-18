@@ -125,15 +125,13 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
     df["gates_total"] = len(gate_results)
     df["gates_failed"] = df["gates_total"] - df["gates_passed"]
 
-    # Build a human-readable failed gates string
-    def _failed_gates_str(row):
-        failed = []
-        for gn in gate_results:
-            if not row.get(f"gate_{gn}", True):
-                failed.append(gn)
-        return ", ".join(failed) if failed else "All passed ✅"
-
-    df["failed_gates"] = df.apply(_failed_gates_str, axis=1)
+    # Build a human-readable failed gates string — fully vectorized (no apply/iterrows)
+    gate_names = list(gate_results.keys())
+    failed_str = pd.Series("", index=df.index)
+    for gn in gate_names:
+        failed_str = failed_str + (~gate_results[gn]).map({True: gn + ", ", False: ""})
+    failed_str = failed_str.str.rstrip(", ")
+    df["failed_gates"] = failed_str.where(failed_str != "", "All passed ✅")
 
     passed_count = df["gate_pass"].sum()
     total = len(df)
@@ -150,12 +148,13 @@ def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
     """Moat score: ROCE trajectory + ROE. Higher = wider moat."""
     score = pd.Series(0.0, index=df.index)
 
+    _nan_s = pd.Series(np.nan, index=df.index)
     signals = {
-        "roce_med_10y":        (_pct_rank(df.get("roce_med_10y", 0), ascending=True), 0.35),
-        "roce_trajectory":     (_pct_rank(df.get("roce_trajectory", 0), ascending=True), 0.15),
-        "roe_med_10y":         (_pct_rank(df.get("roe_med_10y", 0), ascending=True), 0.25),
-        "roe_trajectory":      (_pct_rank(df.get("roe_trajectory", 0), ascending=True), 0.10),
-        "roce_current_vs_med": (_pct_rank(df.get("roce_current_vs_med", 0), ascending=True), 0.15),
+        "roce_med_10y":        (_pct_rank(df.get("roce_med_10y", _nan_s), ascending=True), 0.35),
+        "roce_trajectory":     (_pct_rank(df.get("roce_trajectory", _nan_s), ascending=True), 0.15),
+        "roe_med_10y":         (_pct_rank(df.get("roe_med_10y", _nan_s), ascending=True), 0.25),
+        "roe_trajectory":      (_pct_rank(df.get("roe_trajectory", _nan_s), ascending=True), 0.10),
+        "roce_current_vs_med": (_pct_rank(df.get("roce_current_vs_med", _nan_s), ascending=True), 0.15),
     }
 
     for name, (ranked, weight) in signals.items():
@@ -290,8 +289,12 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
 
     # PEG zone scoring (Baid + Marks: PEG < 1.0 = cheap, > 2.5 = extreme)
     if "peg" in df.columns:
-        peg_score = _zone_score(df["peg"].clip(lower=0, upper=998), PEG_ZONES)  # upper=998: PEG>999 was defaulting to neutral(50) instead of extreme penalty(5)
-        score += peg_score.fillna(50) * VALUATION_SIGNALS["peg_ratio"]
+        raw_peg = df["peg"].fillna(999)
+        peg_score = _zone_score(raw_peg.clip(lower=0, upper=998), PEG_ZONES).fillna(50)
+        # G2 FIX: negative PEG (earnings contracting) was clipped to 0 → fell in deep_value → score=100.
+        # Negative PEG = value destruction, must receive max penalty (5), not deep-value reward.
+        peg_score = pd.Series(np.where(raw_peg < 0, 5.0, peg_score), index=df.index)
+        score += peg_score * VALUATION_SIGNALS["peg_ratio"]
 
     # EV/EBITDA compression: positive ev_compression = getting cheaper = good
     if "ev_compression" in df.columns:
@@ -388,12 +391,89 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
         (df.get("de_slope_3y", pd.Series(0, index=df.index)) > 0)
     ).astype(int)
     df["sell_alert_cash_collapse"] = (
-        df.get("cfo_to_pat", pd.Series(100.0, index=df.index)) < 50  # cfo_to_pat is PERCENTAGE (e.g. 73.04). Was < 0.5 (ratio) — never fired.
+        df.get("cfo_to_pat", pd.Series(100.0, index=df.index)) < 50  # PERCENTAGE: < 50% = poor cash quality (CFO < half of PAT)
     ).astype(int)
+
+    # ── MARKS OVERVALUATION ALERT (Howard Marks — The Dalal Street Thinker) ──
+    # Marks: "Even great businesses can be terrible investments at extreme prices."
+    # Trigger 1: PEG > 2.5 — Marks' explicit "extreme caution" threshold (verbatim from codex)
+    # Trigger 2: P/E > 30% above own 10Y median AND PEG > 2.0 — stock pricing in perfection vs history
+    # d32_pe_vs_median: positive = expensive vs own decade history; fillna(0) = no history → neutral
+    # peg fillna(999): missing PEG (no earnings) → treated as extreme (999 > 2.5 = alert fires)
+    # This fills the gap: the other 3 alerts detect fundamental deterioration; this detects price excess.
+    # fillna(0) for peg: NaN = no earnings / no valid PEG → unknown, not overvalued → don't alert
+    # fillna(0) for pe_hist: NaN = no 10Y median history → neutral → don't alert
+    _peg_sa  = df.get("peg",             pd.Series(0.0, index=df.index)).fillna(0)
+    _pe_hist = df.get("d32_pe_vs_median", pd.Series(0.0, index=df.index)).fillna(0)
+    df["sell_alert_overvalued"] = (
+        (_peg_sa > 2.5) |
+        ((_pe_hist > 30) & (_peg_sa > 2.0))
+    ).astype(int)
+
+    # ── EXPECTATIONS TREADMILL ALERT (Mauboussin/Rappaport — Expectations Investing Codex) ──
+    # "A company priced for perfection must continuously EXCEED already-perfect expectations
+    #  just to maintain its stock price." — Mauboussin
+    # DISTINCT from sell_alert_overvalued (Marks: static overvaluation via PEG / PE vs history).
+    # This alert is DYNAMIC: stock priced for a 15-20 year Competitive Advantage Period (CAP)
+    # that is now visibly decelerating — the treadmill is slipping.
+    # Example gap: PE 65× stock (Marks' PEG < 2.5, passes) but revenue growth collapsed from
+    # 22% → 10% AND ROCE declining — Marks' alert misses it; Treadmill catches it.
+    #
+    # Three conditions required (conservative AND logic — all three must hold):
+    #   1. pe > 50: book's CAP sensitivity table maps P/E 50× → 15-20 year above-WACC assumption.
+    #      fillna(0): loss-making stocks (NaN PE) → 0 → not on the treadmill (correct).
+    #   2. Growth deceleration vs own 3Y baseline:
+    #      rev_gr_yoy < rev_gr_3y - 5: revenue growing 5+ ppts below its own 3Y CAGR.
+    #      eps_gr_yoy < eps_gr_3y - 7: earnings growing 7+ ppts below 3Y CAGR (wider band for
+    #      operating leverage noise). OR condition: either revenue or earnings must decelerate.
+    #      Gap fillna(0): NaN gap (missing data) → 0 → 0 < -5 = False (won't fire on missing data).
+    #   3. d35_roce_trend < 0: ROCE declining vs 1Y ago — no margin expansion to rescue decel.
+    #      fillna(0): NaN → 0 → 0 < 0 = False (conservative: missing trend = neutral).
+    #
+    # False positive guard: a stock at PE 55× with ROCE expanding does NOT trigger (condition 3
+    # saves it). Only the combination of premium + slowing + no margin recovery fires.
+    _tm_nan      = pd.Series(np.nan, index=df.index)
+    _pe_tm       = df.get("pe",            pd.Series(0.0, index=df.index)).fillna(0)
+    _rev_yoy_tm  = df.get("rev_gr_yoy",   _tm_nan)
+    _rev_3y_tm   = df.get("rev_gr_3y",    _tm_nan)
+    _eps_yoy_tm  = df.get("eps_gr_yoy",   _tm_nan)
+    _eps_3y_tm   = df.get("eps_gr_3y",    _tm_nan)
+    _roce_dir_tm = df.get("d35_roce_trend", pd.Series(0.0, index=df.index)).fillna(0)
+    # Deceleration gaps: negative = current growth below own historical baseline
+    _rev_gap_tm  = (_rev_yoy_tm - _rev_3y_tm).fillna(0)   # fillna(0): NaN gap → not decelerating
+    _eps_gap_tm  = (_eps_yoy_tm - _eps_3y_tm).fillna(0)
+    df["sell_alert_treadmill"] = (
+        (_pe_tm        > 50) &                          # Premium: 15-20Y CAP priced in
+        ((_rev_gap_tm  < -5) | (_eps_gap_tm < -7)) &   # Slipping: growth falling behind own history
+        (_roce_dir_tm  < 0)                             # No rescue: ROCE not expanding
+    ).astype(int)
+
+    # ── KHANDELWAL SEQUENTIAL DETERIORATION ALERT (Vishal Khandelwal — The Long Game) ──
+    # Chapter 10: "Sell only on fundamental deterioration confirmed across 2+ consecutive years."
+    # Core guard: one bad year ≠ thesis broken. A PATTERN of decline is required before selling.
+    # This captures structural top-line collapse — revenue AND earnings both declining multi-year.
+    # DISTINCT from sell_alert_thesis_broken (ROCE capital efficiency — capital allocation layer)
+    # and sell_alert_cash_collapse (CFO quality — operating cash layer).
+    # This alert fires when the REVENUE ENGINE itself is structurally shrinking.
+    # rev_gr_3y < 0: 3-year CAGR negative → confirms decline extends beyond 1 year (multi-year).
+    # pat_gr_yoy < 0: earnings also declining → no margin/mix offset rescuing the top-line fall.
+    # All fillna(0): NaN → 0 → condition fails → no false alert on missing data (conservative).
+    _rev_yoy_sd  = df.get("rev_gr_yoy", pd.Series(0.0, index=df.index)).fillna(0)
+    _rev_3y_sd   = df.get("rev_gr_3y",  pd.Series(0.0, index=df.index)).fillna(0)
+    _pat_yoy_sd  = df.get("pat_gr_yoy", pd.Series(0.0, index=df.index)).fillna(0)
+    df["sell_alert_sequential_decline"] = (
+        (_rev_yoy_sd < 0) &    # Current year revenue contracting
+        (_rev_3y_sd  < 0) &    # 3Y CAGR also negative — multi-year revenue decline confirmed
+        (_pat_yoy_sd < 0)      # Earnings also declining — no margin offset to revenue fall
+    ).astype(int)
+
     df["sell_alert_any"] = (
-        (df["sell_alert_thesis_broken"] == 1) |
-        (df["sell_alert_mgmt_deteriorated"] == 1) |
-        (df["sell_alert_cash_collapse"] == 1)
+        (df["sell_alert_thesis_broken"]       == 1) |
+        (df["sell_alert_mgmt_deteriorated"]   == 1) |
+        (df["sell_alert_cash_collapse"]       == 1) |
+        (df["sell_alert_overvalued"]          == 1) |
+        (df["sell_alert_treadmill"]           == 1) |
+        (df["sell_alert_sequential_decline"]  == 1)
     ).astype(int)
 
     df["quality_score"] = _safe_clip(df["quality_score"])
@@ -574,6 +654,16 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
     if "pledge_falling_1y" in df.columns:
         bonus += (df["pledge_falling_1y"] > 0).astype(float) * GOVERNANCE_BONUS["pledge_falling_1y"]
 
+    # Promoter holding alignment (Mayer 100-Bagger: 10/10 Indian 100-baggers had ≥40%+ promoter)
+    # Rewards baseline alignment LEVEL — distinct from promoter_buying which rewards quarterly activity.
+    # promoter_holdings = numeric percentage (e.g. 55.3 = 55.3%)
+    if "promoter_holdings" in df.columns:
+        promo_pct = df["promoter_holdings"].fillna(0)
+        promo_1y  = df.get("change_promoter_1y", pd.Series(0.0, index=df.index)).fillna(0)
+        bonus += (promo_pct >= 60).astype(float) * GOVERNANCE_BONUS["promoter_high_alignment"]
+        bonus += ((promo_pct >= 50) & (promo_pct < 60)).astype(float) * GOVERNANCE_BONUS["promoter_good_alignment"]
+        bonus += ((promo_pct < 40) & (promo_1y < 0)).astype(float) * GOVERNANCE_BONUS["promoter_low_declining"]
+
     # Undiscovered alpha: low FII + Tier C
     if "fii_holdings" in df.columns and "market_cap" in df.columns:
         undiscovered = (df["fii_holdings"] < 5) & (df["market_cap"] < 5000)
@@ -591,7 +681,10 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
             index=df.index
         )
 
-    df["governance_bonus"] = _safe_clip(bonus)
+    # G3 FIX: _safe_clip([0,100]) was erasing dilution penalties for companies starting at 0 governance.
+    # A company with 0 base + dilution_flag=2 → bonus=-25 → clipped to 0 (penalty vanished).
+    # Allow negative governance to drag down the composite score for serial diluters.
+    df["governance_bonus"] = bonus.clip(lower=-50, upper=100)
     return df
 
 
@@ -613,7 +706,7 @@ def compute_composite_score(
     df = df.copy()
 
     # Governance weight is fixed regardless of analysis mode — set via COMPOSITE_WEIGHTS["governance"] (currently 15%)
-    gov_w = COMPOSITE_WEIGHTS.get("governance", 0.10)
+    gov_w = COMPOSITE_WEIGHTS.get("governance", 0.15)
     # Normalize fundamental + momentum to fill remaining 90%
     scale = 1.0 - gov_w
     fund_scaled = fundamental_w * scale
@@ -766,7 +859,9 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
 
     # P: Price (PEG zone score)
     if "peg" in df.columns:
-        p_score = _zone_score(df["peg"].clip(lower=0, upper=998), PEG_ZONES).fillna(50)  # upper=998: PEG>999 was defaulting to neutral(50)
+        raw_peg_q = df["peg"].fillna(999)
+        p_score = _zone_score(raw_peg_q.clip(lower=0, upper=998), PEG_ZONES).fillna(50)
+        p_score = pd.Series(np.where(raw_peg_q < 0, 5.0, p_score), index=df.index)  # G2 FIX: negative PEG = max penalty
     else:
         p_score = pd.Series(50.0, index=df.index)
 
@@ -799,20 +894,37 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # 1. QGLP (Raamdeo Agrawal)
     fw_qglp = df.get("qglp_pass", pd.Series(0, index=df.index)).fillna(0) == 1
 
-    # 2. Coffee Can (Saurabh Mukherjea) — Three mandatory filters:
-    #    (a) ROCE median ≥ 15% (sustained capital efficiency)
-    #    (b) Revenue CAGR ≥ 10% (consistent growth)
-    #    (c) CFO/EBITDA ≥ 90% — the "Clean Accounts" filter (earnings are cash-backed)
-    #    cfo_to_ebitda in CSV is a PERCENTAGE (e.g. 73.06 = 73%), so threshold is 90 not 0.9
-    roce_med_cc    = df.get("roce_med_10y", pd.Series(np.nan, index=df.index)).fillna(
-                     df.get("roce_med_5y", pd.Series(np.nan, index=df.index)))
-    rev_gr_cc      = df.get("rev_gr_10y", pd.Series(np.nan, index=df.index)).fillna(
-                     df.get("rev_gr_5y", pd.Series(np.nan, index=df.index)))
-    cfo_ebitda_cc  = df.get("cfo_to_ebitda", pd.Series(np.nan, index=df.index))
+    # 2. Coffee Can (Saurabh Mukherjea) — Mukherjea's exact Twin Filters + Clean Accounts:
+    #    (a) ROE median ≥ 15% — the book specifies ROE, NOT ROCE. The D/E gate below
+    #        separately disqualifies high-leverage ROE (Mukherjea: "ROE via leverage is rejected").
+    #    (b) Revenue growth CONSISTENCY across 3 CAGR windows — Mukherjea requires EVERY
+    #        year to show ≥ 10% growth. Without year-level data, the best proxy is:
+    #        10Y CAGR ≥ 10% (sustained long-run), 5Y CAGR ≥ 8% (recent, 8% allows for one
+    #        COVID-year averaging without penalising genuine compounders), YoY ≥ 0
+    #        (not currently contracting — the most forward-looking signal).
+    #    (c) CFO/EBITDA ≥ 90% — the "Clean Accounts" filter. cfo_to_ebitda in CSV is a
+    #        PERCENTAGE (e.g. 73.06 = 73%), so threshold is 90 not 0.9.
+    #    (d) D/E < 1.0 for non-financials — Mukherjea explicitly disqualifies companies whose
+    #        ROE is driven by leverage. Financial sector is structurally exempt.
+    _cc_nan = pd.Series(np.nan, index=df.index)
+    roe_med_cc    = df.get("roe_med_10y", _cc_nan).fillna(df.get("roe_med_5y", _cc_nan))
+    roe_rec_cc    = df.get("roe_med_5y",  _cc_nan).fillna(df.get("roe",         _cc_nan))
+    rev_10y_cc    = df.get("rev_gr_10y",  _cc_nan)
+    rev_5y_cc     = df.get("rev_gr_5y",   _cc_nan)
+    rev_yoy_cc    = df.get("rev_gr_yoy",  _cc_nan)
+    cfo_ebitda_cc = df.get("cfo_to_ebitda", _cc_nan)
+    de_cc         = df.get("debt_to_equity", _cc_nan)
+    pledge_cc     = df.get("pledged_percentage", _cc_nan)  # correct column: pledged_percentage
+    is_fin_cc     = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
     fw_coffee_can = (
-        (roce_med_cc.fillna(0) >= 15) &
-        (rev_gr_cc.fillna(0) >= 10) &
-        (cfo_ebitda_cc.fillna(0) >= 90)
+        (roe_med_cc.fillna(0)    >= 15) &          # ROE 10Y/5Y median ≥ 15%
+        (roe_rec_cc.fillna(0)    >= 12) &          # ROE ≥ 12% recent — no collapse allowed
+        (rev_10y_cc.fillna(0)    >= 10) &          # 10Y revenue CAGR ≥ 10% (sustained)
+        (rev_5y_cc.fillna(0)     >= 8)  &          # 5Y revenue CAGR ≥ 8% (recent consistency)
+        (rev_yoy_cc.fillna(-1)   >= 0)  &          # YoY not contracting — no current crisis
+        (cfo_ebitda_cc.fillna(0) >= 90) &          # Clean Accounts: CFO/EBITDA ≥ 90%
+        (is_fin_cc | (de_cc.fillna(999) < 1.0)) &  # D/E < 1 for non-financials
+        (pledge_cc.fillna(0)     < 10)             # Governance: pledge < 10% (>20% = disqualify)
     )
 
     # 3. Magic Formula (Joel Greenblatt) — high Earnings Yield + high ROCE
@@ -825,10 +937,28 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     pat_gr_sm = df.get("pat_gr_5y", pd.Series(np.nan, index=df.index)).fillna(0)
     fw_smile = (mcap_sm < 15000) & (pat_gr_sm >= 20) & (roce_mf >= 20)
 
-    # 5. Lynch Dream (Peter Lynch) — PEG < 1, fast growth, low debt
-    peg_ld  = df.get("peg", pd.Series(999.0, index=df.index)).fillna(999)
-    debt_ld = df.get("debt_to_equity", pd.Series(999.0, index=df.index)).fillna(999)
-    fw_lynch = (peg_ld > 0) & (peg_ld <= 1.0) & (debt_ld < 0.5) & (pat_gr_sm >= 15)
+    # 5. Lynch Fast Grower (Peter Lynch — One Up on Dalal Street)
+    # Pattern DNA from 20 Indian tenbagger case files in the book:
+    # Rev CAGR > 20% + PEG < 0.75 (Lynch's preferred sweet spot, not just fair value at 1.0)
+    # + pre-institutional discovery (FII < 10%) + owner-operator promoter ≥ 45%
+    # fii_holdings fillna(50): if data missing, assume already discovered → exclude
+    _ly_nan   = pd.Series(np.nan, index=df.index)
+    peg_ly    = df.get("peg",               pd.Series(999.0, index=df.index)).fillna(999)
+    rev_ly    = df.get("rev_gr_5y",         _ly_nan)
+    pat3y_ly  = df.get("pat_gr_3y",         _ly_nan)
+    debt_ly   = df.get("debt_to_equity",    _ly_nan)
+    fii_ly    = df.get("fii_holdings",      pd.Series(50.0, index=df.index)).fillna(50)
+    promo_ly  = df.get("promoter_holdings", _ly_nan)
+    is_fin_ly = df.get("is_financial",      pd.Series(False, index=df.index)).fillna(False)
+    fw_lynch = (
+        (rev_ly.fillna(0)    >= 20) &                    # Fast Grower: 20%+ revenue CAGR
+        (peg_ly > 0)                &                    # PEG must be positive (real growth)
+        (peg_ly <= 0.75)            &                    # Lynch sweet spot: price ≤ 0.75× growth rate
+        (pat3y_ly.fillna(0)  >= 15) &                    # Earnings confirming the revenue story
+        (is_fin_ly | (debt_ly.fillna(999) < 0.5)) &      # Clean balance sheet
+        (fii_ly < 10)               &                    # Pre-discovery: institutions < 10%
+        (promo_ly.fillna(0)  >= 45)                      # Owner-operator conviction
+    )
 
     # 6. CAN SLIM (William O'Neill) — earnings acceleration + technical leadership
     #    C: Quarterly EPS growth ≥ 25% YoY (quarterly PAT as proxy)
@@ -874,16 +1004,528 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (df.get("d35_roce_trend", pd.Series(0, index=df.index)).fillna(0) > 0)  # ROCE also rising
     )
 
+    # 9. Peaceful Investing (Vijay Malik) — India's most systematic forensic quality filter
+    #    Malik's 8-parameter system is entirely derived from audited financials — the most
+    #    India-specific framework in this system. 3 qualitative shenanigans (serial M&A,
+    #    earnings smoothing, accounting policy changes) require data not in the CSV and are
+    #    intentionally excluded. Financial sector is exempt from IC, D/E, and CR checks
+    #    (structurally inapplicable, same as Coffee Can rationale).
+    #    Unit note: cfo_to_pat is a PERCENTAGE in this CSV (73.04 = 73%). Threshold = 70, NOT 0.7.
+    _mk_nan    = pd.Series(np.nan, index=df.index)
+    rev_gr_mk  = df.get("rev_gr_10y", _mk_nan).fillna(df.get("rev_gr_5y", _mk_nan))
+    npm_mk     = df.get("npm",              _mk_nan)
+    npm_1yb_mk = df.get("npm_1yb",          _mk_nan)
+    ic_mk      = df.get("interest_coverage", _mk_nan)
+    de_mk      = df.get("debt_to_equity",    _mk_nan)
+    cr_mk      = df.get("current_ratio",     _mk_nan)
+    cfo_pat_mk = df.get("cfo_to_pat",        _mk_nan)   # PERCENTAGE: 73.04 = 73%
+    ssgr_mk    = df.get("ssgr_self_funded",  pd.Series(0, index=df.index)).fillna(0)
+    is_fin_mk  = df.get("is_financial",      pd.Series(False, index=df.index)).fillna(False)
+    # NPM stability: current ≥ 8% AND (prior year ≥ 6% OR prior year data unavailable)
+    # Guards against one-year NPM spike that doesn't reflect the business's true earning power.
+    npm_stable_mk = (npm_mk.fillna(0) >= 8) & (npm_1yb_mk.isna() | (npm_1yb_mk.fillna(0) >= 6))
+    fw_malik_peaceful = (
+        (rev_gr_mk.fillna(0)  >= 10) &                   # P1: Sales CAGR ≥ 10% (10Y primary, 5Y fallback)
+        npm_stable_mk &                                   # P2: NPM ≥ 8% stable, not a one-year spike
+        (is_fin_mk | (ic_mk.fillna(0)   >= 3)) &         # P4: Interest coverage ≥ 3× (fin exempt)
+        (is_fin_mk | (de_mk.fillna(999) <= 0.5)) &       # P5: D/E ≤ 0.5 — Malik's stricter standard
+        (is_fin_mk | (cr_mk.fillna(0)   >= 1.25)) &      # P6: Current ratio ≥ 1.25 (fin exempt)
+        (cfo_pat_mk.fillna(0) >= 70) &                   # P8: CFO/PAT ≥ 70% — cash backs earnings
+        (ssgr_mk == 1)                                    # SSGR: growth is self-funded (Malik's signature)
+    )
+
+    # 10. Unusual Billionaires (Saurabh Mukherjea) — The Greatness Formula
+    #    DELIBERATELY DISTINCT from Coffee Can (also Mukherjea):
+    #      Coffee Can: ROE ≥ 15% + CFO/EBITDA ≥ 90% (cash quality first)
+    #      Unusual Billionaires: ROCE ≥ 15% (capital efficiency first, no CFO/EBITDA gate)
+    #    A high-leverage company can pass Coffee Can (ROE via D/E 0.8) but fail here (ROCE lower).
+    #    A capex-heavy ROCE leader can fail Coffee Can's 90% CFO/EBITDA gate but pass here.
+    #    The book's actual requirement is EVERY year for 10 years — not implementable without
+    #    annual data. Best proxy: BOTH the 10Y and 5Y ROCE medians clear 15% (two overlapping
+    #    windows, harder to fake than a single average). Same logic for revenue.
+    _ub_nan     = pd.Series(np.nan, index=df.index)
+    roce_10y_ub = df.get("roce_med_10y",       _ub_nan)
+    roce_5y_ub  = df.get("roce_med_5y",        _ub_nan)
+    rev_10y_ub  = df.get("rev_gr_10y",         _ub_nan)
+    rev_5y_ub   = df.get("rev_gr_5y",          _ub_nan)
+    de_ub       = df.get("debt_to_equity",     _ub_nan)
+    pledge_ub   = df.get("pledged_percentage", _ub_nan)
+    opm_st_ub   = df.get("opm_stable",         pd.Series(0, index=df.index)).fillna(0)
+    is_fin_ub   = df.get("is_financial",       pd.Series(False, index=df.index)).fillna(False)
+    fw_unusual_billionaires = (
+        (roce_10y_ub.fillna(0) >= 15) &            # Greatness: ROCE 10Y median ≥ 15% — moat proven
+        (roce_5y_ub.fillna(0)  >= 15) &            # Greatness: ROCE 5Y median ≥ 15% — moat still intact
+        (rev_10y_ub.fillna(0)  >= 10) &            # Greatness: Revenue 10Y CAGR ≥ 10% (sustained demand)
+        (rev_5y_ub.fillna(0)   >= 8)  &            # Greatness: Revenue not decelerating badly in recent window
+        (opm_st_ub == 1)               &           # Moat proxy: OPM stable through cycles (pricing power)
+        (is_fin_ub | (de_ub.fillna(999) < 1.0)) &  # Capital discipline: D/E < 1 for non-financials
+        (pledge_ub.fillna(0)   < 10)               # Governance / integrity pillar: pledge < 10%
+    )
+
+    # 11. Fisher Quality (Philip Fisher) — Systematic quantitative proxies for Fisher's key measurable criteria.
+    #    Fisher's framework is 90% qualitative (scuttlebutt, channel checks, management DNA) —
+    #    none of which is in the CSV. Only 6 of his 15 points have reliable quantitative proxies.
+    #    These 6 already power the tearsheet's "Systematic Fisher Proxy" module. This framework
+    #    tag makes those same checks filterable in the main scan — stocks passing all 6 earn the badge.
+    #    P15 (integrity) is Fisher's MASTER FILTER — any forensic flag fails it unconditionally.
+    #    Unit note: cfo_to_pat is PERCENTAGE (73.04 = 73%). Threshold = 70, not 0.7.
+    _fi_nan     = pd.Series(np.nan, index=df.index)
+    rev_gr_fi   = df.get("rev_gr_5y",          _fi_nan)
+    npm_fi      = df.get("npm",                _fi_nan)
+    npm_1yb_fi  = df.get("npm_1yb",            _fi_nan)
+    cfo_pat_fi  = df.get("cfo_to_pat",         _fi_nan)   # PERCENTAGE: 73.04 = 73%
+    dilut_fi    = df.get("dilution_flag",      pd.Series(1, index=df.index)).fillna(1)
+    oplev_fi    = df.get("operating_leverage", pd.Series(0, index=df.index)).fillna(0)
+    fscore_fi   = df.get("forensic_score",     pd.Series(999, index=df.index)).fillna(999)
+    fw_fisher = (
+        (fscore_fi   == 0)                    &   # P15: Integrity — zero forensic flags (master filter)
+        (rev_gr_fi.fillna(0)  >= 15)          &   # P1:  Market growth ≥ 15% revenue CAGR
+        (npm_fi.fillna(0)     >= 10)          &   # P5:  Worthwhile margin ≥ 10% NPM
+        (npm_fi.fillna(0) >= npm_1yb_fi.fillna(0)) &  # P6:  Margins not declining vs prior year
+        (cfo_pat_fi.fillna(0) >= 70)          &   # P10: Accounting controls — CFO/PAT ≥ 70%
+        (dilut_fi == 0)                       &   # P13: Zero equity dilution
+        (oplev_fi == 1)                           # P4:  Operating leverage — profit growing faster than sales
+    )
+
+    # 12. 100-Bagger Candidate (Christopher Mayer / SQGLP) — Small-cap owner-operator compounder
+    #    The SQGLP framework: Small size + Quality + Growth + Longevity + Price.
+    #    Key distinctions vs existing frameworks:
+    #      - SMILE uses market cap < ₹15,000 Cr — far too wide for 100× math
+    #      - QGLP has no size filter at all — a ₹50,000 Cr company passes
+    #      - THIS framework: ₹200–₹3,000 Cr + promoter holding ≥ 50% — BOTH are new signals
+    #    The S (Small size ₹200–₹3,000 Cr): 100× math is mathematically strained above ₹3,000 Cr.
+    #    Below ₹200 Cr: too early-stage, unproven model, illiquid stock (Mayer explicitly excludes).
+    #    Promoter holding ≥ 50%: the #1 owner-operator alignment signal in Indian markets.
+    #    Founder with 50%+ stake thinks in decades, not quarters — the promoter IS the moat.
+    #    CFO/PAT > 0: earnings must be backed by real cash (positive OCF proxy).
+    #    Unit note: market_cap in Crores; promoter_holdings as percentage (55.3 = 55.3%).
+    _hb_nan    = pd.Series(np.nan, index=df.index)
+    mcap_hb    = df.get("market_cap",        _hb_nan)
+    roce_hb    = df.get("roce_med_5y",       _hb_nan)
+    rev_3y_hb  = df.get("rev_gr_3y",         _hb_nan)
+    pat_3y_hb  = df.get("pat_gr_3y",         _hb_nan)
+    de_hb      = df.get("debt_to_equity",    _hb_nan)
+    promo_hb   = df.get("promoter_holdings", _hb_nan)  # % e.g. 55.3 = 55.3%
+    cfo_pat_hb = df.get("cfo_to_pat",        _hb_nan)  # PERCENTAGE
+    is_fin_hb  = df.get("is_financial",      pd.Series(False, index=df.index)).fillna(False)
+    fw_100_bagger = (
+        (mcap_hb.fillna(0)    >= 200)  &           # S: not pre-revenue micro-cap (too early-stage)
+        (mcap_hb.fillna(9999) <= 3000) &           # S: 100× math strained above ₹3,000 Cr
+        (roce_hb.fillna(0)    >= 15)   &           # Q: ROCE 5Y median ≥ 15% — capital efficiency proven
+        (rev_3y_hb.fillna(0)  >= 18)   &           # G: Revenue 3Y CAGR ≥ 18% — accelerating growth
+        (pat_3y_hb.fillna(0)  >= 20)   &           # G: Earnings 3Y CAGR ≥ 20% — the compounding engine
+        (is_fin_hb | (de_hb.fillna(999) < 0.5)) &  # Q: D/E < 0.5 — clean balance sheet
+        (promo_hb.fillna(0)   >= 50)   &           # Q: Promoter ≥ 50% — owner-operator, skin in game
+        (cfo_pat_hb.fillna(-1) > 0)                # Q: CFO positive — earnings backed by real cash
+    )
+
+    # 13. Diamond Field Guide (Saurabh Mukherjea) — forensic-verified compounders
+    #    Three-lens framework: Stage 1 Screen → Gate Zero → Lens 1 (Accounts) → Lens 2 (Moat) → Lens 3 (Capex)
+    #    Key distinctions from other Mukherjea frameworks:
+    #      - D/E < 0.5: STRICTEST of all three Mukherjea books (Coffee Can < 1.0, Unusual Billionaires < 1.0)
+    #      - CFO/PAT ≥ 75%: Lens 1 cash earnings quality (Coffee Can uses CFO/EBITDA — different denominator)
+    #      - FCF/CFO ≥ 25%: Lens 3 capital allocation surplus — new signal absent in all prior frameworks
+    #      - forensic_score == 0: mandatory clean accounts — most frameworks don't hard-require this
+    #      - Market cap ≥ ₹500 Cr: quality size floor (not in Coffee Can or Unusual Billionaires)
+    #    NOT implementable (no CSV data): year-by-year CFO/PAT, DSO 3Y trend, contingent liabilities,
+    #    depreciation consistency, auditor quality, RPT ratios, GNPA/CASA (banks), moat durability scoring
+    _dm_nan    = pd.Series(np.nan, index=df.index)
+    roce_10y_dm = df.get("roce_med_10y",       _dm_nan)
+    roce_5y_dm  = df.get("roce_med_5y",        _dm_nan)
+    rev_10y_dm  = df.get("rev_gr_10y",         _dm_nan)
+    rev_5y_dm   = df.get("rev_gr_5y",          _dm_nan)
+    de_dm       = df.get("debt_to_equity",     _dm_nan)
+    cfo_pat_dm  = df.get("cfo_to_pat",         _dm_nan)   # PERCENTAGE: 75.0 = 75%, not 0.75
+    fcf_cfo_dm  = df.get("fcf_to_cfo_pct",    _dm_nan)   # PERCENTAGE: 25.0 = 25%
+    mcap_dm     = df.get("market_cap",         _dm_nan)   # Crores
+    promo_dm    = df.get("promoter_holdings",  _dm_nan)   # % e.g. 40.0 = 40%
+    pledge_dm   = df.get("pledged_percentage", pd.Series(100.0, index=df.index)).fillna(100)
+    fscore_dm   = df.get("forensic_score",     pd.Series(999, index=df.index)).fillna(999)
+    is_fin_dm   = df.get("is_financial",       pd.Series(False, index=df.index)).fillna(False)
+    fw_diamond = (
+        (roce_10y_dm.fillna(0) >= 15) &                     # Lens 2: ROCE > 15% 10Y — moat proven over full cycle
+        (roce_5y_dm.fillna(0)  >= 15) &                     # Lens 2: ROCE > 15% 5Y — moat sustained recently
+        (rev_10y_dm.fillna(0)  >= 10) &                     # Stage 1: Revenue growth 10Y > 10%
+        (rev_5y_dm.fillna(0)   >=  8) &                     # Stage 1: Recent growth not decelerating sharply
+        (is_fin_dm | (de_dm.fillna(999) < 0.5)) &           # Stage 1: D/E < 0.5 — strictest Mukherjea filter
+        (cfo_pat_dm.fillna(0)  >= 75) &                     # Lens 1: CFO/PAT ≥ 75% cash earnings quality
+        (fcf_cfo_dm.fillna(0)  >= 25) &                     # Lens 3: FCF/CFO ≥ 25% capital allocation surplus
+        (mcap_dm.fillna(0)     >= 500) &                    # Stage 1: ≥ ₹500 Cr proven business scale
+        (promo_dm.fillna(0)    >= 40) &                     # Gate Zero: Promoter ≥ 40% alignment
+        (pledge_dm             <  10) &                     # Gate Zero: Pledge < 10%
+        (fscore_dm             ==  0)                       # Lens 1: Zero forensic red flags
+    )
+
+    # 14. Dorsey Wide Moat (Pat Dorsey — The Moat Investor's Codex)
+    #    Confirmed Wide Moat at an attractive free-cash-flow price.
+    #    Three signals unique to this framework — none of the 13 existing tags use them together:
+    #      1. ROCE ≥ 20%: "confirmed moat" (all other frameworks gate at 15%; Dorsey explicitly says
+    #         "above 15% = likely moated; above 20% = confirmed wide moat" — a materially different bar)
+    #      2. FCF yield ≥ 5%: Dorsey's primary valuation gate for wide moat stocks — no other framework
+    #         in this system uses absolute FCF yield as a hard filter
+    #      3. d35_roce_trend ≥ 0: moat DIRECTION — rising/stable ROIC = moat widening or intact;
+    #         all existing frameworks are point-in-time snapshots, none check trajectory direction
+    #    CFO/PAT ≥ 80%: stricter than Diamond's 75%, matches Dorsey: "< 70% = investigate, > 80% = genuine"
+    #    D/E < 1.0 (not 0.5): Dorsey explicitly allows up to 1.0 for capital-intensive moat businesses
+    #    (asset-heavy moats with switching costs pass where Diamond's 0.5 gate would reject them)
+    #    NOT implementable: moat source classification (brand/network/switching — qualitative),
+    #    margin-of-safety vs intrinsic value (requires DCF), CASA/GNPA banking metrics (not in CSV)
+    _dw_nan      = pd.Series(np.nan, index=df.index)
+    roce_10y_dw  = df.get("roce_med_10y",    _dw_nan)
+    roce_5y_dw   = df.get("roce_med_5y",     _dw_nan)
+    rev_5y_dw    = df.get("rev_gr_5y",       _dw_nan)
+    cfo_pat_dw   = df.get("cfo_to_pat",      _dw_nan)   # PERCENTAGE: 80.0 = 80%
+    fcf_yield_dw = df.get("fcf_yield",       _dw_nan)   # PERCENTAGE: 5.0 = 5%
+    roce_dir_dw  = df.get("d35_roce_trend",  _dw_nan)   # positive = ROCE improving vs 1Y ago
+    de_dw        = df.get("debt_to_equity",  _dw_nan)
+    is_fin_dw    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
+    fw_dorsey = (
+        (roce_10y_dw.fillna(0) >= 20) &              # Confirmed Wide Moat: ROIC > 20% over full cycle
+        (roce_5y_dw.fillna(0)  >= 20) &              # Confirmed Wide Moat: sustained in recent window
+        (rev_5y_dw.fillna(0)   >= 10) &              # Moat enables durable revenue compounding
+        (cfo_pat_dw.fillna(0)  >= 80) &              # Earnings quality: CFO/PAT ≥ 80% (genuine profits)
+        (fcf_yield_dw.fillna(0) >= 5) &              # Wide moat at attractive price: FCF yield ≥ 5%
+        (roce_dir_dw.fillna(-1) >= 0) &              # Moat direction: ROCE not eroding vs 1Y ago
+        (is_fin_dw | (de_dw.fillna(999) < 1.0))      # Capital discipline: < 1.0 (allows asset-heavy moats)
+    )
+
+    # 15. Outsiders on Dalal Street — Capital Allocation Excellence
+    #    The Outsider CEO fingerprint: deleveraging + zero dilution + high cash conversion.
+    #    Three signals unique across all 15 frameworks:
+    #      1. de_slope_3y <= 0: D/E actively declining over 3Y — the ONLY framework to reward
+    #         deleveraging as a positive quality signal (others use D/E as static threshold)
+    #      2. dilution_flag == 0 as PRIMARY hard gate — Outsider DNA = per-share value creation,
+    #         not empire building. Fisher also requires it, but among 7 other conditions.
+    #      3. CFO/PAT ≥ 85%: highest cash quality threshold in the entire system
+    #         (Diamond=75%, Dorsey=80%, Outsiders=85%)
+    #    D/E < 0.75: book's explicit Stage 1 threshold — unique value (between Diamond's 0.5 and
+    #         Coffee Can's 1.0; a deleveraging company at 0.7 passes here, fails Diamond)
+    #    Market cap ≥ ₹1,000 Cr: book's explicit size floor (larger than Diamond's 500 Cr)
+    #    de_slope_3y fillna(1): if D/E trend data missing/restatement suspected → exclude
+    #         (cannot verify deleveraging = won't award the Outsider badge)
+    #    NOT implementable: HQ cost < 0.5% FCF (not in CSV), CEO communication quality,
+    #         decentralisation structure, acquisition ROIC vs hurdle (no M&A data)
+    _os_nan      = pd.Series(np.nan, index=df.index)
+    roce_10y_os  = df.get("roce_med_10y",    _os_nan)
+    roce_5y_os   = df.get("roce_med_5y",     _os_nan)
+    rev_10y_os   = df.get("rev_gr_10y",      _os_nan).fillna(df.get("rev_gr_5y", _os_nan))
+    cfo_pat_os   = df.get("cfo_to_pat",      _os_nan)   # PERCENTAGE: 85.0 = 85%, not 0.85
+    dilut_os     = df.get("dilution_flag",   pd.Series(1, index=df.index)).fillna(1)
+    de_os        = df.get("debt_to_equity",  _os_nan)
+    de_slope_os  = df.get("de_slope_3y",     pd.Series(1.0, index=df.index)).fillna(1)
+    mcap_os      = df.get("market_cap",      _os_nan)   # Crores
+    is_fin_os    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
+    fw_outsider = (
+        (roce_10y_os.fillna(0) >= 15) &             # Quality business: ROIC above cost of capital 10Y
+        (roce_5y_os.fillna(0)  >= 15) &             # Quality business: ROIC sustained recently
+        (rev_10y_os.fillna(0)  >=  8) &             # Business still compounding revenue
+        (cfo_pat_os.fillna(0)  >= 85) &             # Cash conversion: CFO/PAT ≥ 85% (highest bar in system)
+        (dilut_os              ==  0) &             # Zero dilution: per-share value, not empire building
+        (de_slope_os           <=  0) &             # Deleveraging: D/E declining/stable over 3Y (Outsider DNA)
+        (is_fin_os | (de_os.fillna(999) < 0.75)) &  # Stage 1: D/E < 0.75 (book's explicit threshold)
+        (mcap_os.fillna(0)     >= 1000)              # Stage 1: ≥ ₹1,000 Cr established business
+    )
+
+    # 16. Quality Investing Codex (AKO Capital) — Three-Circle Quality Compounder
+    #    Three-Circle Framework: Business Quality + Management Quality + Growth Quality must ALL pass.
+    #    Two signals unique across all 16 frameworks:
+    #      1. nfat > 4: capital intensity < 25% (Net FA Turnover > 4 = revenue is 4× net fixed assets).
+    #         The ONLY framework explicitly gating on asset-lightness. Compounders like Asian Paints
+    #         (NFAT~10), Pidilite (~8), Page Industries (~12) pass; capital-heavy businesses fail even
+    #         with good ROCE — because high ROCE in capital-heavy industries is cyclical, not structural.
+    #      2. fcf_yield >= 2: "fair value" FCF floor — NOT Dorsey's "cheap" 5%. The Codex says 2-3%
+    #         is buy-and-hold for confirmed quality. Asian Paints at 2.5% FCF yield: PASSES here,
+    #         FAILS fw_dorsey (needs 5%). This is the key insight: you can pay fair price for quality.
+    #    CFO/PAT ≥ 80% (PERCENTAGE): Three-Circle Business Quality minimum (70-90% = good)
+    #    nfat fillna(0): missing NFAT data → 0 < 4 → excluded (cannot confirm asset-light)
+    #    fcf_yield fillna(0): negative/missing FCF → 0 < 2 → excluded (no cash generation = no quality)
+    #    NOT implementable: ROIIC per decision (no M&A data), recurring revenue > 60% (no split in CSV),
+    #    pricing power > CPI inflation (no revenue/unit data), management quality score 17/25 (qualitative)
+    _qi_nan      = pd.Series(np.nan, index=df.index)
+    roce_10y_qi  = df.get("roce_med_10y",    _qi_nan)
+    roce_5y_qi   = df.get("roce_med_5y",     _qi_nan)
+    rev_10y_qi   = df.get("rev_gr_10y",      _qi_nan).fillna(df.get("rev_gr_5y", _qi_nan))
+    cfo_pat_qi   = df.get("cfo_to_pat",      _qi_nan)   # PERCENTAGE: 80.0 = 80%, not 0.80
+    nfat_qi      = df.get("nfat",            _qi_nan)   # Revenue / Net Fixed Assets (turnover)
+    fcf_yield_qi = df.get("fcf_yield",       _qi_nan)   # PERCENTAGE: 2.0 = 2% FCF yield
+    de_qi        = df.get("debt_to_equity",  _qi_nan)
+    is_fin_qi    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
+    fw_quality = (
+        (roce_10y_qi.fillna(0)  >= 15) &             # Business Quality: ROIC > 15% 10Y (Circle 1)
+        (roce_5y_qi.fillna(0)   >= 15) &             # Business Quality: ROIC sustained recently
+        (rev_10y_qi.fillna(0)   >= 10) &             # Growth Quality: revenue compounding 10Y (Circle 3)
+        (cfo_pat_qi.fillna(0)   >= 80) &             # Business Quality: FCF/PAT ≥ 80% (Three-Circle gate)
+        (nfat_qi.fillna(0)      >   4) &             # UNIQUE: asset-light moat — capital intensity < 25%
+        (fcf_yield_qi.fillna(0) >=  2) &             # UNIQUE: fair value FCF floor — not cheap, just rational
+        (is_fin_qi | (de_qi.fillna(999) < 0.5))      # Balance sheet: D/E < 0.5 (book Stage 1 threshold)
+    )
+
+    # 17. Dhandho Asymmetry (Mohnish Pabrai — The Dhandho Investors Codex)
+    #    "Heads I win, tails I don't lose much." — Pabrai's framework identifies situations where
+    #    the stock price implies catastrophe but fundamentals confirm the business is intact.
+    #    The two-part test: HIGH UNCERTAINTY (price signal) + LOW ACTUAL RISK (quality signal).
+    #    Three signals unique across all 17 frameworks when combined:
+    #      1. dist_52wh >= 30: fallen 30%+ from 52W high — the UNCERTAINTY proxy. Market has
+    #         priced in distress. Bruised Blue Chip uses >40%; Dhandho's 30% threshold is
+    #         deliberately wider — catches earlier-stage dislocations before they become obvious.
+    #         Combined with FCF gate, this is NOT a pure distress play.
+    #      2. fcf_yield >= 8%: the LOW ACTUAL RISK proof. A fallen stock still generating ≥8%
+    #         FCF yield means payback ≤ 12.5 years — Pabrai's "bet" pays off even in zero-growth
+    #         scenario. No other framework pairs a distress signal with an absolute FCF yield floor.
+    #      3. forensic_score == 0: Pabrai's "accounting integrity" conviction — he only bets on
+    #         companies where the financials are completely clean. Diamond also requires this,
+    #         but Diamond has NO price-distress requirement (it's a buy-at-any-price quality filter).
+    #    ROCE ≥ 15% (5Y median): moat-intact proof — business was quality pre-fall, not a value trap.
+    #    CFO/PAT ≥ 70%: earnings must be real (PERCENTAGE: 70 = 70%, not 0.70).
+    #    D/E < 0.5: Pabrai avoids leveraged businesses entirely — distress + leverage = actual risk.
+    #    dist_52wh fillna(0): NaN → 0% fall → 0 < 30 → excluded (cannot confirm dislocation).
+    #    fcf_yield fillna(0): NaN/negative FCF → excluded (no cash = no asymmetry, just value trap).
+    #    NOT implementable: qualitative moat assessment (Pabrai reads annual reports personally),
+    #    owner-operator check (no proxy for Pabrai's promoter-quality assessment beyond pledge),
+    #    comparable transaction valuation (no private deal comps in CSV)
+    _dh_nan      = pd.Series(np.nan, index=df.index)
+    dist_wh_dh   = df.get("dist_52wh",       pd.Series(0.0, index=df.index)).fillna(0)
+    fcf_yield_dh = df.get("fcf_yield",       _dh_nan)   # PERCENTAGE: 8.0 = 8% FCF yield
+    roce_5y_dh   = df.get("roce_med_5y",     _dh_nan)   # 5Y ROCE median — moat-intact proxy
+    cfo_pat_dh   = df.get("cfo_to_pat",      _dh_nan)   # PERCENTAGE: 70.0 = 70%, not 0.70
+    de_dh        = df.get("debt_to_equity",  _dh_nan)
+    fscore_dh    = df.get("forensic_score",  pd.Series(999, index=df.index)).fillna(999)
+    is_fin_dh    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
+    fw_dhandho = (
+        (dist_wh_dh        >= 30) &              # HIGH UNCERTAINTY: fallen 30%+ from 52W high
+        (fcf_yield_dh.fillna(0) >= 8) &          # LOW ACTUAL RISK: FCF yield ≥ 8% (payback ≤ 12.5Y)
+        (roce_5y_dh.fillna(0)  >= 15) &          # Moat intact: ROIC > 15% over 5Y — not a value trap
+        (cfo_pat_dh.fillna(0)  >= 70) &          # Earnings real: CFO/PAT ≥ 70% (Pabrai's cash test)
+        (is_fin_dh | (de_dh.fillna(999) < 0.5)) & # Balance sheet: D/E < 0.5 — no leverage amplifying risk
+        (fscore_dh             == 0)              # Accounting integrity: zero forensic red flags
+    )
+
+    # 18. Parikh Contrarian (Parag Parikh — Value Investing and Behavioral Finance)
+    #    Graham's quantitative floor + Parag's quality filter + anti-herd behavioral overlay.
+    #    Implements Stages 1, 3, and 4 of the book's Four-Stage Screen. Stage 2 (intrinsic value
+    #    via DCF/EPV/Graham Number) is NOT automatable — requires BVPS and WACC modeling absent
+    #    from the CSV.
+    #    Three signals unique across all 18 frameworks when combined:
+    #      1. pe < 20: Graham's absolute PE ceiling — no other framework gates on PE < 20.
+    #         Parikh's core: "quality at a FAIR price." Dorsey, Quality Compounder, Diamond all have
+    #         no PE ceiling. Magic Formula uses earnings yield but not a direct PE < 20 hard gate.
+    #      2. current_ratio > 1.5: Graham's liquidity minimum — stricter than Malik's 1.25.
+    #         No other framework in this system uses current_ratio > 1.5 as a hard entry condition.
+    #      3. roce_med_5y >= 12: THE ONLY FRAMEWORK IN THIS SYSTEM WITH A 12% ROCE THRESHOLD.
+    #         All 17 other frameworks use >= 15% (or require higher). Parikh doesn't require elite
+    #         moats — a sustained ROCE of 12-14% at PE < 20 is the Graham "fair business at fair price"
+    #         archetype. A stock with ROCE 13% FAILS every single other framework; PASSES here.
+    #    de_slope_3y < 0: Parikh Stage 3 "D/E falling trend" — balance sheet actively strengthening.
+    #         Outsider CEO also uses this, but combined with CFO/PAT >= 85% and dilution_flag == 0
+    #         (creating an entirely different quality profile). Here it pairs with cheap PE < 20.
+    #    dist_52wh >= 30: Stage 4 anti-herd overlay — contrarian entry, market is wrong/fearful.
+    #         Dhandho also uses >= 30, but requires FCF yield >= 8% and ROCE >= 15% (higher bar).
+    #         Parikh's version catches ROCE 12-14% quality companies Dhandho excludes entirely.
+    #    promoter >= 35%: Parikh's skin-in-game threshold (lower than Diamond's 40%, unique level).
+    #    pledge < 20%: Proxy for "no high/rising pledge" — Parikh requires clean promoter governance.
+    #    pe fillna(999): NaN PE = no earnings = loss-maker → 999 < 20 = False (excluded — Graham
+    #         explicitly requires positive earnings; loss-makers don't qualify).
+    #    de_slope_3y fillna(1): NaN = no trend data/Ind AS restatement → 1 > 0 → excluded
+    #         (cannot verify falling D/E = won't award the Parikh badge — conservative).
+    #    NOT implementable: P/B < 3 (no price-to-book column in CSV), P/E × P/B < 22.5 (same),
+    #    intrinsic value discount 20% (requires DCF/EPV/Graham Number with BVPS not in CSV),
+    #    analyst coverage < 3 (external data not in CSV), sector out-of-favour (qualitative),
+    #    Mr. Market Temperature Score (macro data: SIP flows, demat accounts, IPO volumes)
+    _pk_nan      = pd.Series(np.nan, index=df.index)
+    pe_pk        = df.get("pe",                 pd.Series(999.0, index=df.index)).fillna(999)
+    eps5y_pk     = df.get("eps_gr_5y",          _pk_nan)
+    cr_pk        = df.get("current_ratio",      _pk_nan)
+    mcap_pk      = df.get("market_cap",         _pk_nan)
+    roce_5y_pk   = df.get("roce_med_5y",        _pk_nan)
+    cfo_pat_pk   = df.get("cfo_to_pat",         _pk_nan)   # PERCENTAGE: 75.0 = 75%, not 0.75
+    de_pk        = df.get("debt_to_equity",     _pk_nan)
+    de_slope_pk  = df.get("de_slope_3y",        pd.Series(1.0, index=df.index)).fillna(1)
+    promo_pk     = df.get("promoter_holdings",  _pk_nan)
+    pledge_pk    = df.get("pledged_percentage",  pd.Series(100.0, index=df.index)).fillna(100)
+    dist_wh_pk   = df.get("dist_52wh",           pd.Series(0.0, index=df.index)).fillna(0)
+    is_fin_pk    = df.get("is_financial",        pd.Series(False, index=df.index)).fillna(False)
+    fw_parikh = (
+        (pe_pk                      <  20) &              # Graham Stage 1: absolute PE ceiling < 20
+        (eps5y_pk.fillna(0)         >   8) &              # Graham Stage 1: EPS 5Y CAGR > 8% (earning power)
+        (is_fin_pk | (cr_pk.fillna(0) > 1.5)) &           # Graham Stage 1: current ratio > 1.5 (fin exempt)
+        (mcap_pk.fillna(0)          >= 500) &             # Graham Stage 1: ≥ ₹500 Cr proven business
+        (roce_5y_pk.fillna(0)       >= 12) &              # Parag Stage 3: ROCE ≥ 12% sustained (UNIQUE threshold)
+        (cfo_pat_pk.fillna(0)       >= 75) &              # Parag Stage 3: CFO/PAT ≥ 75% — earnings quality
+        (is_fin_pk | (de_pk.fillna(999) <= 0.5)) &        # Graham Stage 1: D/E ≤ 0.5 (fin exempt)
+        (de_slope_pk                <   0) &              # Parag Stage 3: D/E falling — balance sheet strengthening
+        (promo_pk.fillna(0)         >=  35) &             # Parag Stage 3: promoter ≥ 35% — skin in game
+        (pledge_pk                  <  20) &              # Parag Stage 3: pledge < 20% — no high/rising pledge
+        (dist_wh_pk                 >=  30)               # Parikh Stage 4: fallen 30%+ — contrarian anti-herd entry
+    )
+
+    # 19. Baid Compounder (Gautam Baid — The Compounding Codex)
+    #    Baid's "Nirvana" framework: long-duration compounders with ZERO revenue shortfalls.
+    #    The defining uniqueness: rev_gr_yoy >= 5 enforces the "no single year below 5%" rule —
+    #    Baid explicitly rejects stocks that stumble even once, as it signals moat fragility.
+    #    Chapter 4 (Identifying Compounders), Chapter 6 (Valuation Discipline), Chapter 15 (Sell).
+    #    PEG 0–1.5 = Baid's reasonable entry ("between fair and cheap") — no other framework uses 1.5.
+    #    cfo_to_pat >= 80 = Baid's "FCF-to-PAT above 0.8" (PERCENTAGE: 80.0 = 80%).
+    #    fcf_yield >= 3 = PERCENTAGE: unique between Quality Compounder's 2% and Dorsey's 5%.
+    _bd_nan      = pd.Series(np.nan, index=df.index)
+    roce_5y_bd   = df.get("roce_med_5y",     _bd_nan)
+    rev_5y_bd    = df.get("rev_gr_5y",       _bd_nan)   # 5Y revenue CAGR
+    rev_yoy_bd   = df.get("rev_gr_yoy",      _bd_nan)   # UNIQUE: current-year revenue floor (no stumble allowed)
+    fcf_yield_bd = df.get("fcf_yield",       _bd_nan)   # PERCENTAGE: 3.0 = 3%
+    cfo_pat_bd   = df.get("cfo_to_pat",      _bd_nan)   # PERCENTAGE: 80.0 = 80%
+    de_bd        = df.get("debt_to_equity",  _bd_nan)
+    mcap_bd      = df.get("market_cap",      _bd_nan)
+    peg_bd       = df.get("peg",             _bd_nan)
+    is_fin_bd    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
+    fw_baid = (
+        (roce_5y_bd.fillna(0)   >= 15) &              # Chapter 4: ROCE > 15% sustained for 5Y — capital allocation proof
+        (rev_5y_bd.fillna(0)    >= 12) &              # Chapter 4: revenue CAGR ≥ 12% over 5Y — compounding velocity
+        (rev_yoy_bd.fillna(0)   >=  5) &              # UNIQUE — Chapter 4: current year ≥ 5%; no single year shortfall allowed
+        (fcf_yield_bd.fillna(0) >=  3) &              # Chapter 6: FCF yield ≥ 3% — Baid's cash payback discipline
+        (cfo_pat_bd.fillna(0)   >= 80) &              # Chapter 4: CFO/PAT ≥ 80% — Baid's "earnings quality" threshold
+        (is_fin_bd | (de_bd.fillna(999) < 0.5)) &    # Chapter 4: D/E < 0.5 fortress balance sheet (fin exempt)
+        (mcap_bd.fillna(0)      >= 500) &             # Chapter 4: proven size filter — avoids micro-cap noise
+        (peg_bd.fillna(999)     >   0) &              # Chapter 6: PEG > 0 — must have positive earnings
+        (peg_bd.fillna(999)     <= 1.5)               # Chapter 6: PEG ≤ 1.5 — Baid's "reasonable" entry (UNIQUE threshold)
+    )
+
+    # 20. Long Game Quality (Vishal Khandelwal — The Long Game)
+    #    Khandelwal's "fortress compounder": a business that generates REAL free cash after ALL reinvestment.
+    #    Two signals unique across all 19 existing frameworks:
+    #    1. interest_coverage >= 5 — P1 "fort-like balance sheet": strictest ICR in system (Malik uses 3×)
+    #    2. d28_fcf_to_pat_pct >= 60 — FCF AFTER capex as % of PAT; different from CFO/PAT (before capex)
+    #       A capital-guzzler can have CFO/PAT=90% yet FCF/PAT=30% (heavy reinvestment bleeds free cash).
+    #       No other framework tests FCF/PAT — they test either CFO/PAT or FCF/CFO (Mukherjea).
+    #    Differentiation by framework:
+    #    - vs Quality Compounder: no NFAT gate (catches capital-intensive but efficient compounders)
+    #    - vs Diamond: no FCF/CFO gate; adds ICR≥5 + FCF/PAT≥60 — different ratio structure
+    #    - vs Outsider CEO: no dilution gate + adds FCF/PAT≥60 + ICR≥5 instead of de_slope≤0
+    #    Sources: Chapter 2 (5P Performance gates), Chapter 5 (valuation toolkit),
+    #             Chapter 10 (IPS People checklist — 5 disqualifying conditions).
+    _lg_nan       = pd.Series(np.nan, index=df.index)
+    roce_10y_lg   = df.get("roce_med_10y",        _lg_nan)
+    roce_5y_lg    = df.get("roce_med_5y",         _lg_nan)
+    rev_10y_lg    = df.get("rev_gr_10y",          _lg_nan)
+    rev_5y_lg     = df.get("rev_gr_5y",           _lg_nan)
+    cfo_pat_lg    = df.get("cfo_to_pat",          _lg_nan)   # PERCENTAGE: 80.0 = 80%
+    icr_lg        = df.get("interest_coverage",   _lg_nan)   # UNIQUE: fortress ICR ≥ 5× (fin exempt)
+    fcf_pat_lg    = df.get("d28_fcf_to_pat_pct",  _lg_nan)   # UNIQUE: FCF/PAT % after capex ≥ 60%
+    de_lg         = df.get("debt_to_equity",      _lg_nan)
+    promo_lg      = df.get("promoter_holdings",   _lg_nan)
+    pledge_lg     = df.get("pledged_percentage",  pd.Series(100.0, index=df.index)).fillna(100)
+    mcap_lg       = df.get("market_cap",          _lg_nan)
+    is_fin_lg     = df.get("is_financial",        pd.Series(False, index=df.index)).fillna(False)
+    _rev_lg       = rev_10y_lg.fillna(rev_5y_lg)   # 10Y primary, 5Y fallback — same as Diamond/UB pattern
+    # BUG FIX: Debt-free companies (D/E ≈ 0) have no interest expense → CSV reports NaN coverage.
+    # fillna(0) would give 0 >= 5 = False → they fail the ICR gate despite having the STRONGEST
+    # possible balance sheet (no debt = infinite interest coverage). Fix: exempt zero-debt companies.
+    # de_lg.fillna(1.0): NaN D/E → 1.0 (assume some debt) → NOT zero → not exempt (conservative).
+    _no_debt_lg   = de_lg.fillna(1.0) <= 0.01   # True only if D/E is essentially zero (debt-free)
+    fw_long_game = (
+        (roce_10y_lg.fillna(0)    >= 15) &               # P1: ROCE ≥ 15% over full 10Y economic cycle
+        (roce_5y_lg.fillna(0)     >= 15) &               # P1: ROCE not declining in recent window
+        (_rev_lg.fillna(0)        >= 10) &               # P1: Revenue CAGR ≥ 10% (10Y primary / 5Y fallback)
+        (cfo_pat_lg.fillna(0)     >= 80) &               # P1: CFO/PAT ≥ 80% (PERCENTAGE) — cash earnings standard
+        (is_fin_lg | _no_debt_lg | (icr_lg.fillna(0) >= 5)) &  # P1: UNIQUE — ICR≥5 (fin+zero-debt exempt)
+        (fcf_pat_lg.fillna(0)     >= 60) &               # P1: UNIQUE — FCF/PAT ≥ 60% after all capex reinvestment
+        (is_fin_lg | (de_lg.fillna(999) <= 0.5)) &       # P1: D/E ≤ 0.5 fortress balance sheet (fin exempt)
+        (promo_lg.fillna(0)       >= 40) &               # P5: People checklist — promoter ≥ 40% skin in game
+        (pledge_lg                <  10) &               # P5: People checklist — pledge < 10% disqualifier
+        (mcap_lg.fillna(0)        >= 500)                # Screen: ₹500 Cr proven business scale
+    )
+
+    # 21. SEPA Momentum (Mark Minervini — SEPA Trading Codex)
+    #    Specific Entry Point Analysis: the ONLY pure technical-momentum framework in the system.
+    #    All 20 prior frameworks are static quality gates (ROCE, CFO/PAT, D/E, etc.).
+    #    SEPA adds DYNAMIC momentum gates — the stock must be winning RIGHT NOW, not just quality.
+    #    Three signals unique across all 20 prior frameworks:
+    #    1. d45_trend_structure >= 2: SMA alignment proxy (above_sma200 + VSTOP + ADX ≥ 2/3)
+    #       No other framework tests MA structure. This is the "right stacking" filter.
+    #    2. crs_aligned == 1: all THREE relative strength timeframes positive (50D, 26W, 52W)
+    #       CAN SLIM uses crs_50d > 0 only (one timeframe). SEPA's RS≥70 requires sustained
+    #       multi-timeframe outperformance — stocks coasting on prior RS get filtered out.
+    #    3. roe >= 17: Minervini's specific ROE threshold (Coffee Can uses ≥15%; 17% is unique)
+    #    Key differentiation from CAN SLIM (Framework 6):
+    #    - CAN SLIM: quarterly PAT growth + 5Y EPS CAGR + within 15% of 52WH + vol≥1.5 + crs_50d
+    #    - SEPA: annual EPS/rev YoY + ROE≥17 + SMA alignment + all-3-timeframe CRS + within 25% 52WH
+    #    A stock with crs_50d>0 but crs_26w<0 passes CAN SLIM L, FAILS SEPA.
+    #    A stock in Stage 3 (MAs flattening, crs_aligned=0) passes quality frameworks, FAILS SEPA.
+    #    Sources: Chapter 2 (Trend Template, 8 criteria), Chapter 4 (7 fundamental requirements),
+    #             Chapter 11 (India SEPA scanner, ₹500 Cr filter, RS ≥ 70).
+    _sp_nan       = pd.Series(np.nan, index=df.index)
+    trend_str_sp  = df.get("d45_trend_structure",  pd.Series(0, index=df.index)).fillna(0)
+    dist_wh_sp    = df.get("dist_52wh",            pd.Series(999.0, index=df.index)).fillna(999)
+    crs_ali_sp    = df.get("crs_aligned",          pd.Series(0, index=df.index)).fillna(0)
+    eps_yoy_sp    = df.get("eps_gr_yoy",           _sp_nan)   # REQ 1: EPS ≥ 25% YoY acceleration
+    rev_yoy_sp    = df.get("rev_gr_yoy",           _sp_nan)   # REQ 2: Revenue ≥ 20% YoY
+    roe_sp        = df.get("roe",                  _sp_nan)   # REQ 4: ROE > 17% (UNIQUE threshold)
+    fii_sp        = df.get("change_fii_lq",        pd.Series(0.0, index=df.index)).fillna(0)
+    dii_sp        = df.get("change_dii_lq",        pd.Series(0.0, index=df.index)).fillna(0)
+    mcap_sp       = df.get("market_cap",           _sp_nan)
+    fw_sepa = (
+        (trend_str_sp           >= 2) &              # Trend Template proxy: SMA alignment ≥ 2/3 criteria
+        (dist_wh_sp             <= 25) &             # Within 25% of 52WH — Stage 2 uptrend near highs
+        (crs_ali_sp             == 1) &              # UNIQUE: RS confirmed across all 3 timeframes (50D+26W+52W)
+        (eps_yoy_sp.fillna(0)   >= 25) &             # REQ 1: EPS growth ≥ 25% YoY — acceleration threshold
+        (rev_yoy_sp.fillna(0)   >= 20) &             # REQ 2: Revenue ≥ 20% YoY — sales growth gate
+        (roe_sp.fillna(0)       >= 17) &             # REQ 4: UNIQUE — ROE ≥ 17% (Minervini's explicit level)
+        ((fii_sp > 0) | (dii_sp > 0)) &             # REQ 7: Institutional sponsorship growing (FII or DII)
+        (mcap_sp.fillna(0)      >= 500)              # India screen: ₹500 Cr minimum (Minervini's explicit filter)
+    )
+
+    # ── Framework 22: fw_basant — Basant 30% Club (Basant Maheshwari, "The Thoughtful Investor") ──
+    # Maheshwari's "30% Club" thesis: companies sustaining 30% EPS CAGR re-rate massively as
+    # the market prices in sustained growth. Three signals unique in the system:
+    #   1. eps_gr_5y >= 30: no framework requires 30% EPS CAGR (SMILE=20%, Lynch=20% YoY only)
+    #   2. promoter_holdings >= 55: strictest promoter threshold (100-Bagger=50%, Lynch=45%)
+    #   3. market_cap <= 5000: max-cap sweet spot — Basant's "reasonable size" for multibaggers
+    # Sources: Chapter 3 (30% Club criteria), Chapter 5 (3P Framework), Chapter 7 (Screener filters).
+    _bs_nan      = pd.Series(np.nan, index=df.index)
+    eps_5y_bs    = df.get("eps_gr_5y",           _bs_nan)   # UNIQUE: 30% EPS CAGR — highest bar in system
+    eps_yoy_bs   = df.get("eps_gr_yoy",          _bs_nan)   # No-stumble proxy: current year still ≥ 20%
+    cfo_pat_bs   = df.get("cfo_to_pat",          _bs_nan)   # PERCENTAGE: 75.0 = 75%
+    roce_bs      = df.get("roce",                _bs_nan)   # Return quality gate
+    de_bs        = df.get("debt_to_equity",      _bs_nan)
+    is_fin_bs    = df.get("is_financial",        pd.Series(False, index=df.index)).fillna(False)
+    promo_bs     = df.get("promoter_holdings",   _bs_nan)   # UNIQUE: ≥ 55% strictest in system
+    peg_bs       = df.get("peg",                 _bs_nan)
+    mcap_bs      = df.get("market_cap",          _bs_nan)
+    fw_basant = (
+        (eps_5y_bs.fillna(0)    >= 30) &             # UNIQUE: 30% Club EPS CAGR — highest growth bar in system
+        (eps_yoy_bs.fillna(0)   >= 20) &             # No-stumble proxy: current year must still hit ≥ 20%
+        (cfo_pat_bs.fillna(0)   >= 75) &             # Cash earnings quality: CFO ≥ 75% of PAT (PERCENTAGE)
+        (roce_bs.fillna(0)      >= 20) &             # Return quality: ROCE ≥ 20%
+        (is_fin_bs | (de_bs.fillna(999) <= 0.5)) &  # Debt discipline (financial sector exempt)
+        (promo_bs.fillna(0)     >= 55) &             # UNIQUE: highest promoter conviction threshold in system
+        (peg_bs.fillna(999)     >    0) &            # PEG must be positive (real growth, not distorted)
+        (peg_bs.fillna(999)     <= 1.5) &            # Zone 1-2: growth still reasonably priced
+        (mcap_bs.fillna(0)      >= 500) &            # Minimum size for institutional liquidity
+        (mcap_bs.fillna(0)      <= 5000)             # UNIQUE: max cap sweet spot — multibagger range
+    )
+
     # Build comma-separated framework string — fully vectorized, zero apply
     fw_str = (
-        np.where(fw_qglp,          "QGLP|",              "") +
-        np.where(fw_coffee_can,    "Coffee Can|",        "") +
-        np.where(fw_magic_formula, "Magic Formula|",     "") +
-        np.where(fw_smile,         "SMILE|",             "") +
-        np.where(fw_lynch,         "Lynch Dream|",       "") +
-        np.where(fw_can_slim,      "CAN SLIM|",          "") +
-        np.where(fw_bruised_bb,    "Bruised Blue Chip|", "") +
-        np.where(fw_ep_improver,   "EP Improver|",       "")
+        np.where(fw_qglp,                   "QGLP|",                  "") +
+        np.where(fw_coffee_can,             "Coffee Can|",            "") +
+        np.where(fw_magic_formula,          "Magic Formula|",         "") +
+        np.where(fw_smile,                  "SMILE|",                 "") +
+        np.where(fw_lynch,                  "Lynch Dream|",           "") +
+        np.where(fw_can_slim,               "CAN SLIM|",              "") +
+        np.where(fw_bruised_bb,             "Bruised Blue Chip|",     "") +
+        np.where(fw_ep_improver,            "EP Improver|",           "") +
+        np.where(fw_malik_peaceful,         "Peaceful Investing|",    "") +
+        np.where(fw_unusual_billionaires,   "Unusual Billionaires|",  "") +
+        np.where(fw_fisher,                 "Fisher Quality|",        "") +
+        np.where(fw_100_bagger,             "100-Bagger|",            "") +
+        np.where(fw_diamond,                "Diamond|",               "") +
+        np.where(fw_dorsey,                 "Wide Moat|",             "") +
+        np.where(fw_outsider,               "Outsider CEO|",          "") +
+        np.where(fw_quality,                "Quality Compounder|",    "") +
+        np.where(fw_dhandho,                "Dhandho Asymmetry|",     "") +
+        np.where(fw_parikh,                 "Parikh Contrarian|",     "") +
+        np.where(fw_baid,                   "Baid Compounder|",       "") +
+        np.where(fw_long_game,              "Long Game Quality|",     "") +
+        np.where(fw_sepa,                   "SEPA Momentum|",         "") +
+        np.where(fw_basant,                 "Basant 30% Club|",       "")
     )
     df["frameworks_passed"] = (
         pd.Series(fw_str, index=df.index)
