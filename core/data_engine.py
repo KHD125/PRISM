@@ -622,7 +622,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── FINANCIAL SECTOR FLAG ──
     df["is_financial"] = df["industry"].isin(FINANCIAL_SECTORS) | \
-                         df["sector"].str.contains("Bank|NBFC|Insurance|Finance", case=False, na=False)
+                         df["sector"].fillna("").astype(str).str.contains("Bank|NBFC|Insurance|Finance", case=False, na=False)
 
     # Net debt negative flag (fortress balance sheet)
     df["net_debt_negative"] = (df["net_debt"] < 0).astype(int)
@@ -993,7 +993,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── D44: Smart Money Composite (D38 + D39 + 2 if insider bought) ──
     insider_bought = (
         df["insider_trading"].notna() &
-        df["insider_trading"].str.contains("Bought", case=False, na=False)
+        df["insider_trading"].fillna("").astype(str).str.contains("Bought", case=False, na=False)
     ).astype(float) * 2
     df["d44_smart_money_comp"] = df["d38_smart_money"] + df["d39_inst_tide"] + insider_bought
 
@@ -1117,8 +1117,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Financials + Consumer Discretionaries = explosive tipping-point sectors 2025-2040
     _tailwind_patt = "Bank|NBFC|Insurance|Finance|Auto|Consumer|Health|Pharma|Retail|Capital Market"
     df["sector_tailwind"] = (
-        df["industry"].str.contains(_tailwind_patt, case=False, na=False) |
-        df["sector"].str.contains(_tailwind_patt, case=False, na=False)
+        df["industry"].fillna("").astype(str).str.contains(_tailwind_patt, case=False, na=False) |
+        df["sector"].fillna("").astype(str).str.contains(_tailwind_patt, case=False, na=False)
     ).astype(int)
 
     # ── Bruised Blue Chip Detection (29th Study) ──
