@@ -346,11 +346,13 @@ TREND_SIGNALS = {
 # Weights sum: 0.20+0.20+0.15+0.20+0.15+0.10 = 1.00 ✅
 
 BREAKOUT_SIGNALS = {
-    "52wh_distance":    0.30,
-    "13wh_distance":    0.25,
-    "breakout_window":  0.25,
-    "ath_distance":     0.20,
+    "52wh_distance":    0.30,   # % below 52WH — #1 backtested alpha signal (+0.55%/wk)
+    "52wh_days":        0.20,   # days since 52WH was set — recency of momentum peak (new)
+    "13wh_distance":    0.20,   # quarterly high proximity — near-term breakout
+    "breakout_window":  0.20,   # binary breakout flag
+    "ath_distance":     0.10,   # all-time high proximity (reduced: ATH can be years old)
 }
+# Weights sum: 0.30+0.20+0.20+0.20+0.10 = 1.00 ✅
 
 SECTOR_SIGNALS = {
     "ret_vs_industry_1y":  0.55,
@@ -389,6 +391,10 @@ GOVERNANCE_BONUS = {
     "promoter_high_alignment":  15,  # holdings ≥ 60%: dynasty mode
     "promoter_good_alignment":   8,  # holdings 50-60%: well-aligned owner-operator
     "promoter_low_declining":  -12,  # holdings < 40% AND falling 1Y: structural misalignment
+    # 3-year promoter trend — most powerful ownership signal; single quarter buys/sells are noise
+    "promoter_3y_accumulation": 10,  # 3Y net buying > 3%: sustained conviction = dynasty building
+    "promoter_3y_exit":        -15,  # 3Y net selling > 5%: systematic structural exit
+    "promoter_2y_recent_exit":  -8,  # 2Y selling > 3% (and 3Y not yet at threshold): early warning
     # Dilution penalties (negative — deducted from bonus)
     "dilution_tier2_penalty": -25,   # 3-10% dilution: significant governance failure
     "dilution_tier1_minor":    -5,   # <3% ESOP dilution: minor deduction vs zero-dilution
@@ -674,7 +680,7 @@ WAVE_DETECTION = {
 # 8. FORENSIC ENGINE THRESHOLDS
 # ═══════════════════════════════════════════════════════════════
 FORENSIC = {
-    "cfo_pat_alert":         0.7,   # below this = Level 1 red flag
+    "cfo_pat_alert":         70.0,  # below this = Level 1 red flag (percentage, e.g. 73.04 = 73%)
     "receivable_rise_days":  15,    # DSO rising more than this = flag
     "inventory_vs_revenue":  True,  # inv growth > rev growth = flag
     "capex_depr_ratio_max":  3.0,   # capex/depr > 3 without rev jump
@@ -701,6 +707,22 @@ RSI_ZONES = {
     "weak":          {"min": 30, "max": 45,  "score": 20},
     "oversold":      {"min": 0,  "max": 30,  "score": 40},  # mean-reversion potential
 }
+
+# ═══════════════════════════════════════════════════════════════
+# 9b. 52WH AGE ZONE SCORING
+# ═══════════════════════════════════════════════════════════════
+# Scores the FRESHNESS of the 52-week high (how many days ago it was set).
+# Pairs with 52wh_distance (magnitude): both needed for complete breakout picture.
+# A stock 5% from its 52WH set yesterday is completely different from
+# one 5% from its 52WH set 280 days ago (stale overhead supply).
+HIGH_AGE_ZONES = {
+    "breakout_fresh":  {"min": 0,   "max": 31,   "score": 100},  # 0-30d: just made/near new high
+    "consolidating":   {"min": 31,  "max": 91,   "score": 75},   # 1-3m: classic base/flag setup
+    "building":        {"min": 91,  "max": 181,  "score": 45},   # 3-6m: overhead supply forming
+    "stale":           {"min": 181, "max": 253,  "score": 20},   # 6-12m: high becoming resistance
+    "very_stale":      {"min": 253, "max": 9999, "score": 5},    # 1y+: failed breakout or downtrend
+}
+# NaN → default 50 (neutral) — missing data never penalises
 
 # ═══════════════════════════════════════════════════════════════
 # 10. UI CONFIGURATION
