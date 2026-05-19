@@ -33,88 +33,97 @@ COMMON_COLS = {
 }
 
 RATIO_COLS = {
-    # MOAT — ROCE
+    # MOAT — ROCE (current + 2 historical for trajectory; 2yb is pure noise at this timeframe)
     "ROCE Median 10 Years": "roce_med_10y",
-    "ROCE Median 7 Years": "roce_med_7y",
-    "ROCE Median 5 Years": "roce_med_5y",
-    "ROCE": "roce",
-    "ROCE 1 Year Back": "roce_1yb",
+    "ROCE Median 7 Years":  "roce_med_7y",
+    "ROCE Median 5 Years":  "roce_med_5y",
+    "ROCE":                 "roce",
+    "ROCE 1 Year Back":     "roce_1yb",
     # CAPITAL EFFICIENCY — ROE
-    "ROE Median 10 Years": "roe_med_10y",
-    "ROE Median 7 Years": "roe_med_7y",
-    "ROE Median 5 Years": "roe_med_5y",
-    "ROE": "roe",
-    "ROE 1 Year Back": "roe_1yb",
+    "ROE Median 10 Years":  "roe_med_10y",
+    "ROE Median 7 Years":   "roe_med_7y",
+    "ROE Median 5 Years":   "roe_med_5y",
+    "ROE":                  "roe",
+    "ROE 1 Year Back":      "roe_1yb",
     # CASH QUALITY
-    "CFO To PAT": "cfo_to_pat",
-    "CFO To EBITDA": "cfo_to_ebitda",
-    # MARGINS
-    "NPM Median 5 Years": "npm_med_5y",
-    "NPM Median 3 Years": "npm_med_3y",
-    "NPM": "npm",
-    "NPM Latest Quarter": "npm_latest_q",
-    "NPM 1 Year Back": "npm_1yb",
-    "OPM Median 5 Years": "opm_med_5y",
-    "OPM Latest Quarter": "opm_latest_q",
-    "OPM 1 Year Back": "opm_1yb",
-    "GPM Median 5 Years": "gpm_med_5y",
-    # VALUATION
-    "PEG": "peg",
-    "EV To EBITDA": "ev_ebitda",
-    "EV To EBITDA 1 Year Back": "ev_ebitda_1yb",
+    "CFO To PAT":           "cfo_to_pat",
+    "CFO To EBITDA":        "cfo_to_ebitda",
+    # MARGINS — NET
+    "NPM Median 5 Years":   "npm_med_5y",
+    "NPM Median 3 Years":   "npm_med_3y",
+    "NPM":                  "npm",
+    "NPM Latest Quarter":   "npm_latest_q",
+    "NPM 1 Year Back":      "npm_1yb",
+    # MARGINS — OPERATING (opm_med_3y dropped — opm_med_5y is the alpha signal; opm annual kept for OPM delta)
+    "OPM Median 5 Years":   "opm_med_5y",
+    "OPM":                  "opm",
+    "OPM Latest Quarter":   "opm_latest_q",
+    "OPM 1 Year Back":      "opm_1yb",
+    # MARGINS — GROSS (annual gpm dropped — gpm_med_5y covers long-run; gpm_latest_q is freshest single signal)
+    "GPM Median 5 Years":   "gpm_med_5y",
+    "GPM Latest Quarter":   "gpm_latest_q",
+    # VALUATION (price_to_book + enterprise_value dropped — EV/EBITDA + PE + PEG capture all compression)
+    "PEG":                          "peg",
+    "EV To EBITDA":                 "ev_ebitda",
+    "EV To EBITDA 1 Year Back":     "ev_ebitda_1yb",
     "Price To Earnings Median 10 Years": "pe_med_10y",
-    "Price To Earnings": "pe",
-    "Industry PE Median": "industry_pe",
-    # EFFICIENCY
-    "Cash Conversion Cycle": "ccc",
-    "Cash Conversion Cycle 1 Year Back": "ccc_1yb",
-    "Asset Turnover": "asset_turnover",
-    "Days Receivable": "days_receivable",
-    "Inventory Turnover Ratio": "inventory_turnover",
+    "Price To Earnings":            "pe",
+    "Industry PE Median":           "industry_pe",
+    # EFFICIENCY — WORKING CAPITAL
+    # CCC aggregates the 3 components; 2yb is redundant with trend already captured by 1yb delta
+    "Cash Conversion Cycle":              "ccc",
+    "Cash Conversion Cycle 1 Year Back":  "ccc_1yb",
+    "Days Receivable":              "days_receivable",
+    "Days Receivable 1 Year Back":  "days_receivable_1yb",
+    # Days Payable/Inventory raw + 1yb dropped — CCC already aggregates; granular components add noise
+    "Asset Turnover":               "asset_turnover",
+    "Asset Turnover 1 Year Back":   "asset_turnover_1yb",
+    "Inventory Turnover Ratio":             "inventory_turnover",
     "Inventory Turnover Ratio 1 Year Back": "inventory_turnover_1yb",
+    "Dividend Payout Ratio":        "dividend_payout_ratio",
     # HARD GATES
-    "Debt To Equity": "debt_to_equity",
-    "Debt To Equity 1 Year Back": "debt_to_equity_1yb",
-    "Debt To Equity 2 Years Back": "debt_to_equity_2yb",
-    "Debt To Equity 3 Years Back": "debt_to_equity_3yb",
-    "Current Ratio": "current_ratio",
-    "Current Ratio 1 Year Back": "current_ratio_1yb",
-    "ROA": "roa",
-    "Equity Shares 1 Year Back": "equity_shares_1yb",
-    "Interest Coverage": "interest_coverage",
+    "Debt To Equity":               "debt_to_equity",
+    "Debt To Equity 1 Year Back":   "debt_to_equity_1yb",
+    "Debt To Equity 2 Years Back":  "debt_to_equity_2yb",
+    "Debt To Equity 3 Years Back":  "debt_to_equity_3yb",
+    "Current Ratio":                "current_ratio",
+    "Current Ratio 1 Year Back":    "current_ratio_1yb",
+    "ROA":                          "roa",
+    "ROA 1 Year Back":              "roa_1yb",
+    "Equity Shares 1 Year Back":    "equity_shares_1yb",
+    "Interest Coverage":            "interest_coverage",
 }
 
 INCOME_COLS = {
-    # GROWTH
-    "PAT Growth 5 Years": "pat_gr_5y",
-    "PAT Growth 10 Years": "pat_gr_10y",
-    "PAT Growth 3 Years": "pat_gr_3y",
-    "PAT Growth YoY": "pat_gr_yoy",
-    "EPS Growth 5 Years": "eps_gr_5y",
-    "EPS Growth 3 Years": "eps_gr_3y",
-    "EPS Growth YoY": "eps_gr_yoy",
+    # GROWTH — long-term compounding proof (13 columns)
+    "PAT Growth 5 Years":     "pat_gr_5y",
+    "PAT Growth 10 Years":    "pat_gr_10y",
+    "PAT Growth 3 Years":     "pat_gr_3y",
+    "PAT Growth YoY":         "pat_gr_yoy",
+    "EPS Growth 5 Years":     "eps_gr_5y",
+    "EPS Growth 3 Years":     "eps_gr_3y",
+    "EPS Growth YoY":         "eps_gr_yoy",
     "Revenue Growth 5 Years": "rev_gr_5y",
-    "Revenue Growth 10 Years": "rev_gr_10y",
+    "Revenue Growth 10 Years":"rev_gr_10y",
     "Revenue Growth 3 Years": "rev_gr_3y",
-    "Revenue Growth YoY": "rev_gr_yoy",
-    "EBITDA Growth 5 Years": "ebitda_gr_5y",
-    "EBITDA Growth 3 Years": "ebitda_gr_3y",
-    # QUARTERLY
-    "PAT Latest Quarter": "pat_lq",
-    "PAT Preceding Year Quarter": "pat_pyq",
-    "Revenue Latest Quarter": "rev_lq",
-    "Revenue Preceding Year Quarter": "rev_pyq",
-    "EBITDA Latest Quarter": "ebitda_lq",
-    "EBITDA Preceding Year Quarter": "ebitda_pyq",
-    # RAW ANNUAL
-    "PAT": "pat",
-    "PAT 1 Year Back": "pat_1yb",
-    "EBITDA": "ebitda",
-    "EBITDA 1 Year Back": "ebitda_1yb",
-    "Revenue": "revenue",
+    "Revenue Growth YoY":     "rev_gr_yoy",
+    "EBITDA Growth 5 Years":  "ebitda_gr_5y",
+    "EBITDA Growth 3 Years":  "ebitda_gr_3y",
+    # QUARTERLY — freshest timing signals (6 columns)
+    "PAT Latest Quarter":              "pat_lq",
+    "PAT Preceding Year Quarter":      "pat_pyq",
+    "Revenue Latest Quarter":          "rev_lq",
+    "Revenue Preceding Year Quarter":  "rev_pyq",
+    "EBITDA Latest Quarter":           "ebitda_lq",
+    "EBITDA Preceding Year Quarter":   "ebitda_pyq",
+    # RAW ANNUAL — minimum needed for derived signals (8 columns)
+    "PAT":                 "pat",
+    "PAT 1 Year Back":     "pat_1yb",
+    "EBITDA":              "ebitda",
+    "Revenue":             "revenue",
     "Revenue 1 Year Back": "revenue_1yb",
-    "Expenses": "expenses",
-    "Expenses 1 Year Back": "expenses_1yb",
+    "Expenses":            "expenses",
+    "Expenses 1 Year Back":"expenses_1yb",
 }
 
 BALANCE_COLS = {
@@ -163,39 +172,57 @@ CASHFLOW_COLS = {
 }
 
 SHAREHOLDING_COLS = {
+    # ABSOLUTE LEVELS
     "Promoter Holdings": "promoter_holdings",
-    "Change In Promoter Holdings Latest Quarter": "change_promoter_lq",
-    "Change In Promoter Holdings 1 Year": "change_promoter_1y",
+    "FII Holdings": "fii_holdings",
+    "DII Holdings": "dii_holdings",
+    # PLEDGED
     "Pledged Percentage": "pledged_percentage",
     "Pledged Percentage 1 Quarter Back": "pledged_1qb",
     "Pledged Percentage 1 Year Back": "pledged_1yb",
-    "FII Holdings": "fii_holdings",
+    # PROMOTER CHANGES — all 4 kept: promoter decisions are deliberate; 3Y accumulation trend is documented alpha
+    "Change In Promoter Holdings Latest Quarter": "change_promoter_lq",
+    "Change In Promoter Holdings 1 Year": "change_promoter_1y",
+    "Change In Promoter Holdings 2 Years": "change_promoter_2y",
+    "Change In Promoter Holdings 3 Years": "change_promoter_3y",
+    # FII CHANGES — LQ + 1Y only; 2Y/3Y stale (FII flows reverse with every macro cycle)
     "Change In FII Holdings Latest Quarter": "change_fii_lq",
     "Change In FII Holdings 1 Year": "change_fii_1y",
+    # DII CHANGES — LQ + 1Y only; base level kept (low FII + low DII = double undiscovered signal)
     "Change In DII Holdings Latest Quarter": "change_dii_lq",
     "Change In DII Holdings 1 Year": "change_dii_1y",
+    # ACTIVITY
     "Insider Trading": "insider_trading",
-    "Promoter Holdings (Gate Use)": "promoter_gate",
 }
 
 TECHNICAL_COLS = {
-    "Last VSTOP Change 14W 2.5": "last_vstop_change",
+    # FOUNDATION
+    "Market Capitalization": "market_cap",
+    "Close Price": "close_price",
+    # PRIMARY TRIGGER (VSTOP 14W 2.5 — optimal timeframe + sensitivity)
     "VSTOP 14W 2.5": "vstop_value",
+    "Last VSTOP Change 14W 2.5": "last_vstop_change",
+    # RELATIVE STRENGTH — Nifty 500 only (right benchmark for small/mid cap universe)
     "CRS Vs Nifty 500 50D": "crs_50d",
     "CRS Vs Nifty 500 52W": "crs_52w",
     "CRS Vs Nifty 500 26W": "crs_26w",
+    # TREND GATES
     "ADX 14W": "adx_14w",
     "SMA 200D": "sma_200d",
+    # MOMENTUM CONFIRMATION
     "RSI 14D": "rsi_14d",
     "Returns Vs Nifty 500 3M": "ret_vs_n500_3m",
     "Returns Vs Nifty 500 6M": "ret_vs_n500_6m",
     "Returns Vs Industry 1Y": "ret_vs_industry_1y",
+    # BREAKOUT PROXIMITY
     "52WH Distance": "dist_52wh",
     "52WH Distance Days": "dist_52wh_days",
     "13WH Distance": "dist_13wh",
     "Breakout Window": "breakout_window",
+    # VOLUME — institutional entry detector + liquidity gate
     "Volume": "volume",
     "Volume SMA 20D": "vol_sma_20d",
+    # TREND CONFIRMATION
     "Last Goldencrossover 50D 200D": "golden_cross_days",
     "All Time High Distance": "dist_ath",
     "Returns Vs Industry 3M": "ret_vs_industry_3m",
@@ -321,7 +348,7 @@ def coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Columns that should remain as strings
     string_cols = {
         "company_id", "name", "market_category", "eligibility",
-        "industry", "sector", "insider_trading", "promoter_gate",
+        "industry", "sector", "insider_trading",
     }
 
     for col in df.columns:
@@ -340,8 +367,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["roe_trajectory"] = df["roe_med_7y"] - df["roe_med_10y"]
     df["roce_current_vs_med"] = df["roce"] - df["roce_med_10y"]
     df["roe_current_vs_med"] = df["roe"] - df["roe_med_10y"]
-    df["npm_acceleration"] = df["npm_latest_q"] - df["npm_1yb"]
-    df["opm_acceleration"] = df["opm_latest_q"] - df["opm_1yb"]
+    _de_nan = pd.Series(np.nan, index=df.index)
+
+    df["npm_acceleration"] = df.get("npm_latest_q", _de_nan) - df.get("npm_1yb",    _de_nan)
+    df["opm_acceleration"] = df.get("opm_latest_q", _de_nan) - df.get("opm_1yb",    _de_nan)
+    df["gpm_acceleration"] = df.get("gpm_latest_q", _de_nan) - df.get("gpm_med_5y", _de_nan)
     df["pe_discount"] = np.where(
         df["pe_med_10y"].notna() & (df["pe_med_10y"] != 0),
         (df["pe_med_10y"] - df["pe"]) / df["pe_med_10y"] * 100,
@@ -390,9 +420,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── INCOME DERIVED ──
-    df["pat_acceleration"] = df["pat_gr_3y"] - df["pat_gr_5y"]
-    df["rev_acceleration"] = df["rev_gr_3y"] - df["rev_gr_5y"]
-    df["eps_vs_pat_delta"] = df["eps_gr_5y"] - df["pat_gr_5y"]
+    df["pat_acceleration"]    = df["pat_gr_3y"]    - df["pat_gr_5y"]
+    df["rev_acceleration"]    = df["rev_gr_3y"]    - df["rev_gr_5y"]
+    df["ebitda_acceleration"] = df["ebitda_gr_3y"] - df["ebitda_gr_5y"]
+    df["eps_vs_pat_delta"]    = df["eps_gr_5y"]    - df["pat_gr_5y"]
     df["q_pat_yoy"] = np.where(
         df["pat_pyq"].notna() & (df["pat_pyq"].abs() > 0),
         (df["pat_lq"] - df["pat_pyq"]) / df["pat_pyq"].abs() * 100,
@@ -501,6 +532,21 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
     df["capex_3y"] = df["fixed_assets"] - df["fixed_assets_3yb"]
+
+    # Capex consistency: year-by-year FA growth rate variance (3 consecutive years)
+    # High variance = lumpy capex = project execution risk vs smooth compounding expansion.
+    _fa_g1 = np.where(
+        df["fixed_assets_1yb"].notna() & (df["fixed_assets_1yb"].abs() > 0),
+        (df["fixed_assets"] - df["fixed_assets_1yb"]) / df["fixed_assets_1yb"].abs(),
+        np.nan
+    )
+    _fa_g2 = np.where(
+        df["fixed_assets_2yb"].notna() & (df["fixed_assets_2yb"].abs() > 0),
+        (df["fixed_assets_1yb"] - df["fixed_assets_2yb"]) / df["fixed_assets_2yb"].abs(),
+        np.nan
+    )
+    df["capex_consistency"] = np.abs(_fa_g1 - _fa_g2)   # lower = smoother expansion
+
     df["inv_growth"] = np.where(
         df["inventory_1yb"].notna() & (df["inventory_1yb"] > 0),
         (df["inventory"] - df["inventory_1yb"]) / df["inventory_1yb"] * 100,
@@ -512,6 +558,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["total_liabilities"] / df["total_assets"],
         np.nan
     )
+    # Hidden obligation growth: Total Liabilities rising faster than Debt = off-balance-sheet risk.
+    # Catches Ind AS 116 lease liabilities, provisions, contingent obligations that D/E misses.
+    df["liab_change"] = df["total_liabilities"] - df["total_liabilities_1yb"]
+    df["hidden_obligation_growth"] = (
+        df["liab_change"].fillna(0) > df["debt_change_1y"].fillna(0)
+    ).astype(int)   # 1 = TL growing faster than debt = hidden risk flag
 
     # ── SHAREHOLDING DERIVED ──
     df["pledge_rising"] = np.where(
@@ -646,7 +698,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     nfat = np.where(fa > 0, rev / fa, np.nan)
     df["nfat"] = pd.Series(nfat, index=df.index)  # Net Fixed Asset Turnover — Vijay Malik capital-light signal
     npm_decimal = npm_pct / 100.0
-    dpr_approx = 0.25
+    # Use actual DPR from CSV; fall back to 0.25 (India median) only if unavailable
+    _dpr_raw = df.get("dividend_payout_ratio", pd.Series(np.nan, index=df.index))
+    _dpr_pct = _dpr_raw.fillna(25.0).clip(0, 100)     # DPR in % (e.g. 25.0 = 25%)
+    dpr_approx = (_dpr_pct / 100.0).values             # decimal for SSGR formula
 
     # Depreciation rate: sector-specific lookup (Indian Companies Act Schedule II + industry norms).
     # IT/Software: 25% (3-4yr useful life). Infrastructure: 4% (25yr+ assets). Default: 10%.
@@ -681,23 +736,18 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["tax_rate_est"] = df["ebitda_to_pat_gap_pct"]  # backward-compat alias
 
-    # ── Interest Coverage Proxy (Malik Parameter 4) ──
-    # Use CSV-reported interest_coverage when available; synthetic estimate as fallback only.
-    # G1 FIX: was unconditionally overwriting real CSV data with synthetic 8.5% flat estimate.
-    assumed_interest_rate = 0.085
-    df["interest_expense_est"] = df["debt"].fillna(0) * assumed_interest_rate
-    synthetic_coverage = pd.Series(
-        np.where(
-            df["interest_expense_est"] > 0,
-            df["ebitda"].fillna(0) / df["interest_expense_est"],
-            99.0  # debt-free = effectively infinite coverage
-        ),
+    # ── Interest Coverage (Malik Parameter 4) ──
+    # Priority: (1) direct CSV column, (2) synthetic fallback using Debt × 8.5%
+    # Direct CSV is available in the ratio dataset — use it. Fill NaN-only gaps synthetically.
+    _ic_debt  = df.get("debt",   _de_nan).fillna(0)
+    _ic_ebitda = df.get("ebitda", _de_nan).fillna(0)
+    _ic_exp   = _ic_debt * 0.085
+    _ic_synthetic = pd.Series(
+        np.where(_ic_exp > 0, _ic_ebitda / _ic_exp, 99.0),
         index=df.index
     )
-    if "interest_coverage" in df.columns:
-        df["interest_coverage"] = df["interest_coverage"].fillna(synthetic_coverage)
-    else:
-        df["interest_coverage"] = synthetic_coverage
+    _ic_csv = df.get("interest_coverage", _de_nan)   # NaN if not in CSV
+    df["interest_coverage"] = _ic_csv.fillna(_ic_synthetic)
 
     # ── Economic Profit (28th WCS) ──
     # EP = Net Worth × (RoE − Cost of Equity)
@@ -745,8 +795,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # P4: Interest Coverage > 3x
-    malik_p4 = np.where(df["interest_coverage"] >= 8, pw,
-               np.where(df["interest_coverage"] >= 3, pw * 0.7, 0))
+    _ic_p4 = df.get("interest_coverage", _de_nan).fillna(0)
+    malik_p4 = np.where(_ic_p4 >= 8, pw,
+               np.where(_ic_p4 >= 3, pw * 0.7, 0))
 
     # P5: D/E < 0.5
     malik_p5 = np.where(df["debt_to_equity"].fillna(0) <= 0, pw,
@@ -1023,10 +1074,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── D49: Momentum Quality (categorical) ──
+    _rsi_mq = df.get("rsi_14d", pd.Series(np.nan, index=df.index)).fillna(0)
     df["d49_momentum_quality"] = np.select(
         [
-            df["rsi_14d"].fillna(0) > 70,
-            (df["rsi_14d"].fillna(0) >= 50) & (df["rsi_14d"].fillna(0) <= 70) & (df["adx_14w"].fillna(0) > 20),
+            _rsi_mq > 70,
+            (_rsi_mq >= 50) & (_rsi_mq <= 70) & (df.get("adx_14w", pd.Series(np.nan, index=df.index)).fillna(0) > 20),
         ],
         ["OVERHEATED", "HIGH"],
         default="WEAK"
@@ -1038,6 +1090,28 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["ret_vs_n500_6m"].fillna(0) +
         df["ret_vs_industry_1y"].fillna(0)
     ) / 3.0
+
+    # ── D51: QMOM Quality Score — 3-factor fundamental quality composite ──
+    # Implements the Gray & Vogel Quality Overlay for momentum strategies (India Edition).
+    # The handbook (Ch. 4) specifies 4 factors: GP/Assets, ROIC, D/E, CFO/PAT.
+    # GP/Assets NOT computed (COGS not in CSV) — ROCE used as profitability proxy.
+    # ROCE proxy for ROIC: capital employed ≈ equity + net debt → formula is near-identical.
+    # Composite = mean of 3 percentile ranks (0–1 scale). Threshold >= 0.50 = top-half quality.
+    # NaN handling: fillna(0) for ROCE/CFO (unknown = lowest rank = conservative)
+    #               fillna(1.0) for D/E (unknown = moderate leverage = middle rank)
+    _qm_roce_r = df["roce"].fillna(0).rank(pct=True)
+    _qm_de_inv = 1.0 / (df.get("debt_to_equity", _de_nan).fillna(1.0) + 0.01)
+    _qm_de_r   = _qm_de_inv.rank(pct=True)
+    _qm_cfo_r  = df["cfo_to_pat"].fillna(0).rank(pct=True)
+    # 4th factor: GP/Assets proxy (Novy-Marx) using gpm_latest_q × annual revenue / total assets
+    _ta       = df.get("total_assets", _de_nan).replace(0, np.nan)
+    _gpm_q    = df.get("gpm_latest_q", _de_nan)
+    _rev_safe = df.get("revenue",      _de_nan).fillna(0)
+    _qm_gp_r  = ((_gpm_q / 100.0) * _rev_safe / _ta).rank(pct=True)
+    if _qm_gp_r.notna().sum() > 100:
+        df["d51_qmom_quality_score"] = ((_qm_roce_r + _qm_de_r + _qm_cfo_r + _qm_gp_r) / 4.0).round(3)
+    else:
+        df["d51_qmom_quality_score"] = ((_qm_roce_r + _qm_de_r + _qm_cfo_r) / 3.0).round(3)
 
     # ══════════════════════════════════════════════════════════════
     # MOTILAL OSWAL 30-STUDY ALPHA SIGNALS
