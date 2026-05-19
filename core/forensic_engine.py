@@ -118,14 +118,10 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     """Run 10 forensic red flag checks on every stock. Vectorized."""
     df = df.copy()
 
-    # 1. CFO/PAT below threshold
-    # BUG FIX: cfo_to_pat in CSV is a PERCENTAGE (e.g. 73.04), not a ratio (0.73)
-    # FORENSIC["cfo_pat_alert"] = 0.7 was comparing percentage to ratio → always False
-    # Fix: multiply threshold by 100 to match the CSV unit
-    cfo_pat_threshold_pct = FORENSIC["cfo_pat_alert"] * 100  # 0.7 → 70.0
+    # 1. CFO/PAT below threshold (cfo_to_pat is PERCENTAGE in CSV: 73.04 = 73%)
     df["rf_low_cfo_pat"] = np.where(
         df["cfo_to_pat"].notna(),
-        (df["cfo_to_pat"] < cfo_pat_threshold_pct).astype(int),
+        (df["cfo_to_pat"] < FORENSIC["cfo_pat_alert"]).astype(int),
         0
     )
 
@@ -241,7 +237,8 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # High accruals mean reported earnings are not backed by cash. Coefficient in Beneish = 4.679 (largest).
     # Use AVERAGE total assets (current + 1YB)/2 — Gemini G-audit fix: point-in-time denominator can be
     # artificially inflated by late-year acquisitions, masking accrual manipulation.
-    avg_ta = (df["total_assets"].fillna(0) + df["total_assets_1yb"].fillna(df["total_assets"].fillna(0))) / 2.0
+    _ta_1yb = df.get("total_assets_1yb", pd.Series(np.nan, index=df.index)).fillna(df["total_assets"].fillna(0))
+    avg_ta = (df["total_assets"].fillna(0) + _ta_1yb) / 2.0
     df["rf_high_accruals"] = np.where(
         df["pat"].notna() & df["operating_cash_flow"].notna() & (avg_ta > 0),
         (((df["pat"] - df["operating_cash_flow"]) / avg_ta) > 0.05).astype(int),
@@ -335,9 +332,10 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         df["cwip"].fillna(0) / df["total_assets"],
         np.nan
     )
+    _ta_1yb_cwip = df.get("total_assets_1yb", pd.Series(np.nan, index=df.index)).fillna(0)
     cwip_pct_1yb = np.where(
-        df["total_assets_1yb"].fillna(0) > 0,
-        df["cwip_1yb"].fillna(0) / df["total_assets_1yb"],
+        _ta_1yb_cwip > 0,
+        df["cwip_1yb"].fillna(0) / _ta_1yb_cwip.replace(0, np.nan),
         np.nan
     )
     safe_cwip_1yb = np.where(cwip_pct_1yb > 0, cwip_pct_1yb, 1.0)  # safe denominator: 1.0 when 0 or NaN
