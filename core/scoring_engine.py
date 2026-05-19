@@ -17,7 +17,7 @@ from config import (
     HARD_GATES, QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
     MOAT_SIGNALS, GROWTH_SIGNALS, CASH_SIGNALS, MARGIN_SIGNALS,
     BALANCE_SHEET_SIGNALS, RS_SIGNALS, TREND_SIGNALS, BREAKOUT_SIGNALS,
-    SECTOR_SIGNALS, GOVERNANCE_BONUS, CONVICTION_TIERS, RSI_ZONES,
+    SECTOR_SIGNALS, GOVERNANCE_BONUS, CONVICTION_TIERS, RSI_ZONES, HIGH_AGE_ZONES,
     MCAP_TIERS, MCAP_MIN_FLOOR,
     VALUATION_SIGNALS, PEG_ZONES, PAYBACK_ZONES, MEAN_REVERSION, BAID_SELL_TRIGGERS,
     DEFAULT_CYCLE_TEMPERATURE, MARKS_CYCLE,
@@ -164,23 +164,33 @@ def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
 
 
 def _compute_growth_score(df: pd.DataFrame) -> pd.Series:
-    """Growth score: Revenue, PAT, EPS compounding + acceleration."""
+    """Growth score: Revenue, PAT, EPS compounding + acceleration + quarterly freshness.
+    Weights: long-term signals 0.94 + quarterly freshness 0.06 = 1.00"""
     score = pd.Series(0.0, index=df.index)
 
     signals = {
-        "pat_gr_5y":        (True, 0.20),
-        "pat_gr_10y":       (True, 0.10),
-        "rev_gr_5y":        (True, 0.20),
-        "rev_gr_10y":       (True, 0.10),
-        "eps_gr_5y":        (True, 0.15),
-        "ebitda_gr_5y":     (True, 0.10),
-        "pat_acceleration": (True, 0.08),
-        "rev_acceleration": (True, 0.07),
+        "pat_gr_5y":           (True, 0.17),   # -0.03 to fund quarterly freshness layer
+        "pat_gr_10y":          (True, 0.10),
+        "rev_gr_5y":           (True, 0.17),   # -0.03 to fund quarterly freshness layer
+        "rev_gr_10y":          (True, 0.10),
+        "eps_gr_5y":           (True, 0.15),
+        "ebitda_gr_5y":        (True, 0.10),
+        "pat_acceleration":    (True, 0.06),
+        "rev_acceleration":    (True, 0.05),
+        "ebitda_acceleration": (True, 0.04),
     }
+    # Signals sum: 0.17+0.10+0.17+0.10+0.15+0.10+0.06+0.05+0.04 = 0.94
 
     for col, (ascending, weight) in signals.items():
         if col in df.columns:
             score += _pct_rank(df[col], ascending=ascending).fillna(50) * weight
+
+    # Quarterly freshness (6%): latest-quarter YoY — 4-6 months fresher than annual data.
+    # q_pat_yoy drives 60% (profit is the bottom line); q_rev_yoy drives 40% (top-line health).
+    # Catches earnings inflections the annual score misses for 1-2 quarters post-result.
+    _q_pat = _pct_rank(df.get("q_pat_yoy", pd.Series(np.nan, index=df.index)), ascending=True).fillna(50)
+    _q_rev = _pct_rank(df.get("q_rev_yoy", pd.Series(np.nan, index=df.index)), ascending=True).fillna(50)
+    score += (_q_pat * 0.60 + _q_rev * 0.40) * 0.06  # 0.94 + 0.06 = 1.00 ✅
 
     return _safe_clip(score)
 
@@ -333,7 +343,8 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     # of the distribution and compress every other stock's _pct_rank() score.
     _growth_cols = [
         "pat_gr_5y", "pat_gr_10y", "rev_gr_5y", "rev_gr_10y",
-        "eps_gr_5y", "ebitda_gr_5y", "pat_acceleration", "rev_acceleration",
+        "eps_gr_5y", "ebitda_gr_5y", "pat_acceleration", "rev_acceleration", "ebitda_acceleration",
+        "q_pat_yoy", "q_rev_yoy",   # quarterly YoY: base-effect spikes more extreme than annual
     ]
     for _col in _growth_cols:
         if _col in df.columns:
@@ -548,9 +559,16 @@ def _compute_breakout_score(df: pd.DataFrame) -> pd.Series:
     """Breakout proximity: nearness to highs and breakout windows."""
     score = pd.Series(0.0, index=df.index)
 
-    # 52WH distance (lower = closer to breakout = better)
+    # 52WH distance (lower % = closer to breakout = better)
     if "dist_52wh" in df.columns:
         score += _pct_rank(df["dist_52wh"], ascending=False).fillna(50) * BREAKOUT_SIGNALS["52wh_distance"]
+
+    # 52WH age: how many days since the 52-week high was set (fewer = fresher momentum)
+    # Zone-based (not percentile) because absolute thresholds matter regardless of market state:
+    # a 250-day old high is stale whether peers are fresh or not.
+    if "dist_52wh_days" in df.columns:
+        age_score = _zone_score(df["dist_52wh_days"].fillna(9999), HIGH_AGE_ZONES)
+        score += age_score.fillna(50) * BREAKOUT_SIGNALS["52wh_days"]
 
     # 13WH distance
     if "dist_13wh" in df.columns:
@@ -660,9 +678,19 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
     if "promoter_holdings" in df.columns:
         promo_pct = df["promoter_holdings"].fillna(0)
         promo_1y  = df.get("change_promoter_1y", pd.Series(0.0, index=df.index)).fillna(0)
+        promo_2y  = df.get("change_promoter_2y", pd.Series(0.0, index=df.index)).fillna(0)
+        promo_3y  = df.get("change_promoter_3y", pd.Series(0.0, index=df.index)).fillna(0)
         bonus += (promo_pct >= 60).astype(float) * GOVERNANCE_BONUS["promoter_high_alignment"]
         bonus += ((promo_pct >= 50) & (promo_pct < 60)).astype(float) * GOVERNANCE_BONUS["promoter_good_alignment"]
         bonus += ((promo_pct < 40) & (promo_1y < 0)).astype(float) * GOVERNANCE_BONUS["promoter_low_declining"]
+        # 3-year trend signals — single-quarter buys/sells are noise; 3Y patterns are decisions.
+        # Accumulation: net buying >3% over 3 years = sustained conviction, dynasty building.
+        bonus += (promo_3y > 3).astype(float) * GOVERNANCE_BONUS["promoter_3y_accumulation"]
+        # Systematic exit: net selling >5% over 3 years = structural concern, promoter leaving.
+        bonus += (promo_3y < -5).astype(float) * GOVERNANCE_BONUS["promoter_3y_exit"]
+        # Early warning: 2Y selling >3% but 3Y hasn't crossed threshold yet = trend forming.
+        _recent_exit = (promo_2y < -3) & (promo_3y >= -5)
+        bonus += _recent_exit.astype(float) * GOVERNANCE_BONUS["promoter_2y_recent_exit"]
 
     # Undiscovered alpha: low FII + Tier C
     if "fii_holdings" in df.columns and "market_cap" in df.columns:
@@ -961,33 +989,51 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     )
 
     # 6. CAN SLIM (William O'Neill) — earnings acceleration + technical leadership
-    #    C: Quarterly EPS growth ≥ 25% YoY (quarterly PAT as proxy)
-    #    A: Annual EPS multi-year momentum ≥ 20% CAGR
-    #    N: Near 52W high — within 15% (trend confirmation)
-    #    S: Supply/Demand — above-average volume (vol_ratio ≥ 1.5)
-    #    L: Leader — positive relative strength vs market (CRS 50D > 0)
-    #    I: Institutional sponsorship — FII or DII buying
-    pat_lq_cs   = df.get("pat_lq", pd.Series(np.nan, index=df.index)).fillna(np.nan)
-    pat_pyq_cs  = df.get("pat_pyq", pd.Series(np.nan, index=df.index)).fillna(np.nan)
-    eps_gr_cs   = df.get("eps_gr_5y", pd.Series(np.nan, index=df.index)).fillna(0)
-    dist_wh_cs  = df.get("dist_52wh", pd.Series(999.0, index=df.index)).fillna(999)
-    vol_r_cs    = df.get("vol_ratio", pd.Series(np.nan, index=df.index)).fillna(1.0)
-    crs_cs      = df.get("crs_50d", pd.Series(np.nan, index=df.index)).fillna(0)
-    fii_cs      = df.get("change_fii_lq", pd.Series(0.0, index=df.index)).fillna(0)
-    dii_cs      = df.get("change_dii_lq", pd.Series(0.0, index=df.index)).fillna(0)
-    # Quarterly EPS growth: (pat_lq / pat_pyq - 1) >= 0.25, guarded against zero/negative base
+    #    C: Quarterly EPS growth ≥ 25% YoY (book: "at least 25%", best are 40-100%+)
+    #    A: Annual EPS 5Y CAGR ≥ 25% (FIXED: was 20%; book specifies 25%) + ROE ≥ 17%
+    #    N: Near 52W high — within 15% (book: "10-15% of 52-week high")
+    #    S: Supply/Demand — vol_ratio ≥ 1.5 (book: "40-50% above average" = 1.4–1.5x)
+    #    L: Leader — RS percentile ≥ 80 (book: "RS Rating 80+, average of winners = 87")
+    #       Approximated via _pct_rank(d47_rs_composite) — percentile rank across all 2108 stocks
+    #    I: Institutional sponsorship — FII or DII buying (best proxy for A/B A-D rating)
+    #    M: Market direction — NOT IMPLEMENTABLE (requires market index data absent from stock CSV)
+    #    Sources: CAN SLIM Mastery Guide Chapter 1 (C,A), Chapter 2 (N,S), Chapter 3 (L,I), Chapter 6 (M)
+    pat_lq_cs    = df.get("pat_lq",          pd.Series(np.nan, index=df.index)).fillna(np.nan)
+    pat_pyq_cs   = df.get("pat_pyq",         pd.Series(np.nan, index=df.index)).fillna(np.nan)
+    eps_gr_cs    = df.get("eps_gr_5y",        pd.Series(np.nan, index=df.index)).fillna(0)
+    roe_cs       = df.get("roe",              pd.Series(np.nan, index=df.index)).fillna(0)    # A: ROE ≥ 17%
+    dist_wh_cs   = df.get("dist_52wh",        pd.Series(999.0,  index=df.index)).fillna(999)
+    vol_r_cs     = df.get("vol_ratio",        pd.Series(np.nan, index=df.index)).fillna(1.0)
+    rs_comp_cs   = df.get("d47_rs_composite", pd.Series(np.nan, index=df.index)).fillna(0)
+    fii_cs       = df.get("change_fii_lq",    pd.Series(0.0,    index=df.index)).fillna(0)
+    dii_cs       = df.get("change_dii_lq",    pd.Series(0.0,    index=df.index)).fillna(0)
+    # L: Percentile rank of composite RS (50D+26W+52W avg) across universe — approximates IBD RS Rating
+    # ascending=True: higher RS composite → higher rank → top 20% = RS Rating ≥ 80
+    rs_pctrank_cs = _pct_rank(rs_comp_cs, ascending=True).fillna(50)
+    # C: Quarterly EPS growth: (pat_lq / pat_pyq - 1) >= 0.25, guarded against zero/negative base
     qtr_growth_ok = np.where(
         pat_lq_cs.notna() & pat_pyq_cs.notna() & (pat_pyq_cs > 0),
         ((pat_lq_cs / pat_pyq_cs - 1) >= 0.25),
         False
     )
     fw_can_slim = (
-        qtr_growth_ok &                  # C: current earnings +25%+
-        (eps_gr_cs >= 20) &              # A: annual EPS growth ≥ 20% 5Y CAGR
-        (dist_wh_cs <= 15) &             # N: within 15% of 52W high
-        (vol_r_cs >= 1.5) &              # S: volume surging (institutional accumulation)
-        (crs_cs > 0) &                   # L: market leader (outperforming Nifty 500)
-        ((fii_cs > 0) | (dii_cs > 0))   # I: institutional buying confirmed
+        qtr_growth_ok &                    # C: quarterly earnings +25%+ YoY
+        (eps_gr_cs        >= 25) &         # A: annual EPS 5Y CAGR ≥ 25% (FIXED: was 20%)
+        (roe_cs           >= 17) &         # A: ROE ≥ 17% (O'Neill's explicit A-criterion requirement)
+        (dist_wh_cs       <= 15) &         # N: within 15% of 52W high
+        (vol_r_cs         >= 1.5) &        # S: volume ≥ 1.5× avg (40-50%+ above average)
+        (rs_pctrank_cs    >= 80) &         # L: RS Rating ≥ 80 (top 20% of universe by RS composite)
+        ((fii_cs > 0) | (dii_cs > 0))     # I: institutional buying confirmed
+    )
+    # CAN SLIM criteria count (0-7): useful for partial-pass display and ranking within non-full-pass stocks
+    df["can_slim_score"] = (
+        pd.Series(qtr_growth_ok, index=df.index).astype(int) +   # C
+        (eps_gr_cs >= 25).astype(int) +                           # A1: EPS CAGR
+        (roe_cs    >= 17).astype(int) +                           # A2: ROE
+        (dist_wh_cs <= 15).astype(int) +                          # N
+        (vol_r_cs   >= 1.5).astype(int) +                         # S
+        (rs_pctrank_cs >= 80).astype(int) +                       # L
+        ((fii_cs > 0) | (dii_cs > 0)).astype(int)                # I
     )
 
     # 7. Bruised Blue Chip (29th MOSL Study) — quality company fallen hard + cheap vs history
@@ -1502,6 +1548,47 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (mcap_bs.fillna(0)      <= 5000)             # UNIQUE: max cap sweet spot — multibagger range
     )
 
+    # ── Framework 23: fw_qmom — Quality Momentum (Gray & Vogel QMOM, India Edition) ──
+    # The ONLY pure-momentum-first framework in the system. All 22 prior frameworks are
+    # fundamentals-led (quality/value/growth required, momentum is secondary confirmation).
+    # QMOM flips the hierarchy: top-decile RS rank is the PRIMARY gate; quality is the filter
+    # to EXCLUDE junk-momentum and crash risk — NOT a growth prerequisite.
+    # Two signals unique in the system:
+    #   1. rs_pctrank_qm >= 80 as PRIMARY gate: RS composite in top 20% of all 2108 stocks
+    #      (CAN SLIM also uses rs_pctrank >= 80, but CAN SLIM requires EPS 25%+, quarterly
+    #       growth, near-52WH, volume surge, ROE 17% — fundamentals-first. Here RS is the door.)
+    #   2. pledged_percentage <= 30: India QMOM operator-manipulation defense threshold
+    #      (all 22 prior frameworks use <= 10% or <= 20% for governance quality; 30% is the
+    #       specific momentum-strategy threshold per handbook Ch.7 — excludes operator-driven
+    #       discrete spikes that create false momentum signals)
+    # What CANNOT be implemented (missing data):
+    #   - 12-1 skip-month momentum (requires monthly price history not in CSV)
+    #   - FIP score (requires 11 months of monthly returns not in CSV)
+    #   - Regime filter (requires Nifty 500 index time-series not in stock CSV)
+    # Best available proxies used: crs_aligned (all-timeframe RS positive = smooth persistence),
+    #   d47_rs_composite percentile rank (top-decile proxy), d51_qmom_quality_score available.
+    # Sources: Chapters 2 (12-1 momentum), 3 (FIP), 4 (quality overlay), 7 (India operator filter).
+    _qm_nan       = pd.Series(np.nan, index=df.index)
+    rs_comp_qm    = df.get("d47_rs_composite",   pd.Series(0.0, index=df.index)).fillna(0)
+    crs_ali_qm    = df.get("crs_aligned",         pd.Series(0, index=df.index)).fillna(0)
+    roce_qm       = df.get("roce",                _qm_nan)
+    de_qm         = df.get("debt_to_equity",      _qm_nan)
+    is_fin_qm     = df.get("is_financial",        pd.Series(False, index=df.index)).fillna(False)
+    cfo_pat_qm    = df.get("cfo_to_pat",          _qm_nan)   # PERCENTAGE: 70.0 = 70%
+    pledge_qm     = df.get("pledged_percentage",  pd.Series(100.0, index=df.index)).fillna(100.0)
+    mcap_qm       = df.get("market_cap",          _qm_nan)
+    # RS percentile rank: ascending=True → higher RS composite → higher rank → >= 80 = top 20%
+    rs_pctrank_qm = _pct_rank(rs_comp_qm, ascending=True).fillna(50)
+    fw_qmom = (
+        (rs_pctrank_qm          >= 80) &         # UNIQUE PRIMARY GATE: top 20% RS momentum leadership
+        (crs_ali_qm             == 1) &          # All 3 CRS timeframes positive (smooth persistence proxy)
+        (roce_qm.fillna(0)      >= 15) &         # Quality: ROCE ≥ 15% (proxy for ROIC > 15%)
+        (is_fin_qm | (de_qm.fillna(999) < 0.5)) & # Balance sheet: D/E < 0.5 (financials exempt)
+        (cfo_pat_qm.fillna(0)   >= 70) &         # Earnings quality: CFO/PAT ≥ 70% (PERCENTAGE)
+        (pledge_qm              <= 30) &          # UNIQUE: India operator manipulation threshold
+        (mcap_qm.fillna(0)      >= 500)          # Minimum liquidity: ₹500 Cr
+    )
+
     # Build comma-separated framework string — fully vectorized, zero apply
     fw_str = (
         np.where(fw_qglp,                   "QGLP|",                  "") +
@@ -1525,7 +1612,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_baid,                   "Baid Compounder|",       "") +
         np.where(fw_long_game,              "Long Game Quality|",     "") +
         np.where(fw_sepa,                   "SEPA Momentum|",         "") +
-        np.where(fw_basant,                 "Basant 30% Club|",       "")
+        np.where(fw_basant,                 "Basant 30% Club|",       "") +
+        np.where(fw_qmom,                   "Quality Momentum|",      "")
     )
     df["frameworks_passed"] = (
         pd.Series(fw_str, index=df.index)
