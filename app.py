@@ -39,10 +39,13 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
 # Tier 3: run_forensic_analysis— NOT cached. Instant.
 # ═══════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
-def get_clean_data(data_source, uploaded_dict, sheet_id):
-    """Tier-1: Expensive data fetch + clean. Heavily cached."""
+def get_clean_data(data_source, _file_signature: str, sheet_id, _uploaded_dict=None):
+    """Tier-1: Expensive data fetch + clean. Heavily cached.
+    _uploaded_dict is prefixed with _ so Streamlit skips hashing the raw stream objects.
+    _file_signature (stable string: name+size per file) is the actual cache key for uploads.
+    """
     t0 = time.time()
-    df = fetch_and_clean_data(data_source, uploaded_dict, sheet_id)
+    df = fetch_and_clean_data(data_source, _uploaded_dict, sheet_id)
     elapsed = time.time() - t0
     return df, elapsed
 
@@ -108,7 +111,17 @@ if not data_ready:
 
 with st.spinner("🔄 Loading data..."):
     try:
-        clean_df, load_time = get_clean_data(st.session_state.data_source, uploaded_dict, sheet_id)
+        if uploaded_dict:
+            file_sig = "|".join(
+                f"{k}:{v.name}:{v.size}"
+                for k, v in uploaded_dict.items()
+                if v is not None
+            )
+        else:
+            file_sig = f"local_{sheet_id or 'default'}"
+        clean_df, load_time = get_clean_data(
+            st.session_state.data_source, file_sig, sheet_id, _uploaded_dict=uploaded_dict
+        )
     except Exception as e:
         st.error(f"❌ Error loading data: {e}")
         st.stop()
@@ -156,6 +169,10 @@ with st.spinner(f"🧭 Scoring with {scoring_profile} profile..."):
     except Exception as e:
         st.error(f"❌ Scoring error: {e}")
         st.stop()
+
+if df is None or df.empty:
+    st.warning("⚠️ No data returned after scoring. Check your data source or filters.")
+    st.stop()
 
 # Active Engine Weights - Rendered in Expander below Command Center
 adaptive_w = df.attrs.get("adaptive_weights", {})
@@ -425,7 +442,7 @@ with tabs[2]:
             if stock.get('sell_alert_mgmt_deteriorated', 0) == 1:
                 triggers.append("**Management Deteriorated:** Pledge rising + promoter selling + D/E rising")
             if stock.get('sell_alert_cash_collapse', 0) == 1:
-                triggers.append("**Cash Quality Collapse:** CFO/PAT dropped below 0.5")
+                triggers.append("**Cash Quality Collapse:** CFO/PAT dropped below 50%")
             for t in triggers:
                 st.error(t)
 
