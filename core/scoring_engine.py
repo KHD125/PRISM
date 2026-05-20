@@ -204,15 +204,27 @@ def _compute_cash_score(df: pd.DataFrame) -> pd.Series:
 
     # Continuous signals (percentile ranked)
     continuous = {
-        "cfo_to_pat":     (True, 0.20),   # CFO/PAT %: higher = earnings more cash-backed
-        "cfo_to_ebitda":  (True, 0.15),   # CFO/EBITDA %: clean accounts filter
-        "fcf_to_cfo_pct": (True, 0.15),   # FCF/OCF %: Vijay Malik's capital quality ratio (Finolex=76%, PIX=negative)
-        "fcf_yield":      (True, 0.15),   # FCF/MCap: absolute attractiveness
-        "capex_coverage":  (True, 0.10),  # OCF covers capex multiple
+        "cfo_to_pat":    (True, 0.20),   # CFO/PAT %: higher = earnings more cash-backed
+        "cfo_to_ebitda": (True, 0.15),   # CFO/EBITDA %: clean accounts filter
+        "fcf_yield":     (True, 0.15),   # FCF/MCap: absolute attractiveness
+        "capex_coverage": (True, 0.10),  # OCF covers capex multiple
     }
     for col, (ascending, weight) in continuous.items():
         if col in df.columns:
             score += _pct_rank(df[col], ascending=ascending).fillna(50) * weight
+
+    # FCF/CFO: handled separately because negative-OCF companies must score 0, not neutral 50.
+    # When OCF <= 0 the data_engine sets fcf_to_cfo_pct = NaN (correct — ratio is meaningless).
+    # fillna(50) would reward cash-burning companies with a neutral score.
+    # Companies with negative operating cash flow are genuine capital-quality failures.
+    if "fcf_to_cfo_pct" in df.columns:
+        ranked_fcf_cfo = _pct_rank(df["fcf_to_cfo_pct"], ascending=True).fillna(50)
+        if "operating_cash_flow" in df.columns:
+            ranked_fcf_cfo = pd.Series(
+                np.where(df["operating_cash_flow"].fillna(0) <= 0, 0.0, ranked_fcf_cfo),
+                index=df.index
+            )
+        score += ranked_fcf_cfo * 0.15
 
     # Binary signals (0 or 100)
     binary = {
@@ -1589,6 +1601,50 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (mcap_qm.fillna(0)      >= 500)          # Minimum liquidity: ₹500 Cr
     )
 
+    # ── Framework 24: fw_mosl_wealth_creator — MOSL Wealth Creator (30 Annual Wealth Creation Studies) ──
+    # Synthesises the 30 years of MOSL research into a single screen.
+    # Three signals genuinely unique in the system:
+    #   1. compound_growth_power_flag: PAT CAGR consistent across ALL 3 timeframes (3Y≥15%, 5Y≥12%, 10Y≥10%)
+    #      — no other framework simultaneously checks 3 PAT timeframes. Proxy for MOSL's "Consistent" category.
+    #   2. payback_lt2: payback ratio < 2 as a hard gate — 5th Study: payback 1-2 band = 37.4% annual returns
+    #      — no other framework gates on payback_lt2 specifically.
+    #   3. economic_profit_spread >= 10: ROCE ≥ 20% above cost of equity (CoE = 10%) = substantial moat
+    #      — all other ROCE thresholds are absolute; this uses the margin-above-CoE framing.
+    # These three together catch sustained, cash-backed compounders at reasonable prices — the MOSL DNA.
+    _mw_nan = pd.Series(np.nan, index=df.index)
+    cgp_mw      = df.get("compound_growth_power_flag", pd.Series(0, index=df.index)).fillna(0)
+    paylt2_mw   = df.get("payback_lt2",               pd.Series(0, index=df.index)).fillna(0)
+    ep_mw       = df.get("economic_profit_spread",     _mw_nan)   # ROCE - 10 (cost of equity)
+    cfo_pat_mw  = df.get("cfo_to_pat",                _mw_nan)   # PERCENTAGE: 70.0 = 70%
+    de_mw       = df.get("debt_to_equity",             _mw_nan)
+    is_fin_mw   = df.get("is_financial",               pd.Series(False, index=df.index)).fillna(False)
+    mcap_mw     = df.get("market_cap",                 _mw_nan)
+    fw_mosl_wealth_creator = (
+        (cgp_mw              == 1) &              # UNIQUE: PAT consistent across 3Y + 5Y + 10Y simultaneously
+        (paylt2_mw           == 1) &              # UNIQUE: payback ratio < 2 as gate (MOSL 5th Study)
+        (ep_mw.fillna(-99)   >= 10) &            # UNIQUE: ROCE ≥ 20% above CoE (substantial competitive moat)
+        (cfo_pat_mw.fillna(0) >= 70) &           # Cash quality: CFO/PAT ≥ 70% (PERCENTAGE unit)
+        (is_fin_mw | (de_mw.fillna(999) < 1.0)) & # Balance sheet: D/E < 1.0 (financials exempt)
+        (mcap_mw.fillna(0)   >= 500)             # Scale: ₹500 Cr minimum
+    )
+
+    # ── Framework 25: fw_emc — Economic Moat Company (MOSL 17th Study, 2012 theme) ──
+    # Study 17 backtested 1995-2012: EMC portfolio → 25% CAGR vs 12% for non-EMCs (Alpha +7%/yr).
+    # EMC = ROE consistently above sector average (proxy: above sector median for both current + 5yr).
+    # Adds sector-relative moat signal not present in any other framework.
+    fw_emc = df.get("emc_flag", pd.Series(0, index=df.index)).fillna(0) == 1
+
+    # ── Framework 26: fw_blue_chip — Blue Chip Quality (MOSL 16th Study, 2011 theme) ──
+    # "Blue chips offer as much investment growth potential as lesser quality, with far less risk."
+    # Blue chip criterion: consistent dividend + decade ROE > 20% + PAT no-crash consistency.
+    fw_blue_chip = df.get("blue_chip_quality_flag", pd.Series(0, index=df.index)).fillna(0) == 1
+
+    # ── Framework 27: fw_sqglp — SQGLP Century Stock (MOSL 19th Study, 2014 theme) ──
+    # "100x requires vision to see, courage to buy, and patience to hold." — Thomas Phelps
+    # SQGLP = Size (small) + Quality + Growth + Longevity + Price (favorable).
+    # Score >= 4/5: highest-probability 100x candidate profile.
+    fw_sqglp = df.get("century_stock_flag", pd.Series(0, index=df.index)).fillna(0) == 1
+
     # Build comma-separated framework string — fully vectorized, zero apply
     fw_str = (
         np.where(fw_qglp,                   "QGLP|",                  "") +
@@ -1613,7 +1669,11 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_long_game,              "Long Game Quality|",     "") +
         np.where(fw_sepa,                   "SEPA Momentum|",         "") +
         np.where(fw_basant,                 "Basant 30% Club|",       "") +
-        np.where(fw_qmom,                   "Quality Momentum|",      "")
+        np.where(fw_qmom,                   "Quality Momentum|",      "") +
+        np.where(fw_mosl_wealth_creator,    "MOSL Wealth Creator|",   "") +
+        np.where(fw_emc,                    "Economic Moat|",         "") +
+        np.where(fw_blue_chip,              "Blue Chip Quality|",     "") +
+        np.where(fw_sqglp,                  "SQGLP Century Stock|",   "")
     )
     df["frameworks_passed"] = (
         pd.Series(fw_str, index=df.index)
