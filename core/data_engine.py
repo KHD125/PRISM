@@ -116,14 +116,15 @@ INCOME_COLS = {
     "Revenue Preceding Year Quarter":  "rev_pyq",
     "EBITDA Latest Quarter":           "ebitda_lq",
     "EBITDA Preceding Year Quarter":   "ebitda_pyq",
-    # RAW ANNUAL — minimum needed for derived signals (8 columns)
-    "PAT":                 "pat",
-    "PAT 1 Year Back":     "pat_1yb",
-    "EBITDA":              "ebitda",
-    "Revenue":             "revenue",
-    "Revenue 1 Year Back": "revenue_1yb",
-    "Expenses":            "expenses",
-    "Expenses 1 Year Back":"expenses_1yb",
+    # RAW ANNUAL — minimum needed for derived signals (9 columns)
+    "PAT":                    "pat",
+    "PAT 1 Year Back":        "pat_1yb",
+    "EBITDA":                 "ebitda",
+    "EBITDA 1 Year Back":     "ebitda_1yb",
+    "Revenue":                "revenue",
+    "Revenue 1 Year Back":    "revenue_1yb",
+    "Expenses":               "expenses",
+    "Expenses 1 Year Back":   "expenses_1yb",
 }
 
 BALANCE_COLS = {
@@ -193,6 +194,8 @@ SHAREHOLDING_COLS = {
     "Change In DII Holdings 1 Year": "change_dii_1y",
     # ACTIVITY
     "Insider Trading": "insider_trading",
+    # GATE-SPECIFIC PROMOTER (may exclude promoter group / cross-holdings for cleaner gate signal)
+    "Promoter Holdings (Gate Use)": "promoter_holdings_gate",
 }
 
 TECHNICAL_COLS = {
@@ -372,6 +375,95 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["npm_acceleration"] = df.get("npm_latest_q", _de_nan) - df.get("npm_1yb",    _de_nan)
     df["opm_acceleration"] = df.get("opm_latest_q", _de_nan) - df.get("opm_1yb",    _de_nan)
     df["gpm_acceleration"] = df.get("gpm_latest_q", _de_nan) - df.get("gpm_med_5y", _de_nan)
+
+    # ── MOSL Wealth Creation Alpha Signals ──
+    # economic_profit_spread: ROCE minus India cost of equity (~10%).
+    # Positive = value creation above hurdle; > 10 = substantial competitive advantage (2× CoE).
+    # Validated across all 30 MOSL Annual Wealth Creation Studies.
+    df["economic_profit_spread"] = df["roce"].fillna(0) - 10.0
+
+    # compound_growth_power_flag: PAT CAGR consistent across 3 timeframes simultaneously.
+    # 3Y ≥ 15% (recent), 5Y ≥ 12% (medium-term), 10Y ≥ 10% (long-term).
+    # No existing framework checks all three PAT timeframes together.
+    # Source: MOSL Wealth Creation Guide — "consistency, profitability and sustainability are key".
+    _cgp_3y  = df.get("pat_gr_3y",  pd.Series(np.nan, index=df.index)).fillna(0)
+    _cgp_5y  = df.get("pat_gr_5y",  pd.Series(np.nan, index=df.index)).fillna(0)
+    _cgp_10y = df.get("pat_gr_10y", pd.Series(np.nan, index=df.index)).fillna(0)
+    df["compound_growth_power_flag"] = (
+        (_cgp_3y  >= 15) &
+        (_cgp_5y  >= 12) &
+        (_cgp_10y >= 10)
+    ).astype(int)
+
+    # roe_elite_flag: ROE ≥ 35% — elite tier wealth creator.
+    # 6th Study (1996-2001): 12 companies with ROE > 35% created 50% of all wealth in that period.
+    df["roe_elite_flag"] = (df["roe"].fillna(0) >= 35).astype(int)
+
+    # ── MOSL Studies 7-13: Great/Good/Gruesome Framework + Multi-Bagger Formulas ──
+
+    # roe_trend_rising_flag: Study 13 "Great" company criterion (c) — rising ROE trajectory.
+    # roe (current) > roe_med_5y > roe_med_10y = structurally improving return profile.
+    _roe_5y_tr  = df.get("roe_med_5y",  pd.Series(np.nan, index=df.index))
+    _roe_10y_tr = df.get("roe_med_10y", pd.Series(np.nan, index=df.index))
+    df["roe_trend_rising_flag"] = (
+        (df["roe"].fillna(0)    > _roe_5y_tr.fillna(0)) &
+        (_roe_5y_tr.fillna(0)  > _roe_10y_tr.fillna(0))
+    ).astype(int)
+
+    # roe_turnaround_flag: Study 13 — low ROE (<15%) stocks with improving trajectory.
+    # "Anticipating change in profitability ahead of the crowd rewarded very well."
+    # ROE < 5% companies delivered 92% price CAGR when ROE was rising. Bargain zone.
+    df["roe_turnaround_flag"] = (
+        (df["roe"].fillna(0)  <  15) &
+        (df["roe"].fillna(0)  > _roe_5y_tr.fillna(0))
+    ).astype(int)
+
+    # great_company_screen: Study 13 "Great" = 10yr avg Adj ROE > 25% + never below 15% + rising.
+    # Proxy: roe_med_10y ≥ 25 (avg), roe_med_10y ≥ 18 (floor — if 10yr median ≥ 18, no year
+    # likely dipped below 15%), and roe_trend_rising_flag = 1 (criterion c).
+    df["great_company_screen"] = (
+        (_roe_10y_tr.fillna(0) >= 25) &
+        (_roe_10y_tr.fillna(0) >= 18) &   # floor proxy: 10yr median ≥ 18 → no year likely < 15%
+        (df["roe_trend_rising_flag"] == 1)
+    ).astype(int)
+
+    # gruesome_flag: Study 13 — 10yr avg ROE < 10% = wealth destroyer profile. Avoid.
+    df["gruesome_flag"] = (_roe_10y_tr.fillna(0) < 10).astype(int)
+
+    # roce_step_change_flag: Studies 7-9 — 65-70% of wealth creators had ROCE rising over 5yr.
+    # These companies created 75-84% of all wealth in each study period.
+    # Signal: ROCE currently 3+ pp above its own 5yr median = structural improvement underway.
+    _roce_med5_sc = df.get("roce_med_5y", pd.Series(np.nan, index=df.index))
+    df["roce_step_change_flag"] = (
+        (df["roce"].fillna(0) > _roce_med5_sc.fillna(0) + 3)
+    ).astype(int)
+
+    # margin_expansion_flag: Study 9 — "high earnings growth need NOT be associated with high
+    # sales growth." PAT growing 5+ pp faster than revenue = pricing power or operating leverage.
+    # Companies with Sales CAGR 0-10% still created 28% earnings CAGR through margin expansion.
+    _mg_pat = df.get("pat_gr_5y", pd.Series(np.nan, index=df.index))
+    _mg_rev = df.get("rev_gr_5y", pd.Series(np.nan, index=df.index))
+    df["margin_expansion_flag"] = (
+        (_mg_pat.fillna(0) > _mg_rev.fillna(0) + 5)
+    ).astype(int)
+
+    # pe_sweet_spot_flag: Study 9 — PE 5-10x band produced best risk-adjusted CAGR (43.9%),
+    # even better than PE < 5x (36.1%, which often signals distress).
+    # Study 13: PE < 10x = two-thirds of all wealth creators in 2003-2008 period.
+    df["pe_sweet_spot_flag"] = (
+        (df["pe"].fillna(999) >= 5) &
+        (df["pe"].fillna(999) <= 10)
+    ).astype(int)
+
+    # earnings_yield_ratio: Studies 8, 9, 13 — earnings yield (1/PE) vs India G-Sec yield (~7%).
+    # Ratio > 1.0 = stock's earnings yield exceeds risk-free rate = margin of safety exists.
+    # Historical range: 0.13 (market peak 1992) → 1.73 (market trough 2002). > 1.4 = very attractive.
+    df["earnings_yield_ratio"] = np.where(
+        (df["pe"].fillna(0) > 0),
+        (100.0 / df["pe"]) / 7.0,   # 7.0% = India 10yr G-Sec proxy
+        np.nan
+    )
+
     df["pe_discount"] = np.where(
         df["pe_med_10y"].notna() & (df["pe_med_10y"] != 0),
         (df["pe_med_10y"] - df["pe"]) / df["pe_med_10y"] * 100,
@@ -763,6 +855,25 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["economic_profit"] = pd.Series(net_worth, index=df.index) * (df["roe"].fillna(0) - cost_of_equity) / 100.0
     df["economic_profit_positive"] = (df["economic_profit"] > 0).astype(int)
 
+    # ── P/Sales and P/B Ratios (Studies 9, 13 multi-bagger formulas) ──
+    # Study 13: "PE < 10x, P/B < 1x, P/Sales ≤ 1x, Payback ≤ 1x" = four explicit multi-bagger formulas.
+    # Study 9: "If you want a doubler, buy at: P/Book < 1x, P/E < 10x, P/Sales < 0.5x"
+    _nw_series = pd.Series(net_worth, index=df.index)
+    df["pb_ratio"] = np.where(
+        _nw_series.fillna(0) > 0,
+        df["market_cap"].fillna(0) / _nw_series,
+        np.nan
+    )
+    df["pb_lt1_flag"]  = (df["pb_ratio"].fillna(999) <  1.0).astype(int)   # doubler zone (Study 9/13)
+
+    df["ps_ratio"] = np.where(
+        df["revenue"].fillna(0) > 0,
+        df["market_cap"].fillna(0) / df["revenue"],
+        np.nan
+    )
+    df["ps_lt1_flag"]  = (df["ps_ratio"].fillna(999) <= 1.0).astype(int)   # multi-bagger formula (Study 13)
+    df["ps_lt05_flag"] = (df["ps_ratio"].fillna(999) <= 0.5).astype(int)   # doubler formula (Study 9)
+
     # ── High Cash + High Debt Flag (Malik Shenanigan 4) ──
     df["high_cash_high_debt"] = (
         (df["cash_equivalents"].fillna(0) > 0) &
@@ -1148,8 +1259,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
     df["payback_ratio"] = pd.Series(payback_growth, index=df.index)
-    df["payback_lt1"] = (df["payback_ratio"].fillna(99) < 1.0).astype(int)   # supernormal returns zone
-    df["payback_lt2"] = (df["payback_ratio"].fillna(99) < 2.0).astype(int)   # attractive zone
+    df["payback_lt05"] = (df["payback_ratio"].fillna(99) < 0.5).astype(int)  # supernormal tier 1 (Studies 7-9: top-7 fastest ALL had payback < 0.5x)
+    df["payback_lt1"]  = (df["payback_ratio"].fillna(99) < 1.0).astype(int)  # supernormal tier 2
+    df["payback_lt2"]  = (df["payback_ratio"].fillna(99) < 2.0).astype(int)  # attractive zone
 
     # ── Consistency Champion (27th Study: Consistents vs Volatiles) ──
     # Full 15Y analysis requires 15 years of annual PAT — not in CSV.
@@ -1256,18 +1368,148 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["opm_stable"] = (df["opm_stability"].fillna(99) < 20).astype(int)
 
-    # ── WCS Score: Wealth Creation Criteria Count (0–7) ──
+    # ── WCS Score: Wealth Creation Criteria Count (0–10) ──
     # Each criterion is a separately validated MOSL supernormal-return predictor.
+    # Studies 7-13 synthesised: criteria 1-7 from original; 8-10 from Study 9/13 "four formulas".
     # The more criteria met, the higher the probability of 5Y outperformance.
     df["wcs_score"] = (
-        ((df["peg"].fillna(99) > 0) & (df["peg"].fillna(99) <= 1.0)).astype(int) +   # PEG < 1
-        df["pe_below_roe"].fillna(0).astype(int) +                                    # PE < ROE (MoS)
-        df["economic_profit_positive"].fillna(0).astype(int) +                        # EP > 0
-        (df["pat_gr_5y"].fillna(0) >= 20).astype(int) +                               # PAT CAGR > 20%
-        (df["roce_med_5y"].fillna(df["roce"]).fillna(0) >= 15).astype(int) +          # ROCE > 15% sustained
-        df["payback_lt1"].fillna(0).astype(int) +                                     # Payback < 1
-        df["consistency_champion"].fillna(0).astype(int)                              # PAT consistency
+        ((df["peg"].fillna(99) > 0) & (df["peg"].fillna(99) <= 1.0)).astype(int) +   # 1. PEG < 1
+        df["pe_below_roe"].fillna(0).astype(int) +                                    # 2. PE < ROE (MoS)
+        df["economic_profit_positive"].fillna(0).astype(int) +                        # 3. EP > 0
+        (df["pat_gr_5y"].fillna(0) >= 20).astype(int) +                               # 4. PAT CAGR > 20%
+        (df["roce_med_5y"].fillna(df["roce"]).fillna(0) >= 15).astype(int) +          # 5. ROCE > 15%
+        df["payback_lt1"].fillna(0).astype(int) +                                     # 6. Payback < 1 (Study 13: 82/100 wealth creators)
+        df["consistency_champion"].fillna(0).astype(int) +                            # 7. PAT consistency
+        (df["pe"].fillna(999) <= 10).astype(int) +                                    # 8. PE ≤ 10 (Study 9/13: "doubler formula")
+        df["pb_lt1_flag"].fillna(0).astype(int) +                                     # 9. P/B < 1x (Study 9/13: 67% CAGR zone)
+        df["ps_lt1_flag"].fillna(0).astype(int)                                       # 10. P/Sales ≤ 1x (Study 13: 62% CAGR zone)
     )
+
+    # ══════════════════════════════════════════════════════════════
+    # MOSL STUDIES 14-19: CATEGORY WINNERS, UU INVESTING, BLUE CHIPS,
+    # ECONOMIC MOAT, UNCOMMON PROFITS, 100x / SQGLP
+    # Source: 14th-19th Annual Wealth Creation Studies (2009-2015 themes)
+    # ══════════════════════════════════════════════════════════════
+
+    # ── Study 17 (2012): Economic Moat — Sector-Relative ROE (EMC Flag) ──
+    # Backtested 1995-2012: EMC portfolio → 25% CAGR, non-EMC → 12% CAGR, Alpha = +7%.
+    # Criterion: ROE > sector average for 6/8 years. Proxy: above-median for current + 5yr.
+    _sector_grp_roe = df["sector"].fillna("Unknown")
+    _sector_roe_med  = df.groupby(_sector_grp_roe)["roe"].transform("median").fillna(df["roe"].median())
+    _sector_roe5_med = df.groupby(_sector_grp_roe)["roe_med_5y"].transform("median").fillna(df["roe_med_5y"].median())
+    df["emc_flag"] = (
+        (df["roe"].fillna(0)         > _sector_roe_med.fillna(0)) &
+        (df["roe_med_5y"].fillna(0)  > _sector_roe5_med.fillna(0))
+    ).astype(int)
+
+    # ── Study 14 (2009): Category Winner — Sector-Relative ROCE Leader ──
+    # "Category Winners enjoy exponential growth in profits within Winner Categories."
+    # 3 conditions for fastest creators: small mcap + single-digit PE + PAT CAGR > 35%.
+    # Category Winner proxy: top-30% ROCE within sector AND beating-market revenue growth.
+    df["sector_roce_pct_rank"] = (
+        df.groupby(_sector_grp_roe)["roce"]
+          .transform(lambda x: x.rank(pct=True, na_option="bottom"))
+          .fillna(0.5)
+    )
+    df["category_winner_flag"] = (
+        (df["sector_roce_pct_rank"] >= 0.70) &    # top-30% capital efficiency within sector
+        (df["rev_gr_5y"].fillna(0) >= 12)          # AND above-market revenue growth
+    ).astype(int)
+
+    # Study 14 fast-track signal: small mcap + low PE + high PAT CAGR = fastest creator setup
+    df["fast_creator_setup"] = (
+        (df["market_cap"].fillna(0) < 4_000) &     # Base mcap < Rs4B (fastest creator filter)
+        (df["pe"].fillna(99) < 10) &               # Single-digit PE at entry
+        (df["pat_gr_5y"].fillna(0) >= 35)          # PAT CAGR > 35%
+    ).astype(int)
+
+    # ── Study 16 (2011): Blue Chip Quality — 6-Screen Filter (Geraldine Weiss, adapted) ──
+    # Screen 4: "Average RoE ≥ 15% for last 12 years" — proxy = roe_med_10y ≥ 15%.
+    # Screen 3: "Earnings growth in 7/12 years" — proxy = consistency_champion (no PAT crash).
+    # Screen 1/2: "Dividend longevity + growth" — proxy = dividend_payout_ratio ≥ 20%.
+    # Screen 5: "≥ 5 million shares outstanding" — proxy = equity_shares ≥ 5 (in millions).
+    # From 3,000+ stocks, only 48 (1.5%) passed all 6 screens. This is appropriately rare.
+    _dpr_bc    = df.get("dividend_payout_ratio", pd.Series(np.nan, index=df.index))
+    _eq_shares = df.get("equity_shares",         pd.Series(np.nan, index=df.index))
+    df["blue_chip_quality_flag"] = (
+        (_dpr_bc.fillna(0)          >= 20) &      # Screen 1/2: consistent dividend payout
+        (df["roe_med_10y"].fillna(0) >= 15) &      # Screen 4: 10yr ROE ≥ 15% (India CoE threshold)
+        (df["consistency_champion"]  == 1) &       # Screen 3: PAT no-crash consistency proxy
+        (_eq_shares.fillna(0)        >= 5)         # Screen 5: ≥ 5M shares liquidity proxy
+    ).astype(int)
+
+    # Synthetic dividend yield estimate (DPR × Earnings Yield)
+    # Used when direct dividend yield column is unavailable in CSV.
+    df["dividend_yield_synthetic"] = np.where(
+        df["earnings_yield"].notna() & _dpr_bc.notna(),
+        df["earnings_yield"] * (_dpr_bc.fillna(0) / 100.0),
+        np.nan
+    )
+    df["dividend_yield_ratio"] = np.where(
+        df["dividend_yield_synthetic"].notna(),
+        df["dividend_yield_synthetic"] / 7.0,    # vs India G-Sec ~7% (Study 16 buy signal)
+        np.nan
+    )
+
+    # ── Study 15 (2010): UU Investing — Unknown-Unknowable → Known-Knowable Setup ──
+    # "The market handsomely rewards a successful journey from UU to KK."
+    # Examples: Infosys IPO (890x, 173% CAGR), Bharti FY03 (37x, 123% CAGR),
+    #           Pantaloon FY03 (109x, 156% CAGR), Titan 10yr (58x, 50% CAGR).
+    # UU Setup = undiscovered (small cap) + earnings emerging (improving ROE) + low payback.
+    df["uu_setup_flag"] = (
+        (df["market_cap"].fillna(0) < 20_000) &   # Small/mid cap — less discovered
+        (df["payback_lt1"] == 1) &                # Reasonable entry price (payback < 1)
+        (df["roe_turnaround_flag"] == 1)          # ROE improving = UU→KK journey beginning
+    ).astype(int)
+
+    # ── Study 18 (2013): Uncommon Profits — Emerging vs Enduring Value Creators ──
+    # Emerging VC: first-time ROE crossing 15% (Cost of Equity threshold) = Emergence event.
+    # Filter: corporate-parent quality + non-cyclical + PE ≤ 20x at emergence.
+    # "In most cases, there is no significant gain in pre-empting emergence."
+    df["emerging_vc_flag"] = (
+        (df["roe"].fillna(0) >= 15) &             # Current: crossed the 15% CoE threshold
+        (df["roe_med_5y"].fillna(0) < 15) &        # Historical: was below (first-time crossing)
+        (df["pat_gr_3y"].fillna(0) > 15) &         # Growth confirming the emergence
+        (df["economic_profit_positive"] == 1) &    # Earning above cost of equity
+        (df["pe"].fillna(999) <= 20)               # Reasonable valuation at emergence
+    ).astype(int)
+
+    # Enduring VC: proven decade of above-CoE returns = the permanent compounder.
+    # "It's hard for a stock to earn more return than the business itself earns." — Munger
+    df["enduring_vc_flag"] = (
+        (df["economic_profit_positive"] == 1) &
+        (df["consistency_champion"] == 1) &
+        (df["roe_med_10y"].fillna(0) >= 15)        # Decade of above-CoE returns
+    ).astype(int)
+
+    # ── Study 19 (2014): 100x / SQGLP — Five-Factor Century Stock Screen ──
+    # "100x requires vision to see, courage to buy, and patience to hold." — Thomas Phelps
+    # SQGLP: S=Size, Q=Quality, G=Growth, L=Longevity, P=Price
+    # 100x stock profile: avg P/E 6x at purchase → 24x at exit; mcap < USD 500M at entry.
+    _sqglp_s = (df["market_cap"].fillna(0) < 40_000).astype(int)    # S: < ~USD 500M mcap
+    _sqglp_q = (
+        (df["roce"].fillna(0)      >= 15) &
+        (df["roe"].fillna(0)       >= 15) &
+        (df["cfo_to_pat"].fillna(0) >= 70)
+    ).astype(int)                                                     # Q: Quality trifecta
+    _sqglp_g = (
+        (df["pat_gr_5y"].fillna(0)  >= 20) &
+        (df["rev_gr_5y"].fillna(0)  >= 15)
+    ).astype(int)                                                     # G: Earnings + revenue growth
+    _sqglp_l = (
+        df["pat_gr_10y"].fillna(df["pat_gr_5y"]).fillna(0) >= 12
+    ).astype(int)                                                     # L: 10yr sustainable growth
+    _sqglp_p = (df["pe"].fillna(999) <= 15).astype(int)              # P: Favorable entry price
+
+    df["sqglp_s"] = _sqglp_s
+    df["sqglp_q"] = _sqglp_q
+    df["sqglp_g"] = _sqglp_g
+    df["sqglp_l"] = _sqglp_l
+    df["sqglp_p"] = _sqglp_p
+    df["sqglp_score"] = _sqglp_s + _sqglp_q + _sqglp_g + _sqglp_l + _sqglp_p
+
+    # century_stock_flag: 4-5/5 SQGLP criteria = highest-probability 100x candidate
+    df["century_stock_flag"] = (df["sqglp_score"] >= 4).astype(int)
 
     # ── Lynch Category (Peter Lynch — One Up on Dalal Street) ──
     # Classifies each stock by growth trajectory for tearsheet display.
@@ -1285,6 +1527,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     n_derived = len([c for c in df.columns if c not in set(COMMON_COLS.values())])
     print(f"  ✅ Computed all derived signals. Total columns: {len(df.columns)}")
+
+    # Flush all infinities created by division edge cases (zero denominators, etc.)
+    # np.seterr(all='ignore') suppresses the warning but doesn't prevent np.inf in the array.
+    # _pct_rank treats np.inf as a valid maximum, pushing bankrupt/zero-equity stocks to 99th pctile.
+    inf_count = int(np.isinf(df.select_dtypes(include=[np.number])).sum().sum())
+    if inf_count > 0:
+        df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        print(f"  ⚠️  Flushed {inf_count} infinity values to NaN")
+
     return df
 
 
