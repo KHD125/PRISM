@@ -31,11 +31,7 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
     final_cols = first_cols + remaining
     
     display_df = df[final_cols].copy()
-    
-    # Format floats for better readability
-    for col in display_df.select_dtypes(include=['float64', 'float32']).columns:
-        display_df[col] = display_df[col].round(2)
-        
+
     if not AGGRID_AVAILABLE:
         st.info("💡 Pro Tip: Install `streamlit-aggrid` for advanced Excel-like filtering.")
         st.dataframe(display_df, use_container_width=True, height=600)
@@ -46,10 +42,17 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
     gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=50)
     gb.configure_side_bar() # Shows the filtering sidebar
     gb.configure_default_column(
-        filterable=True, 
-        sortable=True, 
+        filterable=True,
+        sortable=True,
         resizable=True,
-        minWidth=100
+        minWidth=100,
+        # Display rounding without mutating underlying sort data
+        valueFormatter=(
+            "params.value === null || params.value === undefined ? '' : "
+            "typeof params.value === 'number' ? "
+            "(params.value % 1 === 0 ? params.value.toFixed(0) : params.value.toFixed(2)) : "
+            "params.value"
+        ),
     )
     
     # Pin important columns
@@ -60,6 +63,7 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
     
     st.markdown("""
         <style>
+        /* Only one AgGrid instance in this system — global scope is safe */
         .ag-theme-streamlit {
             --ag-header-background-color: #1E293B;
             --ag-header-foreground-color: #F8FAFC;
