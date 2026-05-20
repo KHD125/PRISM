@@ -236,40 +236,49 @@ MOAT_SIGNALS = {
 }
 
 GROWTH_SIGNALS = {
-    "pat_gr_5y":        0.20,
-    "pat_gr_10y":       0.10,
-    "rev_gr_5y":        0.20,
-    "rev_gr_10y":       0.10,
-    "eps_gr_5y":        0.15,
-    "ebitda_gr_5y":     0.10,
-    "pat_acceleration": 0.08,  # pat_gr_3y - pat_gr_5y
-    "rev_acceleration": 0.07,  # rev_gr_3y - rev_gr_5y
+    "pat_gr_5y":           0.17,
+    "pat_gr_10y":          0.10,
+    "rev_gr_5y":           0.17,
+    "rev_gr_10y":          0.10,
+    "eps_gr_5y":           0.15,
+    "ebitda_gr_5y":        0.10,
+    "pat_acceleration":    0.06,   # pat_gr_3y - pat_gr_5y
+    "rev_acceleration":    0.05,   # rev_gr_3y - rev_gr_5y
+    "ebitda_acceleration": 0.04,   # ebitda_gr_3y - ebitda_gr_5y
+    # Quarterly freshness layer (q_pat_yoy × 0.60 + q_rev_yoy × 0.40) × 0.06
 }
+# Weights sum: 0.17+0.10+0.17+0.10+0.15+0.10+0.06+0.05+0.04 = 0.94 + 0.06 quarterly = 1.00
 
 CASH_SIGNALS = {
-    "cfo_to_pat":       0.25,
-    "cfo_to_ebitda":    0.15,
-    "fcf_yield":        0.20,
-    "fcf_consistency":  0.15,
-    "capex_coverage":   0.10,
-    "self_funding":     0.15,
+    "cfo_to_pat":      0.20,   # CFO/PAT % — earnings cash-backing
+    "cfo_to_ebitda":   0.15,   # CFO/EBITDA % — clean accounts filter
+    "fcf_yield":       0.15,   # FCF/MCap — absolute attractiveness
+    "fcf_to_cfo_pct":  0.15,   # FCF/CFO — capex discipline (0 when OCF≤0, not neutral 50)
+    "capex_coverage":  0.10,   # OCF/capex multiple
+    "fcf_consistency": 0.15,   # FCF consistently positive (binary)
+    "self_funding":    0.10,   # SSGR ≥ actual growth — no external debt needed (binary)
 }
+# Weights sum: 0.20+0.15+0.15+0.15+0.10+0.15+0.10 = 1.00
 
 MARGIN_SIGNALS = {
-    "npm_med_5y":       0.30,
+    "npm_med_5y":       0.25,
     "opm_med_5y":       0.25,
     "gpm_med_5y":       0.15,
-    "npm_acceleration": 0.15,  # npm_lq - npm_1yb
-    "opm_acceleration": 0.15,  # opm_lq - opm_1yb
+    "npm_acceleration": 0.15,   # npm_lq - npm_1yb
+    "opm_acceleration": 0.10,   # opm_lq - opm_1yb
+    "opm_stable":       0.10,   # OPM within ±20% of 5Y median = pricing power (binary)
 }
+# Weights sum: 0.25+0.25+0.15+0.15+0.10+0.10 = 1.00
 
 BALANCE_SHEET_SIGNALS = {
-    "net_debt_negative":  0.25,  # negative net_debt = fortress
-    "debt_slope_3y":      0.20,  # negative = deleveraging
-    "reserves_growth":    0.20,
-    "cwip_conversion":    0.15,  # positive = capacity coming online
-    "cash_change":        0.20,  # positive = building cash
+    "net_debt_negative": 0.25,  # negative net_debt = fortress (binary)
+    "debt_slope_3y":     0.20,  # negative = deleveraging (ascending=False)
+    "reserves_growth":   0.15,
+    "cwip_conversion":   0.15,  # positive = capacity came online
+    "cash_change":       0.15,  # positive = building cash
+    "nfat":              0.10,  # Net Fixed Asset Turnover — capital-light moat (Malik)
 }
+# Weights sum: 0.25+0.20+0.15+0.15+0.15+0.10 = 1.00
 
 # ═══════════════════════════════════════════════════════════════
 # 4b. VALUATION SCORE SIGNALS (Marks + Baid Entry Price Discipline)
