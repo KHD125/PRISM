@@ -23,6 +23,7 @@ from config import (
     DEFAULT_CYCLE_TEMPERATURE, MARKS_CYCLE,
     MASTER_PROFILES, ANALYSIS_MODES, WAVE_DETECTION,
     REGIME_ADJUSTMENTS, get_adaptive_weights,
+    EPOCH2_REINVESTMENT,
 )
 
 
@@ -44,12 +45,36 @@ def _safe_clip(series: pd.Series, lo: float = 0, hi: float = 100) -> pd.Series:
 
 
 def _zone_score(value: pd.Series, zones: dict) -> pd.Series:
-    """Score based on value falling in predefined zones."""
+    """Score based on value falling in predefined zones.
+    Boundaries: left-closed [min, max) for all but the last zone.
+    Last zone is left-closed and unbounded above (value >= min) to prevent
+    exact-float boundary fallthrough (e.g. HIGH_AGE_ZONES NaN→9999 == max)."""
     result = pd.Series(50.0, index=value.index)  # default neutral
-    for zone_name, z in zones.items():
-        mask = (value >= z["min"]) & (value < z["max"])
+    zone_items = list(zones.items())
+    for i, (zone_name, z) in enumerate(zone_items):
+        if i < len(zone_items) - 1:
+            mask = (value >= z["min"]) & (value < z["max"])
+        else:
+            mask = value >= z["min"]  # last zone: open upper bound
         result = np.where(mask, z["score"], result)
     return pd.Series(result, index=value.index)
+
+
+def _sector_pct_rank(df: pd.DataFrame, col: str, sector_col: str = "sector",
+                     ascending: bool = True, fillna_val: float = 50.0) -> pd.Series:
+    """Sector-relative percentile rank (0-100) using groupby().rank() — fully vectorized.
+    Falls back to universe rank when sector column is missing or col not in df."""
+    if col not in df.columns:
+        return pd.Series(fillna_val, index=df.index)
+    if sector_col not in df.columns:
+        return _pct_rank(df[col], ascending=ascending).fillna(fillna_val)
+    sector_grp = df[sector_col].fillna("Unknown")
+    return (
+        df.groupby(sector_grp)[col]
+        .rank(pct=True, ascending=ascending, na_option="keep")
+        .mul(100)
+        .fillna(fillna_val)
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -145,14 +170,38 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════
 
 def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
-    """Moat score: ROCE trajectory + ROE. Higher = wider moat."""
+    """Moat score: ROCE trajectory + ROE.
+    Agent 4 Sector Normalization: blend 70% universe rank + 30% sector-relative rank."""
     score = pd.Series(0.0, index=df.index)
-
     _nan_s = pd.Series(np.nan, index=df.index)
+    _sector_grp = df.get("sector", pd.Series("Unknown", index=df.index)).fillna("Unknown")
+
+    # ROCE 10Y: 70% universe + 30% sector-peer rank
+    _roce10y_raw  = df.get("roce_med_10y", _nan_s)
+    _roce10y_univ = _pct_rank(_roce10y_raw, ascending=True).fillna(50)
+    if "roce_med_10y" in df.columns and "sector" in df.columns:
+        _roce10y_sector = df.groupby(_sector_grp)["roce_med_10y"].rank(
+            pct=True, na_option="keep"
+        ).mul(100).fillna(50)
+        _roce10y = _roce10y_univ * 0.70 + _roce10y_sector * 0.30
+    else:
+        _roce10y = _roce10y_univ
+
+    # ROE 10Y: 70% universe + 30% sector-peer rank
+    _roe10y_raw  = df.get("roe_med_10y", _nan_s)
+    _roe10y_univ = _pct_rank(_roe10y_raw, ascending=True).fillna(50)
+    if "roe_med_10y" in df.columns and "sector" in df.columns:
+        _roe10y_sector = df.groupby(_sector_grp)["roe_med_10y"].rank(
+            pct=True, na_option="keep"
+        ).mul(100).fillna(50)
+        _roe10y = _roe10y_univ * 0.70 + _roe10y_sector * 0.30
+    else:
+        _roe10y = _roe10y_univ
+
     signals = {
-        "roce_med_10y":        (_pct_rank(df.get("roce_med_10y", _nan_s), ascending=True), 0.35),
+        "roce_med_10y":        (_roce10y, 0.35),
         "roce_trajectory":     (_pct_rank(df.get("roce_trajectory", _nan_s), ascending=True), 0.15),
-        "roe_med_10y":         (_pct_rank(df.get("roe_med_10y", _nan_s), ascending=True), 0.25),
+        "roe_med_10y":         (_roe10y, 0.25),
         "roe_trajectory":      (_pct_rank(df.get("roe_trajectory", _nan_s), ascending=True), 0.10),
         "roce_current_vs_med": (_pct_rank(df.get("roce_current_vs_med", _nan_s), ascending=True), 0.15),
     }
@@ -202,16 +251,18 @@ def _compute_cash_score(df: pd.DataFrame) -> pd.Series:
     Sum = 1.00"""
     score = pd.Series(0.0, index=df.index)
 
-    # Continuous signals (percentile ranked)
-    continuous = {
-        "cfo_to_pat":    (True, 0.20),   # CFO/PAT %: higher = earnings more cash-backed
-        "cfo_to_ebitda": (True, 0.15),   # CFO/EBITDA %: clean accounts filter
-        "fcf_yield":     (True, 0.15),   # FCF/MCap: absolute attractiveness
-        "capex_coverage": (True, 0.10),  # OCF covers capex multiple
-    }
-    for col, (ascending, weight) in continuous.items():
+    # Sector-normalized cash quality signals: banks/financials have structurally different CFO/PAT norms.
+    # Blend: 70% universe rank + 30% sector-relative rank eliminates cross-sector structural bias.
+    for col, weight in (("cfo_to_pat", 0.20), ("cfo_to_ebitda", 0.15)):
         if col in df.columns:
-            score += _pct_rank(df[col], ascending=ascending).fillna(50) * weight
+            univ_r = _pct_rank(df[col], ascending=True).fillna(50)
+            sect_r = _sector_pct_rank(df, col, ascending=True)
+            score += (univ_r * 0.70 + sect_r * 0.30) * weight
+
+    # Universe-ranked signals (no structural sector bias — meaningful cross-sector)
+    for col, weight in (("fcf_yield", 0.15), ("capex_coverage", 0.10)):
+        if col in df.columns:
+            score += _pct_rank(df[col], ascending=True).fillna(50) * weight
 
     # FCF/CFO: handled separately because negative-OCF companies must score 0, not neutral 50.
     # When OCF <= 0 the data_engine sets fcf_to_cfo_pct = NaN (correct — ratio is meaningless).
@@ -245,16 +296,18 @@ def _compute_margin_score(df: pd.DataFrame) -> pd.Series:
              npm_acceleration=0.15, opm_acceleration=0.10, opm_stable=0.10. Sum=1.00"""
     score = pd.Series(0.0, index=df.index)
 
-    signals = {
-        "npm_med_5y":       (True, 0.25),
-        "opm_med_5y":       (True, 0.25),
-        "gpm_med_5y":       (True, 0.15),
-        "npm_acceleration": (True, 0.15),
-        "opm_acceleration": (True, 0.10),
-    }
-    for col, (ascending, weight) in signals.items():
+    # Sector-normalized margin medians: commodity sectors (steel, cement) have 5% OPM norms;
+    # branded FMCG sectors have 20%+. Blend 70% universe + 30% sector-relative removes this bias.
+    for col, weight in (("npm_med_5y", 0.25), ("opm_med_5y", 0.25), ("gpm_med_5y", 0.15)):
         if col in df.columns:
-            score += _pct_rank(df[col], ascending=ascending).fillna(50) * weight
+            univ_r = _pct_rank(df[col], ascending=True).fillna(50)
+            sect_r = _sector_pct_rank(df, col, ascending=True)
+            score += (univ_r * 0.70 + sect_r * 0.30) * weight
+
+    # Acceleration signals: improvement velocity is cross-sectorally comparable
+    for col, weight in (("npm_acceleration", 0.15), ("opm_acceleration", 0.10)):
+        if col in df.columns:
+            score += _pct_rank(df[col], ascending=True).fillna(50) * weight
 
     # OPM stability (binary): stable OPM within ±20% of 5Y median = pricing power
     if "opm_stable" in df.columns:
@@ -340,6 +393,16 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
         payback_score = _zone_score(df["payback_ratio"].clip(lower=0, upper=998), PAYBACK_ZONES)
         score += payback_score.fillna(50) * VALUATION_SIGNALS["payback_ratio"]
 
+    # Agent 9 (1st WCS): Valuation Multiple Trap — PE > 35 AND ROE < 18%.
+    # Market is pricing in returns the business cannot sustainably generate.
+    # Slash valuation score by 40% for these stocks; the quality score still reflects fundamentals.
+    if "valuation_multiple_trap" in df.columns:
+        trap_mask = df["valuation_multiple_trap"].fillna(0) == 1
+        score = pd.Series(
+            np.where(trap_mask, score * 0.60, score),
+            index=df.index
+        )
+
     return _safe_clip(score)
 
 
@@ -349,19 +412,6 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     Applies Marks' Mean Reversion Risk penalty for cyclical peak margins.
     Detects Baid's Sell Triggers for existing holding alerts."""
     df = df.copy()
-
-    # D3: Winsorize growth CAGRs at p01-p99 before percentile ranking.
-    # Extreme outliers (e.g., IOC +528%, COFORGE +1068% YoY PAT) inflate the top
-    # of the distribution and compress every other stock's _pct_rank() score.
-    _growth_cols = [
-        "pat_gr_5y", "pat_gr_10y", "rev_gr_5y", "rev_gr_10y",
-        "eps_gr_5y", "ebitda_gr_5y", "pat_acceleration", "rev_acceleration", "ebitda_acceleration",
-        "q_pat_yoy", "q_rev_yoy",   # quarterly YoY: base-effect spikes more extreme than annual
-    ]
-    for _col in _growth_cols:
-        if _col in df.columns:
-            _p01, _p99 = df[_col].quantile(0.01), df[_col].quantile(0.99)
-            df[_col] = df[_col].clip(lower=_p01, upper=_p99)
 
     df["moat_score"] = _compute_moat_score(df)
     df["growth_score"] = _compute_growth_score(df)
@@ -403,6 +453,49 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
         df["quality_score"] * MEAN_REVERSION["penalty_factor"],
         df["quality_score"]
     )
+
+    # Agent 10 (6th WCS): Elite ROE Tier sub-factor — ROE ≥ 35% mapped into quality_score.
+    # 6th Study (1996-2001): 12 companies with ROE > 35% created 50% of all wealth in that period.
+    # Wired as 0.25-weight sub-factor within the moat bucket: contribution = 0.25 × 100 × moat_weight = 5.5 pts max.
+    # Bounded by _safe_clip at step end — cannot exceed 100.
+    if "roe_elite_flag" in df.columns:
+        _roe_elite_contrib = df["roe_elite_flag"].fillna(0) * 100.0 * 0.25 * QUALITY_WEIGHTS["moat"]
+        df["quality_score"] = df["quality_score"] + _roe_elite_contrib
+
+    # ── EPOCH 2 (7th–12th WCS, 2002–2007): Self-Funding Scale Velocity ──
+    # Agent 10 / 12th WCS: flag_epoch2_compounder — high-retention mid/small-cap ROCE leaders.
+    # Three concurrent conditions (all must hold):
+    #   (1) RR ≥ 60%: retaining ≥60% of earnings internally — no payout dilution of compounding base.
+    #   (2) ROCE_10Y ≥ 20%: sustained capital efficiency — proven reinvestment returns over full cycle.
+    #   (3) Scalable category: Mid/Small/Micro/Nano Cap — hasn't hit structural size ceiling yet.
+    # 12th WCS empirical: this configuration produced the highest wealth-creation velocity in 2002-07.
+    # Boost: +10 pts to quality_score (threshold-agnostic; final _safe_clip caps at 100).
+    _epoch2_req_cols = ["reinvestment_rate", "fundamental_growth_capacity", "mcap_tier"]
+    if all(c in df.columns for c in _epoch2_req_cols):
+        df["flag_epoch2_compounder"] = (
+            (df["reinvestment_rate"].fillna(0)     >= EPOCH2_REINVESTMENT["min_reinvestment_rate"]) &
+            (df.get("roce_med_10y", pd.Series(0.0, index=df.index)).fillna(0)
+             >= EPOCH2_REINVESTMENT["min_capital_efficiency"]) &
+            df["mcap_tier"].isin(["Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"])
+        ).astype(int)
+        df["quality_score"] = (
+            df["quality_score"]
+            + df["flag_epoch2_compounder"].fillna(0) * EPOCH2_REINVESTMENT["quality_boost_pts"]
+        )
+    else:
+        df["flag_epoch2_compounder"] = 0
+
+    # Capital Misallocation Risk Penalty (Agent 9 / 11th WCS): Buffett VCR test.
+    # Companies retaining >50% of earnings but generating VCR < 1.0 are destroying minority value.
+    # Apply 10% quality_score haircut — business is structurally misallocating the retained capital.
+    if "capital_misallocation_risk" in df.columns:
+        _cmal = df["capital_misallocation_risk"].fillna(0) == 1
+        df["quality_score"] = pd.Series(
+            np.where(_cmal,
+                     df["quality_score"] * EPOCH2_REINVESTMENT["misallocation_penalty"],
+                     df["quality_score"]),
+            index=df.index
+        )
 
     # ── BAID SELL TRIGGERS (alert flags for existing holdings) ──
     df["sell_alert_thesis_broken"] = (
@@ -615,12 +708,16 @@ def _compute_volume_score(df: pd.DataFrame) -> pd.Series:
 
 
 def _compute_sector_leader_score(df: pd.DataFrame) -> pd.Series:
-    """Sector leadership: outperformance vs industry peers."""
+    """Sector leadership: outperformance vs industry peers.
+    Ranked within sector so the score captures who outperformed their peers most,
+    not which sector had the best absolute returns."""
     score = pd.Series(0.0, index=df.index)
 
     for col, weight in SECTOR_SIGNALS.items():
         if col in df.columns:
-            score += _pct_rank(df[col], ascending=True).fillna(50) * weight
+            # Sector-relative ranking: ensures a top IT stock isn't penalized in a tech downturn
+            # and a mediocre bank isn't rewarded when banking sector outperformed.
+            score += _sector_pct_rank(df, col, ascending=True) * weight
 
     return _safe_clip(score)
 
@@ -757,6 +854,20 @@ def compute_composite_score(
         df["momentum_score"]  * mom_scaled +
         df["governance_bonus"] * gov_w
     )
+
+    # EP Hockey-Stick Breakout boost (28th WCS): structural alpha inflection — emerging
+    # value generator (Q2/Q3) ascending the Power Curve with institutional volume confirmation.
+    # Bounded +5 pts to preserve composite range [0, 100].
+    _hs_boost = df.get("ep_hockey_stick_breakout", pd.Series(0, index=df.index)).fillna(0)
+    df["composite_score"] = df["composite_score"] + _hs_boost * 5.0
+
+    # Agent 8 (1st WCS): Mid-Cap Velocity Compounder boost.
+    # Mid/Small/Micro-Cap stocks with sustained ROCE ≥ 20% compound dramatically faster than large caps.
+    # 1st WCS: scale-velocity advantage — smaller base means each incremental revenue rupee has
+    # proportionally more impact on returns. Bounded +3 pts.
+    _mcv_boost = df.get("mcap_velocity_compounder", pd.Series(0, index=df.index)).fillna(0)
+    df["composite_score"] = df["composite_score"] + _mcv_boost * 3.0
+
     df["composite_score"] = _safe_clip(df["composite_score"])
 
     # Assign conviction tiers
@@ -1645,35 +1756,73 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # Score >= 4/5: highest-probability 100x candidate profile.
     fw_sqglp = df.get("century_stock_flag", pd.Series(0, index=df.index)).fillna(0) == 1
 
+    # ── Framework 28: fw_cap_gap — CAP + GAP Longevity Compounder (MOSL 22nd Study, 2017 theme) ──
+    # Competitive Advantage Period (CAP) + Growth Advantage Period (GAP) both extended.
+    # Proves DURATION of competitive advantage — not just current level.
+    # Most frameworks test current ROCE/growth; CAP-GAP tests whether it has LASTED.
+    # Backtested signal: companies with both extended CAP + GAP show the deepest compounding.
+    fw_cap_gap = (
+        (df.get("cap_extended_flag", pd.Series(0, index=df.index)).fillna(0) == 1) &
+        (df.get("gap_extended_flag", pd.Series(0, index=df.index)).fillna(0) == 1)
+    )
+
+    # ── Framework 29: fw_consistent_volatile — Consistent in Volatile Sector (MOSL 27th Study, 2022) ──
+    # Study 27 backtested 697 companies over 2007-2022 (15yr). Consistent companies in Volatile sectors
+    # delivered 19% avg CAGR — the single highest return combination in the entire study.
+    # Signal: deepest moat when a company sustains earnings consistency despite adverse sector dynamics.
+    fw_consistent_volatile = (
+        df.get("consistent_in_volatile_flag", pd.Series(0, index=df.index)).fillna(0) == 1
+    )
+
+    # ── Framework 30: fw_ep_hockey_stick — EP Hockey Stick (28th WCS, 2023) ──
+    fw_ep_hockey_stick = (
+        df.get("ep_hockey_stick", pd.Series(0, index=df.index)).fillna(0) == 1
+    )
+
+    # ── Framework 31: fw_bruised_bb_29 — Bruised Blue Chip WCS 29 (Large-Cap Edition, 2024) ──
+    fw_bruised_bb_29 = (
+        df.get("bruised_blue_chip_29", pd.Series(0, index=df.index)).fillna(0) == 1
+    )
+
+    # ── Framework 32: fw_multitrillioncap — Multi-Trillion Compounding Engine (30th WCS, 2025) ──
+    fw_multitrillioncap = (
+        df.get("multitrillioncap_tipping_point", pd.Series(0, index=df.index)).fillna(0) == 1
+    )
+
     # Build comma-separated framework string — fully vectorized, zero apply
     fw_str = (
-        np.where(fw_qglp,                   "QGLP|",                  "") +
-        np.where(fw_coffee_can,             "Coffee Can|",            "") +
-        np.where(fw_magic_formula,          "Magic Formula|",         "") +
-        np.where(fw_smile,                  "SMILE|",                 "") +
-        np.where(fw_lynch,                  "Lynch Dream|",           "") +
-        np.where(fw_can_slim,               "CAN SLIM|",              "") +
-        np.where(fw_bruised_bb,             "Bruised Blue Chip|",     "") +
-        np.where(fw_ep_improver,            "EP Improver|",           "") +
-        np.where(fw_malik_peaceful,         "Peaceful Investing|",    "") +
-        np.where(fw_unusual_billionaires,   "Unusual Billionaires|",  "") +
-        np.where(fw_fisher,                 "Fisher Quality|",        "") +
-        np.where(fw_100_bagger,             "100-Bagger|",            "") +
-        np.where(fw_diamond,                "Diamond|",               "") +
-        np.where(fw_dorsey,                 "Wide Moat|",             "") +
-        np.where(fw_outsider,               "Outsider CEO|",          "") +
-        np.where(fw_quality,                "Quality Compounder|",    "") +
-        np.where(fw_dhandho,                "Dhandho Asymmetry|",     "") +
-        np.where(fw_parikh,                 "Parikh Contrarian|",     "") +
-        np.where(fw_baid,                   "Baid Compounder|",       "") +
-        np.where(fw_long_game,              "Long Game Quality|",     "") +
-        np.where(fw_sepa,                   "SEPA Momentum|",         "") +
-        np.where(fw_basant,                 "Basant 30% Club|",       "") +
-        np.where(fw_qmom,                   "Quality Momentum|",      "") +
-        np.where(fw_mosl_wealth_creator,    "MOSL Wealth Creator|",   "") +
-        np.where(fw_emc,                    "Economic Moat|",         "") +
-        np.where(fw_blue_chip,              "Blue Chip Quality|",     "") +
-        np.where(fw_sqglp,                  "SQGLP Century Stock|",   "")
+        np.where(fw_qglp,                   "QGLP|",                       "") +
+        np.where(fw_coffee_can,             "Coffee Can|",                 "") +
+        np.where(fw_magic_formula,          "Magic Formula|",              "") +
+        np.where(fw_smile,                  "SMILE|",                      "") +
+        np.where(fw_lynch,                  "Lynch Dream|",                "") +
+        np.where(fw_can_slim,               "CAN SLIM|",                   "") +
+        np.where(fw_bruised_bb,             "Bruised Blue Chip|",          "") +
+        np.where(fw_ep_improver,            "EP Improver|",                "") +
+        np.where(fw_malik_peaceful,         "Peaceful Investing|",         "") +
+        np.where(fw_unusual_billionaires,   "Unusual Billionaires|",       "") +
+        np.where(fw_fisher,                 "Fisher Quality|",             "") +
+        np.where(fw_100_bagger,             "100-Bagger|",                 "") +
+        np.where(fw_diamond,                "Diamond|",                    "") +
+        np.where(fw_dorsey,                 "Wide Moat|",                  "") +
+        np.where(fw_outsider,               "Outsider CEO|",               "") +
+        np.where(fw_quality,                "Quality Compounder|",         "") +
+        np.where(fw_dhandho,                "Dhandho Asymmetry|",          "") +
+        np.where(fw_parikh,                 "Parikh Contrarian|",          "") +
+        np.where(fw_baid,                   "Baid Compounder|",            "") +
+        np.where(fw_long_game,              "Long Game Quality|",          "") +
+        np.where(fw_sepa,                   "SEPA Momentum|",              "") +
+        np.where(fw_basant,                 "Basant 30% Club|",            "") +
+        np.where(fw_qmom,                   "Quality Momentum|",           "") +
+        np.where(fw_mosl_wealth_creator,    "MOSL Wealth Creator|",        "") +
+        np.where(fw_emc,                    "Economic Moat|",              "") +
+        np.where(fw_blue_chip,              "Blue Chip Quality|",          "") +
+        np.where(fw_sqglp,                  "SQGLP Century Stock|",        "") +
+        np.where(fw_cap_gap,                "CAP-GAP Compounder|",         "") +
+        np.where(fw_consistent_volatile,    "Consistent in Volatile|",     "") +
+        np.where(fw_ep_hockey_stick,        "EP Hockey Stick|",            "") +
+        np.where(fw_bruised_bb_29,          "Bruised Blue Chip 29|",       "") +
+        np.where(fw_multitrillioncap,       "Multi-Trillion Cap|",         "")
     )
     df["frameworks_passed"] = (
         pd.Series(fw_str, index=df.index)
@@ -1681,6 +1830,64 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         .str.replace("|", ", ", regex=False)
     )
     df["frameworks_passed"] = np.where(df["frameworks_passed"] == "", "None", df["frameworks_passed"])
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════
+# 28th WCS: ECONOMIC PROFIT POWER CURVE (MOSL 2023)
+# ═══════════════════════════════════════════════════════════════
+
+def compute_ep_power_curve(df: pd.DataFrame) -> pd.DataFrame:
+    """28th WCS Power Curve: cross-sectional EP quintile matrix + Hockey-Stick breakout flag.
+
+    Quintile 1 = Top 20% absolute value creators (highest EP).
+    Quintile 5 = Bottom 20% absolute value destroyers (lowest EP).
+
+    Hockey-Stick Breakout (ep_hockey_stick_breakout = 1) requires all three concurrent:
+      1. EP quintile ∈ {2, 3} — emerging value generator, not yet priced as elite
+      2. economic_profit_velocity > 0 — ascending the Power Curve (improving EP YoY)
+      3. vol_ratio > 1.0 — volume above 20D SMA, confirming institutional accumulation
+    """
+    df = df.copy()
+
+    # ── Cross-Sectional EP Quintile Matrix ──
+    df["ep_quintile"] = pd.Series(np.nan, index=df.index)
+    if "economic_profit" in df.columns:
+        ep_valid = df["economic_profit"].notna()
+        if ep_valid.sum() >= 10:
+            try:
+                quintile_labels = pd.qcut(
+                    df.loc[ep_valid, "economic_profit"],
+                    q=5,
+                    labels=[5, 4, 3, 2, 1],  # 1=top value creators, 5=bottom destroyers
+                    duplicates="drop"
+                )
+                df.loc[ep_valid, "ep_quintile"] = quintile_labels.astype(float)
+            except Exception:
+                # Fallback: rank-based quintile if qcut fails (e.g. many ties)
+                ep_rank_pct = df["economic_profit"].rank(pct=True, na_option="keep")
+                df["ep_quintile"] = pd.cut(
+                    ep_rank_pct,
+                    bins=[0, 0.20, 0.40, 0.60, 0.80, 1.0],
+                    labels=[5, 4, 3, 2, 1],
+                    include_lowest=True
+                ).astype(float)
+
+    # ── Hockey-Stick Breakout: emerging EP generators + velocity + volume confirmation ──
+    _ep_q   = df["ep_quintile"].fillna(99)
+    _ep_vel = df.get("economic_profit_velocity", pd.Series(0.0, index=df.index)).fillna(0)
+    _vol_r  = df.get("vol_ratio", pd.Series(0.0, index=df.index)).fillna(0)
+
+    df["ep_hockey_stick_breakout"] = (
+        (_ep_q.isin([2.0, 3.0])) &   # Quintile 2 or 3: emerging value generators
+        (_ep_vel > 0) &               # Velocity positive: ascending the Power Curve
+        (_vol_r  > 1.0)              # Volume above 20D SMA: institutional accumulation
+    ).astype(int)
+
+    breakout_count = int(df["ep_hockey_stick_breakout"].sum())
+    print(f"\n📈 EP Power Curve: {int((df['ep_quintile'] == 1.0).sum())} Q1 value creators | "
+          f"{breakout_count} Hockey-Stick breakout setups")
 
     return df
 
@@ -1749,6 +1956,9 @@ def run_full_scoring(
 
     # ── Profile-adaptive QGLP Framework ──
     df = compute_qglp_score(df, profile=adaptive)
+
+    # ── 28th WCS EP Power Curve: quintile matrix + Hockey-Stick breakout ──
+    df = compute_ep_power_curve(df)
 
     # ── Layer 4: Composite — blend per Analysis Mode ──
     fundamental_w = mode["fundamental_w"]
