@@ -17,10 +17,16 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
         st.warning("No stocks match the current filters.")
         return
         
-    # Reorder columns to put priority columns first
+    # Reorder columns — pattern-matched so pinned signals survive column renames/additions
     all_cols = list(df.columns)
-    first_cols = ["rank", "name", "sector", "composite_score", "moat_growth_quad", "cash_machine_label", "buy_zone_label"]
-    first_cols = [c for c in first_cols if c in all_cols]
+    _PINNED = ["rank", "name", "sector", "composite_score", "moat_growth", "cash_machine", "buy_zone"]
+    seen: set = set()
+    first_cols: list = []
+    for pattern in _PINNED:
+        for c in all_cols:
+            if pattern.lower() in c.lower() and c not in seen:
+                first_cols.append(c)
+                seen.add(c)
     
     if priority_cols:
         for c in priority_cols:
