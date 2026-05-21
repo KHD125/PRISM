@@ -1702,10 +1702,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Identity C: Growth-Adjusted Payback Runway (26th WCS — Bits accounting anomaly correction)
     # GAPR = P/B / (ROE × Reinvestment Rate). Measures how quickly retained ROE earns back
     # the book premium. Lower GAPR = faster payback via compounding.
-    # ROE is in percentage form (e.g. 25.0 = 25%), so divide by 100 for decimal form.
+    # ROE is percentage (25.0 = 25%). RR computed inline — reinvestment_rate is defined later.
+    # clip(0.01, 1.0): guards DPR ≥ 100% edge case (avoids divide-by-zero).
+    _gapr_rr = (1.0 - df["dividend_payout_ratio"].fillna(0) / 100.0).clip(0.01, 1.0)
     df["gapr"] = np.where(
         (df["roe"].fillna(0) > 0) & (df["pb_ratio"].fillna(0) > 0),
-        df["pb_ratio"].fillna(0) / ((df["roe"].fillna(0) / 100.0) * df["reinvestment_rate"].fillna(1.0)),
+        df["pb_ratio"].fillna(0) / ((df["roe"].fillna(0) / 100.0) * _gapr_rr),
         np.nan
     )
 
