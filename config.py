@@ -13,29 +13,32 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _get_actual_path(base, folder_name, file_name):
-    # Case-insensitive resolution for Linux (Streamlit Cloud)
+    # Case-insensitive resolution for Linux (Streamlit Cloud).
+    # Pre-hashes a single os.listdir pass per directory instead of N linear scans.
     try:
-        # Find folder
-        actual_folder = folder_name
-        for item in os.listdir(base):
-            if item.lower() == folder_name.lower() and os.path.isdir(os.path.join(base, item)):
-                actual_folder = item
-                break
-        
+        folder_map = {
+            item.lower(): item
+            for item in os.listdir(base)
+            if os.path.isdir(os.path.join(base, item))
+        }
+        actual_folder = folder_map.get(folder_name.lower(), folder_name)
         folder_path = os.path.join(base, actual_folder)
-        
-        # Find file
-        actual_file = file_name
-        for item in os.listdir(folder_path):
-            if item.lower() == file_name.lower():
-                actual_file = item
-                break
-                
+        file_map = {item.lower(): item for item in os.listdir(folder_path)}
+        actual_file = file_map.get(file_name.lower(), file_name)
         return os.path.join(folder_path, actual_file)
     except Exception:
         return os.path.join(base, folder_name, file_name)
 
 DATA_DIR_NAME = "CSV Data"
+
+# ═══════════════════════════════════════════════════════════════
+# 2. MACRO ECONOMIC CONSTANTS
+# ═══════════════════════════════════════════════════════════════
+
+# India institutional Cost of Equity — Motilal Oswal 23rd WCS baseline.
+# Used in Economic Profit: EP = Net Worth × (RoE − COST_OF_EQUITY).
+# Referenced in data_engine.py; update here to stress-test against 12% or 15% hurdle rates.
+COST_OF_EQUITY = 12.0
 
 CSV_FILES = {
     "ratio":         _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Ratio.csv"),
@@ -681,6 +684,22 @@ WAVE_DETECTION = {
     "vqs_smart_money": 0.20,  # VQS: Smart Money Flow
     "vqs_consistency": 0.20,  # VQS: Pattern Consistency
     "vqs_efficiency": 0.10,   # VQS: Price Efficiency
+}
+
+# ═══════════════════════════════════════════════════════════════
+# EPOCH 2: REINVESTMENT MOAT THRESHOLDS (7th–12th WCS, 2002–2007)
+# Three mathematical identities for self-funding compound machines:
+#   Identity A: Reinvestment Rate (RR) = 1 − DPR
+#   Identity B: Fundamental Growth Capacity = ROE × RR
+#   Identity C: Buffett Value Creation Ratio (VCR) ≥ 1.0 to pass
+# ═══════════════════════════════════════════════════════════════
+EPOCH2_REINVESTMENT = {
+    "min_reinvestment_rate":    0.60,   # DPR < 40% — retaining ≥60% of earnings
+    "min_capital_efficiency":   20.0,   # ROCE/ROE baseline hurdle rate (%)
+    "min_value_creation_ratio": 1.0,    # Buffett 1-to-1 dollar baseline test hurdle
+    "elite_vcr_threshold":      2.0,    # VCR ≥ 2.0 = elite capital allocator
+    "quality_boost_pts":        10.0,   # Quality score boost for flag_epoch2_compounder
+    "misallocation_penalty":    0.90,   # 10% quality score penalty for capital misallocators
 }
 
 
