@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import warnings
 from typing import Dict, Tuple, Optional
-from config import CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR, FINANCIAL_SECTORS, SSGR_DEP_RATES, COST_OF_EQUITY
+from config import CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR, FINANCIAL_SECTORS, SSGR_DEP_RATES, COST_OF_EQUITY, EPOCH3_TAXONOMY, EPOCH5_MODERN
 
 warnings.filterwarnings('ignore')
 np.seterr(all='ignore')
@@ -339,7 +339,7 @@ def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         master = master.merge(
             df[bring_cols],
             on="company_id",
-            how="left",
+            how="inner",
             suffixes=("", f"_{name}")
         )
         print(f"  ✅ Merged {name}: {len(master)} rows, {len(master.columns)} cols")
@@ -812,6 +812,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         "inventory_turnover", "inventory_turnover_1yb",
         "ccc", "ccc_1yb",
         "inventory", "inventory_1yb",
+        "days_receivable", "days_receivable_1yb",
         # Also NaN already-computed derived columns that came from these inputs above line 776
         "inv_growth", "inv_vs_rev_gap",
     ]
@@ -1429,6 +1430,17 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         _bbc29_largecap & _bbc29_elite_roce & _bbc29_bruised_pb & _bbc29_tailwind
     ).astype(int)
 
+    # ── Identity D: Macro Tipping Point Velocity (30th WCS — India Multi-Trillion Engine) ──
+    # Continuous velocity indicator: Rev Growth YoY × NPM × Vol Ratio (volume confirm).
+    # Set to 0 for non-tipping sectors so the composite boost is sector-gated.
+    _ttp_in_sector = df["sector"].fillna("").isin(EPOCH5_MODERN["tipping_sectors"])
+    df["is_tipping_sector"] = _ttp_in_sector.astype(int)
+    df["tipping_point_velocity"] = np.where(
+        _ttp_in_sector,
+        df["rev_gr_yoy"].fillna(0) * df["npm"].fillna(0) * df["vol_ratio"].fillna(1.0),
+        0.0
+    )
+
     # ══════════════════════════════════════════════════════════════
     # VIJAY MALIK PEACEFUL INVESTING SIGNALS (Vol 1–3 deep extraction)
     # "Hard Gates" layer — capital efficiency, OPM consistency, cash conversion quality.
@@ -1687,6 +1699,16 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
 
+    # Identity C: Growth-Adjusted Payback Runway (26th WCS — Bits accounting anomaly correction)
+    # GAPR = P/B / (ROE × Reinvestment Rate). Measures how quickly retained ROE earns back
+    # the book premium. Lower GAPR = faster payback via compounding.
+    # ROE is in percentage form (e.g. 25.0 = 25%), so divide by 100 for decimal form.
+    df["gapr"] = np.where(
+        (df["roe"].fillna(0) > 0) & (df["pb_ratio"].fillna(0) > 0),
+        df["pb_ratio"].fillna(0) / ((df["roe"].fillna(0) / 100.0) * df["reinvestment_rate"].fillna(1.0)),
+        np.nan
+    )
+
     # Study 27 (2022): Sector Consistent/Volatile classification
     # MOSL classified 18 sectors as Consistent (sustained earnings compounding)
     # and 35+ sectors as Volatile across 697 companies over 2007-2022.
@@ -1796,6 +1818,118 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (df["reinvestment_rate"]    < 0.30) &   # DPR > 70%
         _scc_flat_assets &
         _scc_no_cwip
+    ).astype(int)
+
+    # ══════════════════════════════════════════════════════════════
+    # EPOCH 3 (13th–18th WCS, 2008–2013): STRUCTURAL CLASSIFICATION
+    # Great/Good/Gruesome taxonomy, Moat Endurance Factor, enhanced Payback
+    # ══════════════════════════════════════════════════════════════
+
+    # ── Identity A: Capital Return Spread ──
+    df["capital_return_spread"] = df["roce"].fillna(0) - COST_OF_EQUITY
+
+    # ── Identity A: FCF Generation Velocity (FCF/OCF ratio) ──
+    df["fcf_to_ocf_velocity"] = np.where(
+        df["operating_cash_flow"].fillna(0) > 0,
+        df["free_cash_flow"].fillna(0) / df["operating_cash_flow"],
+        0.0
+    )
+
+    # ── Identity C: Moat Endurance Factor (MEF) ──
+    df["moat_endurance_factor"] = np.where(
+        df["roce_med_10y"].fillna(0) > 0,
+        df["roce"].fillna(0) / df["roce_med_10y"],
+        0.0
+    )
+    df["mef_label"] = np.select(
+        [
+            df["moat_endurance_factor"] >= 1.2,
+            df["moat_endurance_factor"] >= 1.0,
+            df["moat_endurance_factor"] >= 0.80,
+        ],
+        ["🟢 Expanding", "✅ Intact", "🟡 Eroding"],
+        default="🔴 Degrading"
+    )
+
+    # ── Cyclical Profit Mirage Anti-Pattern (Gruesome Growth Trap) ──
+    df["cyclical_mirage_flag"] = (
+        (df["rev_gr_yoy"].fillna(0) >= EPOCH3_TAXONOMY["mirage_rev_growth_min"]) &
+        (df["roce_med_10y"].fillna(0) < EPOCH3_TAXONOMY["mirage_roce_10y_max"])
+    ).astype(int)
+
+    # ── PSU Value-Destruction Loop Anti-Pattern (Epoch 3) ──
+    # State-owned enterprises prioritizing political/social goals over equity returns.
+    # Expose this by checking low capital spreads + sub-par reinvestment velocities + continuous CWIP delays.
+    _psu_name = df["name"].fillna("").astype(str).str.contains(
+        "India|Bharat|Hindustan|National|NTPC|NHPC|GAIL|SAIL|ONGC|IOC|BPCL|HPCL|IRFC|RVNL|HUDCO|LIC|BHEL|BEL|HAL|Coal|Mineral|Oil|Power|Gas|Corporation",
+        case=False, na=False
+    )
+    _psu_sector = df["sector"].fillna("").astype(str).str.contains("Public Sector|Govt", case=False, na=False) | \
+                  df["industry"].fillna("").astype(str).str.contains("Public Sector|Govt", case=False, na=False)
+    _is_psu_proxy = (_psu_name | _psu_sector) & (df["promoter_holdings"].fillna(0) >= 50) & (df["pledged_percentage"].fillna(0) == 0)
+
+    _psu_low_spread = df["capital_return_spread"].fillna(0) <= 0
+    _psu_low_velocity = (df["reinvestment_rate"].fillna(1) < 0.40) | (df["fcf_to_ocf_velocity"].fillna(0) < 0.40)
+    _psu_cwip_delays = (df["cwip"].fillna(0) > 0) & (df["cwip_1yb"].fillna(0) > 0) & (df["cwip_conversion"].fillna(0) <= 0)
+
+    df["psu_value_destruction_flag"] = (
+        _is_psu_proxy & _psu_low_spread & _psu_low_velocity & _psu_cwip_delays
+    ).astype(int)
+
+    # ── Epoch 3 Structural Filter Pass (Capital Return Floor + Solvency) ──
+    _e3_is_fin = df["is_financial"] == True
+    df["epoch3_structural_pass"] = (
+        (df["roce_med_10y"].fillna(0) >= EPOCH3_TAXONOMY["capital_return_floor_10y"]) &
+        (df["roce_med_7y"].fillna(df["roce_med_5y"]).fillna(0)
+            >= EPOCH3_TAXONOMY["capital_return_floor_7y"]) &
+        (_e3_is_fin | (df["interest_coverage"].fillna(0) >= EPOCH3_TAXONOMY["min_interest_coverage"])) &
+        (_e3_is_fin | (df["debt_to_equity"].fillna(999) < EPOCH3_TAXONOMY["max_debt_to_equity"])) &
+        (df["cfo_to_pat"].fillna(0) >= EPOCH3_TAXONOMY["cfo_pat_structural_min"])
+    ).astype(int)
+
+    # ── Identity B: Low Payback Ratio Proxy (15th WCS — UU Investing Asymmetry) ──
+    # Simplified PE/PAT-growth quotient as a crisis-dislocation scanner.
+    # Distinct from payback_ratio (MCap/5Y-PAT-geometric): this uses PE + YoY growth,
+    # making it reactive to short-term dislocations during GFC-style market crises.
+    # Payback_ratio_proxy < 2.0 during a crisis → asymmetric UU setup (15th WCS).
+    # Floor growth at 1.0% prevents division-by-zero and near-zero denominator blow-up.
+    _pat_velocity_safe = df["pat_gr_yoy"].fillna(0).clip(lower=1.0)
+    df["payback_ratio_proxy"] = np.where(
+        df["pe"].fillna(0) > 0,
+        df["pe"].fillna(999) / _pat_velocity_safe,
+        np.nan
+    )
+
+    # ══════════════════════════════════════════════════════════════
+    # EPOCH 4 (19th–25th WCS, 2014–2020): SQGLP 100x ENGINE VECTORS
+    # Management Integrity, Reinvestment Efficiency Spread, Value Migration
+    # ══════════════════════════════════════════════════════════════
+
+    # ── Identity B: Incremental ROCE Proxy (22nd/23rd WCS — Reinvestment Efficiency Spread) ──
+    # ΔProfit / |ΔFixed Assets| measures quality of recent capital deployments.
+    # Positive + high = new investments are maintaining/expanding the return profile.
+    # Guard: capital delta > 5 Cr filters noise from trivial reclassifications.
+    _incr_pat_e4       = df["pat"].fillna(0) - df.get("pat_1yb", pd.Series(0.0, index=df.index)).fillna(0)
+    _incr_cap_delta_e4 = (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)).abs()
+    df["incremental_roce_proxy"] = np.where(
+        (_incr_cap_delta_e4 > 5.0) & (df["pat"].fillna(0) > 0),
+        (_incr_pat_e4 / _incr_cap_delta_e4) * 100.0,
+        np.nan
+    )
+
+    # ── Value Migration Flag (20th WCS — Structural Sector Value Rotation) ──
+    # Identifies companies capturing structural market share from weaker sector peers.
+    # Three concurrent conditions: top-quartile sector revenue growth + ROCE not declining +
+    # absolute 5Y revenue growth floor. Mega/Large caps excluded — value already migrated.
+    _vm_sector      = df["sector"].fillna("Unknown")
+    _vm_sector_size = df.groupby(_vm_sector)["market_cap"].transform("count").fillna(0)
+    _vm_rev_rank    = df.groupby(_vm_sector)["rev_gr_5y"].rank(pct=True).fillna(0)
+    df["value_migration_flag"] = (
+        (_vm_rev_rank >= 0.75) &                              # Top 25% by revenue growth in sector
+        (df["roce_trajectory"].fillna(0) >= 0) &               # ROCE not structurally declining
+        (df["rev_gr_5y"].fillna(0) >= 15.0) &                 # Absolute 5Y revenue growth ≥ 15%
+        (_vm_sector_size >= 4) &                               # Sector must have ≥ 4 peers
+        (~df["mcap_tier"].isin(["Mega Cap", "Large Cap"]))     # Exclude fully-valued mega/large caps
     ).astype(int)
 
     n_derived = len([c for c in df.columns if c not in set(COMMON_COLS.values())])
