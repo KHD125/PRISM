@@ -18,10 +18,17 @@ try:
 except ImportError as e:
     import traceback
     traceback.print_exc()
-    raise ImportError(
-        f"Failed to import from ui_tearsheet. Root cause: {e}. "
-        f"This usually means ui_tearsheet.py has a syntax or import error on this Python version."
-    ) from e
+    # Soft-fail: create stub functions so app.py doesn't crash
+    def _stub(*args, **kwargs):
+        import streamlit as st
+        st.warning(f"⚠️ Tearsheet module unavailable: {e}")
+    render_moat_growth_matrix = _stub
+    render_fisher_module = _stub
+    render_ep_power_curve_module = _stub
+    render_bruised_blue_chip_badge = _stub
+    render_multitrillioncap_card = _stub
+    render_forensic_perimeter = _stub
+    render_guru_frameworks = _stub
 from .ui_components import (
     inject_css,
     render_hero_banner,
