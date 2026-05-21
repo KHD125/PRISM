@@ -703,6 +703,71 @@ EPOCH2_REINVESTMENT = {
 }
 
 
+# ═══════════════════════════════════════════════════════════════
+# EPOCH 3: TAXONOMY & MOAT ENDURANCE (13th–18th WCS, 2008–2013)
+# ═══════════════════════════════════════════════════════════════
+EPOCH3_TAXONOMY = {
+    # Great/Good/Gruesome classification boundaries
+    "great_roce_spread_floor": 10.0,    # ROCE - CoC ≥ 10% = structural monopoly
+    "great_fcf_velocity_min":  0.60,    # FCF/OCF ≥ 60% = organic cash machine
+    "good_roce_spread_floor":  5.0,     # ROCE - CoC ≥ 5% = efficient operator
+    "good_fcf_velocity_max":   0.60,    # FCF/OCF < 60% = capex-heavy growth model
+    "gruesome_roce_ceiling":   12.0,    # 10Y median ROCE < 12% = value destruction zone
+
+    # Moat Endurance Factor (MEF) — 17th WCS
+    "mef_expanding_threshold": 1.0,     # MEF ≥ 1.0 = moat intact/expanding
+    "mef_eroding_threshold":   0.80,    # MEF < 0.80 = severe moat degradation
+
+    # Payback Ratio enhancement thresholds (15th WCS)
+    "payback_dislocation_max": 2.0,     # Payback < 2.0 during crises = asymmetric setup
+
+    # Capital Return Floor (Epoch 3 structural filter)
+    "capital_return_floor_10y": 20.0,   # 10Y median ROCE ≥ 20%
+    "capital_return_floor_7y":  20.0,   # 7Y median ROCE ≥ 20%
+
+    # Debt Solvency Perimeter
+    "min_interest_coverage":   4.0,     # ICR ≥ 4.0x (stricter than Malik's 3x)
+    "max_debt_to_equity":      1.0,     # D/E < 1.0 absolute ceiling
+    "preferred_de_non_fin":    0.5,     # D/E < 0.5 preferred for industrials
+
+    # Free Cash Verification Gate
+    "cfo_pat_structural_min":  80.0,    # CFO ≥ 80% of PAT (percentage)
+
+    # Anti-Pattern: Cyclical Profit Mirage
+    "mirage_rev_growth_min":   25.0,    # Revenue YoY > 25%
+    "mirage_roce_10y_max":     12.0,    # 10Y median ROCE < 12%
+
+    # Scoring impact
+    "gruesome_quality_penalty": 0.50,   # 50% haircut to quality_score
+    "great_quality_boost":      1.10,   # 10% boost for Great companies
+}
+
+
+# ═══════════════════════════════════════════════════════════════
+# EPOCH 4: SQGLP & ACCOUNTING INTEGRITY (19th–25th WCS, 2014–2020)
+# ═══════════════════════════════════════════════════════════════
+EPOCH4_SQGLP = {
+    "min_cfo_to_pat_ratio": 0.80,       # Saurabh Mukherjea / 24th WCS Cash Quality Floor
+    "max_promoter_pledge": 10.0,        # Strict 10% maximum pledging boundary
+    "max_peg_ratio": 1.0,               # 23rd WCS near-infallible outperformance anchor
+}
+
+
+# ═══════════════════════════════════════════════════════════════
+# EPOCH 5: MODERN DIGITAL & MACRO FRONTIER (26th–30th WCS, 2011–2025)
+# Atoms vs Bits paradigm, Consistents vs Volatiles classification,
+# Bruised Blue Chip entry matrix, Multi-Trillion Tipping Point velocity.
+# ═══════════════════════════════════════════════════════════════
+EPOCH5_MODERN = {
+    "bbc_roce_floor":    20.0,          # 29th WCS: minimum 10Y median ROCE for BBC flag
+    "bbc_pb_ceiling":    2.0,           # 29th WCS: maximum P/B for deep-value BBC entry
+    "tipping_sectors": [                # 30th WCS: sectors hitting multi-trillion tipping point
+        "Financial Services", "Stock/Commodity Brokers",
+        "Consumer Durables", "Automobiles", "Quick Service Restaurants",
+    ],
+    "max_volatility_ratio": 0.40,       # 27th WCS: Consistency Coefficient ceiling for Consistents
+}
+
 
 # ═══════════════════════════════════════════════════════════════
 # 8. FORENSIC ENGINE THRESHOLDS
