@@ -292,23 +292,12 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    # 19. Capitalizing Expenses (WorldCom / Satyam pattern)
-    # Gross CapEx > 3× Depreciation without proportional revenue growth = hiding expenses on balance sheet.
-    # WorldCom inflated profits by capitalizing ordinary line-costs as capital assets.
-    # BUG FIX: Previous version used NET FA change (= gross capex - depreciation) as the capex estimate.
-    # Threshold of 3× on net change was equivalent to requiring gross capex/dep > 4× — under-sensitive.
-    # Correct: gross capex ≈ net FA increase + estimated depreciation. Then ratio vs dep = intended 3×.
-    depr_est_wc        = df["fixed_assets_1yb"].fillna(0) * 0.10  # conservative flat 10% dep rate
-    capex_net_wc       = (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)).clip(lower=0)
-    capex_gross_est_wc = capex_net_wc + depr_est_wc               # gross capex = net change + dep
-    df["rf_capitalizing_expenses"] = np.where(
-        (depr_est_wc > 0) & df["rev_gr_yoy"].notna(),
-        (
-            (capex_gross_est_wc / depr_est_wc > FORENSIC.get("capex_depr_ratio_max", 3.0)) &
-            (df["rev_gr_yoy"] < 15)
-        ).astype(int),
-        0
-    )
+    # 19. rf_capitalizing_expenses — RETIRED (superseded by rf_capex_mirage, flag #22)
+    # The prior logic penalized high capex (>3× dep without rev growth) — an inverted diagnostic:
+    # it flagged companies actively reinvesting in their asset base, not those neglecting it.
+    # rf_capex_mirage (flag #22) correctly identifies the deferred-maintenance time bomb:
+    # rapid revenue growth (>20%) paired with capex/dep < 0.5 — under-investment, not over-investment.
+    # Column deliberately omitted so the max_flags denominator in forensic_score stays accurate.
 
     # 20. Debt/EBITDA > 5× (Amtek Auto / infrastructure sector danger signal)
     # Financial Shenanigans India Ch.6 Case 8: Amtek Auto collapsed when Debt/EBITDA exceeded 10×.
@@ -345,6 +334,83 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
+    # 22. Capex Velocity Mismatch — Capitalization Mirage (WCS Quantamental Agent 8)
+    # A capital-intensive company showing rapid revenue growth (>20% YoY) but net capex/depreciation
+    # ratio < 0.5 is NOT investing enough to sustain that growth. This reveals a deferred-maintenance
+    # time bomb: the asset base is silently aging while revenues appear to scale.
+    #
+    # Formula: capex_net_ratio = max(0, FA - FA_1YB) / (FA_1YB × 0.10)
+    # - Numerator: actual net new capital deployed (0 if FA flat or declining)
+    # - Denominator: estimated annual depreciation of existing asset base
+    # - Ratio < 0.5 means less than half of depreciated assets are being replaced
+    #
+    # EXCLUSION: IT/Software, Services, and Financial companies are asset-light by design —
+    # high revenue with low capex is their COMPETITIVE ADVANTAGE, not a red flag.
+    # Only flag capital-intensive businesses (Manufacturing, Metals, Infra, Auto, etc.)
+    if "industry" in df.columns:
+        _is_svc_cm = df["industry"].isin(_SERVICE_INDUSTRIES)
+    else:
+        _is_svc_cm = pd.Series(False, index=df.index)
+    _is_fin_cm = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
+    _is_capital_intensive = ~_is_svc_cm & ~_is_fin_cm
+
+    _depr_est_cm   = df["fixed_assets_1yb"].fillna(0) * 0.10
+    _capex_net_cm  = (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)).clip(lower=0)
+    _capex_ratio_cm = np.where(
+        _depr_est_cm > 0,
+        _capex_net_cm / _depr_est_cm,
+        1.0  # safe default: unknown depreciation base → neutral (1.0 = replacing all)
+    )
+    df["rf_capex_mirage"] = np.where(
+        _is_capital_intensive & df["rev_gr_yoy"].notna() & (_depr_est_cm > 0),
+        (
+            (df["rev_gr_yoy"] > 20) &
+            (_capex_ratio_cm < 0.5)
+        ).astype(int),
+        0
+    )
+
+    # 23. Effective Tax Rate Panic (WCS 24: Sharp Practices)
+    # Companies with PAT > 0 paying an effective tax rate < 10% raise governance concerns:
+    # deferred tax asset exhaustion, tax holiday abuse, or opaque structured avoidance.
+    # GUARD: Bypass entirely for loss-makers (PAT ≤ 0) — they inherently pay no tax.
+    # GUARD: Bypass when PBT ≤ 0 (pre-tax loss) — negative PBT makes the ratio meaningless.
+    #
+    # Formula: effective_tax_rate = (PBT − PAT) / PBT × 100
+    # Uses real PBT column from Income Statement CSV — no estimation needed.
+    _pbt_tp = df.get("pbt", pd.Series(np.nan, index=df.index)).fillna(np.nan)
+    _eff_tax_tp = np.where(
+        _pbt_tp > 0,
+        ((_pbt_tp - df["pat"].fillna(0)).clip(lower=0) / _pbt_tp) * 100,
+        np.nan
+    )
+    df["rf_tax_panic"] = np.where(
+        df["pat"].notna() & (df["pat"] > 0) & pd.notna(_eff_tax_tp),
+        (_eff_tax_tp < 10).astype(int),
+        0
+    )
+
+    # 24. Sector-Relative Receivables Expansion (WCS 24: Receivables Manipulation)
+    # rf_high_receivables (flag #2) catches absolute DSO level violations.
+    # This flag catches EXPANSION velocity beyond sector norms: a company stretching
+    # receivables faster than peers, even when absolute DSO is within acceptable range.
+    # Trigger: (days_receivable − days_receivable_1yb) > sector median expansion + 20 days.
+    if "days_receivable" in df.columns and "days_receivable_1yb" in df.columns:
+        _dso_exp_raw = df["days_receivable"] - df["days_receivable_1yb"]
+        if "sector" in df.columns:
+            _sector_g = df["sector"].fillna("Unknown")
+            _sector_med_exp = _dso_exp_raw.groupby(_sector_g).transform("median")
+        else:
+            _sector_med_exp = pd.Series(_dso_exp_raw.median(), index=df.index)
+        _dso_exp = _dso_exp_raw.fillna(0)
+        df["rf_receivables_bloat"] = np.where(
+            df["days_receivable"].notna() & df["days_receivable_1yb"].notna(),
+            (_dso_exp > _sector_med_exp.fillna(0) + 20).astype(int),
+            0
+        )
+    else:
+        df["rf_receivables_bloat"] = 0
+
     # Sum all red flags
     rf_cols = [c for c in df.columns if c.startswith("rf_")]
     df["red_flag_count"] = df[rf_cols].sum(axis=1)
@@ -352,6 +418,16 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # Forensic score: 100 = clean, 0 = maximum flags
     max_flags = len(rf_cols)
     df["forensic_score"] = ((max_flags - df["red_flag_count"]) / max_flags * 100).clip(0, 100)
+
+    # ── Study 24 (2019): Management Integrity Score (0-3) ──
+    # "32% of stocks listed in 2014 fell 70%+ by 2019 — Sharp Practices destroyed value."
+    # Integrity = Clean Accounts + Low Pledge + Promoter Ownership Alignment.
+    # 3 = highest integrity; 0 = all three red flags present.
+    df["management_integrity_score"] = (
+        (df["red_flag_count"] == 0).astype(int) +
+        (df.get("pledged_percentage", pd.Series(100, index=df.index)).fillna(100) < 5).astype(int) +
+        (df.get("promoter_holdings", pd.Series(0, index=df.index)).fillna(0) >= 50).astype(int)
+    )
 
     # Risk classification
     df["forensic_label"] = np.select(
@@ -384,9 +460,11 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_fcf_to_cfo_low":           "FCF/CFO <15% — capital trap, capex consuming all operating cash",
         "rf_opm_volatile":             "OPM >30% off 5Y median — commodity trap, no pricing power",
         "rf_nfat_very_low":            "NFAT <1.5 — extreme capital intensity, growth destroys value",
-        "rf_capitalizing_expenses":    "CapEx >3× Depreciation without rev growth — WorldCom expense-hiding pattern",
         "rf_debt_ebitda_high":         "Debt/EBITDA >5× — Amtek Auto collapse pattern, critical for infra/real estate",
         "rf_cwip_bloat":               "CWIP share of assets grew >50% YoY — IL&FS-style balance sheet parking",
+        "rf_capex_mirage":             "Rapid rev growth (>20%) but capex <0.5× dep — deferred-maintenance time bomb",
+        "rf_tax_panic":                "Estimated effective tax rate <10% despite PAT>0 — Sharp Practices alert (WCS 24)",
+        "rf_receivables_bloat":        "DSO expansion >20 days above sector median — sector-relative receivables manipulation",
     }
 
 
@@ -403,6 +481,41 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     print(f"   Watch (1-2): {((df['red_flag_count'] >= 1) & (df['red_flag_count'] <= 2)).sum()}")
     print(f"   Caution (3-4): {((df['red_flag_count'] >= 3) & (df['red_flag_count'] <= 4)).sum()}")
     print(f"   High Risk (5+): {(df['red_flag_count'] >= 5).sum()}")
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════
+# CASCADING FORENSIC FILTER
+# ═══════════════════════════════════════════════════════════════
+
+def compute_cascading_forensic_filter(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply a multiplier to composite_score based on forensic red flag count.
+
+    Separates binary forensic flags (gating) from continuous quality scoring.
+    Red flags act as a multiplier layer — a single isolated flag does not collapse
+    an otherwise excellent company's rank, but 5+ flags cut the score in half.
+
+    Multiplier tiers (based on red_flag_count):
+        0 flags   → 1.00 (full pass-through — clean company)
+        1–2 flags → 0.90 (Watch — 10% discount)
+        3–4 flags → 0.75 (Caution — 25% discount)
+        5+ flags  → 0.50 (High Risk — 50% discount)
+    """
+    df = df.copy()
+
+    flag_count = df.get("red_flag_count", pd.Series(0, index=df.index)).fillna(0)
+
+    df["forensic_multiplier"] = np.select(
+        [flag_count == 0, flag_count <= 2, flag_count <= 4],
+        [1.0, 0.9, 0.75],
+        default=0.5
+    )
+
+    if "composite_score" in df.columns:
+        df["composite_score"] = (
+            df["composite_score"] * df["forensic_multiplier"]
+        ).clip(0, 100)
 
     return df
 
@@ -449,5 +562,6 @@ def run_forensic_analysis(df: pd.DataFrame) -> pd.DataFrame:
     df = compute_piotroski_fscore(df)
     df = compute_red_flags(df)
     df = compute_cashflow_triangle(df)
+    df = compute_cascading_forensic_filter(df)
 
     return df
