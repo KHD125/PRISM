@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import warnings
 from typing import Dict, Tuple, Optional
-from config import CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR, FINANCIAL_SECTORS, SSGR_DEP_RATES
+from config import CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR, FINANCIAL_SECTORS, SSGR_DEP_RATES, COST_OF_EQUITY
 
 warnings.filterwarnings('ignore')
 np.seterr(all='ignore')
@@ -116,9 +116,11 @@ INCOME_COLS = {
     "Revenue Preceding Year Quarter":  "rev_pyq",
     "EBITDA Latest Quarter":           "ebitda_lq",
     "EBITDA Preceding Year Quarter":   "ebitda_pyq",
-    # RAW ANNUAL — minimum needed for derived signals (9 columns)
+    # RAW ANNUAL — minimum needed for derived signals (11 columns)
     "PAT":                    "pat",
     "PAT 1 Year Back":        "pat_1yb",
+    "PBT":                    "pbt",
+    "PBT 1 Year Back":        "pbt_1yb",
     "EBITDA":                 "ebitda",
     "EBITDA 1 Year Back":     "ebitda_1yb",
     "Revenue":                "revenue",
@@ -365,6 +367,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     """Compute all 36+ derived signals. Pure vectorized Pandas."""
     print("\n🧮 Computing derived signals...")
 
+    # ── D3 FIX: Winsorize YoY growth at p01-p99 before any ranking ──
+    # Extreme outliers (IOC +528%, COFORGE +1068%) compress percentile ranks for all 2,108 stocks.
+    # Winsorizing at p01/p99 preserves relative ordering while preventing outlier-driven compression.
+    for _gcol in ["pat_gr_yoy", "eps_gr_yoy", "rev_gr_yoy"]:
+        if _gcol in df.columns:
+            _lo = df[_gcol].quantile(0.01)
+            _hi = df[_gcol].quantile(0.99)
+            df[_gcol] = df[_gcol].clip(lower=_lo, upper=_hi)
+
     # ── RATIO DERIVED ──
     df["roce_trajectory"] = df["roce_med_7y"] - df["roce_med_10y"]
     df["roe_trajectory"] = df["roe_med_7y"] - df["roe_med_10y"]
@@ -377,10 +388,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["gpm_acceleration"] = df.get("gpm_latest_q", _de_nan) - df.get("gpm_med_5y", _de_nan)
 
     # ── MOSL Wealth Creation Alpha Signals ──
-    # economic_profit_spread: ROCE minus India cost of equity (~10%).
-    # Positive = value creation above hurdle; > 10 = substantial competitive advantage (2× CoE).
+    # economic_profit_spread: ROCE minus India cost of equity (COST_OF_EQUITY from config).
+    # Positive = value creation above hurdle; > COST_OF_EQUITY = substantial competitive advantage.
     # Validated across all 30 MOSL Annual Wealth Creation Studies.
-    df["economic_profit_spread"] = df["roce"].fillna(0) - 10.0
+    df["economic_profit_spread"] = df["roce"].fillna(0) - COST_OF_EQUITY
 
     # compound_growth_power_flag: PAT CAGR consistent across 3 timeframes simultaneously.
     # 3Y ≥ 15% (recent), 5Y ≥ 12% (medium-term), 10Y ≥ 10% (long-term).
@@ -398,6 +409,17 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # roe_elite_flag: ROE ≥ 35% — elite tier wealth creator.
     # 6th Study (1996-2001): 12 companies with ROE > 35% created 50% of all wealth in that period.
     df["roe_elite_flag"] = (df["roe"].fillna(0) >= 35).astype(int)
+
+    # valuation_multiple_trap: 1st WCS — PE > 35 AND ROE < 18%.
+    # When PE expands without corresponding ROE expansion, the market is pricing in future
+    # returns the business cannot generate. pe_vs_roe_mos (derived below) captures the spread;
+    # this binary flag allows scoring_engine to apply a targeted 40% valuation-score slash.
+    # pe fillna(0): loss-makers (NaN PE) → 0 → 0 > 35 = False → not trapped (conservative).
+    # roe fillna(99): NaN ROE → 99 → 99 < 18 = False → not trapped (benefit of doubt).
+    df["valuation_multiple_trap"] = (
+        (df["pe"].fillna(0)  > 35) &
+        (df["roe"].fillna(99) < 18)
+    ).astype(int)
 
     # ── MOSL Studies 7-13: Great/Good/Gruesome Framework + Multi-Bagger Formulas ──
 
@@ -712,7 +734,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
                
     vqs_eff = np.where(df["ret_vs_n500_3m"].fillna(0) > 0, 10, 0)
     
-    df["vqs_score"] = pd.Series(vqs_liquidity + vqs_smart + vqs_cons + vqs_eff).fillna(0)
+    df["vqs_score"] = pd.Series(vqs_liquidity + vqs_smart + vqs_cons + vqs_eff, index=df.index).fillna(0)
     
     df["smart_money_flow"] = np.select(
         [
@@ -764,9 +786,38 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         default="Nano Cap"
     )
 
+    # ── Mid-Cap Velocity Compounder (1st WCS) ──
+    # 1st WCS empirical finding: smaller companies (Mid/Small/Micro-Cap) with sustained
+    # ROCE ≥ 20% compound at dramatically higher rates than large/mega caps with similar ROCE.
+    # Scale-velocity advantage: a ₹500 Cr company can double revenue in 3 years;
+    # a ₹50,000 Cr company needs 50 times the incremental revenue for the same effect.
+    # Validated across all 30 MOSL studies as the primary mid-cap alpha driver.
+    df["mcap_velocity_compounder"] = (
+        df["mcap_tier"].isin(["Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]) &
+        (df["roce_med_10y"].fillna(0) >= 20)
+    ).astype(int)
+
     # ── FINANCIAL SECTOR FLAG ──
     df["is_financial"] = df["industry"].isin(FINANCIAL_SECTORS) | \
                          df["sector"].fillna("").astype(str).str.contains("Bank|NBFC|Insurance|Finance", case=False, na=False)
+
+    # ── AGENT 3: SECTOR ISOLATION — NaN out working-capital metrics for financial stocks ──
+    # Banks, NBFCs, and insurance companies have no inventory and no traditional CCC.
+    # Applying inventory turnover / CCC flags to these would generate structurally meaningless
+    # signals — e.g. a bank scoring 0 on inventory days is noise, not signal.
+    # Explict NaN-out here ensures all downstream derived columns (inventory_days, d37_ccc_direction)
+    # and all forensic flags (rf_itr_declining, rf_ccc_worsening, rf_inventory_bloat) are guarded.
+    _fin_mask = df["is_financial"] == True
+    _wc_nullify = [
+        "inventory_turnover", "inventory_turnover_1yb",
+        "ccc", "ccc_1yb",
+        "inventory", "inventory_1yb",
+        # Also NaN already-computed derived columns that came from these inputs above line 776
+        "inv_growth", "inv_vs_rev_gap",
+    ]
+    for _wc_col in _wc_nullify:
+        if _wc_col in df.columns:
+            df.loc[_fin_mask, _wc_col] = np.nan
 
     # Net debt negative flag (fortress balance sheet)
     df["net_debt_negative"] = (df["net_debt"] < 0).astype(int)
@@ -842,26 +893,49 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["interest_coverage"] = _ic_csv.fillna(_ic_synthetic)
 
     # ── Economic Profit (28th WCS) ──
-    # EP = Net Worth × (RoE − Cost of Equity)
-    # Cost of Equity ≈ 10% for India
-    # Net Worth = PAT / (ROE/100)
-    cost_of_equity = 10.0
-    roe_safe = df["roe"].fillna(0).clip(lower=1)  # avoid division by near-zero
-    net_worth = np.where(
-        (df["roe"].fillna(0) > 1) & (df["pat"].fillna(0) > 0),
-        df["pat"] / (roe_safe / 100.0),
-        df["reserves"].fillna(0).clip(lower=1)
+    # EP = Net Worth × (RoE − Cost of Equity)  [MOSL 23rd/28th WCS formula]
+    # Authentic balance-sheet Net Worth: Reserves + Equity Share Capital.
+    # Replaces the PAT/RoE proxy which discarded share capital for loss-makers.
+    df["net_worth"]     = df["reserves"].fillna(0)     + df["equity_shares"].fillna(0)
+    df["net_worth_1yb"] = df["reserves_1yb"].fillna(0) + df["equity_shares_1yb"].fillna(0)
+
+    df["economic_profit"] = (
+        df["net_worth"] * (df["roe"].fillna(0) / 100.0 - COST_OF_EQUITY / 100.0)
     )
-    df["economic_profit"] = pd.Series(net_worth, index=df.index) * (df["roe"].fillna(0) - cost_of_equity) / 100.0
+    df["economic_profit_1yb"] = (
+        df["net_worth_1yb"] * (df["roe_1yb"].fillna(0) / 100.0 - COST_OF_EQUITY / 100.0)
+    )
     df["economic_profit_positive"] = (df["economic_profit"] > 0).astype(int)
+
+    # ── Economic Profit Velocity (28th WCS — Hockey Stick EP Trajectory) ──
+    # Multi-year EP direction: companies moving UP the Economic Profit Power Curve
+    # are the "Hockey Stick" setup from MOSL 28th Study (2023).
+    df["economic_profit_velocity"] = df["economic_profit"] - df["economic_profit_1yb"]
+    # Backward-compat alias consumed by downstream flags
+    df["economic_profit_delta"] = df["economic_profit_velocity"]
+
+    # Hockey Stick: EP is positive AND improving YoY = ascending the EP Power Curve
+    df["ep_hockey_stick"] = (
+        (df["economic_profit"] > 0) &
+        (df["economic_profit_velocity"] > 0)
+    ).astype(int)
+    # EP Power Curve position (McKinsey taxonomy applied to Indian equity universe)
+    df["ep_power_curve"] = np.select(
+        [
+            (df["economic_profit"] > 0) & (df["economic_profit_velocity"] > 0),
+            (df["economic_profit"] > 0) & (df["economic_profit_velocity"] <= 0),
+            (df["economic_profit"] <= 0) & (df["economic_profit_velocity"] > 0),
+        ],
+        ["🚀 Hockey Stick", "✅ EP Positive", "📈 Improving"],
+        default="📉 Value Trap"
+    )
 
     # ── P/Sales and P/B Ratios (Studies 9, 13 multi-bagger formulas) ──
     # Study 13: "PE < 10x, P/B < 1x, P/Sales ≤ 1x, Payback ≤ 1x" = four explicit multi-bagger formulas.
     # Study 9: "If you want a doubler, buy at: P/Book < 1x, P/E < 10x, P/Sales < 0.5x"
-    _nw_series = pd.Series(net_worth, index=df.index)
     df["pb_ratio"] = np.where(
-        _nw_series.fillna(0) > 0,
-        df["market_cap"].fillna(0) / _nw_series,
+        df["net_worth"].fillna(0) > 0,
+        df["market_cap"].fillna(0) / df["net_worth"],
         np.nan
     )
     df["pb_lt1_flag"]  = (df["pb_ratio"].fillna(999) <  1.0).astype(int)   # doubler zone (Study 9/13)
@@ -1068,14 +1142,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
 
-    # ── D19 FIX: CWIP Conversion (full formula — CWIP → Fixed Assets) ──
-    # Correct formula: (CWIP_1YB - CWIP) + (FA - FA_1YB)
-    # = CWIP that disappeared + Fixed assets that appeared = capital going live
-    df["d19_cwip_conversion"] = (
-        (df["cwip_1yb"].fillna(0) - df["cwip"].fillna(0)) +
-        (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0))
-    )
-    df["cwip_conversion"] = df["d19_cwip_conversion"]  # replace incomplete formula
+    # ── D19: CWIP Conversion — Net Fixed Asset Expansion ──
+    # When CWIP goes live it transfers out of CWIP and into Net Fixed Assets in the same entry.
+    # The old formula added ΔCWIP + ΔFA, double-counting that exact transaction (2× error).
+    # True capital deployment velocity = net expansion of the fixed asset block.
+    df["d19_cwip_conversion"] = df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)
+    df["cwip_conversion"] = df["d19_cwip_conversion"]
 
     # ── D20: Fixed Asset CAGR 3Y (%) ──
     df["d20_fa_cagr_3y"] = np.where(
@@ -1307,6 +1379,34 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["sector"].fillna("").astype(str).str.contains(_tailwind_patt, case=False, na=False)
     ).astype(int)
 
+    # ── Multi-Trillion Compounding Tipping Point (30th WCS — 2025 Theme) ──
+    _MULTITRILLIONCAP_SECTORS = frozenset({
+        "Banking", "NBFC", "Insurance", "Financial Services",
+        "Banks - Private Sector", "Banks - Public Sector",
+        "Capital Markets", "Asset Management",
+    })
+    _mtc_in_sector = (
+        df["industry"].fillna("").isin(_MULTITRILLIONCAP_SECTORS) |
+        df["sector"].fillna("").astype(str).str.contains(
+            "Bank|Finance|Insurance|Capital Market|Consumer|Auto|Retail",
+            case=False, na=False
+        )
+    )
+    _mtc_vol_surge     = df["vol_ratio"].fillna(0) >= 1.5
+    _mtc_earnings_mom  = (
+        (df.get("q_pat_yoy", pd.Series(0, index=df.index)).fillna(0) > 25) |
+        (df.get("pat_gr_3y", pd.Series(0, index=df.index)).fillna(0) > 25)
+    )
+    _mtc_near_breakout = df.get("dist_52wh", pd.Series(999, index=df.index)).fillna(999) <= 15
+    _mtc_signal_count  = (
+        _mtc_vol_surge.astype(int) +
+        _mtc_earnings_mom.astype(int) +
+        _mtc_near_breakout.astype(int)
+    )
+    df["multitrillioncap_tipping_point"] = (
+        _mtc_in_sector & (_mtc_signal_count >= 2)
+    ).astype(int)
+
     # ── Bruised Blue Chip Detection (29th Study) ──
     # Quality company fallen hard + trading cheap vs own history = asymmetric payoff
     # Criteria: quality company (ROCE > 15% + PAT CAGR > 10%) AND
@@ -1319,6 +1419,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
     _bbc_cheap    = df["d32_pe_vs_median"].fillna(0) < -25
     df["bruised_blue_chip"] = (_bbc_fallen & _bbc_quality & _bbc_cheap).astype(int)
+
+    # ── Bruised Blue Chip 29th WCS (Agent 9 — Large-Cap Elite ROCE + P/B ≤ 2x) ──
+    _bbc29_largecap   = df["market_cap"].fillna(0) >= 20_000
+    _bbc29_elite_roce = df["roce_med_10y"].fillna(0) >= 20
+    _bbc29_bruised_pb = df["pb_ratio"].fillna(999) <= 2.0
+    _bbc29_tailwind   = df.get("sector_tailwind", pd.Series(0, index=df.index)).fillna(0) == 1
+    df["bruised_blue_chip_29"] = (
+        _bbc29_largecap & _bbc29_elite_roce & _bbc29_bruised_pb & _bbc29_tailwind
+    ).astype(int)
 
     # ══════════════════════════════════════════════════════════════
     # VIJAY MALIK PEACEFUL INVESTING SIGNALS (Vol 1–3 deep extraction)
@@ -1511,6 +1620,103 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # century_stock_flag: 4-5/5 SQGLP criteria = highest-probability 100x candidate
     df["century_stock_flag"] = (df["sqglp_score"] >= 4).astype(int)
 
+    # ══════════════════════════════════════════════════════════════
+    # MOSL STUDIES 20-24: MQGLP/MID-TO-MEGA, CAP/GAP LONGEVITY,
+    # VALUATION INSIGHTS, MANAGEMENT INTEGRITY
+    # Source: 20th-24th Annual Wealth Creation Studies (2015-2019 themes)
+    # ══════════════════════════════════════════════════════════════
+
+    # ── Study 20 (2015): MQGLP — Mid-to-Mega Candidate ──
+    # "Mid-to-Mega" template: median 46% return, 28% alpha vs Sensex (2010-2015).
+    # Entry profile from backtested wealth creators: PE 15x, ROE 20%, PAT CAGR 35%.
+    # MQGLP = QGLP applied to mid-cap (rank 101-300 by mcap) entry universe.
+    # Proxy for mid-cap range: ₹5,000-20,000 Cr (India 2025 midcap band).
+    df["mid_to_mega_candidate"] = (
+        (df["market_cap"].fillna(0) >= 5_000) &
+        (df["market_cap"].fillna(0) <= 20_000) &
+        (df["roce_med_5y"].fillna(df["roce"]).fillna(0) >= 15) &
+        (df["pat_gr_5y"].fillna(0) >= 20) &
+        (df["pe"].fillna(999) <= 25)
+    ).astype(int)
+
+    # ── Study 22 (2017): CAP & GAP — Competitive + Growth Advantage Period ──
+    # CAP = Competitive Advantage Period: ROE > Cost of Equity (Ke = 15% for India).
+    # GAP = Growth Advantage Period: PAT growth rate exceeds benchmark (15%).
+    # "Moat without growth underperforms; growth without moat ends soon." — MOSL 22nd Study.
+    # Extended CAP: ROCE consistently > 10% across all 4 timeframes (depth of moat over time).
+    df["cap_extended_flag"] = (
+        (df["roce_med_10y"].fillna(0) >= 10) &
+        (df["roce_med_7y"].fillna(df["roce_med_5y"]).fillna(0) >= 10) &
+        (df["roce_med_5y"].fillna(0) >= 10) &
+        (df["roce"].fillna(0) >= 10)
+    ).astype(int)
+
+    # Extended GAP: PAT growth sustained across all 3 windows — proxy for earnings compounding depth.
+    df["gap_extended_flag"] = (
+        (df["pat_gr_10y"].fillna(df["pat_gr_5y"]).fillna(0) >= 12) &
+        (df["pat_gr_5y"].fillna(0) >= 12) &
+        (df["pat_gr_3y"].fillna(0) >= 8)
+    ).astype(int)
+
+    # CAP-GAP composite (0-4): +1 for cap_extended, +1 for gap_extended, +1 for both, +1 for ROE > 15
+    df["cap_gap_score"] = (
+        df["cap_extended_flag"] +
+        df["gap_extended_flag"] +
+        (df["cap_extended_flag"] & df["gap_extended_flag"]).astype(int) +  # bonus for both = longevity proof
+        (df["roe"].fillna(0) >= 15).astype(int)
+    )
+
+    # ── Study 23 (2018): Valuation Insights — ROE vs India CoE (15%) ──
+    # Study 23 explicitly defines India Cost of Equity = 15% (not 10% as in Graham/US frameworks).
+    # ROE - Ke (15%) = economic spread: positive = value creation, negative = value destruction.
+    # Note: existing economic_profit uses CoE=10%; this signal uses the India-specific 15% threshold.
+    df["roe_vs_coe15"] = df["roe"].fillna(0) - 15.0
+
+    # ══════════════════════════════════════════════════════════════
+    # MOSL STUDIES 25-27: QGLP CHECKLIST, ATOMS/BITS PSG,
+    # CONSISTENTS & VOLATILES SECTOR CLASSIFICATION
+    # Source: 25th Annual WCS (2020), 26th (2021), 27th (2022)
+    # ══════════════════════════════════════════════════════════════
+
+    # Study 26 (2021): PSG Ratio — Price/Sales/Growth (digital analog of PEG)
+    # PSG = P/Sales ÷ Rev Growth CAGR. Lower PSG = better value for growth.
+    # Benchmarks from Study 26: PSG <0.3 = very attractive; >1.0 = expensive.
+    df["psg_ratio"] = np.where(
+        df["rev_gr_5y"].notna() & (df["rev_gr_5y"] > 0) & df["ps_ratio"].notna(),
+        df["ps_ratio"] / df["rev_gr_5y"],
+        np.nan
+    )
+
+    # Study 27 (2022): Sector Consistent/Volatile classification
+    # MOSL classified 18 sectors as Consistent (sustained earnings compounding)
+    # and 35+ sectors as Volatile across 697 companies over 2007-2022.
+    _CONSISTENT_SECTORS = {
+        "Agro Chemicals", "Auto Ancillaries", "Banks - Private Sector",
+        "Cement", "Chemicals", "Cigarettes", "Credit Rating Agencies",
+        "Diamonds/Gems/Jewellery", "Engineering", "Finance", "FMCG",
+        "IT", "Logistics", "Oil & Gas", "Paints/Varnish",
+        "Pharma", "Refineries", "Utilities"
+    }
+    df["sector_consistent_type"] = np.where(
+        df["sector"].fillna("").isin(_CONSISTENT_SECTORS),
+        "Consistent", "Volatile"
+    )
+
+    # Study 27: Consistent company in Volatile sector = highest-alpha combination
+    # 19% avg CAGR (31 companies) vs 16% for Consistents in Consistent sectors (83 companies).
+    # A company sustaining earnings consistency despite adverse sector dynamics = deepest moat.
+    df["consistent_in_volatile_flag"] = (
+        (df["consistency_champion"].fillna(0) == 1) &
+        (df["sector_consistent_type"] == "Volatile")
+    ).astype(int)
+
+    # Study 27: P/E below own 10Y median — entry signal for Consistent companies.
+    # Study 27 finding: Consistents bought below own P/E median deliver 70-100% alpha probability.
+    # Reuses d32_pe_vs_median (derived earlier): negative = currently trading below own history.
+    df["pe_below_own_median"] = (
+        df["d32_pe_vs_median"].fillna(0) < 0
+    ).astype(int)
+
     # ── Lynch Category (Peter Lynch — One Up on Dalal Street) ──
     # Classifies each stock by growth trajectory for tearsheet display.
     # Fast Grower: Lynch's primary hunting ground for 10-100× returns.
@@ -1524,6 +1730,73 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         ["Fast Grower", "Stalwart", "Slow Grower", "Declining"],
         default="Unknown"
     )
+
+    # ══════════════════════════════════════════════════════════════
+    # EPOCH 2 (7th–12th WCS, 2002–2007): REINVESTMENT MOAT VECTORS
+    # Scalability & Self-Funding Reinvestment frameworks from Motilal Oswal Studies 7-12.
+    # Identity A: Reinvestment Rate | Identity B: Fundamental Growth Capacity
+    # Identity C: Buffett 1-to-1 Value Creation Ratio
+    # ══════════════════════════════════════════════════════════════
+
+    # Identity A (Agent 8): Reinvestment Rate (RR) — fraction of net profit retained in business.
+    # RR = 1 − (DPR/100). High RR = self-funding compounder; low RR = defensive income asset.
+    # DPR fillna(0): no dividend data → full retention (conservative for growth companies).
+    # clip(0,1): guards against DPR > 100 (data artefacts in some screeners).
+    df["reinvestment_rate"] = (
+        1.0 - (df["dividend_payout_ratio"].fillna(0) / 100.0)
+    ).clip(0.0, 1.0)
+
+    # Identity B (Agent 8): Fundamental Growth Capacity g = ROE × RR.
+    # Theoretical organic growth ceiling without external funding.
+    # Actual growth >> g over multi-years → company is debt/dilution-dependent.
+    df["fundamental_growth_capacity"] = df["roe"].fillna(0) * df["reinvestment_rate"]
+
+    # 5Y cumulative retained earnings proxy — single-year PAT × RR × 5.
+    # Approximation: current PAT/RR assumed representative of trailing 5-year period.
+    # Used as denominator in the Buffett VCR identity below.
+    df["retained_earnings_est_5y"] = df["pat"].fillna(0) * df["reinvestment_rate"] * 5.0
+
+    # Identity C (Agent 9): Buffett 1-to-1 Value Creation Ratio (VCR) proxy.
+    # True VCR = (MCap_now − MCap_5YB) / ΣRetainedEarnings(5Y). MCap 5Y back not in CSV.
+    # Cross-sectional proxy: market_cap × 0.5 as center-of-distribution approximation.
+    # Benchmarks from 11th WCS: VCR ≥ 2.0 = elite, ≥ 1.0 = passing, < 1.0 = concern.
+    df["value_creation_ratio"] = np.where(
+        df["retained_earnings_est_5y"] > 0,
+        (df["market_cap"].fillna(0) * 0.5) / df["retained_earnings_est_5y"],
+        0.0
+    )
+
+    # Capital Misallocation Risk (Agent 9): retaining >50% of earnings but VCR < 1.0.
+    # Destroying minority shareholder value despite appearing to "conserve" capital.
+    # Scoring engine applies a 10% quality penalty to these stocks.
+    df["capital_misallocation_risk"] = (
+        (df["reinvestment_rate"]    >  0.5) &
+        (df["value_creation_ratio"] <  1.0) &
+        (df["value_creation_ratio"] >  0.0)   # exclude zero (no data / negative PAT)
+    ).astype(int)
+
+    # ── Anti-Pattern A: Dilution Vampire (Capital Deficiency Trap) ──
+    # Fast revenue growth (≥30%) funded by chronic equity dilution rather than internal capital.
+    # Structural ROE < 12% = cannot self-fund growth → constant share issuance to minority investors.
+    df["dilution_vampire_flag"] = (
+        (df["rev_gr_5y"].fillna(0)   >= 30) &
+        (df["roe"].fillna(99)         < 12) &
+        (df["dilution_flag"].fillna(0) >= 1)   # ESOP-level dilution or higher
+    ).astype(int)
+
+    # ── Anti-Pattern B: Stagnant Cash-Cow Trap ──
+    # Elite optical ROE (>35%) + high payout (DPR >70%, RR < 30%) + flat fixed assets + zero CWIP.
+    # These are defensive income assets not compounders — 12th WCS: remove from high-velocity scan.
+    _scc_flat_assets = (
+        df["fixed_assets"].fillna(0) <= df["fixed_assets_1yb"].fillna(0) * 1.05  # <5% FA growth
+    )
+    _scc_no_cwip = df["cwip"].fillna(0) < 1.0   # essentially zero work-in-progress
+    df["stagnant_cash_cow_flag"] = (
+        (df["roe"].fillna(0)        > 35) &
+        (df["reinvestment_rate"]    < 0.30) &   # DPR > 70%
+        _scc_flat_assets &
+        _scc_no_cwip
+    ).astype(int)
 
     n_derived = len([c for c in df.columns if c not in set(COMMON_COLS.values())])
     print(f"  ✅ Computed all derived signals. Total columns: {len(df.columns)}")
