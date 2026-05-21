@@ -23,8 +23,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core import fetch_and_clean_data, run_full_scoring, run_forensic_analysis
 from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
+                render_ep_power_curve_module, render_bruised_blue_chip_badge,
+                render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
-                render_radar_chart, render_tier_summary, render_score_bar, render_sidebar_brand)
+                render_radar_chart, render_tier_summary, render_score_bar, render_sidebar_brand,
+                render_bruised_blue_chips, render_multi_trillion_tipping_points)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
@@ -163,12 +166,17 @@ with cc_col2:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-with st.spinner(f"🧭 Scoring with {scoring_profile} profile..."):
-    try:
-        df = get_scored_data(clean_df, analysis_mode, scoring_profile)
-    except Exception as e:
-        st.error(f"❌ Scoring error: {e}")
-        st.stop()
+_score_key = f"{file_sig}::{analysis_mode}::{scoring_profile}"
+if st.session_state.get("_score_key") != _score_key or "_scored_df" not in st.session_state:
+    with st.spinner(f"🧭 Scoring with {scoring_profile} profile..."):
+        try:
+            _df_scored = get_scored_data(clean_df, analysis_mode, scoring_profile)
+            st.session_state["_scored_df"] = _df_scored
+            st.session_state["_score_key"] = _score_key
+        except Exception as e:
+            st.error(f"❌ Scoring error: {e}")
+            st.stop()
+df = st.session_state["_scored_df"]
 
 if df is None or df.empty:
     st.warning("⚠️ No data returned after scoring. Check your data source or filters.")
@@ -344,9 +352,23 @@ with tabs[2]:
     # Quantamental Best Practice: Tear Sheet searches the FULL Universe.
     all_stock_names = df["name"].dropna().tolist()
     if all_stock_names:
-        c_sel, c_blank = st.columns([1, 2])
+        c_search, c_sel, _blank = st.columns([1, 2, 1])
+        with c_search:
+            search_ticker = st.text_input(
+                "🔍 Filter Stock", placeholder="e.g. HDFC, Infosys, TATA...",
+                key="search_ticker",
+            )
+        _term = (search_ticker or "").strip().upper()
+        _names = [n for n in all_stock_names if _term in n.upper()] if _term else all_stock_names
+        if not _names:
+            _names = all_stock_names
+        _prev = st.session_state.get("xray_stock")
+        _idx = _names.index(_prev) if _prev in _names else 0
         with c_sel:
-            selected = st.selectbox("Select Stock for Deep Dive (Full 2,000+ Universe)", all_stock_names, key="xray_stock")
+            selected = st.selectbox(
+                "Select Stock for Deep Dive (Full 2,000+ Universe)",
+                _names, index=_idx, key="xray_stock",
+            )
         stock = df[df["name"] == selected].iloc[0]
         
         # ELITE ARCHITECTURE: Explicit Rejection Banner for failed stocks
@@ -370,8 +392,6 @@ with tabs[2]:
             st.markdown(f"**Smart Money Flow:** {stock.get('smart_money_flow', '⚪ Neutral')}")
             st.markdown(f"**Cashflow Triangle:** {stock.get('cf_triangle','')}")
             st.markdown(f"**Moat-Growth:** {stock.get('moat_growth_quad', 'N/A')}")
-            if stock.get('red_flag_count', 0) > 0:
-                st.warning(f"🚨 Red Flags: {stock.get('red_flag_list','')}")
         with c2:
             fig = render_radar_chart(stock, f"{selected} — Quality Profile")
             st.plotly_chart(fig, use_container_width=True)
@@ -380,7 +400,14 @@ with tabs[2]:
         
         # MID LEVEL: Visualizations (Matrix)
         render_moat_growth_matrix(filt, highlight_stock=selected)
-        
+
+        st.markdown("---")
+
+        # ── WCS 28/29/30 Structural Alpha Modules ──
+        render_ep_power_curve_module(stock)
+        render_bruised_blue_chip_badge(stock)
+        render_multitrillioncap_card(stock)
+
         st.markdown("---")
 
         # ── Dr. Malik + WCS Signals ──
@@ -458,6 +485,12 @@ with tabs[2]:
         c3.metric("EV Compression", f"{stock.get('ev_compression', 0):.1f}")
         c4.metric("FCF Yield", f"{stock.get('fcf_yield', 0):.1f}%")
         
+        st.markdown("---")
+        render_forensic_perimeter(stock)
+
+        st.markdown("---")
+        render_guru_frameworks(stock)
+
         st.markdown("---")
         # BOTTOM LEVEL: The Systematic Fisher Proxy
         render_fisher_module(stock)
@@ -557,6 +590,12 @@ with tabs[3]:
                              font=dict(color=COLORS['text_primary']), height=400,
                              xaxis_tickangle=-45)
         st.plotly_chart(fig_sec, use_container_width=True)
+
+    st.markdown("---")
+    render_bruised_blue_chips(df)
+
+    st.markdown("---")
+    render_multi_trillion_tipping_points(df)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
