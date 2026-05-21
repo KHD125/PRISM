@@ -23,7 +23,7 @@ from config import (
     DEFAULT_CYCLE_TEMPERATURE, MARKS_CYCLE,
     MASTER_PROFILES, ANALYSIS_MODES, WAVE_DETECTION,
     REGIME_ADJUSTMENTS, get_adaptive_weights,
-    EPOCH2_REINVESTMENT,
+    EPOCH2_REINVESTMENT, EPOCH3_TAXONOMY, EPOCH4_SQGLP, EPOCH5_MODERN,
 )
 
 
@@ -152,11 +152,10 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
 
     # Build a human-readable failed gates string — fully vectorized (no apply/iterrows)
     gate_names = list(gate_results.keys())
-    failed_str = pd.Series("", index=df.index)
-    for gn in gate_names:
-        failed_str = failed_str + (~gate_results[gn]).map({True: gn + ", ", False: ""})
-    failed_str = failed_str.str.rstrip(", ")
-    df["failed_gates"] = failed_str.where(failed_str != "", "All passed ✅")
+    fail_matrix = (~pd.DataFrame(gate_results)).astype(int)
+    gate_labels = pd.Series([gn + ", " for gn in gate_names], index=gate_names)
+    failed_str = (fail_matrix * gate_labels).sum(axis=1).str.rstrip(", ")
+    df["failed_gates"] = np.where(failed_str != "", failed_str, "All passed ✅")
 
     passed_count = df["gate_pass"].sum()
     total = len(df)
@@ -170,44 +169,35 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════
 
 def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
-    """Moat score: ROCE trajectory + ROE.
-    Agent 4 Sector Normalization: blend 70% universe rank + 30% sector-relative rank."""
+    """Moat score: ROCE trajectory + ROE evaluated within industry/sector cohorts.
+    Uses groupby-based _sector_pct_rank (70% universe + 30% sector blend) for peer benchmarking.
+    MEF (Moat Endurance Factor) modifier from 17th WCS boosts or penalises structural durability."""
     score = pd.Series(0.0, index=df.index)
-    _nan_s = pd.Series(np.nan, index=df.index)
-    _sector_grp = df.get("sector", pd.Series("Unknown", index=df.index)).fillna("Unknown")
-
-    # ROCE 10Y: 70% universe + 30% sector-peer rank
-    _roce10y_raw  = df.get("roce_med_10y", _nan_s)
-    _roce10y_univ = _pct_rank(_roce10y_raw, ascending=True).fillna(50)
-    if "roce_med_10y" in df.columns and "sector" in df.columns:
-        _roce10y_sector = df.groupby(_sector_grp)["roce_med_10y"].rank(
-            pct=True, na_option="keep"
-        ).mul(100).fillna(50)
-        _roce10y = _roce10y_univ * 0.70 + _roce10y_sector * 0.30
-    else:
-        _roce10y = _roce10y_univ
-
-    # ROE 10Y: 70% universe + 30% sector-peer rank
-    _roe10y_raw  = df.get("roe_med_10y", _nan_s)
-    _roe10y_univ = _pct_rank(_roe10y_raw, ascending=True).fillna(50)
-    if "roe_med_10y" in df.columns and "sector" in df.columns:
-        _roe10y_sector = df.groupby(_sector_grp)["roe_med_10y"].rank(
-            pct=True, na_option="keep"
-        ).mul(100).fillna(50)
-        _roe10y = _roe10y_univ * 0.70 + _roe10y_sector * 0.30
-    else:
-        _roe10y = _roe10y_univ
-
     signals = {
-        "roce_med_10y":        (_roce10y, 0.35),
-        "roce_trajectory":     (_pct_rank(df.get("roce_trajectory", _nan_s), ascending=True), 0.15),
-        "roe_med_10y":         (_roe10y, 0.25),
-        "roe_trajectory":      (_pct_rank(df.get("roe_trajectory", _nan_s), ascending=True), 0.10),
-        "roce_current_vs_med": (_pct_rank(df.get("roce_current_vs_med", _nan_s), ascending=True), 0.15),
+        "roce_med_10y":        (_sector_pct_rank(df, "roce_med_10y", ascending=True), 0.35),
+        "roce_trajectory":     (_sector_pct_rank(df, "roce_trajectory", ascending=True), 0.15),
+        "roe_med_10y":         (_sector_pct_rank(df, "roe_med_10y", ascending=True), 0.25),
+        "roe_trajectory":      (_sector_pct_rank(df, "roe_trajectory", ascending=True), 0.10),
+        "roce_current_vs_med": (_sector_pct_rank(df, "roce_current_vs_med", ascending=True), 0.15),
     }
 
     for name, (ranked, weight) in signals.items():
         score += ranked.fillna(50) * weight
+
+    # Moat Endurance Factor (17th WCS): structural moat durability modifier.
+    # MEF = ROCE_current / ROCE_med_10y. Stable/expanding ≥ 1.0 = moat intact.
+    # Boost expanding moats; penalize degrading ones where current ROCE trails long-run median.
+    if "moat_endurance_factor" in df.columns:
+        _mef = df["moat_endurance_factor"].fillna(1.0)
+        _mef_adj = pd.Series(
+            np.select(
+                [_mef >= 1.2,  _mef >= 1.0,  _mef >= EPOCH3_TAXONOMY["mef_eroding_threshold"]],
+                [5.0,           2.0,           0.0],
+                default=-8.0   # MEF < 0.80: ROCE has degraded below 80% of 10Y median
+            ),
+            index=df.index
+        )
+        score = score + _mef_adj
 
     return _safe_clip(score)
 
@@ -245,37 +235,23 @@ def _compute_growth_score(df: pd.DataFrame) -> pd.Series:
 
 
 def _compute_cash_score(df: pd.DataFrame) -> pd.Series:
-    """Cash quality score: CFO ratios, FCF yield, FCF/CFO conversion, self-funding.
-    Weights: cfo_to_pat=0.20, cfo_to_ebitda=0.15, fcf_to_cfo_pct=0.15,
-             fcf_yield=0.15, capex_coverage=0.10, fcf_consistency=0.15, self_funding=0.10
-    Sum = 1.00"""
+    """Cash quality score: CFO ratios, FCF yield, FCF/CFO conversion strictly within sector cohorts."""
     score = pd.Series(0.0, index=df.index)
 
-    # Sector-normalized cash quality signals: banks/financials have structurally different CFO/PAT norms.
-    # Blend: 70% universe rank + 30% sector-relative rank eliminates cross-sector structural bias.
-    for col, weight in (("cfo_to_pat", 0.20), ("cfo_to_ebitda", 0.15)):
-        if col in df.columns:
-            univ_r = _pct_rank(df[col], ascending=True).fillna(50)
-            sect_r = _sector_pct_rank(df, col, ascending=True)
-            score += (univ_r * 0.70 + sect_r * 0.30) * weight
-
-    # Universe-ranked signals (no structural sector bias — meaningful cross-sector)
-    for col, weight in (("fcf_yield", 0.15), ("capex_coverage", 0.10)):
-        if col in df.columns:
-            score += _pct_rank(df[col], ascending=True).fillna(50) * weight
+    # Sector-relative cohort cash quality signals
+    score += _sector_pct_rank(df, "cfo_to_pat", ascending=True) * 0.20
+    score += _sector_pct_rank(df, "cfo_to_ebitda", ascending=True) * 0.15
+    score += _sector_pct_rank(df, "fcf_yield", ascending=True) * 0.15
+    score += _sector_pct_rank(df, "capex_coverage", ascending=True) * 0.10
 
     # FCF/CFO: handled separately because negative-OCF companies must score 0, not neutral 50.
-    # When OCF <= 0 the data_engine sets fcf_to_cfo_pct = NaN (correct — ratio is meaningless).
-    # fillna(50) would reward cash-burning companies with a neutral score.
-    # Companies with negative operating cash flow are genuine capital-quality failures.
-    if "fcf_to_cfo_pct" in df.columns:
-        ranked_fcf_cfo = _pct_rank(df["fcf_to_cfo_pct"], ascending=True).fillna(50)
-        if "operating_cash_flow" in df.columns:
-            ranked_fcf_cfo = pd.Series(
-                np.where(df["operating_cash_flow"].fillna(0) <= 0, 0.0, ranked_fcf_cfo),
-                index=df.index
-            )
-        score += ranked_fcf_cfo * 0.15
+    ranked_fcf_cfo = _sector_pct_rank(df, "fcf_to_cfo_pct", ascending=True)
+    if "operating_cash_flow" in df.columns:
+        ranked_fcf_cfo = pd.Series(
+            np.where(df["operating_cash_flow"].fillna(0) <= 0, 0.0, ranked_fcf_cfo),
+            index=df.index
+        )
+    score += ranked_fcf_cfo * 0.15
 
     # Binary signals (0 or 100)
     binary = {
@@ -352,32 +328,24 @@ def _compute_balance_sheet_score(df: pd.DataFrame) -> pd.Series:
 
 
 def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
-    """Valuation attractiveness: Marks + Baid entry price discipline.
-    Uses PE discount vs 10Y median, PEG zone, EV/EBITDA compression,
-    FCF yield, and Baid's D/E < 0.5 fortress bonus.
+    """Valuation attractiveness: Marks + Baid entry price discipline strictly within sector cohorts.
     Lower valuations = higher score = better entry point."""
     score = pd.Series(0.0, index=df.index)
 
     # PE discount vs 10Y median: positive = trading below historical median = good
-    if "pe_discount" in df.columns:
-        score += _pct_rank(df["pe_discount"], ascending=True).fillna(50) * VALUATION_SIGNALS["pe_discount"]
+    score += _sector_pct_rank(df, "pe_discount", ascending=True) * VALUATION_SIGNALS["pe_discount"]
 
-    # PEG zone scoring (Baid + Marks: PEG < 1.0 = cheap, > 2.5 = extreme)
-    if "peg" in df.columns:
-        raw_peg = df["peg"].fillna(999)
-        peg_score = _zone_score(raw_peg.clip(lower=0, upper=998), PEG_ZONES).fillna(50)
-        # G2 FIX: negative PEG (earnings contracting) was clipped to 0 → fell in deep_value → score=100.
-        # Negative PEG = value destruction, must receive max penalty (5), not deep-value reward.
-        peg_score = pd.Series(np.where(raw_peg < 0, 5.0, peg_score), index=df.index)
-        score += peg_score * VALUATION_SIGNALS["peg_ratio"]
+    # PEG: lower is better (ascending=False)
+    # Apply maximum penalty for negative/invalid PEG
+    peg_score = _sector_pct_rank(df, "peg", ascending=False)
+    peg_score = np.where(df["peg"].fillna(999.0) < 0, 5.0, peg_score)
+    score += pd.Series(peg_score, index=df.index) * VALUATION_SIGNALS["peg_ratio"]
 
     # EV/EBITDA compression: positive ev_compression = getting cheaper = good
-    if "ev_compression" in df.columns:
-        score += _pct_rank(df["ev_compression"], ascending=True).fillna(50) * VALUATION_SIGNALS["ev_compression"]
+    score += _sector_pct_rank(df, "ev_compression", ascending=True) * VALUATION_SIGNALS["ev_compression"]
 
     # FCF yield: higher = more attractive (Marks: > 3% large-cap, > 4% mid-cap)
-    if "fcf_yield" in df.columns:
-        score += _pct_rank(df["fcf_yield"], ascending=True).fillna(50) * VALUATION_SIGNALS["fcf_yield_val"]
+    score += _sector_pct_rank(df, "fcf_yield", ascending=True) * VALUATION_SIGNALS["fcf_yield_val"]
 
     # Baid's D/E < 0.5 fortress bonus (net cash companies score highest)
     if "debt_to_equity" in df.columns:
@@ -389,8 +357,13 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
 
     # Payback Ratio: MOSL's most validated supernormal-return predictor (all 30 studies)
     # payback_ratio = market_cap / 5Y cumulative estimated PAT (growth-adjusted)
-    if "payback_ratio" in df.columns:
-        payback_score = _zone_score(df["payback_ratio"].clip(lower=0, upper=998), PAYBACK_ZONES)
+    # payback_ratio_proxy (15th WCS UU) = PE / PAT_growth_YoY — reactive crisis scanner.
+    # When full payback_ratio is NaN, the proxy ensures all PE-bearing stocks score here.
+    _payback_val = df.get("payback_ratio", pd.Series(np.nan, index=df.index)).copy()
+    if "payback_ratio_proxy" in df.columns:
+        _payback_val = _payback_val.fillna(df["payback_ratio_proxy"])
+    if _payback_val.notna().sum() > 0:
+        payback_score = _zone_score(_payback_val.clip(lower=0, upper=998), PAYBACK_ZONES)
         score += payback_score.fillna(50) * VALUATION_SIGNALS["payback_ratio"]
 
     # Agent 9 (1st WCS): Valuation Multiple Trap — PE > 35 AND ROE < 18%.
@@ -869,6 +842,56 @@ def compute_composite_score(
     df["composite_score"] = df["composite_score"] + _mcv_boost * 3.0
 
     df["composite_score"] = _safe_clip(df["composite_score"])
+
+    # ── SQGLP 100x Engine Integration (Epoch 4 — 19th & 24th WCS) ──
+    # Raamdeo Agrawal's 5-pillar SQGLP framework: Size + Quality + Growth + Longevity + Price.
+    # Thresholds wired from EPOCH4_SQGLP config (single source of truth).
+    # All conditions must pass simultaneously. +15 pts = elite outperformance premium.
+    _mcat   = df.get("market_category", df.get("mcap_tier", pd.Series("", index=df.index)))
+    _roce10y = df.get("roce_med_10y", pd.Series(0.0, index=df.index)).fillna(0.0)
+    _peg_v   = df.get("peg",          pd.Series(999.0, index=df.index))
+    _cfopat  = df.get("cfo_to_pat",   pd.Series(0.0, index=df.index)).fillna(0.0)
+    df["flag_sqglp_engine"] = (
+        _mcat.isin(["Mid Cap", "Small Cap", "Micro Cap"]) &                                    # S: Scale entry
+        (_roce10y >= 25.0) &                                                                    # Q: Capital quality
+        (_cfopat >= EPOCH4_SQGLP["min_cfo_to_pat_ratio"] * 100) &                             # Q: ECV >= 80%
+        (_peg_v.fillna(0.0) > 0) & (_peg_v.fillna(999.0) <= EPOCH4_SQGLP["max_peg_ratio"]) & # P: PEG <= 1.0
+        (df.get("forensic_label", pd.Series("", index=df.index)) == "🟢 Clean")                # Integrity gate
+    ).astype(int)
+
+    df["composite_score"] = np.where(df["flag_sqglp_engine"] == 1, df["composite_score"] + 15.0, df["composite_score"])
+    df["composite_score"] = _safe_clip(df["composite_score"])
+
+    # ── Value Migration Boost (20th WCS — Structural Sector Value Rotation) ──
+    # Companies capturing structural market share from weaker sector peers: +4 composite pts.
+    # Distinct from mcap_velocity_compounder (+3 pts): value_migration specifically rewards
+    # top-quartile sector revenue captors with expanding ROCE.
+    _vm_boost = df.get("value_migration_flag", pd.Series(0, index=df.index)).fillna(0)
+    df["composite_score"] = _safe_clip(df["composite_score"] + _vm_boost * 4.0)
+
+    # ── Bruised Blue Chip 29th WCS Entry Matrix (29th WCS) ──
+    # Large-cap elite franchise (ROCE_10Y ≥ 20%) at deep valuation floor (P/B ≤ 2.0x).
+    # Thresholds from EPOCH5_MODERN. +12 pts = asymmetric payoff at franchise valuation trough.
+    _bbc29_boost = df.get("bruised_blue_chip_29", pd.Series(0, index=df.index)).fillna(0)
+    df["composite_score"] = _safe_clip(df["composite_score"] + _bbc29_boost * 12.0)
+
+    # ── Macro Tipping Point Velocity Boost (30th WCS — India Multi-Trillion Engine) ──
+    # Financials/Consumer stocks hitting top-15% of tipping point velocity signal.
+    # Uses positive-only quantile so non-tipping-sector zeros don't dilute the threshold.
+    if "tipping_point_velocity" in df.columns:
+        _ttp_vals = df["tipping_point_velocity"].fillna(0)
+        _ttp_pos  = _ttp_vals[_ttp_vals > 0]
+        if len(_ttp_pos) >= 10:
+            _ttp_p85 = _ttp_pos.quantile(0.85)
+            df["composite_score"] = _safe_clip(
+                df["composite_score"] + (_ttp_vals > _ttp_p85).astype(float) * 10.0
+            )
+
+    # ── Consistency-in-Volatile Sector Premium (27th WCS) ──
+    # Consistent PAT compounder inside a structurally volatile sector = highest-alpha combination.
+    # 19% avg CAGR (31 companies) vs 16% for Consistents in Consistent sectors (27th WCS data).
+    _civ_boost = df.get("consistent_in_volatile_flag", pd.Series(0, index=df.index)).fillna(0)
+    df["composite_score"] = _safe_clip(df["composite_score"] + _civ_boost * 5.0)
 
     # Assign conviction tiers
     conditions = []
@@ -1831,6 +1854,19 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     )
     df["frameworks_passed"] = np.where(df["frameworks_passed"] == "", "None", df["frameworks_passed"])
 
+    # ── Epoch 3: Great/Good/Gruesome Taxonomy (vectorized, zero apply) ──
+    df["corporate_class"] = np.select(
+        [
+            (df["roce_med_10y"].fillna(0) >= 20.0) &
+            (df["fcf_to_ocf_velocity"].fillna(0) >= 0.60),
+            (df["roce_med_10y"].fillna(0) >= 12.0) &
+            (df["fcf_to_ocf_velocity"].fillna(0) < 0.60),
+            (df["roce_med_10y"].fillna(0) < 12.0),
+        ],
+        ["🏆 GREAT", "👍 GOOD", "💀 GRUESOME"],
+        default="👍 GOOD"
+    )
+
     return df
 
 
@@ -1920,6 +1956,12 @@ def run_full_scoring(
       3. Regime detection → get_adaptive_weights(profile, regime)
       4. Composite blend using Analysis Mode + regime-adjusted momentum boost
     """
+    df = df.copy()
+    # Dynamic import to avoid load-time circular references and ensure forensic data is present
+    from core.forensic_engine import compute_piotroski_fscore, compute_red_flags
+    df = compute_piotroski_fscore(df)
+    df = compute_red_flags(df)
+
     mode = ANALYSIS_MODES.get(analysis_mode, ANALYSIS_MODES["Hybrid"])
 
     # ── Step 0: Detect market regime from the data ──
@@ -1943,6 +1985,30 @@ def run_full_scoring(
 
     # ── Layer 2: Quality Score ──
     df = compute_quality_score(df)
+
+    # ── Epoch 3: Great/Good/Gruesome Taxonomy (vectorized, zero apply) ──
+    df["corporate_class"] = np.select(
+        [
+            (df["roce_med_10y"].fillna(0) >= 20.0) &
+            (df["fcf_to_ocf_velocity"].fillna(0) >= 0.60),
+            (df["roce_med_10y"].fillna(0) >= 12.0) &
+            (df["fcf_to_ocf_velocity"].fillna(0) < 0.60),
+            (df["roce_med_10y"].fillna(0) < 12.0),
+        ],
+        ["🏆 GREAT", "👍 GOOD", "💀 GRUESOME"],
+        default="👍 GOOD"
+    )
+
+    # ── Epoch 3: Gruesome quality penalty (50% haircut) ──
+    _gruesome_mask = df["corporate_class"] == "💀 GRUESOME"
+    df.loc[_gruesome_mask, "quality_score"] = (
+        df.loc[_gruesome_mask, "quality_score"] * EPOCH3_TAXONOMY["gruesome_quality_penalty"]
+    )
+    # ── Epoch 3: Great quality boost (10%) ──
+    _great_mask = df["corporate_class"] == "🏆 GREAT"
+    df.loc[_great_mask, "quality_score"] = (
+        df.loc[_great_mask, "quality_score"] * EPOCH3_TAXONOMY["great_quality_boost"]
+    ).clip(upper=100)
 
     # ── Layer 3: Momentum Score (apply regime momentum boost) ──
     df = compute_momentum_score(df)
