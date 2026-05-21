@@ -411,6 +411,9 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["rf_receivables_bloat"] = 0
 
+    # 25. PSU Value-Destruction Loop (Epoch 3)
+    df["rf_psu_value_destruction"] = df.get("psu_value_destruction_flag", pd.Series(0, index=df.index)).fillna(0).astype(int)
+
     # Sum all red flags
     rf_cols = [c for c in df.columns if c.startswith("rf_")]
     df["red_flag_count"] = df[rf_cols].sum(axis=1)
@@ -429,16 +432,17 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         (df.get("promoter_holdings", pd.Series(0, index=df.index)).fillna(0) >= 50).astype(int)
     )
 
-    # Risk classification
-    df["forensic_label"] = np.select(
-        [
-            df["red_flag_count"] == 0,
-            df["red_flag_count"] <= 2,
-            df["red_flag_count"] <= 4,
-        ],
-        ["🟢 Clean", "🟡 Watch", "🟠 Caution"],
-        default="🔴 High Risk"
+    # Risk classification - WCS 24 Forensic Hard Gates Absolute Gatekeeper Model
+    cfo_pat_valid = (df["cfo_to_pat"].fillna(0.0) >= 80.0)
+    pledge_valid  = (df.get("pledged_percentage", pd.Series(0.0, index=df.index)).fillna(0.0) < 10.0)
+    no_dilution   = (
+        df.get("equity_shares",     pd.Series(np.nan, index=df.index)).fillna(0.0) <=
+        df.get("equity_shares_1yb", pd.Series(np.nan, index=df.index)).fillna(0.0)
     )
+    no_red_flags  = (df["red_flag_count"] == 0)
+
+    integrity_pass = cfo_pat_valid & pledge_valid & no_dilution & no_red_flags
+    df["forensic_label"] = np.where(integrity_pass, "🟢 Clean", "🚨 Sharp Practices Detected")
 
     # Human-readable flag list
     flag_descriptions = {
@@ -465,6 +469,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_capex_mirage":             "Rapid rev growth (>20%) but capex <0.5× dep — deferred-maintenance time bomb",
         "rf_tax_panic":                "Estimated effective tax rate <10% despite PAT>0 — Sharp Practices alert (WCS 24)",
         "rf_receivables_bloat":        "DSO expansion >20 days above sector median — sector-relative receivables manipulation",
+        "rf_psu_value_destruction":    "PSU Value-Destruction Loop (low spread, high payout, CWIP delays)",
     }
 
 
@@ -481,6 +486,9 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     print(f"   Watch (1-2): {((df['red_flag_count'] >= 1) & (df['red_flag_count'] <= 2)).sum()}")
     print(f"   Caution (3-4): {((df['red_flag_count'] >= 3) & (df['red_flag_count'] <= 4)).sum()}")
     print(f"   High Risk (5+): {(df['red_flag_count'] >= 5).sum()}")
+    print(f"🛡️ WCS 24 Forensic Label Distribution:")
+    print(f"   🟢 Clean: {(df['forensic_label'] == '🟢 Clean').sum()}")
+    print(f"   🚨 Sharp Practices Detected: {(df['forensic_label'] == '🚨 Sharp Practices Detected').sum()}")
 
     return df
 
