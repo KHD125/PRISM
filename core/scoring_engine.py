@@ -151,10 +151,16 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
     df["gates_failed"] = df["gates_total"] - df["gates_passed"]
 
     # Build a human-readable failed gates string — fully vectorized (no apply/iterrows)
+    # np.where per column avoids numpy string-multiply ufunc (broken in NumPy 2.x).
     gate_names = list(gate_results.keys())
-    fail_matrix = (~pd.DataFrame(gate_results)).astype(int)
-    gate_labels = pd.Series([gn + ", " for gn in gate_names], index=gate_names)
-    failed_str = (fail_matrix * gate_labels).sum(axis=1).str.rstrip(", ")
+    fail_df = pd.DataFrame(gate_results)
+    failed_str = pd.Series("", index=df.index, dtype=object)
+    for _gn in gate_names:
+        failed_str = failed_str + pd.Series(
+            np.where(~fail_df[_gn].values, _gn + ", ", ""),
+            index=df.index, dtype=object,
+        )
+    failed_str = failed_str.str.rstrip(", ")
     df["failed_gates"] = np.where(failed_str != "", failed_str, "All passed ✅")
 
     passed_count = df["gate_pass"].sum()
