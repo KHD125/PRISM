@@ -19,7 +19,7 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
         
     # Reorder columns — pattern-matched so pinned signals survive column renames/additions
     all_cols = list(df.columns)
-    _PINNED = ["rank", "name", "sector", "composite_score", "moat_growth", "cash_machine", "buy_zone"]
+    _PINNED = ["rank", "name", "corporate_class", "sector", "composite_score", "moat_growth", "cash_machine", "buy_zone"]
     seen: set = set()
     first_cols: list = []
     for pattern in _PINNED:
