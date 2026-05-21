@@ -323,6 +323,14 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     elif "Extended" in bz_label:
         pills += f'<span class="pill pill-red">{bz_label}</span>'
 
+    # 4. Bruised Blue Chip (WCS 29): quality large-cap at PE discount
+    if (
+        row.get("market_cap", 0) >= 20_000
+        and row.get("roce_med_10y", 0) >= 20
+        and row.get("pe_discount", 0) >= 20
+    ):
+        pills += '<span class="pill pill-blue">💙 Bruised Blue Chip</span>'
+
     card_html = f"""
     <div class="stock-card" style="border-left: 3px solid {tc['border']};">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -430,3 +438,122 @@ def render_sidebar_brand():
         <div class="sb-brand-ver">v{UI['version']} · QUANTAMENTAL ENGINE</div>
     </div>
     """, unsafe_allow_html=True)
+
+
+def render_bruised_blue_chips(df: pd.DataFrame):
+    """
+    Bruised Blue Chips tracker (29th WCS).
+    Large-cap quality compounders (ROCE ≥ 20% 10Y, Market Cap ≥ ₹20,000 Cr)
+    trading at a ≥ 20% discount to their 10Y mean P/E — temporary bruising, not structural damage.
+    """
+    st.markdown("<div class='sec-head'>💙 Bruised Blue Chips (29th WCS)</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='sec-cap'>Established quality compounders with ROCE ≥ 20% over 10Y, Market Cap ≥ ₹20,000 Cr, "
+        "currently trading ≥ 20% below their 10Y mean P/E. Temporary bruising — not structural damage.</div>",
+        unsafe_allow_html=True,
+    )
+
+    _mcap   = df["market_cap"].fillna(0)   if "market_cap"    in df.columns else pd.Series(0,   index=df.index)
+    _roce   = df["roce_med_10y"].fillna(0) if "roce_med_10y"  in df.columns else pd.Series(0,   index=df.index)
+    _pe_d   = df["pe_discount"].fillna(0)  if "pe_discount"   in df.columns else pd.Series(0,   index=df.index)
+    _pb_ok  = (
+        (df["pb_ratio"].fillna(0) > 0) & (df["pb_ratio"].fillna(0) <= 3.0)
+        if "pb_ratio" in df.columns
+        else pd.Series(True, index=df.index)
+    )
+
+    bbc = df[(_mcap >= 20_000) & (_roce >= 20) & (_pe_d >= 20) & _pb_ok].sort_values(
+        "pe_discount", ascending=False
+    )
+
+    if bbc.empty:
+        st.info("💙 No Bruised Blue Chips detected. Quality large-caps are either fairly valued or not yet discounted enough.")
+        return
+
+    st.success(f"💙 **{len(bbc)} Bruised Blue Chips** — quality at a discount.")
+    _disp_cols = [c for c in ["rank", "name", "sector", "market_cap", "roce_med_10y", "pe_discount",
+                               "pb_ratio", "composite_score", "conviction_tier"] if c in bbc.columns]
+    st.dataframe(
+        bbc[_disp_cols].reset_index(drop=True),
+        use_container_width=True,
+        height=min(400, 80 + len(bbc) * 35),
+        column_config={
+            "pe_discount":   st.column_config.ProgressColumn("PE Discount %", min_value=0, max_value=60, format="%.1f"),
+            "roce_med_10y":  st.column_config.NumberColumn("ROCE 10Y %", format="%.1f"),
+            "market_cap":    st.column_config.NumberColumn("MCap (Cr)", format="₹%.0f"),
+            "composite_score": st.column_config.ProgressColumn("Composite", min_value=0, max_value=100, format="%.0f"),
+        },
+    )
+
+
+def render_multi_trillion_tipping_points(df: pd.DataFrame):
+    """
+    Multi-Trillion Macro Tipping Points (30th WCS).
+    Sectors with structural tailwinds to become next multi-trillion market cap clusters.
+    Filters for momentum-ready stocks in selected sunrise sectors.
+    """
+    st.markdown("<div class='sec-head'>🚀 Multi-Trillion Tipping Points (30th WCS)</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='sec-cap'>Sunrise sectors with structural tailwinds to reach multi-trillion INR market cap. "
+        "Shows stocks with institutional momentum, earnings acceleration, and technical readiness.</div>",
+        unsafe_allow_html=True,
+    )
+
+    _SECTOR_GROUPS = {
+        "Financial Services": ["Financial", "Bank", "NBFC", "Insurance", "Fintech"],
+        "Consumer Discretionary": ["Consumer", "Retail", "Automobile", "Durables", "Hotel", "Tourism"],
+        "Healthcare & Pharma": ["Pharma", "Health", "Hospital", "Diagnostic"],
+        "Infrastructure & Capital Goods": ["Infrastructure", "Capital Goods", "Construction", "Defence", "Engineering"],
+    }
+
+    selected_group = st.radio(
+        "Select Sunrise Sector",
+        options=list(_SECTOR_GROUPS.keys()),
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    keywords = _SECTOR_GROUPS[selected_group]
+    _sector_pat = "|".join(keywords)
+
+    if "sector" in df.columns:
+        _sector_mask = df["sector"].str.contains(_sector_pat, case=False, na=False)
+    else:
+        st.warning("Sector column not available.")
+        return
+
+    _pat_gr   = df["pat_gr_yoy"].fillna(0)  if "pat_gr_yoy"      in df.columns else pd.Series(0,  index=df.index)
+    _vstop    = df["vstop_green"].fillna(0)  if "vstop_green"     in df.columns else pd.Series(0,  index=df.index)
+    _inst     = df["inst_convergence"].fillna(0) if "inst_convergence" in df.columns else pd.Series(0, index=df.index)
+    _brk      = df["breakout_score"].fillna(0)   if "breakout_score"   in df.columns else pd.Series(0, index=df.index)
+
+    # Core trigger: in sector AND (earning acceleration > 15%) AND (technical OR institutional signal)
+    _earnings_acc = _pat_gr > 15
+    _tech_or_inst = (_vstop == 1) | (_inst == 1) | (_brk >= 70)
+
+    mttp = df[_sector_mask & _earnings_acc & _tech_or_inst].sort_values("composite_score", ascending=False)
+
+    if mttp.empty:
+        st.info(f"No {selected_group} stocks currently meet the multi-trillion tipping point criteria (earnings acceleration + technical/institutional signal).")
+        return
+
+    render_metric_strip([
+        (str(len(mttp)),                                    f"{selected_group} triggers",  "m-purple"),
+        (f"{mttp['composite_score'].mean():.0f}",           "Avg Composite",               "m-blue"),
+        (str(int((_vstop[mttp.index] == 1).sum())),         "VSTOP Green",                 "m-green"),
+        (str(int((_inst[mttp.index] == 1).sum())),          "Inst Convergence",            "m-gold"),
+    ])
+
+    _disp = [c for c in ["rank", "name", "sector", "market_cap", "pat_gr_yoy",
+                          "vstop_green", "inst_convergence", "breakout_score",
+                          "composite_score", "conviction_tier"] if c in mttp.columns]
+    st.dataframe(
+        mttp[_disp].reset_index(drop=True),
+        use_container_width=True,
+        height=min(500, 80 + len(mttp) * 35),
+        column_config={
+            "pat_gr_yoy":     st.column_config.NumberColumn("PAT Gr YoY %", format="%.1f"),
+            "composite_score": st.column_config.ProgressColumn("Composite", min_value=0, max_value=100, format="%.0f"),
+            "breakout_score": st.column_config.ProgressColumn("Breakout", min_value=0, max_value=100, format="%.0f"),
+            "market_cap":     st.column_config.NumberColumn("MCap (Cr)", format="₹%.0f"),
+        },
+    )
