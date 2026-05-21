@@ -19,7 +19,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 import sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core import fetch_and_clean_data, run_full_scoring, run_forensic_analysis
 from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
