@@ -14,6 +14,7 @@ try:
         render_multitrillioncap_card,
         render_forensic_perimeter,
         render_guru_frameworks,
+        render_financial_insights,
     )
 except ImportError as e:
     import traceback
@@ -29,6 +30,7 @@ except ImportError as e:
     render_multitrillioncap_card = _stub
     render_forensic_perimeter = _stub
     render_guru_frameworks = _stub
+    render_financial_insights = _stub
 from .ui_components import (
     inject_css,
     render_hero_banner,
@@ -51,6 +53,7 @@ __all__ = [
     "render_multitrillioncap_card",
     "render_forensic_perimeter",
     "render_guru_frameworks",
+    "render_financial_insights",
     "inject_css",
     "render_hero_banner",
     "render_metric_strip",
