@@ -654,3 +654,208 @@ def render_fisher_module(stock: pd.Series):
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# FINANCIAL INSIGHTS PANEL — Translated Business Analysis
+# ═══════════════════════════════════════════════════════════════
+
+def render_financial_insights(stock: pd.Series):
+    """
+    Translates raw CSV metrics into human-language grouped verdicts.
+    4 cards: Business Quality · Cash & Debt · Valuation · Ownership.
+    Replaces the raw metric grid rows in the Tear-Sheet main view.
+    """
+
+    def _row(label: str, passed, value_str: str, context: str = "") -> str:
+        if passed is True:
+            ico, clr = "✅", COLORS["green"]
+        elif passed is False:
+            ico, clr = "❌", COLORS["red"]
+        else:
+            ico, clr = "⚪", COLORS["text_muted"]
+        c_sec = COLORS["text_secondary"]
+        c_mut = COLORS["text_muted"]
+        ctx = (
+            f'<span style="color:{c_mut};font-size:0.69rem;margin-left:4px;">{_esc(context)}</span>'
+        ) if context else ""
+        return (
+            f'<div style="display:flex;align-items:baseline;gap:6px;padding:5px 0;'
+            f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+            f'<span style="font-size:0.85rem;width:18px;flex-shrink:0;">{ico}</span>'
+            f'<span style="font-size:0.76rem;color:{c_sec};flex:0 0 170px;min-width:0;">'
+            f'{_esc(label)}</span>'
+            f'<span style="font-size:0.80rem;font-weight:700;color:{clr};flex:1;min-width:0;">'
+            f'{_esc(value_str)}</span>'
+            f'{ctx}</div>'
+        )
+
+    def _card(title: str, icon: str, rows_html: str, border: str) -> str:
+        bg = COLORS["bg_secondary"]
+        bdr = COLORS["border"]
+        return (
+            f'<div style="background:{bg};border:1px solid {bdr};'
+            f'border-left:3px solid {border};border-radius:10px;'
+            f'padding:14px 16px;margin-bottom:12px;">'
+            f'<div style="font-size:0.68rem;font-weight:800;color:{border};'
+            f'text-transform:uppercase;letter-spacing:1.2px;margin-bottom:9px;">'
+            f'{icon}&nbsp; {_esc(title)}</div>'
+            f'{rows_html}'
+            f'</div>'
+        )
+
+    # ── Business Quality ──
+    _r10y_raw = _g(stock, "roce_med_10y", None)   # None = missing; 0 = real zero
+    roce_10y  = _r10y_raw if _r10y_raw is not None else _g(stock, "roce", 0)
+    roce_curr = _g(stock, "roce", 0)
+    pat_5y    = _g(stock, "pat_gr_5y", 0)
+    rev_5y    = _g(stock, "rev_gr_5y", 0)
+    op_lev    = int(_g(stock, "operating_leverage", 0))
+    npm       = _g(stock, "npm", 0)
+    npm_5y    = _g(stock, "npm_med_5y", npm)
+
+    bq = ""
+    bq += _row(
+        "ROCE — 10Y Median",
+        roce_10y >= 15,
+        f"{roce_10y:.1f}%",
+        f"Current {roce_curr:.1f}% · {'Accelerating ↑' if roce_curr >= roce_10y else 'Decelerating ↓'}",
+    )
+    bq += _row(
+        "Profit CAGR — 5 Years",
+        pat_5y >= 15,
+        f"{pat_5y:.1f}% p.a.",
+        f"vs Revenue {rev_5y:.1f}% · {'Expanding margin ✅' if pat_5y > rev_5y else 'Margin pressure ⚠️'}",
+    )
+    bq += _row(
+        "Sales→Profit Conversion",
+        op_lev == 1,
+        "Positive ✅" if op_lev else "Negative",
+        "PAT CAGR > Revenue CAGR → scalable cost structure",
+    )
+    bq += _row(
+        "Net Margin — 5Y Median",
+        npm_5y >= 10,
+        f"{npm_5y:.1f}%",
+        f"Current {npm:.1f}% · {'Stable/Improving' if npm >= npm_5y * 0.95 else 'Declining'}",
+    )
+
+    # ── Cash & Debt Quality ──
+    cfo_pat = _g(stock, "cfo_to_pat", 0)
+    ssgr    = _g(stock, "ssgr", 0)
+    ssgr_c  = _g(stock, "ssgr_cushion", 0)
+    ssgr_sf = int(_g(stock, "ssgr_self_funded", 0))
+    de      = _g(stock, "debt_to_equity", 0)
+    tax     = _g(stock, "tax_rate_est", 0)
+
+    cd = ""
+    cd += _row(
+        "Cash Earnings (CFO/PAT)",
+        cfo_pat >= 70,
+        f"{cfo_pat:.1f}%",
+        "≥70%: real cash  |  50–70%: watch  |  <50%: accrual risk",
+    )
+    ssgr_txt = (
+        f"Self-Funded — SSGR {ssgr:.1f}% covers growth ({ssgr_c:.1f}% cushion)"
+        if ssgr_sf else
+        f"External Capital — actual growth exceeds SSGR {ssgr:.1f}%"
+    )
+    cd += _row("Growth Funding (SSGR)", ssgr_sf == 1, ssgr_txt, "")
+    # Distinguish truly debt-free (int_cov data absent AND D/E near zero) from
+    # missing coverage data (company has debt but interest_coverage not in CSV).
+    _int_raw = _g(stock, "interest_coverage", None)  # None = NaN/missing
+    if _int_raw is None:
+        int_pass = de < 0.05
+        int_str  = "Debt-free" if de < 0.05 else "Coverage N/A"
+    elif _int_raw > 0.01:
+        int_pass = _int_raw >= 3
+        int_str  = f"{_int_raw:.1f}×"
+    else:
+        int_pass = de < 0.05
+        int_str  = "Debt-free" if de < 0.05 else "Coverage 0×"
+    cd += _row(
+        "Debt Safety",
+        int_pass,
+        int_str,
+        f"D/E {de:.2f}  |  Safe: Int.Cov ≥3× or near-zero debt",
+    )
+    tax_ok = (30 <= tax <= 55) if tax > 5 else None
+    cd += _row(
+        "Tax Rate — Malik P3 proxy",
+        tax_ok,
+        f"{tax:.1f}%",
+        "Normal band 30–55%  |  <10%: Sharp Practices flag",
+    )
+
+    # ── Valuation ──
+    pe_disc  = _g(stock, "pe_discount", 0)
+    fcf_y    = _g(stock, "fcf_yield", 0)
+    ey       = _g(stock, "earnings_yield", 0)
+    peg      = _g(stock, "peg", 0)
+    peg_zone = str(stock.get("peg_zone", "") or "")   # _row() escapes it
+
+    vl = ""
+    if pe_disc > 1:
+        vl += _row("P/E vs 10Y Average", pe_disc >= 15,
+                   f"{pe_disc:.1f}% below avg", "≥20%: historically cheap  |  0–20%: fair")
+    elif pe_disc < -1:
+        vl += _row("P/E vs 10Y Average", False,
+                   f"{abs(pe_disc):.1f}% above avg", "Trading at premium to historical mean")
+    else:
+        vl += _row("P/E vs 10Y Average", None, "At median", "Fair value territory")
+
+    vl += _row(
+        "PEG Ratio",
+        (0 < peg <= 1.0) if peg > 0 else None,
+        f"{peg:.2f}×" if peg > 0 else "N/A",
+        f"{peg_zone}  |  Lynch rule: ≤1.0 = growth at bargain price",
+    )
+    vl += _row(
+        "Earnings Yield",
+        ey >= 4,
+        f"{ey:.1f}%",
+        "Bond-equity benchmark: ≥4% justifies equity risk",
+    )
+    if fcf_y > 0:
+        vl += _row(
+            "FCF Yield",
+            fcf_y >= 3,
+            f"{fcf_y:.1f}%",
+            "≥4%: excellent  |  2–4%: reasonable  |  <2%: low",
+        )
+
+    # ── Ownership Alignment ──
+    prom    = _g(stock, "promoter_holdings", 0)
+    pledge  = _g(stock, "pledged_percentage", 0)
+    fii     = _g(stock, "fii_holdings", 0)
+    dii     = _g(stock, "dii_holdings", 0)
+    ch_prom = _g(stock, "change_promoter_lq", 0)
+    smart   = str(stock.get("smart_money_flow", "⚪ Neutral") or "⚪ Neutral")  # _row() escapes it
+
+    _dir = "↑" if ch_prom > 0.05 else ("↓" if ch_prom < -0.05 else "→")
+    prom_ctx = (
+        f"{_dir} {abs(ch_prom):.1f}% last Q  |  "
+        f"{'Dynasty ≥60%' if prom >= 60 else ('Well-aligned ≥50%' if prom >= 50 else 'Below ideal <50%')}"
+    )
+    ow = ""
+    ow += _row("Promoter Holding", prom >= 50, f"{prom:.1f}%", prom_ctx)
+    ow += _row("Promoter Pledge",  pledge <= 10, f"{pledge:.1f}%",
+               "0%: clean  |  <5%: low risk  |  >10%: red flag")
+    ow += _row("FII + DII Holdings", fii >= 5 or dii >= 5,
+               f"FII {fii:.1f}%  ·  DII {dii:.1f}%",
+               f"Smart Money: {smart}")
+
+    # ── Render in 2-column layout ──
+    st.markdown("<div class='sec-head'>📊 Business & Financial Analysis</div>",
+                unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(_card("Business Quality", "🏭", bq, COLORS["purple"]),
+                    unsafe_allow_html=True)
+        st.markdown(_card("Valuation", "💰", vl, COLORS["gold"]),
+                    unsafe_allow_html=True)
+    with col2:
+        st.markdown(_card("Cash & Debt Quality", "💵", cd, COLORS["green"]),
+                    unsafe_allow_html=True)
+        st.markdown(_card("Ownership Alignment", "👥", ow, COLORS["blue"]),
+                    unsafe_allow_html=True)
