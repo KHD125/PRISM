@@ -421,13 +421,173 @@ with tabs[0]:
 # TAB 2: DEEP SCANNER
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tabs[1]:
-    st.markdown(f"<div class='sec-head'>🔍 Deep Scanner — {len(filt)} Stocks · {profile_cfg.get('icon', '⚖️')} {scoring_profile}</div>", unsafe_allow_html=True)
 
-    priority = profile_cfg.get("priority_cols", [])
-    render_scanner_grid(filt, priority_cols=priority)
-    
-    csv_data = filt.to_csv(index=False)
-    st.download_button("📥 Export CSV", csv_data, "multibagger_scan.csv", "text/csv")
+    # ── Column view presets ────────────────────────────────────────
+    _DS_VIEWS = {
+        "🏆 Core":      ["rank","name","sector","market_category","composite_score",
+                         "conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
+        "📊 Quality":   ["name","quality_score","moat_score","growth_score","cash_score",
+                         "governance_bonus","piotroski_fscore","roce","opm","cfo_to_pat"],
+        "💰 Valuation": ["name","composite_score","pe_ratio","pb_ratio","peg",
+                         "earnings_yield","fcf_yield","market_cap","buy_zone_label"],
+        "🔬 Forensic":  ["name","piotroski_fscore","forensic_score","cfo_to_pat",
+                         "debt_to_equity","promoter_holdings","pledged_percentage"],
+        "📈 Technical": ["name","momentum_score","rsi","from_high_pct",
+                         "breakout_score","smart_money_flow","tsunami_signal","vstop_green"],
+    }
+    _DS_SORTS = {
+        "Score ↓":    ("composite_score", False),
+        "Quality ↓":  ("quality_score",   False),
+        "Momentum ↓": ("momentum_score",  False),
+        "PEG ↑":      ("peg",             True),
+        "MCap ↓":     ("market_cap",      False),
+    }
+
+    # ── Control bar ────────────────────────────────────────────────
+    st.markdown(
+        f'<div style="font-size:0.7rem;font-weight:700;color:{COLORS["text_muted"]};'
+        f'text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">'
+        f'🔍 Deep Scanner &nbsp;·&nbsp; {profile_cfg.get("icon","⚖️")} {scoring_profile}</div>',
+        unsafe_allow_html=True,
+    )
+    _ds_c1, _ds_c2, _ds_c3 = st.columns([2, 5, 2])
+    with _ds_c1:
+        ds_search = st.text_input(
+            "Search", placeholder="Search stock name…",
+            key="ds_search", label_visibility="collapsed",
+        )
+    with _ds_c2:
+        ds_view = st.pills(
+            "Column View", list(_DS_VIEWS.keys()),
+            default="🏆 Core", key="ds_view",
+        )
+        if not ds_view:
+            ds_view = "🏆 Core"
+    with _ds_c3:
+        ds_sort_label = st.selectbox(
+            "Sort", list(_DS_SORTS.keys()),
+            key="ds_sort", label_visibility="collapsed",
+        )
+
+    # ── Filter + sort ──────────────────────────────────────────────
+    ds_df = filt.copy()
+    if ds_search and ds_search.strip():
+        ds_df = ds_df[ds_df["name"].str.contains(ds_search.strip(), case=False, na=False)]
+    _sort_col, _sort_asc = _DS_SORTS[ds_sort_label]
+    if _sort_col in ds_df.columns:
+        ds_df = ds_df.sort_values(_sort_col, ascending=_sort_asc)
+
+    # ── Stats strip ────────────────────────────────────────────────
+    _ds_t1   = int((ds_df["conviction_tier"] == 1).sum()) if "conviction_tier" in ds_df.columns else 0
+    _ds_tsun = int(ds_df["tsunami_signal"].sum()) if "tsunami_signal" in ds_df.columns else 0
+    _ds_avg  = ds_df["composite_score"].mean() if "composite_score" in ds_df.columns and len(ds_df) else 0
+    _ds_gate = int(ds_df["gate_pass"].sum()) if "gate_pass" in ds_df.columns else len(ds_df)
+    st.markdown(f"""
+    <div style="display:flex;gap:20px;padding:8px 2px 12px 2px;
+         border-bottom:1px solid {COLORS['border']};margin-bottom:10px;flex-wrap:wrap;
+         align-items:center;">
+      <span style="font-size:0.82rem;font-weight:800;color:{COLORS['text_primary']};">
+        {len(ds_df)} stocks
+      </span>
+      <span style="font-size:0.78rem;color:{COLORS['text_muted']};">
+        Avg&nbsp;<strong style="color:{COLORS['blue']};font-size:0.86rem;">{_ds_avg:.0f}</strong>
+      </span>
+      <span style="font-size:0.78rem;color:{COLORS['green']};">
+        ✅ {_ds_gate} gate&nbsp;passed
+      </span>
+      <span style="font-size:0.78rem;color:{COLORS['gold']};">
+        🏆 {_ds_t1} Crown&nbsp;Jewels
+      </span>
+      <span style="font-size:0.78rem;color:{COLORS['purple']};">
+        🌊 {_ds_tsun} Tsunami
+      </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Column selection ───────────────────────────────────────────
+    _view_cols = [c for c in _DS_VIEWS.get(ds_view, []) if c in ds_df.columns]
+    if not _view_cols:
+        _view_cols = [c for c in ["rank", "name", "composite_score"] if c in ds_df.columns]
+    _display_df = ds_df[_view_cols].reset_index(drop=True)
+
+    # ── Column config ──────────────────────────────────────────────
+    _CC: dict = {}
+    for _sc, _sl in {
+        "composite_score": "Score", "quality_score": "Quality",
+        "moat_score": "Moat", "growth_score": "Growth",
+        "cash_score": "Cash", "momentum_score": "Momentum",
+        "forensic_score": "Forensic", "governance_bonus": "Governance",
+        "breakout_score": "Breakout",
+    }.items():
+        if _sc in _display_df.columns:
+            _CC[_sc] = st.column_config.ProgressColumn(_sl, min_value=0, max_value=100, format="%.0f")
+    for _bc in ("gate_pass", "tsunami_signal", "vstop_green"):
+        if _bc in _display_df.columns:
+            _lbl = {"gate_pass": "✅ Gate", "tsunami_signal": "🌊", "vstop_green": "VSTOP"}[_bc]
+            _CC[_bc] = st.column_config.CheckboxColumn(_lbl)
+    _num_fmt = {
+        "conviction_tier": ("Tier",     "T%.0f"),
+        "piotroski_fscore":("F-Score",  "%.0f/9"),
+        "peg":             ("PEG",      "%.2f×"),
+        "pe_ratio":        ("P/E",      "%.1f×"),
+        "pb_ratio":        ("P/B",      "%.1f×"),
+        "cfo_to_pat":      ("CFO/PAT",  "%.0f%%"),
+        "opm":             ("OPM",      "%.1f%%"),
+        "roce":            ("ROCE",     "%.1f%%"),
+        "debt_to_equity":  ("D/E",      "%.2f"),
+        "promoter_holdings":("Promoter","%.1f%%"),
+        "pledged_percentage":("Pledged","%.1f%%"),
+        "rsi":             ("RSI",      "%.0f"),
+        "from_high_pct":   ("52WH Δ",  "%.1f%%"),
+        "earnings_yield":  ("E.Yield",  "%.1f%%"),
+        "fcf_yield":       ("FCF Yld",  "%.1f%%"),
+        "market_cap":      ("MCap ₹Cr", "%.0f"),
+        "rank":            ("Rank",     "%.0f"),
+    }
+    for _nc, (_nl, _nf) in _num_fmt.items():
+        if _nc in _display_df.columns:
+            _CC[_nc] = st.column_config.NumberColumn(_nl, format=_nf)
+
+    # ── Render table ───────────────────────────────────────────────
+    _sel = st.dataframe(
+        _display_df,
+        column_config=_CC,
+        use_container_width=True,
+        height=580,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+    )
+
+    # ── Tearsheet shortcut on row select ──────────────────────────
+    _sel_rows = _sel.selection.rows if _sel and hasattr(_sel, "selection") else []
+    if _sel_rows:
+        _picked = ds_df.iloc[_sel_rows[0]]["name"]
+        st.session_state["xray_stock"] = _picked
+        st.markdown(f"""
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;
+             background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.25);
+             border-radius:8px;margin-top:8px;">
+          <span style="font-size:1rem;">🔬</span>
+          <span style="font-size:0.8rem;color:{COLORS['text_secondary']};">
+            <strong style="color:{COLORS['text_primary']};">{_picked}</strong>
+            set as active stock —
+            <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> to view full analysis.
+          </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Export ─────────────────────────────────────────────────────
+    st.markdown("<div style='margin-top:12px;'>", unsafe_allow_html=True)
+    _safe_mandate = _sel_mandate.replace(" ", "_").lower()
+    st.download_button(
+        f"📥 Export {len(ds_df)} stocks — {_sel_mandate} / {scoring_profile}",
+        data=filt.to_csv(index=False),
+        file_name=f"scan_{_safe_mandate}_{scoring_profile.lower()}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
