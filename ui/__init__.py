@@ -15,6 +15,10 @@ try:
         render_forensic_perimeter,
         render_guru_frameworks,
         render_financial_insights,
+        render_stock_hero,
+        render_score_strip,
+        render_sell_alerts_panel,
+        render_raw_signals,
     )
 except ImportError as e:
     import traceback
@@ -31,6 +35,11 @@ except ImportError as e:
     render_forensic_perimeter = _stub
     render_guru_frameworks = _stub
     render_financial_insights = _stub
+    render_stock_hero = _stub
+    render_score_strip = _stub
+    render_sell_alerts_panel = _stub
+    render_raw_signals = _stub
+
 from .ui_components import (
     inject_css,
     render_hero_banner,
@@ -54,6 +63,10 @@ __all__ = [
     "render_forensic_perimeter",
     "render_guru_frameworks",
     "render_financial_insights",
+    "render_stock_hero",
+    "render_score_strip",
+    "render_sell_alerts_panel",
+    "render_raw_signals",
     "inject_css",
     "render_hero_banner",
     "render_metric_strip",
