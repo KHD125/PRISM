@@ -433,6 +433,119 @@ def render_multitrillioncap_card(stock: pd.Series):
 # FORENSIC FRAUD PERIMETER — WCS 24 / 25-Flag Cascade
 # ═══════════════════════════════════════════════════════════════
 
+def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
+    """Return stock-specific metric values for a fired forensic flag.
+    Matches the design system: shows 'cfo_to_pat: 54.2% · threshold: 70%'
+    style context beneath each flag title.
+    """
+    def _v(col, fmt):
+        raw = stock.get(col)
+        if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+            return None
+        try:
+            return fmt.format(float(raw))
+        except Exception:
+            return None
+
+    if rf_col == "rf_low_cfo_pat":
+        v = _v("cfo_to_pat", "{:.1f}%")
+        return f"cfo_to_pat: {v}  ·  threshold: ≥70%" if v else ""
+
+    if rf_col == "rf_high_receivables":
+        v = _v("days_receivable", "{:.0f}d")
+        return f"DSO: {v}  ·  threshold: >90d (products) / >120d (services)" if v else ""
+
+    if rf_col == "rf_inventory_bloat":
+        rg = _v("rev_gr_yoy", "{:.1f}%")
+        return f"rev_gr: {rg}  ·  inventory grew faster than revenue" if rg else ""
+
+    if rf_col == "rf_rising_debt":
+        de = _v("debt_to_equity", "{:.2f}")
+        de1 = _v("debt_to_equity_1yb", "{:.2f}")
+        parts = []
+        if de: parts.append(f"D/E current: {de}")
+        if de1: parts.append(f"prior year: {de1}")
+        return "  ·  ".join(parts)
+
+    if rf_col == "rf_pledge_elevated":
+        v = _v("pledged_percentage", "{:.1f}%")
+        return f"pledge: {v}  ·  threshold: >10%" if v else ""
+
+    if rf_col == "rf_negative_fcf":
+        ocf = _v("operating_cash_flow", "₹{:,.0f} Cr")
+        fcf = _v("free_cash_flow", "₹{:,.0f} Cr")
+        parts = []
+        if ocf: parts.append(f"OCF: {ocf}")
+        if fcf: parts.append(f"FCF: {fcf}")
+        return "  ·  ".join(parts)
+
+    if rf_col == "rf_margin_squeeze":
+        rg = _v("rev_gr_yoy", "{:.1f}%")
+        pg = _v("pat_gr_yoy", "{:.1f}%")
+        parts = []
+        if rg: parts.append(f"rev_gr: +{rg}")
+        if pg: parts.append(f"pat_gr: {pg}")
+        return "  ·  ".join(parts)
+
+    if rf_col == "rf_ssgr_deficit":
+        gr = _v("pat_gr_yoy", "{:.1f}%")
+        ssgr = _v("ssgr", "{:.1f}%")
+        parts = []
+        if gr: parts.append(f"actual_gr: {gr}")
+        if ssgr: parts.append(f"SSGR: {ssgr}")
+        return "  ·  ".join(parts)
+
+    if rf_col == "rf_opm_volatile":
+        opm = _v("opm", "{:.1f}%")
+        opm5 = _v("opm_med_5y", "{:.1f}%")
+        parts = []
+        if opm: parts.append(f"OPM: {opm}")
+        if opm5: parts.append(f"5Y median: {opm5}")
+        return "  ·  ".join(parts)
+
+    if rf_col == "rf_nfat_very_low":
+        v = _v("nfat", "{:.2f}×")
+        return f"NFAT: {v}  ·  threshold: <1.5×" if v else ""
+
+    if rf_col == "rf_debt_ebitda_high":
+        v = _v("debt_to_ebitda", "{:.1f}×")
+        return f"Debt/EBITDA: {v}  ·  threshold: >5×" if v else ""
+
+    if rf_col == "rf_tax_panic":
+        v = _v("tax_rate_est", "{:.1f}%")
+        return f"tax_rate: {v}  ·  threshold: <10% despite positive PAT" if v else ""
+
+    if rf_col == "rf_fcf_to_cfo_low":
+        v = _v("fcf_to_cfo_pct", "{:.1f}%")
+        return f"FCF/CFO: {v}  ·  threshold: <15%" if v else ""
+
+    if rf_col == "rf_low_fcf_ebitda":
+        v = _v("fcf_to_ebitda_pct", "{:.1f}%")
+        return f"FCF/EBITDA: {v}  ·  threshold: <30%" if v else ""
+
+    if rf_col == "rf_high_cash_debt":
+        de = _v("debt_to_equity", "{:.2f}")
+        return f"D/E: {de}  ·  high cash + high debt simultaneously" if de else ""
+
+    if rf_col == "rf_receivables_bloat":
+        v = _v("days_receivable", "{:.0f}d")
+        return f"DSO: {v}  ·  sector-relative expansion >20d" if v else ""
+
+    if rf_col == "rf_high_accruals":
+        v = _v("accruals_to_assets", "{:.1f}%")
+        return f"accruals/assets: {v}  ·  threshold: >5%" if v else ""
+
+    if rf_col == "rf_ccc_worsening":
+        v = _v("ccc", "{:.0f}d")
+        return f"CCC: {v}  ·  worsened >10 days YoY" if v else ""
+
+    if rf_col == "rf_expense_rising":
+        v = _v("expense_ratio", "{:.1f}%")
+        return f"expense_ratio: {v}  ·  rose >3pp" if v else ""
+
+    return ""
+
+
 def render_forensic_perimeter(stock: pd.Series):
     """
     Vectorized Fraud Perimeter Display.
@@ -544,17 +657,19 @@ def render_forensic_perimeter(stock: pd.Series):
             f'{sev} {label} — {len(sev_flags)} flag{"s" if len(sev_flags)>1 else ""}</div>',
             unsafe_allow_html=True,
         )
-        for _, desc in sev_flags:
-            # Split into flag name and context (first ` — ` is the separator)
+        for rf_col, desc in sev_flags:
             parts  = desc.split(" — ", 1)
             title  = parts[0].strip()
             detail = parts[1].strip() if len(parts) > 1 else ""
+            # Prefer actual stock-specific values over generic description context
+            val_ctx = _get_flag_context(stock, rf_col)
+            sub_text = val_ctx if val_ctx else detail
             st.markdown(
                 f'<div class="ts-flag-row" style="background:{bg};border-left-color:{bdr};">'
                 f'<div class="ts-flag-sev">{sev}</div>'
                 f'<div>'
                 f'<div class="ts-flag-title" style="color:{clr};">{_esc(title)}</div>'
-                f'{"<div class=ts-flag-sub>" + _esc(detail) + "</div>" if detail else ""}'
+                f'{"<div class=ts-flag-sub>" + _esc(sub_text) + "</div>" if sub_text else ""}'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
@@ -1077,14 +1192,15 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
 
 def render_score_strip(stock: pd.Series):
     """
-    Horizontal 5-cell strip: Moat · Growth · Cash · Momentum · Governance.
+    Horizontal 5-cell strip: Quality · Growth · Cash · Momentum · Governance.
+    Quality = full blended quality score (moat+growth+cash+margin+balance_sheet).
     Each cell has big number + colored mini progress bar.
     """
-    moat  = float(_g(stock, "moat_score",       0))
-    grow  = float(_g(stock, "growth_score",      0))
-    cash  = float(_g(stock, "cash_score",        0))
-    mom   = float(_g(stock, "momentum_score",    0))
-    gov   = float(_g(stock, "governance_bonus",  0))
+    qual  = float(_g(stock, "quality_score",    0))
+    grow  = float(_g(stock, "growth_score",     0))
+    cash  = float(_g(stock, "cash_score",       0))
+    mom   = float(_g(stock, "momentum_score",   0))
+    gov   = float(_g(stock, "governance_bonus", 0))
 
     def _cell(label: str, icon: str, val: float, color: str) -> str:
         w = max(0.0, min(100.0, val))
@@ -1100,7 +1216,7 @@ def render_score_strip(stock: pd.Series):
         )
 
     cells = (
-        _cell("Moat",       "🏰", moat, COLORS["purple"]) +
+        _cell("Quality",    "🏭", qual, COLORS["purple"]) +
         _cell("Growth",     "🌱", grow, COLORS["green"])  +
         _cell("Cash",       "💵", cash, COLORS["blue"])   +
         _cell("Momentum",   "⚡", mom,  COLORS["orange"]) +
