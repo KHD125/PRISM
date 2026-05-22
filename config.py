@@ -39,6 +39,7 @@ DATA_DIR_NAME = "CSV Data"
 # Used in Economic Profit: EP = Net Worth × (RoE − COST_OF_EQUITY).
 # Referenced in data_engine.py; update here to stress-test against 12% or 15% hurdle rates.
 COST_OF_EQUITY = 12.0
+INDIA_GSEC_YIELD = 7.0   # India 10-year G-Sec proxy (update when RBI policy shifts)
 
 CSV_FILES = {
     "ratio":         _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Ratio.csv"),
@@ -50,7 +51,7 @@ CSV_FILES = {
 }
 
 # Google Sheets Configuration
-DEFAULT_SHEET_ID = ""
+DEFAULT_SHEET_ID = None  # Must be set before using data_source="sheet"; "" causes cryptic errors deep in data_engine
 DEFAULT_GIDS = {
     "ratio": "1823439984",
     "income": "1179123585",
@@ -61,7 +62,7 @@ DEFAULT_GIDS = {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 2. MARKET CAP TIERS  (₹ Crores)
+# 3. MARKET CAP TIERS  (₹ Crores)
 # ═══════════════════════════════════════════════════════════════
 MCAP_TIERS = {
     "Mega Cap":   {"label": "Mega Cap",   "min": 200_000, "emoji": "🏛️"},
@@ -273,8 +274,11 @@ GROWTH_SIGNALS = {
     "rev_acceleration":    0.05,   # rev_gr_3y - rev_gr_5y
     "ebitda_acceleration": 0.04,   # ebitda_gr_3y - ebitda_gr_5y
     # Quarterly freshness layer (q_pat_yoy × 0.60 + q_rev_yoy × 0.40) × 0.06
+    # NOTE: dict intentionally sums to 0.94. The remaining 0.06 is applied separately in
+    # scoring_engine.py compute_growth_score() because quarterly freshness requires a
+    # blended sub-formula (0.60/0.40 split) that can't be expressed as a flat signal weight.
 }
-# Weights sum: 0.17+0.10+0.17+0.10+0.15+0.10+0.06+0.05+0.04 = 0.94 + 0.06 quarterly = 1.00
+# Weights sum: 0.17+0.10+0.17+0.10+0.15+0.10+0.06+0.05+0.04 = 0.94 + 0.06 quarterly = 1.00 total
 
 CASH_SIGNALS = {
     "cfo_to_pat":      0.20,   # CFO/PAT % — earnings cash-backing
@@ -405,7 +409,7 @@ COMPOSITE_WEIGHTS = {
     "governance": 0.15,
 }
 
-# Governance bonus components (0–100 total possible)
+# Governance bonus components — positive values sum to 133 (raw max), engine clamps to 100 via _safe_clip.
 # Dilution penalties are DEDUCTIONS applied inside compute_governance_bonus.
 # Tier 3 (>10%) never reaches scoring — hard gate eliminates it first.
 # Tier 2 (3-10%): passes gate, but loses 25 governance pts — visible, proportional.
@@ -415,7 +419,7 @@ GOVERNANCE_BONUS = {
     "promoter_buying":         20,   # promoter increased holding this Q
     "fii_accumulating":        15,   # FII buying this Q
     "dii_accumulating":        10,   # DII buying this Q
-    "inst_convergence":        15,   # FII + DII both buying same Q
+    "inst_convergence":        15,   # FII + DII both buying same Q — intentional triple-stack (FII+DII+convergence=40pts): convergence of smart money is qualitatively stronger than either alone
     "insider_trading_present": 15,   # directors buying
     "pledge_falling_1y":       10,   # pledge reduced over 1 year
     "undiscovered_alpha":      15,   # low FII + Tier C mcap
@@ -584,7 +588,7 @@ MASTER_PROFILES = {
     "Momentum": {
         "label": "Momentum (O'Neil CAN-SLIM)",    "icon": "⚡",
         "description": "Price + Earnings momentum — buy what FII/DII are accumulating RIGHT NOW",
-        "quality_w": 0.20, "growth_w": 0.25, "longevity_w": 0.10, "price_w": 0.15,
+        "quality_w": 0.25, "growth_w": 0.35, "longevity_w": 0.15, "price_w": 0.25,  # weights sum: 1.00
         "roce_gate": 12.0, "growth_gate": 15.0, "peg_gate": 3.0,
         "forensic_boost": 0.7,
         "priority_cols": ["crs_50d", "ret_vs_n500_3m", "momentum_score", "rsi_14d", "dist_52wh"],
@@ -592,7 +596,7 @@ MASTER_PROFILES = {
     "Turnaround": {
         "label": "Turnaround / Special Situation",    "icon": "🔄",
         "description": "QoQ acceleration + promoter buying + volume surge. High risk, high reward",
-        "quality_w": 0.20, "growth_w": 0.40, "longevity_w": 0.10, "price_w": 0.10,
+        "quality_w": 0.20, "growth_w": 0.45, "longevity_w": 0.15, "price_w": 0.20,  # weights sum: 1.00
         "roce_gate": 8.0, "growth_gate": 0.0, "peg_gate": 5.0,
         "forensic_boost": 1.3,
         "priority_cols": ["pat_gr_yoy", "change_promoter_lq", "crs_50d", "volume", "pat_lq"],
@@ -771,7 +775,7 @@ EPOCH3_TAXONOMY = {
 # EPOCH 4: SQGLP & ACCOUNTING INTEGRITY (19th–25th WCS, 2014–2020)
 # ═══════════════════════════════════════════════════════════════
 EPOCH4_SQGLP = {
-    "min_cfo_to_pat_ratio": 0.80,       # Saurabh Mukherjea / 24th WCS Cash Quality Floor
+    "min_cfo_to_pat_ratio": 80.0,       # Saurabh Mukherjea / 24th WCS Cash Quality Floor — PERCENTAGE (cfo_to_pat is stored as 73.04, not 0.73)
     "max_promoter_pledge": 10.0,        # Strict 10% maximum pledging boundary
     "max_peg_ratio": 1.0,               # 23rd WCS near-infallible outperformance anchor
 }
@@ -825,6 +829,10 @@ CONSISTENT_SECTORS = frozenset([
 # ═══════════════════════════════════════════════════════════════
 # 8. FORENSIC ENGINE THRESHOLDS
 # ═══════════════════════════════════════════════════════════════
+# Fixed denominator for forensic_score: (max_flags - red_flag_count) / max_flags × 100.
+# Must be updated manually when a new rf_ flag is added to forensic_engine.py.
+# Current flags: 25 active (rf_psu_value_destruction, rf_lease_inflation added recently).
+FORENSIC_MAX_FLAGS = 25
 FORENSIC = {
     "cfo_pat_alert":         70.0,  # below this = Level 1 red flag (percentage, e.g. 73.04 = 73%)
     "receivable_rise_days":  15,    # DSO rising more than this = flag
