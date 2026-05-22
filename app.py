@@ -656,16 +656,8 @@ with tabs[2]:
     if not all_stock_names:
         st.info("No stocks available. Check your data source.")
     else:
-        # ── Stock selector: search + dropdown + prev/next navigation ──────
-        # Resolve any pending navigation request BEFORE rendering widgets.
-        # Buttons must NOT write to "xray_stock" directly (Streamlit forbids
-        # writing to a widget-bound key after that widget has been rendered).
-        # Instead they write to "_ts_nav"; we consume it here on the next run.
-        _ts_nav = st.session_state.get("_ts_nav")
-        if "_ts_nav" in st.session_state:
-            del st.session_state["_ts_nav"]
-
-        _ts_c1, _ts_c2, _ts_c3, _ts_c4 = st.columns([2, 4, 1, 1])
+        # ── Stock selector: search + dropdown ────────────────────────
+        _ts_c1, _ts_c2 = st.columns([2, 5])
         with _ts_c1:
             search_ticker = st.text_input(
                 "Search", placeholder="🔍  HDFC, Infosys, TATA…",
@@ -675,27 +667,13 @@ with tabs[2]:
         _names = [n for n in all_stock_names if _term in n.upper()] if _term else all_stock_names
         if not _names:
             _names = all_stock_names
-
-        # Navigation override takes priority over widget state
-        _resolve = _ts_nav if (_ts_nav and _ts_nav in _names) else st.session_state.get("xray_stock")
-        _ts_idx  = _names.index(_resolve) if _resolve in _names else 0
-
+        _prev_sel = st.session_state.get("xray_stock")
+        _ts_idx   = _names.index(_prev_sel) if _prev_sel in _names else 0
         with _ts_c2:
             selected = st.selectbox(
                 "Stock", _names, index=_ts_idx, key="xray_stock",
                 label_visibility="collapsed",
             )
-        _cur_idx = _names.index(selected) if selected in _names else 0
-        with _ts_c3:
-            if st.button("◀ Prev", key="ts_prev", use_container_width=True,
-                         disabled=(_cur_idx == 0)):
-                st.session_state["_ts_nav"] = _names[_cur_idx - 1]
-                st.rerun()
-        with _ts_c4:
-            if st.button("Next ▶", key="ts_next", use_container_width=True,
-                         disabled=(_cur_idx >= len(_names) - 1)):
-                st.session_state["_ts_nav"] = _names[_cur_idx + 1]
-                st.rerun()
 
         stock   = df[df["name"] == selected].iloc[0]
         _regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
@@ -766,9 +744,6 @@ with tabs[2]:
           <span style="font-size:0.75rem;color:{COLORS['text_secondary']};
                flex:1;min-width:160px;">{_verdict_reason}</span>
           {_mr_pill}
-          <span style="font-size:0.67rem;color:{COLORS['text_muted']};white-space:nowrap;">
-            {_cur_idx + 1}&thinsp;/&thinsp;{len(_names)}
-          </span>
         </div>
         """, unsafe_allow_html=True)
 
