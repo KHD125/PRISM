@@ -15,12 +15,16 @@ from typing import List, Dict
 from config import FORENSIC, PIOTROSKI
 
 # Industries with long billing cycles — DSO > 90 days is normal, not a red flag
-_SERVICE_INDUSTRIES = frozenset({
-    "Information Technology", "IT - Software", "Computers - Software",
-    "IT Services & Consulting", "BPO/KPO",
-    "Pharmaceuticals", "Pharmaceuticals - Indian - Bulk Drugs",
-    "Healthcare", "Biotechnology",
-    "Financial Services", "Banking", "NBFC", "Insurance",
+# Sector-based classification for DSO threshold and capex-mirage exclusion.
+# Uses the SECTOR column (81 values) — auto-adapts when Screener.in adds new sub-industries
+# without requiring any code change. Verified: these 4 sectors contain all 40+ relevant
+# IT / Pharma / Healthcare industries in the live CSV.
+# Financial stocks are excluded separately via is_financial (days_receivable is NaN-out there).
+_HIGH_DSO_SECTORS = frozenset({
+    "IT - Software",      # 11 industries: ER&D, BPO, Data Centre, IT Product, Geospatial…
+    "IT - Hardware",      # 5 industries: Computer Hardware, Peripherals, Networking…
+    "Healthcare",         # 9 industries: Hospitals, Diagnostics, Medical Equipment…
+    "Pharmaceuticals",    # 15 industries: all Pharma sub-types, Ayurvedic, Biosimilars…
 })
 
 
@@ -88,8 +92,15 @@ def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    # Sum all 9 components
-    f_cols = [c for c in df.columns if c.startswith("f_")]
+    # Sum exactly the 9 authentic Piotroski components — hard-coded to prevent
+    # fcf_yield, fcf_consistency, fcf_to_cfo_pct, fcf_growth (all start with "f_")
+    # from being included if those columns happen to be present in df.
+    _PIOTROSKI_COLS = [
+        "f_roa", "f_cfo", "f_accrual",
+        "f_leverage", "f_liquidity", "f_dilution",
+        "f_margin", "f_turnover", "f_roa_delta",
+    ]
+    f_cols = [c for c in _PIOTROSKI_COLS if c in df.columns]
     df["piotroski_fscore"] = df[f_cols].sum(axis=1)
 
     # F-Score classification
@@ -126,13 +137,11 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # 2. Receivables quality: sector-aware DSO threshold
-    # Services/IT/Pharma/Financials have 60-90 day billing cycles — 120d is the alert level.
-    # Products/FMCG/Manufacturing: >75d signals collection risk.
-    if "industry" in df.columns:
-        is_service = df["industry"].isin(_SERVICE_INDUSTRIES)
-        dso_threshold = np.where(is_service, 120, 75)
-    else:
-        dso_threshold = 90  # fallback if industry column unavailable
+    # IT / Pharma / Healthcare have 60-90d normal billing cycles → alert at 120d.
+    # Products / FMCG / Manufacturing → alert at 75d.
+    # Financial stocks: days_receivable is NaN-out in data_engine → always 0 here.
+    is_service = df.get("sector", pd.Series("", index=df.index)).fillna("").isin(_HIGH_DSO_SECTORS)
+    dso_threshold = np.where(is_service, 120, 75)
     df["rf_high_receivables"] = np.where(
         df["days_receivable"].notna(),
         (df["days_receivable"] > dso_threshold).astype(int),
@@ -344,13 +353,10 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # - Denominator: estimated annual depreciation of existing asset base
     # - Ratio < 0.5 means less than half of depreciated assets are being replaced
     #
-    # EXCLUSION: IT/Software, Services, and Financial companies are asset-light by design —
+    # EXCLUSION: IT/Software, Pharma, Healthcare, and Financial companies are asset-light —
     # high revenue with low capex is their COMPETITIVE ADVANTAGE, not a red flag.
     # Only flag capital-intensive businesses (Manufacturing, Metals, Infra, Auto, etc.)
-    if "industry" in df.columns:
-        _is_svc_cm = df["industry"].isin(_SERVICE_INDUSTRIES)
-    else:
-        _is_svc_cm = pd.Series(False, index=df.index)
+    _is_svc_cm = df.get("sector", pd.Series("", index=df.index)).fillna("").isin(_HIGH_DSO_SECTORS)
     _is_fin_cm = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
     _is_capital_intensive = ~_is_svc_cm & ~_is_fin_cm
 
@@ -414,6 +420,34 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # 25. PSU Value-Destruction Loop (Epoch 3)
     df["rf_psu_value_destruction"] = df.get("psu_value_destruction_flag", pd.Series(0, index=df.index)).fillna(0).astype(int)
 
+    # 26. Ind AS 116 Lease Inflation — D4 forensic shield
+    # Ind AS 116 (effective FY2020) forces companies to capitalise operating leases as Right-of-Use
+    # (RoU) assets. Lease rentals move out of "Other Expenses" into Depreciation + Finance Costs.
+    # Net effect: EBITDA looks inflated (rentals no longer in opex), OCF looks depressed (lease
+    # payments shift to Financing Cash Flow). QSR chains, retail malls, airlines with large lease
+    # bases appear as high-EBITDA, cash-generative businesses even when unit economics are weak.
+    # Detection: EBITDA materially exceeds Operating Cash Flow in lease-intensive sectors.
+    # Using exact sector names from the production CSV — verified against 81-sector master list.
+    _lease_sectors = [
+        "Retail",
+        "Quick Service Restaurant",
+        "Air Transport Service",
+        "Hotels & Restaurants",
+    ]
+    _in_lease_sector = df.get("sector", pd.Series("", index=df.index)).fillna("").isin(_lease_sectors)
+    _ebitda_vals     = df.get("ebitda", pd.Series(np.nan, index=df.index)).fillna(0)
+    _ocf_vals        = df.get("operating_cash_flow", pd.Series(np.nan, index=df.index)).fillna(0)
+    _ebitda_cfo_gap  = _ebitda_vals - _ocf_vals
+    df["rf_lease_inflation"] = np.where(
+        _in_lease_sector
+        & df.get("ebitda", pd.Series(np.nan, index=df.index)).notna()
+        & df.get("operating_cash_flow", pd.Series(np.nan, index=df.index)).notna()
+        & (_ebitda_vals > 0)
+        & (_ebitda_cfo_gap > _ebitda_vals * 0.30),
+        1,
+        0,
+    ).astype(int)
+
     # Sum all red flags
     rf_cols = [c for c in df.columns if c.startswith("rf_")]
     df["red_flag_count"] = df[rf_cols].sum(axis=1)
@@ -470,6 +504,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_tax_panic":                "Estimated effective tax rate <10% despite PAT>0 — Sharp Practices alert (WCS 24)",
         "rf_receivables_bloat":        "DSO expansion >20 days above sector median — sector-relative receivables manipulation",
         "rf_psu_value_destruction":    "PSU Value-Destruction Loop (low spread, high payout, CWIP delays)",
+        "rf_lease_inflation":          "Ind AS 116 lease mirage — EBITDA inflated by RoU capitalisation (QSR/Retail/Aviation)",
     }
 
 
