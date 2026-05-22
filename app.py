@@ -439,20 +439,107 @@ with tabs[2]:
 
         # ── Tab A: Overview ───────────────────────────────────────────────
         with _itabs[0]:
+            # Null-safe getter scoped to this stock row
+            def _sg(k, d=0):
+                v = stock.get(k, d)
+                return d if (v is None or (isinstance(v, float) and np.isnan(v))) else v
+
+            tier_num_ov = int(_sg("conviction_tier", 5))
+            tc_ov       = TIER_COLORS.get(tier_num_ov, TIER_COLORS[5])
+            tier_cfg_ov = next((t for t in CONVICTION_TIERS if t["tier"] == tier_num_ov),
+                               CONVICTION_TIERS[-1])
+            comp_ov     = float(_sg("composite_score", 0))
+
             col1, col2 = st.columns([1, 1])
+
             with col1:
                 fig = render_radar_chart(stock, f"{selected} — Quality Radar")
                 st.plotly_chart(fig, use_container_width=True)
-                st.markdown(
-                    f"<div style='font-size:0.75rem;color:{COLORS['text_muted']};margin-top:-8px;'>"
-                    f"Piotroski {stock.get('piotroski_fscore','N/A')}/9 &nbsp;·&nbsp; "
-                    f"{stock.get('piotroski_label','')} &nbsp;·&nbsp; "
-                    f"Smart Money: {stock.get('smart_money_flow','⚪ Neutral')} &nbsp;·&nbsp; "
-                    f"CF: {stock.get('cf_triangle','')}</div>",
-                    unsafe_allow_html=True,
+
+                # ── Elevated signal badges (replaces tiny caption text) ────
+                pio_raw = stock.get("piotroski_fscore", None)
+                pio_val = None
+                if pio_raw is not None and not (isinstance(pio_raw, float) and np.isnan(pio_raw)):
+                    try:
+                        pio_val = int(float(pio_raw))
+                    except Exception:
+                        pio_val = None
+                pio_str = f"{pio_val}/9" if pio_val is not None else "N/A"
+                pio_lbl = str(stock.get("piotroski_label", "") or "")
+                pio_clr = (COLORS["green"] if pio_val is not None and pio_val >= 7 else
+                           COLORS["gold"]  if pio_val is not None and pio_val >= 5 else
+                           COLORS["red"])
+                smart  = str(stock.get("smart_money_flow", "⚪ Neutral") or "⚪ Neutral")
+                cf_tri = str(stock.get("cf_triangle", "") or "")
+                badge_items = [(f"F-Score {pio_str} {pio_lbl}".strip(), pio_clr),
+                               (smart, COLORS["purple"])]
+                if cf_tri:
+                    badge_items.append((cf_tri, COLORS["blue"]))
+                bdgs = "".join(
+                    f'<span style="display:inline-block;padding:3px 9px;border-radius:6px;'
+                    f'font-size:0.68rem;font-weight:700;margin:2px 3px 2px 0;'
+                    f'background:{c}18;border:1px solid {c}40;color:{c};">{lbl}</span>'
+                    for lbl, c in badge_items
                 )
+                st.markdown(bdgs, unsafe_allow_html=True)
+
             with col2:
-                render_stock_card(stock, show_scores=False)
+                # ── Key Decision Metrics — replaces redundant stock card ───
+                # Shows the 7 signals that answer "is this worth buying?" —
+                # new information not already visible in the hero or score strip.
+                _roce_r = _sg("roce_med_10y", None)
+                roce_ov = float(_roce_r if _roce_r is not None else _sg("roce", 0))
+                pat5_ov = float(_sg("pat_gr_5y", 0))
+                peg_ov  = float(_sg("peg", 0))
+                cfo_ov  = float(_sg("cfo_to_pat", 0))
+                de_ov   = float(_sg("debt_to_equity", 0))
+                prom_ov = float(_sg("promoter_holdings", 0))
+                plg_ov  = float(_sg("pledged_percentage", 0))
+                fcfy_ov = float(_sg("fcf_yield", 0))
+
+                def _krow(label, val_str, passed, note=""):
+                    ico, clr = (("✅", COLORS["green"]) if passed is True else
+                                ("❌", COLORS["red"])   if passed is False else
+                                ("⚪", COLORS["text_muted"]))
+                    nh = (f'<span style="font-size:0.63rem;color:{COLORS["text_muted"]};'
+                          f'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;'
+                          f'white-space:nowrap;margin-left:6px;">{note}</span>') if note else ""
+                    return (
+                        f'<div style="display:flex;align-items:center;gap:8px;padding:6px 0;'
+                        f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+                        f'<span style="width:18px;text-align:center;flex-shrink:0;">{ico}</span>'
+                        f'<span style="font-size:0.74rem;color:{COLORS["text_secondary"]};'
+                        f'width:128px;flex-shrink:0;">{label}</span>'
+                        f'<span style="font-size:0.82rem;font-weight:700;color:{clr};'
+                        f'white-space:nowrap;flex-shrink:0;">'
+                        f'{val_str}</span>{nh}</div>'
+                    )
+
+                peg_str  = f"{peg_ov:.2f}×" if peg_ov > 0 else "N/A"
+                peg_pass = (0 < peg_ov <= 1.0) if peg_ov > 0 else None
+                pr_note  = f"⚠️ {plg_ov:.0f}% pledged" if plg_ov > 10 else "≥50% aligned"
+
+                kpi_html = (
+                    _krow("ROCE 10Y Median", f"{roce_ov:.1f}%",  roce_ov >= 15,    "≥15%")      +
+                    _krow("PAT CAGR 5Y",     f"{pat5_ov:.1f}%",  pat5_ov >= 15,    "≥15%")      +
+                    _krow("PEG Ratio",         peg_str,           peg_pass,        "Lynch ≤1.0") +
+                    _krow("CFO / PAT",       f"{cfo_ov:.1f}%",   cfo_ov >= 70,     "≥70% cash") +
+                    _krow("D / E Ratio",     f"{de_ov:.2f}",      de_ov < 0.5,     "<0.5 safe") +
+                    _krow("Promoter Hold.",  f"{prom_ov:.1f}%",   prom_ov >= 50,   pr_note)     +
+                    _krow("FCF Yield",       f"{fcfy_ov:.1f}%",   fcfy_ov >= 3,    "≥3% solid")
+                )
+
+                st.markdown(f"""
+                <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
+                            border-left:3px solid {tc_ov['text']};border-radius:10px;
+                            padding:14px 16px;">
+                  <div style="font-size:0.64rem;font-weight:800;color:{tc_ov['text']};
+                              text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px;">
+                    {tier_cfg_ov['emoji']} {tier_cfg_ov['label']} &nbsp;·&nbsp; Score {comp_ov:.0f} / 100
+                  </div>
+                  {kpi_html}
+                </div>
+                """, unsafe_allow_html=True)
 
             st.markdown(
                 f"<div class='sec-head'>📊 Business & Financial Analysis</div>",
