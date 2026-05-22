@@ -45,19 +45,19 @@ def _safe_clip(series: pd.Series, lo: float = 0, hi: float = 100) -> pd.Series:
 
 
 def _zone_score(value: pd.Series, zones: dict) -> pd.Series:
-    """Score based on value falling in predefined zones.
-    Boundaries: left-closed [min, max) for all but the last zone.
-    Last zone is left-closed and unbounded above (value >= min) to prevent
-    exact-float boundary fallthrough (e.g. HIGH_AGE_ZONES NaN→9999 == max)."""
-    result = pd.Series(50.0, index=value.index)  # default neutral
-    zone_items = list(zones.items())
-    for i, (zone_name, z) in enumerate(zone_items):
-        if i < len(zone_items) - 1:
-            mask = (value >= z["min"]) & (value < z["max"])
+    """Score based on value falling in predefined zones — fully vectorized with np.select.
+    Boundaries: left-closed [min, max) for all but the last zone (open upper bound).
+    Zones evaluated in reverse order so the lowest-min zone wins for any value ≥ its min."""
+    zone_list = list(zones.values())
+    conditions = []
+    choices = []
+    for i, z in enumerate(zone_list):
+        if i < len(zone_list) - 1:
+            conditions.append((value >= z["min"]) & (value < z["max"]))
         else:
-            mask = value >= z["min"]  # last zone: open upper bound
-        result = np.where(mask, z["score"], result)
-    return pd.Series(result, index=value.index)
+            conditions.append(value >= z["min"])
+        choices.append(z["score"])
+    return pd.Series(np.select(conditions, choices, default=50.0), index=value.index, dtype=float)
 
 
 def _sector_pct_rank(df: pd.DataFrame, col: str, sector_col: str = "sector",
@@ -114,7 +114,10 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
 
         # NaN handling: if data is missing, we give benefit of doubt for non-critical gates
         # but for critical gates (pledge, debt), NaN = fail
-        critical_gates = {"pledge_safety", "pledge_direction", "positive_ocf"}
+        # critical_gates: NaN = fail (missing data is as suspicious as failing)
+        # cash_quality: missing CFO/PAT data should not pass the "earnings are real cash" gate
+        # positive_pat: unknown profitability should not pass the no-loss-makers gate
+        critical_gates = {"pledge_safety", "pledge_direction", "positive_ocf", "cash_quality", "positive_pat"}
         if gate_name in critical_gates:
             passed = passed.fillna(False)
         else:
@@ -179,6 +182,10 @@ def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
     Uses groupby-based _sector_pct_rank (70% universe + 30% sector blend) for peer benchmarking.
     MEF (Moat Endurance Factor) modifier from 17th WCS boosts or penalises structural durability."""
     score = pd.Series(0.0, index=df.index)
+    # Long-term signals require 10-year history to be meaningful.
+    # fillna(0) for these two: a stock listed <10 years has NOT proven its moat — neutral credit is unearned.
+    # Trajectory/current signals use fillna(50): short history doesn't invalidate recent performance trends.
+    _long_term_signals = {"roce_med_10y", "roe_med_10y"}
     signals = {
         "roce_med_10y":        (_sector_pct_rank(df, "roce_med_10y", ascending=True), 0.35),
         "roce_trajectory":     (_sector_pct_rank(df, "roce_trajectory", ascending=True), 0.15),
@@ -188,7 +195,8 @@ def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
     }
 
     for name, (ranked, weight) in signals.items():
-        score += ranked.fillna(50) * weight
+        fill = 0 if name in _long_term_signals else 50
+        score += ranked.fillna(fill) * weight
 
     # Moat Endurance Factor (17th WCS): structural moat durability modifier.
     # MEF = ROCE_current / ROCE_med_10y. Stable/expanding ≥ 1.0 = moat intact.
@@ -338,8 +346,17 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
     Lower valuations = higher score = better entry point."""
     score = pd.Series(0.0, index=df.index)
 
-    # PE discount vs 10Y median: positive = trading below historical median = good
-    score += _sector_pct_rank(df, "pe_discount", ascending=True) * VALUATION_SIGNALS["pe_discount"]
+    # PE discount signal — blended: 40% trailing (vs own 10Y median) + 60% quality-adjusted (EVA Fair PE)
+    # Trailing pe_discount rewards stocks cheap vs their own history (momentum of cheapness).
+    # EVA pe_discount_to_quality rewards stocks cheap vs what their quality justifies (structural cheapness).
+    # Blending captures both dimensions. Graceful fallback: if EVA column missing, uses trailing only.
+    _pe_trail = _sector_pct_rank(df, "pe_discount", ascending=True)
+    if "pe_discount_to_quality" in df.columns:
+        _pe_qadj = _sector_pct_rank(df, "pe_discount_to_quality", ascending=True)
+        _pe_sig  = (_pe_trail * 0.40 + _pe_qadj * 0.60).fillna(_pe_trail.fillna(50))
+    else:
+        _pe_sig  = _pe_trail
+    score += _pe_sig * VALUATION_SIGNALS["pe_discount"]
 
     # PEG: lower is better (ascending=False)
     # Apply maximum penalty for negative/invalid PEG
@@ -752,9 +769,10 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
     if "inst_convergence" in df.columns:
         bonus += df["inst_convergence"].fillna(0) * GOVERNANCE_BONUS["inst_convergence"]
 
-    # Insider trading present
+    # Insider trading — reward buying directors only, not sellers
     if "insider_trading" in df.columns:
-        bonus += df["insider_trading"].notna().astype(float) * GOVERNANCE_BONUS["insider_trading_present"]
+        _insider_bought = df["insider_trading"].fillna("").astype(str).str.contains("Bought", case=False)
+        bonus += _insider_bought.astype(float) * GOVERNANCE_BONUS["insider_trading_present"]
 
     # Pledge falling over 1 year
     if "pledge_falling_1y" in df.columns:
@@ -834,25 +852,10 @@ def compute_composite_score(
         df["governance_bonus"] * gov_w
     )
 
-    # EP Hockey-Stick Breakout boost (28th WCS): structural alpha inflection — emerging
-    # value generator (Q2/Q3) ascending the Power Curve with institutional volume confirmation.
-    # Bounded +5 pts to preserve composite range [0, 100].
-    _hs_boost = df.get("ep_hockey_stick_breakout", pd.Series(0, index=df.index)).fillna(0)
-    df["composite_score"] = df["composite_score"] + _hs_boost * 5.0
-
-    # Agent 8 (1st WCS): Mid-Cap Velocity Compounder boost.
-    # Mid/Small/Micro-Cap stocks with sustained ROCE ≥ 20% compound dramatically faster than large caps.
-    # 1st WCS: scale-velocity advantage — smaller base means each incremental revenue rupee has
-    # proportionally more impact on returns. Bounded +3 pts.
-    _mcv_boost = df.get("mcap_velocity_compounder", pd.Series(0, index=df.index)).fillna(0)
-    df["composite_score"] = df["composite_score"] + _mcv_boost * 3.0
-
-    df["composite_score"] = _safe_clip(df["composite_score"])
-
     # ── SQGLP 100x Engine Integration (Epoch 4 — 19th & 24th WCS) ──
+    # Applied FIRST: most stringent multi-condition signal (+15 pts) earns priority before
+    # smaller boosts compete to fill the 100-point cap.
     # Raamdeo Agrawal's 5-pillar SQGLP framework: Size + Quality + Growth + Longevity + Price.
-    # Thresholds wired from EPOCH4_SQGLP config (single source of truth).
-    # All conditions must pass simultaneously. +15 pts = elite outperformance premium.
     _mcat   = df.get("market_category", df.get("mcap_tier", pd.Series("", index=df.index)))
     _roce10y = df.get("roce_med_10y", pd.Series(0.0, index=df.index)).fillna(0.0)
     _peg_v   = df.get("peg",          pd.Series(999.0, index=df.index))
@@ -860,12 +863,23 @@ def compute_composite_score(
     df["flag_sqglp_engine"] = (
         _mcat.isin(["Mid Cap", "Small Cap", "Micro Cap"]) &                                    # S: Scale entry
         (_roce10y >= 25.0) &                                                                    # Q: Capital quality
-        (_cfopat >= EPOCH4_SQGLP["min_cfo_to_pat_ratio"] * 100) &                             # Q: ECV >= 80%
+        (_cfopat >= EPOCH4_SQGLP["min_cfo_to_pat_ratio"]) &                                   # Q: ECV >= 80% (percentage unit — matches cfo_to_pat CSV column, e.g. 73.04)
         (_peg_v.fillna(0.0) > 0) & (_peg_v.fillna(999.0) <= EPOCH4_SQGLP["max_peg_ratio"]) & # P: PEG <= 1.0
         (df.get("forensic_label", pd.Series("", index=df.index)) == "🟢 Clean")                # Integrity gate
     ).astype(int)
 
     df["composite_score"] = np.where(df["flag_sqglp_engine"] == 1, df["composite_score"] + 15.0, df["composite_score"])
+
+    # EP Hockey-Stick Breakout boost (28th WCS): structural alpha inflection — emerging
+    # value generator (Q2/Q3) ascending the Power Curve with institutional volume confirmation.
+    _hs_boost = df.get("ep_hockey_stick_breakout", pd.Series(0, index=df.index)).fillna(0)
+    df["composite_score"] = df["composite_score"] + _hs_boost * 5.0
+
+    # Agent 8 (1st WCS): Mid-Cap Velocity Compounder boost.
+    # Mid/Small/Micro-Cap stocks with sustained ROCE ≥ 20% compound dramatically faster than large caps.
+    _mcv_boost = df.get("mcap_velocity_compounder", pd.Series(0, index=df.index)).fillna(0)
+    df["composite_score"] = df["composite_score"] + _mcv_boost * 3.0
+
     df["composite_score"] = _safe_clip(df["composite_score"])
 
     # ── Value Migration Boost (20th WCS — Structural Sector Value Rotation) ──
@@ -1859,19 +1873,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         .str.replace("|", ", ", regex=False)
     )
     df["frameworks_passed"] = np.where(df["frameworks_passed"] == "", "None", df["frameworks_passed"])
-
-    # ── Epoch 3: Great/Good/Gruesome Taxonomy (vectorized, zero apply) ──
-    df["corporate_class"] = np.select(
-        [
-            (df["roce_med_10y"].fillna(0) >= 20.0) &
-            (df["fcf_to_ocf_velocity"].fillna(0) >= 0.60),
-            (df["roce_med_10y"].fillna(0) >= 12.0) &
-            (df["fcf_to_ocf_velocity"].fillna(0) < 0.60),
-            (df["roce_med_10y"].fillna(0) < 12.0),
-        ],
-        ["🏆 GREAT", "👍 GOOD", "💀 GRUESOME"],
-        default="👍 GOOD"
-    )
+    # corporate_class is computed in run_full_scoring (before quality_score penalties are applied).
+    # Do NOT recompute here — that would overwrite the label without reapplying penalties.
 
     return df
 
@@ -1939,13 +1942,30 @@ def compute_ep_power_curve(df: pd.DataFrame) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════
 
 def detect_market_regime(df: pd.DataFrame) -> str:
-    """Auto-detect market regime from breadth of CRS data."""
+    """Auto-detect market regime from multi-signal breadth consensus (2/3 required).
+    Single CRS-50D can flip regime on one session's noise — consensus prevents whipsawing."""
+    bull_signals = 0
+    bear_signals = 0
+
     if "crs_50d" in df.columns:
-        breadth = (df["crs_50d"] > 0).mean()
-        if breadth > 0.60:
-            return "BULL"
-        elif breadth < 0.40:
-            return "BEAR"
+        b50 = (df["crs_50d"] > 0).mean()
+        if b50 > 0.60: bull_signals += 1
+        elif b50 < 0.40: bear_signals += 1
+
+    if "crs_26w" in df.columns:
+        b26 = (df["crs_26w"] > 0).mean()
+        if b26 > 0.55: bull_signals += 1
+        elif b26 < 0.45: bear_signals += 1
+
+    if "above_sma200" in df.columns:
+        b200 = df["above_sma200"].fillna(0).mean()
+        if b200 > 0.55: bull_signals += 1
+        elif b200 < 0.45: bear_signals += 1
+
+    if bull_signals >= 2:
+        return "BULL"
+    if bear_signals >= 2:
+        return "BEAR"
     return "SIDEWAYS"
 
 
@@ -1963,10 +1983,12 @@ def run_full_scoring(
       4. Composite blend using Analysis Mode + regime-adjusted momentum boost
     """
     df = df.copy()
-    # Dynamic import to avoid load-time circular references and ensure forensic data is present
-    from core.forensic_engine import compute_piotroski_fscore, compute_red_flags
-    df = compute_piotroski_fscore(df)
-    df = compute_red_flags(df)
+    # Ensure forensic data is present for framework checks (fw_diamond, fw_dhandho need forensic_score).
+    # Guard: skip if run_forensic_analysis already ran (avoids double computation on every scoring run).
+    if "forensic_score" not in df.columns:
+        from core.forensic_engine import compute_piotroski_fscore, compute_red_flags
+        df = compute_piotroski_fscore(df)
+        df = compute_red_flags(df)
 
     mode = ANALYSIS_MODES.get(analysis_mode, ANALYSIS_MODES["Hybrid"])
 
