@@ -770,16 +770,20 @@ def render_financial_insights(stock: pd.Series):
             ico, clr = "⚪", COLORS["text_muted"]
         c_sec = COLORS["text_secondary"]
         c_mut = COLORS["text_muted"]
+        # Context truncates with ellipsis — value NEVER wraps (white-space:nowrap;flex-shrink:0)
         ctx = (
-            f'<span style="color:{c_mut};font-size:0.69rem;margin-left:4px;">{_esc(context)}</span>'
+            f'<span style="color:{c_mut};font-size:0.68rem;flex:1;min-width:0;'
+            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+            f'margin-left:6px;">{_esc(context)}</span>'
         ) if context else ""
         return (
-            f'<div style="display:flex;align-items:baseline;gap:6px;padding:5px 0;'
+            f'<div style="display:flex;align-items:center;gap:6px;padding:5px 0;'
             f'border-bottom:1px solid rgba(255,255,255,0.04);">'
             f'<span style="font-size:0.85rem;width:18px;flex-shrink:0;">{ico}</span>'
-            f'<span style="font-size:0.76rem;color:{c_sec};flex:0 0 170px;min-width:0;">'
+            f'<span style="font-size:0.76rem;color:{c_sec};width:155px;flex-shrink:0;">'
             f'{_esc(label)}</span>'
-            f'<span style="font-size:0.80rem;font-weight:700;color:{clr};flex:1;min-width:0;">'
+            f'<span style="font-size:0.80rem;font-weight:700;color:{clr};'
+            f'white-space:nowrap;flex-shrink:0;">'
             f'{_esc(value_str)}</span>'
             f'{ctx}</div>'
         )
