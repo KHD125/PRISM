@@ -524,6 +524,37 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
     if rf_col == "rf_expense_rising":
         v = _v("expense_ratio", "{:.1f}%")
         return f"expense_ratio: {v}  ·  rose >3pp" if v else ""
+    if rf_col == "rf_dilution":
+        dil = _v("dilution_flag", "{:.0f}")
+        shares_gr = _v("shares_gr_yoy", "{:.1f}%")
+        return f"share count grew: {shares_gr}  ·  Tier 2+ dilution (>3%)" if shares_gr else ""
+    if rf_col == "rf_itr_declining":
+        itr = _v("inventory_turnover", "{:.2f}×")
+        itr1 = _v("inventory_turnover_1yb", "{:.2f}×")
+        parts = []
+        if itr:  parts.append(f"ITR current: {itr}")
+        if itr1: parts.append(f"prior year: {itr1}")
+        return "  ·  ".join(parts) if parts else ""
+    if rf_col == "rf_cwip_bloat":
+        cwip = _v("cwip_to_assets", "{:.1f}%")
+        return f"CWIP/assets: {cwip}  ·  grew >50% YoY — balance-sheet parking risk" if cwip else ""
+    if rf_col == "rf_capex_mirage":
+        rg = _v("rev_gr_yoy", "{:.1f}%")
+        dep = _v("depreciation", "₹{:,.0f} Cr")
+        parts = []
+        if rg: parts.append(f"rev_gr: +{rg}")
+        if dep: parts.append(f"dep: {dep}  ·  capex <0.5× dep")
+        return "  ·  ".join(parts) if parts else ""
+    if rf_col == "rf_psu_value_destruction":
+        roce = _v("roce", "{:.1f}%")
+        de = _v("debt_to_equity", "{:.2f}")
+        parts = []
+        if roce: parts.append(f"ROCE: {roce}")
+        if de:   parts.append(f"D/E: {de}")
+        return "  ·  ".join(parts) + "  ·  PSU capital spread < cost of capital" if parts else ""
+    if rf_col == "rf_lease_inflation":
+        opm = _v("opm", "{:.1f}%")
+        return f"EBITDA-level OPM: {opm}  ·  Ind AS 116 RoU removes operating lease costs from EBITDA" if opm else ""
     return ""
 
 
@@ -1122,14 +1153,17 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
                 f'background:{clr}18;border:1px solid {clr}55;color:{clr};margin:2px 3px;">'
                 f'{txt}</span>')
 
+    _mg_badge = (
+        _badge(mg_quad, COLORS["green"] if "Wealth Creator" in mg_quad else
+                        COLORS["gold"]  if "Quality Trap"   in mg_quad else
+                        COLORS["blue"]  if "Growth Trap"    in mg_quad else COLORS["red"])
+    ) if mg_quad else ""
     badges_html = (
         _badge(f"{tcfg['emoji']} {tcfg['label']}", ring_clr) +
-        _badge(mg_quad,   COLORS["green"] if "Wealth Creator" in mg_quad else
-                          COLORS["gold"]  if "Quality Trap"   in mg_quad else
-                          COLORS["blue"]  if "Growth Trap"    in mg_quad else COLORS["red"]) +
-        _badge(f_lbl,     COLORS["green"] if "Clean" in f_lbl else
-                          COLORS["gold"]  if "Watch" in f_lbl else
-                          COLORS["orange"] if "Caution" in f_lbl else COLORS["red"]) +
+        _mg_badge +
+        _badge(f_lbl,   COLORS["green"]  if "Clean"   in f_lbl else
+                        COLORS["gold"]   if "Watch"   in f_lbl else
+                        COLORS["orange"] if "Caution" in f_lbl else COLORS["red"]) +
         _badge(reg_txt, reg_clr)
     )
 
@@ -1182,15 +1216,20 @@ def render_score_strip(stock: pd.Series):
     gov   = float(_g(stock, "governance_bonus",  0))
 
     def _cell(label: str, icon: str, val: float, color: str) -> str:
-        w = max(0.0, min(100.0, val))
+        w   = max(0.0, min(100.0, val))
         neg = val < 0
         disp = f"{val:+.0f}" if neg else f"{val:.0f}"
+        zone = ("Strong" if val >= 70 else "Average" if val >= 40 else "Weak") if not neg else "Penalty"
+        zone_clr = (COLORS["green"] if val >= 70 else
+                    COLORS["gold"]  if val >= 40 else COLORS["red"])
         return (
             f'<div class="ts-score-cell" style="border-top:3px solid {color};">'
             f'<div class="ts-score-cell-lbl">{icon} {label}</div>'
             f'<div class="ts-score-cell-val" style="color:{color};">{disp}</div>'
             f'<div class="ts-score-bar-bg"><div class="ts-score-bar-fill" '
             f'style="width:{w:.1f}%;background:{color};"></div></div>'
+            f'<div style="font-size:0.52rem;color:{zone_clr};margin-top:4px;'
+            f'text-transform:uppercase;letter-spacing:0.6px;font-weight:700;">{zone}</div>'
             f'</div>'
         )
 
@@ -1210,11 +1249,27 @@ def render_score_strip(stock: pd.Series):
 
 def render_sell_alerts_panel(stock: pd.Series):
     """
-    Renders sell alert banners prominently. No-op when no alerts are active.
+    Renders sell alert banners prominently.
+    Shows a green confirmation when no alerts are active — silence was confusing users.
     Shows each fired alert as a distinct colored banner with explanation.
     """
     has_any = int(_g(stock, "sell_alert_any", 0)) == 1
     if not has_any:
+        st.markdown(f"""
+        <div style="background:rgba(63,185,80,0.07);border:1px solid rgba(63,185,80,0.3);
+                    border-radius:10px;padding:11px 18px;margin:4px 0 12px 0;
+                    display:flex;align-items:center;gap:10px;">
+          <span style="font-size:1rem;">✅</span>
+          <div>
+            <div style="font-size:0.78rem;font-weight:700;color:{COLORS['green']};">
+              No Exit Signals Active
+            </div>
+            <div style="font-size:0.68rem;color:{COLORS['text_muted']};margin-top:1px;">
+              All 6 Baid/Howard Marks/Mauboussin sell triggers checked — none fired.
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
         return
 
     _ALERTS = [
