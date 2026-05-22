@@ -25,7 +25,8 @@ from core import fetch_and_clean_data, run_full_scoring, run_forensic_analysis
 from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
-                render_financial_insights,
+                render_financial_insights, render_stock_hero, render_score_strip,
+                render_sell_alerts_panel, render_raw_signals,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
                 render_radar_chart, render_tier_summary, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points)
@@ -361,179 +362,158 @@ with tabs[1]:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 3: THE TEAR-SHEET (X-Ray + Forensic + Fisher)
+# TAB 3: THE TEAR-SHEET
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tabs[2]:
-    st.markdown(f"<div class='sec-head'>🔬 The Ultimate Tear-Sheet</div>", unsafe_allow_html=True)
-    # Quantamental Best Practice: Tear Sheet searches the FULL Universe.
     all_stock_names = df["name"].dropna().tolist()
-    if all_stock_names:
-        c_search, c_sel, _blank = st.columns([1, 2, 1])
+    if not all_stock_names:
+        st.info("No stocks available. Check your data source.")
+    else:
+        # ── Stock search bar ──────────────────────────────────────────────
+        c_search, c_sel = st.columns([1, 3])
         with c_search:
             search_ticker = st.text_input(
-                "🔍 Filter Stock", placeholder="e.g. HDFC, Infosys, TATA...",
-                key="search_ticker",
+                "🔍 Search", placeholder="HDFC, Infosys, TATA…",
+                key="search_ticker", label_visibility="collapsed",
             )
-        _term = (search_ticker or "").strip().upper()
+        _term  = (search_ticker or "").strip().upper()
         _names = [n for n in all_stock_names if _term in n.upper()] if _term else all_stock_names
         if not _names:
             _names = all_stock_names
         _prev = st.session_state.get("xray_stock")
-        _idx = _names.index(_prev) if _prev in _names else 0
+        _idx  = _names.index(_prev) if _prev in _names else 0
         with c_sel:
             selected = st.selectbox(
-                "Select Stock for Deep Dive (Full 2,000+ Universe)",
+                "Stock",
                 _names, index=_idx, key="xray_stock",
+                label_visibility="collapsed",
             )
+
         stock = df[df["name"] == selected].iloc[0]
-        
-        # ELITE ARCHITECTURE: Explicit Rejection Banner for failed stocks
+        _regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
+
+        # ── Hard-gate rejection banner (above everything) ─────────────────
         if stock.get("gate_pass", 0) == 0:
             st.markdown(f"""
-            <div style="background:rgba(248, 81, 73, 0.1); border:1px solid #f85149; border-radius:8px; padding:15px; margin-bottom:20px;">
-                <h3 style="color:#f85149; margin:0 0 5px 0;">❌ SYSTEM REJECTED</h3>
-                <p style="color:#eee; margin:0; font-size:0.95rem;">
-                    This stock failed the Quantitative Hard Gates. It is excluded from the main scanner.<br>
-                    <b>Failure Reason(s):</b> {stock.get('failed_gates', 'Unknown')}
-                </p>
+            <div style="background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.5);
+                        border-radius:10px;padding:14px 18px;margin:6px 0 12px 0;">
+              <div style="font-size:0.88rem;font-weight:800;color:{COLORS['red']};margin-bottom:4px;">
+                ❌ SYSTEM REJECTED — Hard Gate Failure
+              </div>
+              <div style="font-size:0.78rem;color:{COLORS['text_secondary']};">
+                <strong>Reason(s):</strong> {stock.get('failed_gates', 'Unknown')}
+              </div>
             </div>
             """, unsafe_allow_html=True)
 
-        # ── Conviction Tier Verdict Header ──
-        _tier_num = int(stock.get("conviction_tier", 5) or 5)
-        _tcfg = next((t for t in CONVICTION_TIERS if t["tier"] == _tier_num), CONVICTION_TIERS[-1])
-        _tc_style = TIER_COLORS.get(_tier_num, TIER_COLORS[5])
-        _f_lbl = str(stock.get("forensic_label", "🟢 Clean") or "🟢 Clean")
-        _mg_q  = str(stock.get("moat_growth_quad", "") or "N/A")
-        _comp  = float(stock.get("composite_score", 0) or 0)
-        _reg   = df.attrs.get("detected_market_regime", "SIDEWAYS")
-        _reg_txt = {"BULL": "🟢 Bull", "BEAR": "🔴 Bear"}.get(_reg, "🟡 Sideways")
-        st.markdown(f"""
-        <div style="background:{_tc_style['bg']};border:1px solid {_tc_style['border']};
-                    border-radius:10px;padding:12px 20px;margin:8px 0 14px 0;
-                    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-            <div>
-                <span style="font-size:1.0rem;font-weight:800;color:{_tc_style['text']};">
-                    {_tcfg['emoji']} {_tcfg['label']}
-                </span>
-                <span style="font-size:0.78rem;color:{COLORS['text_muted']};margin-left:12px;">
-                    {_mg_q} &nbsp;·&nbsp; {_f_lbl} &nbsp;·&nbsp; {_reg_txt}
-                </span>
-            </div>
-            <div style="font-size:1.9rem;font-weight:900;color:{_tc_style['text']};">
-                {_comp:.0f}<span style="font-size:0.62rem;color:{COLORS['text_muted']};font-weight:400;">&nbsp;/100</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # ── Sell alerts (prominent, above hero) ───────────────────────────
+        render_sell_alerts_panel(stock)
 
-        # TOP LEVEL: Radar & Core Profile
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            render_stock_card(stock, show_scores=True)
-            st.markdown(
-                f"**Piotroski F-Score:** {stock.get('piotroski_fscore', 'N/A')}/9 "
-                f"· {stock.get('piotroski_label', '')}",
-            )
-            st.markdown(
-                f"**Smart Money:** {stock.get('smart_money_flow', '⚪ Neutral')} "
-                f"· **CF:** {stock.get('cf_triangle', '')}",
-            )
-        with c2:
-            fig = render_radar_chart(stock, f"{selected} — Quality Profile")
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("---")
-        
-        # MID LEVEL: Visualizations (Matrix)
-        render_moat_growth_matrix(filt, highlight_stock=selected)
-
-        st.markdown("---")
-
-        # ── WCS 28/29/30 Structural Alpha Modules ──
-        render_ep_power_curve_module(stock)
-        render_bruised_blue_chip_badge(stock)
-        render_multitrillioncap_card(stock)
-
-        st.markdown("---")
-
-        # ── Business & Financial Analysis (Translated Insights) ──
-        render_financial_insights(stock)
-
-        # ── SELL ALERTS (Baid's 3 Triggers) ──
-        has_sell_alert = stock.get('sell_alert_any', 0) == 1
-        if has_sell_alert:
-            st.markdown(f"<div class='sec-head' style='color:#f85149;'>🚨 BAID SELL TRIGGERS ACTIVE</div>", unsafe_allow_html=True)
-            triggers = []
-            if stock.get('sell_alert_thesis_broken', 0) == 1:
-                triggers.append("**Thesis Broken:** ROCE trajectory declining structurally")
-            if stock.get('sell_alert_mgmt_deteriorated', 0) == 1:
-                triggers.append("**Management Deteriorated:** Pledge rising + promoter selling + D/E rising")
-            if stock.get('sell_alert_cash_collapse', 0) == 1:
-                triggers.append("**Cash Quality Collapse:** CFO/PAT dropped below 50%")
-            for t in triggers:
-                st.error(t)
-
-        # ── MEAN REVERSION WARNING (Marks) ──
+        # ── Mean reversion warning ────────────────────────────────────────
         if stock.get('mean_reversion_risk', 0) == 1:
-            st.warning("⚠️ **Marks Mean Reversion Risk:** Current margins are significantly above 5Y median — cyclical peak risk detected. Quality score penalized by 15%.")
+            st.markdown(f"""
+            <div style="background:rgba(228,179,65,0.07);border:1px solid rgba(228,179,65,0.4);
+                        border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.78rem;">
+              ⚠️ <strong style="color:{COLORS['gold']};">Marks Mean Reversion Risk:</strong>
+              <span style="color:{COLORS['text_secondary']};">
+                Current margins significantly above 5Y median — cyclical peak risk detected.
+                Quality score penalized by 15%.
+              </span>
+            </div>
+            """, unsafe_allow_html=True)
 
-        # ── RAW SIGNAL DATA (for deep divers) ──
-        with st.expander("📋 Raw Signal Data — All Metrics", expanded=False):
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("Malik Score", f"{stock.get('malik_score', 0):.0f}/100", stock.get('malik_label', ''))
-            d2.metric("SSGR", f"{stock.get('ssgr', 0):.1f}%")
-            d3.metric("SSGR Cushion", f"{stock.get('ssgr_cushion', 0):.1f}%")
-            d4.metric("Interest Coverage", f"{stock.get('interest_coverage', 0):.1f}x")
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("Tax Rate Est.", f"{stock.get('tax_rate_est', 0):.1f}%")
-            d2.metric("CFO/PAT", f"{stock.get('cfo_to_pat', 0):.1f}%")
-            d3.metric("High Cash+Debt", "⚠️ Flagged" if stock.get('high_cash_high_debt', 0) == 1 else "Clean ✅")
-            d4.metric("Earnings Yield", f"{stock.get('earnings_yield', 0):.1f}%")
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("Economic Profit", f"₹{stock.get('economic_profit', 0):.0f} Cr",
-                      "EP+ ✅" if stock.get('economic_profit_positive', 0) == 1 else "EP- ❌")
-            d2.metric("QGLP Score", f"{stock.get('qglp_score', 0):.0f}/100")
-            d3.metric("QGLP Pass", "✅ Yes" if stock.get('qglp_pass', 0) == 1 else "❌ No")
-            d4.metric("Capex Productive", "✅ Yes" if stock.get('capex_productive', 0) == 1 else "❌ No")
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("ROCE Med 10Y", f"{stock.get('roce_med_10y', 0):.1f}%")
-            d2.metric("ROE Med 10Y", f"{stock.get('roe_med_10y', 0):.1f}%")
-            d3.metric("D/E Ratio", f"{stock.get('debt_to_equity', 0):.2f}")
-            d4.metric("Current Ratio", f"{stock.get('current_ratio', 0):.2f}")
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("PAT Gr 5Y", f"{stock.get('pat_gr_5y', 0):.1f}%")
-            d2.metric("Rev Gr 5Y", f"{stock.get('rev_gr_5y', 0):.1f}%")
-            d3.metric("NPM Med 5Y", f"{stock.get('npm_med_5y', 0):.1f}%")
-            d4.metric("PEG", f"{stock.get('peg', 0):.2f}")
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("Promoter %", f"{stock.get('promoter_holdings', 0):.1f}%")
-            d2.metric("Pledge %", f"{stock.get('pledged_percentage', 0):.1f}%")
-            d3.metric("FII %", f"{stock.get('fii_holdings', 0):.1f}%")
-            d4.metric("CRS 50D", f"{stock.get('crs_50d', 0):.0f}")
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("Valuation Score", f"{stock.get('valuation_score', 0):.0f}/100")
-            d2.metric("PE Discount vs 10Y", f"{stock.get('pe_discount', 0):.1f}%")
-            d3.metric("EV Compression", f"{stock.get('ev_compression', 0):.1f}")
-            d4.metric("FCF Yield", f"{stock.get('fcf_yield', 0):.1f}%")
-            d1, d2, d3, d4 = st.columns(4)
-            _pe_roe = float(stock.get('pe_vs_roe_mos', 0) or 0)
-            d1.metric("P/E vs ROE (MoS)", f"{_pe_roe:.1f}",
-                      "Value Zone ✅" if _pe_roe > 0 else "Premium Zone ⚠️")
-            d2.metric("PEG Zone", stock.get('peg_zone', 'N/A'))
-            d3.metric("Smart Money", stock.get('smart_money_flow', '⚪ Neutral'))
-            d4.metric("CF Triangle", stock.get('cf_triangle', ''))
+        # ── Hero card ─────────────────────────────────────────────────────
+        render_stock_hero(stock, regime=_regime)
 
-        st.markdown("---")
-        render_forensic_perimeter(stock)
+        # ── Score strip ───────────────────────────────────────────────────
+        render_score_strip(stock)
 
-        st.markdown("---")
-        render_guru_frameworks(stock)
+        # ── Inner tabs ────────────────────────────────────────────────────
+        _itabs = st.tabs([
+            "📋 Overview",
+            "🔬 Forensics & Accounting",
+            "🏛️ Frameworks",
+            "📈 Matrix & WCS",
+            "📊 All Data",
+        ])
 
-        st.markdown("---")
-        # BOTTOM LEVEL: The Systematic Fisher Proxy
-        render_fisher_module(stock)
-    else:
-        st.info("No stocks match current filters.")
+        # ── Tab A: Overview ───────────────────────────────────────────────
+        with _itabs[0]:
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                fig = render_radar_chart(stock, f"{selected} — Quality Radar")
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown(
+                    f"<div style='font-size:0.75rem;color:{COLORS['text_muted']};margin-top:-8px;'>"
+                    f"Piotroski {stock.get('piotroski_fscore','N/A')}/9 &nbsp;·&nbsp; "
+                    f"{stock.get('piotroski_label','')} &nbsp;·&nbsp; "
+                    f"Smart Money: {stock.get('smart_money_flow','⚪ Neutral')} &nbsp;·&nbsp; "
+                    f"CF: {stock.get('cf_triangle','')}</div>",
+                    unsafe_allow_html=True,
+                )
+            with col2:
+                render_stock_card(stock, show_scores=False)
+
+            st.markdown(
+                f"<div class='sec-head'>📊 Business & Financial Analysis</div>",
+                unsafe_allow_html=True,
+            )
+            render_financial_insights(stock)
+
+        # ── Tab B: Forensics & Accounting ─────────────────────────────────
+        with _itabs[1]:
+            st.markdown(
+                f"<div class='sec-head'>🔬 Forensic Fraud Perimeter (25-Flag Cascade)</div>",
+                unsafe_allow_html=True,
+            )
+            render_forensic_perimeter(stock)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='sec-head'>🧠 Systematic Fisher Proxy — 7 Automated Checks</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"<div class='sec-cap'>Phil Fisher's 15 qualitative points translated into "
+                f"strict quantitative proxies using pre-derived CSV columns. "
+                f"100% automated — zero manual input.</div>",
+                unsafe_allow_html=True,
+            )
+            render_fisher_module(stock)
+
+        # ── Tab C: Guru Frameworks ────────────────────────────────────────
+        with _itabs[2]:
+            st.markdown(
+                f"<div class='sec-head'>🏛️ Guru Framework Alignment — 32 Frameworks</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"<div class='sec-cap'>Pre-computed framework badges from scoring engine. "
+                f"Each represents a complete quantamental screen from a master investor's methodology.</div>",
+                unsafe_allow_html=True,
+            )
+            render_guru_frameworks(stock)
+
+        # ── Tab D: Matrix & WCS ───────────────────────────────────────────
+        with _itabs[3]:
+            render_moat_growth_matrix(filt, highlight_stock=selected)
+            st.markdown("<br>", unsafe_allow_html=True)
+            render_ep_power_curve_module(stock)
+            render_bruised_blue_chip_badge(stock)
+            render_multitrillioncap_card(stock)
+
+        # ── Tab E: All Data ───────────────────────────────────────────────
+        with _itabs[4]:
+            st.markdown(
+                f"<div class='sec-head'>📊 Raw Signal Data — Full Universe Output</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"<div class='sec-cap'>Every computed signal across all 6 data sheets. "
+                f"Grouped by category. All values are engine-computed — no re-calculation here.</div>",
+                unsafe_allow_html=True,
+            )
+            render_raw_signals(stock)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
