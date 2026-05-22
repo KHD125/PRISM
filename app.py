@@ -132,45 +132,92 @@ with st.spinner("🔄 Loading data..."):
         st.stop()
 
 # ═══════════════════════════════════════════════════════════════
-# 🏛️ THE COMMAND CENTER (Global Strategy Controls)
+# 🏛️ THE COMMAND CENTER — Mandate-Driven Investment Philosophy
 # ═══════════════════════════════════════════════════════════════
-st.markdown(f"""
-<div style="background:linear-gradient(135deg, {COLORS['bg_secondary']}, #0d1117); border:1px solid {COLORS['border']}; border-radius:8px; padding:15px 20px; margin-bottom:20px;">
-    <div style="color:{COLORS['text_muted']}; font-size:0.85rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-bottom:10px;">
-        ⚙️ Quantamental Command Center
-    </div>
-</div>
-""", unsafe_allow_html=True)
+_MANDATES = {
+    "QGLP Balanced": {
+        "icon": "🎯", "mode": "Hybrid", "profile": "Balanced",
+        "desc": "Raamdeo's all-weather formula — Quality · Growth · Longevity · Price in harmony",
+    },
+    "Coffee Can": {
+        "icon": "🛡️", "mode": "Fundamental", "profile": "Quality",
+        "desc": "Buffett / Mukherjea: ROCE 20%+ sustained, zero debt stress — buy and hold forever",
+    },
+    "Lynch GARP": {
+        "icon": "📈", "mode": "Hybrid", "profile": "GARP",
+        "desc": "Peter Lynch: PEG ≤ 1.0 mandatory — earnings growth at a price no one else will pay",
+    },
+    "Deep Value": {
+        "icon": "💰", "mode": "Hybrid", "profile": "Value",
+        "desc": "Howard Marks / Vijay Kedia: beaten-down quality at maximum margin of safety",
+    },
+    "Breakout": {
+        "icon": "⚡", "mode": "Technical", "profile": "Momentum",
+        "desc": "O'Neil CAN-SLIM: institutional accumulation into Stage 2 breakouts — follow smart money",
+    },
+    "Turnaround": {
+        "icon": "🔄", "mode": "Technical", "profile": "Turnaround",
+        "desc": "QoQ earnings revival + promoter buying + volume surge — asymmetric risk/reward",
+    },
+}
+_MANDATE_KEYS   = list(_MANDATES.keys())
+_MANDATE_LABELS = [f"{v['icon']} {k}" for k, v in _MANDATES.items()]
 
-cc_col1, cc_col2 = st.columns([1, 1])
+# ── Mandate Radio (horizontal) ─────────────────────────────────
+_sel_label   = st.radio(
+    "Investment Mandate",
+    options=_MANDATE_LABELS,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="_mandate_radio",
+)
+_sel_mandate = _MANDATE_KEYS[_MANDATE_LABELS.index(_sel_label)]
 
-with cc_col1:
+# Reset advanced selectors when mandate changes — eliminates coupling bug
+if st.session_state.get("_last_mandate") != _sel_mandate:
+    st.session_state["adv_mode"]      = _MANDATES[_sel_mandate]["mode"]
+    st.session_state["adv_profile"]   = _MANDATES[_sel_mandate]["profile"]
+    st.session_state["_last_mandate"] = _sel_mandate
+
+# Mandate description strip
+st.markdown(
+    f'<div style="font-size:0.75rem;color:{COLORS["text_secondary"]};'
+    f'padding:4px 2px 10px 2px;border-bottom:1px solid {COLORS["border"]};margin-bottom:6px;">'
+    f'{_MANDATES[_sel_mandate]["desc"]}</div>',
+    unsafe_allow_html=True,
+)
+
+# ── Advanced Override (collapsed — power users only) ───────────
+with st.expander("⚙️ Advanced: Override Mandate Defaults", expanded=False):
     analysis_mode = st.selectbox(
-        "🎯 Master Analysis Mode",
+        "Analysis Mode",
         options=list(ANALYSIS_MODES.keys()),
-        index=0,
         format_func=lambda k: ANALYSIS_MODES[k]["label"],
-        key="sel_mode",
+        key="adv_mode",
     )
     st.caption(ANALYSIS_MODES[analysis_mode]["description"])
 
-with cc_col2:
-    allowed = ANALYSIS_MODES[analysis_mode]["allowed_profiles"]
+    _ov_allowed = ANALYSIS_MODES[analysis_mode]["allowed_profiles"]
+    if st.session_state.get("adv_profile") not in _ov_allowed:
+        st.session_state["adv_profile"] = _ov_allowed[0]
     scoring_profile = st.selectbox(
-        "📊 Scoring Profile (Regime Aware)",
-        options=allowed,
-        index=0,
+        "Scoring Profile",
+        options=_ov_allowed,
         format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
-        key="sel_profile",
+        key="adv_profile",
     )
-    profile_cfg = MASTER_PROFILES[scoring_profile]
-    st.caption(profile_cfg["description"])
+    st.caption(MASTER_PROFILES[scoring_profile]["description"])
 
-st.markdown("<br>", unsafe_allow_html=True)
+# Final values — expander code always executes even when collapsed
+analysis_mode   = st.session_state.get("adv_mode",    _MANDATES[_sel_mandate]["mode"])
+scoring_profile = st.session_state.get("adv_profile", _MANDATES[_sel_mandate]["profile"])
+profile_cfg     = MASTER_PROFILES[scoring_profile]
 
+# ── Scoring ────────────────────────────────────────────────────
 _score_key = f"{file_sig}::{analysis_mode}::{scoring_profile}"
 if st.session_state.get("_score_key") != _score_key or "_scored_df" not in st.session_state:
-    with st.spinner(f"🧭 Scoring with {scoring_profile} profile..."):
+    _spin_icon = _MANDATES.get(_sel_mandate, {}).get("icon", "🧭")
+    with st.spinner(f"{_spin_icon} Running {_sel_mandate} mandate — {scoring_profile}..."):
         try:
             _df_scored = get_scored_data(clean_df, analysis_mode, scoring_profile)
             st.session_state["_scored_df"] = _df_scored
@@ -184,22 +231,7 @@ if df is None or df.empty:
     st.warning("⚠️ No data returned after scoring. Check your data source or filters.")
     st.stop()
 
-# Active Engine Weights - Rendered in Expander below Command Center
 adaptive_w = df.attrs.get("adaptive_weights", {})
-if adaptive_w:
-    with st.expander("🔬 View Active Engine Weights & Thresholds", expanded=False):
-        regime_label = adaptive_w.get("regime_label", "🟡 Sideways")
-        w_cols = st.columns(5)
-        w_cols[0].metric("Regime", regime_label)
-        w_cols[1].metric("Quality Weight", f"{adaptive_w.get('quality_w', 0):.0%}")
-        w_cols[2].metric("Growth Weight", f"{adaptive_w.get('growth_w', 0):.0%}")
-        w_cols[3].metric("Longevity Weight", f"{adaptive_w.get('longevity_w', 0):.0%}")
-        w_cols[4].metric("Price Weight", f"{adaptive_w.get('price_w', 0):.0%}")
-        st.caption(
-            f"**Active Hard Gates:** ROCE ≥ {adaptive_w.get('roce_gate', 15):.0f}% | "
-            f"Growth ≥ {adaptive_w.get('growth_gate', 15):.0f}% | "
-            f"PEG ≤ {adaptive_w.get('peg_gate', 1.5):.1f}"
-        )
 # Key metrics
 total = len(df)
 gate_passed = int(df["gate_pass"].sum())
@@ -294,25 +326,57 @@ render_metric_strip([
     (f"{avg_quality:.0f}", "Avg Quality", "m-blue"),
 ])
 
-# ── Profile Context Badge (always visible above tabs) ──
+# ── Live Engine Weights Strip (always visible) ────────────────
 if adaptive_w:
-    profile_icon = MASTER_PROFILES.get(scoring_profile, {}).get('icon', '⚖️')
-    regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
-    regime_emoji = "🟢" if regime == "BULL" else "🔴" if regime == "BEAR" else "🟡"
+    _qw         = adaptive_w.get("quality_w", 0)
+    _gw         = adaptive_w.get("growth_w", 0)
+    _lw         = adaptive_w.get("longevity_w", 0)
+    _pw         = adaptive_w.get("price_w", 0)
+    _det_regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
+    _reg_clr    = COLORS["green"] if _det_regime == "BULL" else COLORS["red"] if _det_regime == "BEAR" else COLORS["gold"]
+    _reg_emoji  = "🟢" if _det_regime == "BULL" else "🔴" if _det_regime == "BEAR" else "🟡"
+    _m_icon     = _MANDATES.get(_sel_mandate, {}).get("icon", "⚖️")
+    _prof_icon  = profile_cfg.get("icon", "⚖️")
+    _wbars = [
+        ("⚡ Quality",     _qw, COLORS["purple"]),
+        ("🌱 Growth",      _gw, COLORS["green"]),
+        ("🏛️ Longevity",  _lw, COLORS["blue"]),
+        ("💰 Price",       _pw, COLORS["gold"]),
+    ]
+    _bars_html = "".join(
+        f'<div style="flex:1;min-width:55px;">'
+        f'<div style="font-size:0.57rem;color:{COLORS["text_muted"]};text-transform:uppercase;'
+        f'letter-spacing:0.6px;margin-bottom:4px;font-weight:600;">{lbl}</div>'
+        f'<div style="background:{COLORS["bg_tertiary"]};border-radius:4px;height:5px;overflow:hidden;">'
+        f'<div style="width:{pct*100:.0f}%;height:5px;border-radius:4px;background:{clr};"></div>'
+        f'</div>'
+        f'<div style="font-size:0.7rem;font-weight:700;color:{clr};margin-top:3px;">{pct:.0%}</div>'
+        f'</div>'
+        for lbl, pct, clr in _wbars
+    )
     st.markdown(f"""
-    <div style="background:linear-gradient(135deg, {COLORS['bg_secondary']}, {COLORS['bg_tertiary']});
-                border:1px solid {COLORS['border']}; border-radius:10px; padding:10px 18px;
-                margin:8px 0 16px 0; display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
-        <span style="font-size:0.8rem; color:{COLORS['text_muted']};">
-            <b>{profile_icon} {scoring_profile}</b> · {analysis_mode} Mode · {regime_emoji} {regime}
+    <div style="background:linear-gradient(135deg,{COLORS['bg_secondary']},{COLORS['bg_tertiary']});
+         border:1px solid {COLORS['border']};border-radius:10px;padding:12px 18px;margin:8px 0 16px 0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;
+           margin-bottom:10px;flex-wrap:wrap;gap:6px;">
+        <span style="font-size:0.8rem;font-weight:700;color:{COLORS['text_primary']};">
+          {_m_icon} {_sel_mandate}
+          <span style="color:{COLORS['text_muted']};font-weight:400;"> · </span>
+          <span style="color:{COLORS['text_secondary']};font-weight:400;font-size:0.74rem;">
+            {_prof_icon} {scoring_profile}
+          </span>
         </span>
-        <span style="font-size:0.75rem; color:{COLORS['text_secondary']};">
-            Q:{adaptive_w['quality_w']:.0%} · G:{adaptive_w['growth_w']:.0%} ·
-            L:{adaptive_w['longevity_w']:.0%} · P:{adaptive_w['price_w']:.0%}
+        <span style="font-size:0.71rem;font-weight:700;padding:2px 10px;border-radius:20px;
+             background:{_reg_clr}18;color:{_reg_clr};border:1px solid {_reg_clr}50;">
+          {_reg_emoji} {_det_regime}
         </span>
-        <span style="font-size:0.72rem; color:{COLORS['text_muted']};">
-            Gates: ROCE≥{adaptive_w['roce_gate']:.0f}% · Growth≥{adaptive_w['growth_gate']:.0f}% · PEG≤{adaptive_w['peg_gate']:.1f}
-        </span>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:8px;">{_bars_html}</div>
+      <div style="font-size:0.62rem;color:{COLORS['text_muted']};">
+        Hard Gates — ROCE≥{adaptive_w.get('roce_gate', 15):.0f}% ·
+        Growth≥{adaptive_w.get('growth_gate', 15):.0f}% ·
+        PEG≤{adaptive_w.get('peg_gate', 1.5):.1f}
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
