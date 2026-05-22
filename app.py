@@ -28,7 +28,7 @@ from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_mo
                 render_financial_insights, render_stock_hero, render_score_strip,
                 render_sell_alerts_panel, render_raw_signals,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
-                render_radar_chart, render_tier_summary, render_score_bar, render_sidebar_brand,
+                render_radar_chart, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
@@ -394,27 +394,85 @@ tabs = st.tabs(["🏠 Discovery", "🔍 Deep Scanner", "🔬 The Tear-Sheet", "�
 # TAB 1: DISCOVERY DASHBOARD
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tabs[0]:
-    st.markdown(f"<div class='sec-head'>📋 Conviction Tier Overview</div>", unsafe_allow_html=True)
-    render_tier_summary(df)
 
-    st.markdown(f"<div class='sec-head'>🏆 Top Conviction Stocks ({len(filt)} filtered)</div>", unsafe_allow_html=True)
-    # Tier count summary chips
-    _tier_chips = ""
-    for _t in range(1, 6):
-        _t_cfg = next((x for x in CONVICTION_TIERS if x["tier"] == _t), None)
-        _t_cnt = int((filt["conviction_tier"] == _t).sum()) if "conviction_tier" in filt.columns else 0
-        if _t_cnt > 0 and _t_cfg:
-            _t_style = TIER_COLORS.get(_t, TIER_COLORS[5])
-            _tier_chips += (
-                f'<div class="m-chip" style="border-color:{_t_style["border"]};max-width:160px;">'
-                f'<div class="m-val" style="color:{_t_style["text"]};font-size:1.1rem;">{_t_cnt}</div>'
-                f'<div class="m-lbl">{_t_cfg["emoji"]} {_t_cfg["label"]}</div></div>'
-            )
-    if _tier_chips:
-        st.markdown(f'<div class="m-strip">{_tier_chips}</div>', unsafe_allow_html=True)
+    # ── Compact tier strip (replaces 5 stacked tier cards) ────────
+    _tier_strip_html = ""
+    for _tc in CONVICTION_TIERS:
+        _tn   = _tc["tier"]
+        _fcnt = int((filt["conviction_tier"] == _tn).sum())
+        _acnt = int((df["conviction_tier"] == _tn).sum())
+        if _acnt == 0:
+            continue
+        _ts = TIER_COLORS.get(_tn, TIER_COLORS[5])
+        _tier_strip_html += (
+            f'<div style="flex:1;min-width:90px;background:{_ts["bg"]};border:1px solid {_ts["border"]};'
+            f'border-radius:10px;padding:11px 8px;text-align:center;">'
+            f'<div style="font-size:1.5rem;font-weight:900;color:{_ts["text"]};line-height:1;">{_fcnt}</div>'
+            f'<div style="font-size:0.67rem;font-weight:700;color:{_ts["text"]};margin-top:3px;'
+            f'text-transform:uppercase;letter-spacing:0.4px;">{_tc["emoji"]} {_tc["label"]}</div>'
+            f'<div style="font-size:0.57rem;color:{COLORS["text_muted"]};margin-top:2px;">of {_acnt} total</div>'
+            f'</div>'
+        )
+    st.markdown(
+        f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">{_tier_strip_html}</div>',
+        unsafe_allow_html=True,
+    )
 
-    for _, row in filt.head(20).iterrows():
-        render_stock_card(row, show_scores=True)
+    # ── Controls: sort + count ─────────────────────────────────────
+    _dc1, _dc2 = st.columns([6, 2])
+    with _dc1:
+        _disc_sort = st.pills(
+            "Sort by",
+            ["🏆 Score", "📊 Quality", "📈 Momentum", "💰 PEG"],
+            default="🏆 Score",
+            key="disc_sort",
+        )
+    with _dc2:
+        _disc_n = st.selectbox(
+            "Show", [10, 20, 30, 50], index=1, key="disc_n",
+        )
+
+    # Sort the filtered data
+    _sort_map = {
+        "🏆 Score":    ("composite_score", False),
+        "📊 Quality":  ("quality_score",   False),
+        "📈 Momentum": ("momentum_score",  False),
+        "💰 PEG":      ("peg",             True),
+    }
+    if not _disc_sort:
+        _disc_sort = "🏆 Score"
+    _sc, _sa = _sort_map.get(_disc_sort, ("composite_score", False))
+    _disc_df  = filt.sort_values(_sc, ascending=_sa) if _sc in filt.columns else filt.copy()
+    _shown_n  = int(_disc_n or 20)
+
+    st.markdown(
+        f'<div class="sec-head">🏆 Top Picks — {len(_disc_df)} stocks'
+        f'{"" if _disc_sort == "🏆 Score" else f" &nbsp;·&nbsp; sorted by {_disc_sort}"}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Stock cards with tearsheet shortcut ────────────────────────
+    for _di, (_, _drow) in enumerate(_disc_df.head(_shown_n).iterrows()):
+        render_stock_card(_drow, show_scores=True)
+        _, _btn_c = st.columns([8, 2])
+        with _btn_c:
+            if st.button(
+                "🔬 Open Analysis →",
+                key=f"disc_ts_{_di}",
+                use_container_width=True,
+                type="secondary",
+                help=f"View full tearsheet for {_drow.get('name', '')}",
+            ):
+                st.session_state["xray_stock"] = _drow.get("name", "")
+                st.toast(f"🔬 {_drow.get('name', '')} ready — click The Tear-Sheet tab")
+
+    if len(_disc_df) > _shown_n:
+        st.markdown(
+            f'<div style="text-align:center;padding:12px 0 4px;font-size:0.73rem;'
+            f'color:{COLORS["text_muted"]};">'
+            f'{len(_disc_df) - _shown_n} more stocks — increase "Show" above</div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
