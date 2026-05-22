@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import numpy as np
+import html as _html
 from config import COLORS, TIER_COLORS, CONVICTION_TIERS, UI
 
 
@@ -331,18 +332,55 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     ):
         pills += '<span class="pill pill-blue">💙 Bruised Blue Chip</span>'
 
+    # ── Verdict strip: gate + forensic + moat quadrant in one scannable line ──
+    _gate_ok = row.get("gate_pass", 0) == 1
+    _failed_esc = _html.escape(str(row.get("failed_gates", "") or ""))
+    if _gate_ok:
+        _gate_v = f'<span style="color:{COLORS["green"]};font-size:0.72rem;font-weight:700;">✅ All Gates</span>'
+    else:
+        _short = (_failed_esc[:38] + "…") if len(_failed_esc) > 38 else _failed_esc
+        _gate_v = f'<span style="color:{COLORS["red"]};font-size:0.72rem;font-weight:700;">❌ {_short}</span>'
+
+    _f_lbl = str(row.get("forensic_label", "🟢 Clean") or "🟢 Clean")
+    _f_cnt = int(row.get("red_flag_count", 0) or 0)
+    if "Clean" in _f_lbl:
+        _forensic_v = f'<span style="color:{COLORS["green"]};font-size:0.72rem;">🟢 Clean</span>'
+    elif "Watch" in _f_lbl:
+        _forensic_v = f'<span style="color:{COLORS["gold"]};font-size:0.72rem;">🟡 Watch — {_f_cnt}⚑</span>'
+    elif "Caution" in _f_lbl:
+        _forensic_v = f'<span style="color:{COLORS["orange"]};font-size:0.72rem;">🟠 Caution — {_f_cnt}⚑</span>'
+    else:
+        _forensic_v = f'<span style="color:{COLORS["red"]};font-size:0.72rem;">🔴 Risk — {_f_cnt}⚑</span>'
+
+    _mg = str(row.get("moat_growth_quad", "") or "")
+    if "Wealth Creator" in _mg:
+        _mg_v = f'<span style="color:{COLORS["green"]};font-size:0.72rem;">⭐ Wealth Creator</span>'
+    elif "Quality Trap" in _mg:
+        _mg_v = f'<span style="color:{COLORS["gold"]};font-size:0.72rem;">🛡️ Quality Trap</span>'
+    elif "Growth Trap" in _mg:
+        _mg_v = f'<span style="color:{COLORS["blue"]};font-size:0.72rem;">⚡ Growth Trap</span>'
+    elif "Destroyer" in _mg:
+        _mg_v = f'<span style="color:{COLORS["red"]};font-size:0.72rem;">💀 Destroyer</span>'
+    else:
+        _mg_v = ""
+
+    _dot = '<span style="color:#555;font-size:0.65rem;margin:0 3px;">·</span>'
+    _verdict_parts = [_gate_v, _forensic_v] + ([_mg_v] if _mg_v else [])
+    _verdict_strip = _dot.join(_verdict_parts)
+
     card_html = f"""
     <div class="stock-card" style="border-left: 3px solid {tc['border']};">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
+            <div style="flex:1;min-width:0;">
                 <div style="font-weight:800; font-size:1.05rem; color:{COLORS['text_primary']};">
                     {row.get('tier_emoji', '')} #{int(row.get('rank', 0))} · {row.get('name', 'N/A')}
                 </div>
                 <div style="font-size:0.75rem; color:{COLORS['text_secondary']}; margin-top:2px;">
                     {row.get('sector', '')} · {row.get('industry', '')} · ₹{row.get('market_cap', 0):,.0f} Cr · {row.get('market_category', '')}
                 </div>
+                <div style="margin-top:5px;">{_verdict_strip}</div>
             </div>
-            <div style="text-align:right;">
+            <div style="text-align:right;flex-shrink:0;margin-left:12px;">
                 <div style="font-size:1.8rem; font-weight:900; color:{tc['text']};">{row.get('composite_score', 0):.0f}</div>
                 <div style="font-size:0.65rem; color:{COLORS['text_muted']};">COMPOSITE</div>
             </div>
