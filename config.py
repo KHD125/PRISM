@@ -210,12 +210,36 @@ SSGR_DEP_RATES = {
 }
 
 # Financial sector stocks get a separate gate set
-FINANCIAL_SECTORS = [
-    "Banking", "NBFC", "Insurance", "Financial Services",
-    "Banks - Private Sector", "Banks - Public Sector",
-    "Finance - NBFC", "Finance - Housing Finance",
-    "Life Insurance", "General Insurance",
-]
+# Exact INDUSTRY names for df["industry"].isin() — verified against 354 CSV industry values.
+# Previous list ("Banking", "NBFC", etc.) matched 0/10 — all were sector names, not industry names.
+FINANCIAL_SECTORS = frozenset([
+    "Finance - Capital Markets",
+    "Finance - Capital Markets - Brokers",
+    "Finance - Capital Markets - RTA",
+    "Finance - Capital Markets - Wealth Management",
+    "Finance - Holding Company",
+    "Finance - Housing",
+    "Finance - Investment/Others",
+    "Finance - PSU Lending",
+    "Finance & Investments - Others",
+    "NBFC - Holding Companies",
+    "NBFC - Others",
+    "Insurance - Proxy",
+    "Exchanges",
+    "Credit Rating Agencies",
+    "Infra/Real Estate Investment Trust",
+    "Infrastructure Investment Trusts",
+    "Real Estate Investment Trusts",
+])
+
+# Exact SECTOR names for df["sector"].isin() — verified against 81 CSV sector values.
+# Covers: Financial Services, Finance, brokers, and credit agencies.
+FINANCIAL_SECTOR_NAMES = frozenset([
+    "Financial Services",
+    "Finance",
+    "Stock/ Commodity Brokers",
+    "Credit Rating Agencies",
+])
 
 # ═══════════════════════════════════════════════════════════════
 # 4. QUALITY SCORE WEIGHTS (Layer 2) — 0 to 100
@@ -762,11 +786,40 @@ EPOCH5_MODERN = {
     "bbc_roce_floor":    20.0,          # 29th WCS: minimum 10Y median ROCE for BBC flag
     "bbc_pb_ceiling":    2.0,           # 29th WCS: maximum P/B for deep-value BBC entry
     "tipping_sectors": [                # 30th WCS: sectors hitting multi-trillion tipping point
-        "Financial Services", "Stock/Commodity Brokers",
-        "Consumer Durables", "Automobiles", "Quick Service Restaurants",
+        # Names verified against CSV Sector column (81 unique values)
+        "Financial Services",
+        "Stock/ Commodity Brokers",     # CSV has space after /
+        "Consumer Durables",
+        "Automobile",                   # CSV has no trailing 's'
+        "Quick Service Restaurant",     # CSV has no trailing 's'
     ],
     "max_volatility_ratio": 0.40,       # 27th WCS: Consistency Coefficient ceiling for Consistents
 }
+
+# 27th WCS: Sectors MOSL classified as Consistent compounders (sustained earnings 2007–2022).
+# Verified against 81 CSV Sector column values — previous inline set in data_engine had 7 wrong names.
+# Removed: "Banks - Private Sector" (no such sector), "Utilities" (no such sector).
+# Fixed: "Cigarettes"→"Tobacco Products", "Diamonds/Gems/Jewellery"→"Diamond, Gems and Jewellery",
+#        "IT"→"IT - Software"+"IT - Hardware", "Oil & Gas"→"Crude Oil & Natural Gas", "Pharma"→"Pharmaceuticals".
+CONSISTENT_SECTORS = frozenset([
+    "Agro Chemicals",
+    "Auto Ancillaries",
+    "Cement",
+    "Chemicals",
+    "Credit Rating Agencies",
+    "Diamond, Gems and Jewellery",
+    "Engineering",
+    "Finance",
+    "FMCG",
+    "IT - Software",
+    "IT - Hardware",
+    "Logistics",
+    "Crude Oil & Natural Gas",
+    "Paints/Varnish",
+    "Pharmaceuticals",
+    "Refineries",
+    "Tobacco Products",
+])
 
 
 # ═══════════════════════════════════════════════════════════════
