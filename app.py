@@ -160,27 +160,29 @@ _MANDATES = {
         "desc": "QoQ earnings revival + promoter buying + volume surge — asymmetric risk/reward",
     },
 }
-_MANDATE_KEYS   = list(_MANDATES.keys())
-_MANDATE_LABELS = [f"{v['icon']} {k}" for k, v in _MANDATES.items()]
+_MANDATE_KEYS = list(_MANDATES.keys())
 
-# ── Mandate Selector ───────────────────────────────────────────
-_sel_label = st.segmented_control(
-    "Investment Mandate",
-    options=_MANDATE_LABELS,
-    default=st.session_state.get("_mandate_ctrl", _MANDATE_LABELS[0]),
-    selection_mode="single",
-    label_visibility="collapsed",
-    key="_mandate_ctrl",
-)
-if not _sel_label:
-    _sel_label = _MANDATE_LABELS[0]
-_sel_mandate = _MANDATE_KEYS[_MANDATE_LABELS.index(_sel_label)]
+# ── Mandate Selector — button row ─────────────────────────────
+if "sel_mandate" not in st.session_state:
+    st.session_state["sel_mandate"] = _MANDATE_KEYS[0]
 
-# Reset advanced selectors when mandate changes — eliminates coupling bug
-if st.session_state.get("_last_mandate") != _sel_mandate:
-    st.session_state["adv_mode"]      = _MANDATES[_sel_mandate]["mode"]
-    st.session_state["adv_profile"]   = _MANDATES[_sel_mandate]["profile"]
-    st.session_state["_last_mandate"] = _sel_mandate
+_sel_mandate = st.session_state["sel_mandate"]
+_mb_cols = st.columns(len(_MANDATES))
+for _mi, (_mk, _mv) in enumerate(_MANDATES.items()):
+    with _mb_cols[_mi]:
+        _is_active = (_sel_mandate == _mk)
+        if st.button(
+            f"{_mv['icon']} {_mk}",
+            key=f"_mb_{_mk}",
+            type="primary" if _is_active else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["sel_mandate"] = _mk
+            st.session_state["adv_mode"]    = _mv["mode"]
+            st.session_state["adv_profile"] = _mv["profile"]
+            st.rerun()
+
+_sel_mandate = st.session_state["sel_mandate"]
 
 # Mandate description strip
 st.markdown(
