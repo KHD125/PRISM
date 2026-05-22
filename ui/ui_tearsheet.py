@@ -439,9 +439,6 @@ def render_forensic_perimeter(stock: pd.Series):
     Outputs structured, named red-flag badges (not just a count) for every fired
     forensic signal. Connects directly to the cascading forensic filter multiplier.
     """
-    st.markdown("<div class='sec-head'>🔬 Forensic Fraud Perimeter (25-Flag Cascade)</div>",
-                unsafe_allow_html=True)
-
     flag_count     = int(_g(stock, "red_flag_count",         0))
     forensic_score = _g(stock,  "forensic_score",            100)
     forensic_label = stock.get("forensic_label", "🟢 Clean") or "🟢 Clean"
@@ -572,9 +569,6 @@ def render_guru_frameworks(stock: pd.Series):
     Displays which institutional Guru frameworks the stock passes.
     Reads pre-computed framework flags from scoring_engine — no re-computation.
     """
-    st.markdown("<div class='sec-head'>🏛️ Guru Framework Alignment</div>",
-                unsafe_allow_html=True)
-
     fw_str = stock.get("frameworks_passed", "None") or "None"
     fw_list = [f.strip() for f in fw_str.split(",") if f.strip() and f.strip() != "None"]
 
@@ -666,16 +660,6 @@ def render_fisher_module(stock: pd.Series):
     proxies using ONLY pre-derived CSV columns. Zero manual input; zero re-computation.
     Columns read directly from the pre-computed stock row (data_engine outputs).
     """
-    st.markdown(f"""
-    <div style="background:{COLORS['bg_secondary']};border-left:4px solid {COLORS['gold']};
-                padding:10px 15px;margin-bottom:15px;border-radius:4px;">
-        <h3 style="margin:0;font-size:1.1rem;color:{COLORS['gold']};">🧠 Systematic Fisher Proxy</h3>
-        <p style="margin:4px 0 0 0;font-size:0.8rem;color:{COLORS['text_muted']};">
-            100% Automated. Fisher&#x27;s 15 qualitative points translated into vectorized CSV signals.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
     proxies = []
 
     # P1 — Market Potential: Revenue growth → rev_gr_5y (pre-computed 5Y CAGR)
