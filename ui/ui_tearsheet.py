@@ -623,6 +623,19 @@ def render_guru_frameworks(stock: pd.Series):
     pct = int(passed_n / total_fw * 100)
     bar_clr = COLORS["green"] if pct >= 30 else COLORS["gold"] if pct >= 10 else COLORS["orange"]
 
+    grid_cards = ""
+    for fw in fw_list:
+        color, icon, desc = _FW_META.get(fw, (COLORS["text_muted"], "✅", fw))
+        grid_cards += (
+            f'<div class="ts-fw-card" style="background:{color}10;border-color:{color}40;">'
+            f'<div class="ts-fw-card-head">'
+            f'<span style="font-size:1.1rem;">{icon}</span>'
+            f'<span class="ts-fw-card-name" style="color:{color};">{_esc(fw)}</span>'
+            f'</div>'
+            f'<div class="ts-fw-card-desc">{_esc(desc)}</div>'
+            f'</div>'
+        )
+
     st.markdown(f"""
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;
                 background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
@@ -639,23 +652,8 @@ def render_guru_frameworks(stock: pd.Series):
       </div>
       <div style="font-size:0.7rem;color:{COLORS['text_muted']};">{pct}%</div>
     </div>
-    <div class="ts-fw-grid">
+    <div class="ts-fw-grid">{grid_cards}</div>
     """, unsafe_allow_html=True)
-
-    for fw in fw_list:
-        color, icon, desc = _FW_META.get(fw, (COLORS["text_muted"], "✅", fw))
-        st.markdown(
-            f'<div class="ts-fw-card" style="background:{color}10;border-color:{color}40;">'
-            f'<div class="ts-fw-card-head">'
-            f'<span style="font-size:1.1rem;">{icon}</span>'
-            f'<span class="ts-fw-card-name" style="color:{color};">{_esc(fw)}</span>'
-            f'</div>'
-            f'<div class="ts-fw-card-desc">{_esc(desc)}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1070,7 +1068,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         </div>
         <!-- Score ring -->
         <div class="ts-score-ring" style="border-color:{ring_bdr};
-             box-shadow:0 0 30px {ring_bdr}88,inset 0 0 20px rgba(0,0,0,0.4);">
+             box-shadow:0 0 28px {ring_bdr},inset 0 0 20px rgba(0,0,0,0.4);">
           <div class="ts-score-val" style="color:{ring_clr};">{comp:.0f}</div>
           <div class="ts-score-lbl" style="color:{ring_clr};">/ 100</div>
         </div>
@@ -1163,6 +1161,20 @@ def render_sell_alerts_panel(stock: pd.Series):
          "Not a one-bad-year blip — this is structural multi-year collapse. Exit signal."),
     ]
 
+    banners_html = ""
+    for col, clr, sev, title, body in _ALERTS:
+        if int(_g(stock, col, 0)) != 1:
+            continue
+        banners_html += (
+            f'<div class="ts-sell-banner" style="background:{clr}0d;border-color:{clr}55;">'
+            f'<div class="ts-sell-icon">{sev}</div>'
+            f'<div>'
+            f'<div class="ts-sell-title" style="color:{clr};">{title}</div>'
+            f'<div class="ts-sell-body" style="color:{COLORS["text_secondary"]};">{body}</div>'
+            f'</div>'
+            f'</div>'
+        )
+
     st.markdown(f"""
     <div style="background:rgba(248,81,73,0.06);border:1px solid rgba(248,81,73,0.4);
                 border-radius:14px;padding:14px 18px;margin:8px 0 16px 0;">
@@ -1170,22 +1182,9 @@ def render_sell_alerts_panel(stock: pd.Series):
                   text-transform:uppercase;margin-bottom:12px;">
         🚨 &nbsp;Sell Alert(s) Active — Review Before Holding
       </div>
+      {banners_html}
+    </div>
     """, unsafe_allow_html=True)
-
-    for col, clr, sev, title, body in _ALERTS:
-        if int(_g(stock, col, 0)) != 1:
-            continue
-        st.markdown(f"""
-        <div class="ts-sell-banner" style="background:{clr}0d;border-color:{clr}55;">
-          <div class="ts-sell-icon">{sev}</div>
-          <div>
-            <div class="ts-sell-title" style="color:{clr};">{title}</div>
-            <div class="ts-sell-body" style="color:{COLORS['text_secondary']};">{body}</div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
