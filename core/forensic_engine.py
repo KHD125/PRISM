@@ -12,7 +12,7 @@ Based on: Financial Shenanigans India Forensic Edition
 import pandas as pd
 import numpy as np
 from typing import List, Dict
-from config import FORENSIC, PIOTROSKI
+from config import FORENSIC, PIOTROSKI, FORENSIC_MAX_FLAGS, CONVICTION_TIERS
 
 # Industries with long billing cycles — DSO > 90 days is normal, not a red flag
 # Sector-based classification for DSO threshold and capex-mirage exclusion.
@@ -33,72 +33,90 @@ _HIGH_DSO_SECTORS = frozenset({
 # ═══════════════════════════════════════════════════════════════
 
 def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute Piotroski F-Score (0-9) for every stock. Pure vectorized."""
+    """Compute Piotroski F-Score (0-9) for every stock. Pure vectorized.
+
+    All column access uses df.get() with NaN fallback — safe even if a CSV sheet is
+    missing from the upload or has a column-name mismatch. Missing columns default to
+    NaN, which the np.where guards convert to 0 (conservative / no credit).
+    """
     df = df.copy()
+    _nan = pd.Series(np.nan, index=df.index, dtype=float)
 
-    # 1. ROA positive (net income / total assets > 0)
-    df["f_roa_positive"] = (df["roa"] > 0).astype(int)
+    # Safe column aliases — no KeyError if any sheet was not loaded
+    _roa     = df.get("roa",                 _nan)
+    _roa_1yb = df.get("roa_1yb",             _nan)
+    _roe     = df.get("roe",                 _nan)
+    _roe_1yb = df.get("roe_1yb",             _nan)
+    _ocf     = df.get("operating_cash_flow", _nan)
+    _pat     = df.get("pat",                 _nan)
+    _de      = df.get("debt_to_equity",      _nan)
+    _de_1yb  = df.get("debt_to_equity_1yb",  _nan)
+    _cr      = df.get("current_ratio",       _nan)
+    _cr_1yb  = df.get("current_ratio_1yb",   _nan)
+    _eq      = df.get("equity_shares",       _nan)
+    _eq_1yb  = df.get("equity_shares_1yb",   _nan)
+    _opm_q   = df.get("opm_latest_q",        _nan)
+    _opm_1yb = df.get("opm_1yb",             _nan)
+    _roce    = df.get("roce",                _nan)
+    _roce_1yb= df.get("roce_1yb",            _nan)
 
-    # 2. Operating cash flow positive
-    df["f_ocf_positive"] = (df["operating_cash_flow"] > 0).astype(int)
+    # F1: ROA positive
+    df["f_roa_positive"] = np.where(_roa.notna(), (_roa > 0).astype(int), 0)
 
-    # 3. ROA improving (current ROE > last year ROE as proxy)
+    # F2: Operating cash flow positive
+    df["f_ocf_positive"] = np.where(_ocf.notna(), (_ocf > 0).astype(int), 0)
+
+    # F3: ROA improving — use actual roa_1yb (available in RATIO_COLS).
+    # Fall back to ROE proxy only when roa_1yb is unavailable.
     df["f_roa_improving"] = np.where(
-        df["roe"].notna() & df["roe_1yb"].notna(),
-        (df["roe"] > df["roe_1yb"]).astype(int),
-        0
+        _roa.notna() & _roa_1yb.notna(),
+        (_roa > _roa_1yb).astype(int),
+        np.where(_roe.notna() & _roe_1yb.notna(), (_roe > _roe_1yb).astype(int), 0),
     )
 
-    # 4. Accrual quality: OCF > PAT (cash confirms earnings)
+    # F4: Accrual quality — OCF > PAT confirms earnings are cash-backed
     df["f_accrual_quality"] = np.where(
-        df["operating_cash_flow"].notna() & df["pat"].notna(),
-        (df["operating_cash_flow"] > df["pat"]).astype(int),
-        0
+        _ocf.notna() & _pat.notna(), (_ocf > _pat).astype(int), 0
     )
 
-    # 5. Leverage declining: D/E decreasing
+    # F5: Leverage declining — D/E decreasing YoY
     df["f_leverage_declining"] = np.where(
-        df["debt_to_equity"].notna() & df["debt_to_equity_1yb"].notna(),
-        (df["debt_to_equity"] < df["debt_to_equity_1yb"]).astype(int),
-        0
+        _de.notna() & _de_1yb.notna(), (_de < _de_1yb).astype(int), 0
     )
 
-    # 6. Liquidity improving: current ratio increasing
+    # F6: Liquidity improving — current ratio increasing YoY
+    # Guard: identical current and 1YB values indicate a data copy error in the source;
+    # treat as "no change detected" → 0 (conservative, not penalised beyond no-credit).
     df["f_liquidity_improving"] = np.where(
-        df["current_ratio"].notna() & df["current_ratio_1yb"].notna(),
-        (df["current_ratio"] > df["current_ratio_1yb"]).astype(int),
-        0
+        _cr.notna() & _cr_1yb.notna() & (_cr != _cr_1yb),
+        (_cr > _cr_1yb).astype(int),
+        0,
     )
 
-    # 7. No dilution: shares not increased
+    # F7: No dilution — shares not increased YoY (benefit of doubt if data missing)
     df["f_no_dilution"] = np.where(
-        df["equity_shares"].notna() & df["equity_shares_1yb"].notna(),
-        (df["equity_shares"] <= df["equity_shares_1yb"]).astype(int),
-        1  # benefit of doubt if data missing
+        _eq.notna() & _eq_1yb.notna(),
+        (_eq <= _eq_1yb).astype(int),
+        1,
     )
 
-    # 8. Gross margin improving (OPM latest quarter > 1 year back as proxy)
+    # F8: Gross margin improving — OPM latest quarter vs 1 year back
     df["f_margin_improving"] = np.where(
-        df["opm_latest_q"].notna() & df["opm_1yb"].notna(),
-        (df["opm_latest_q"] > df["opm_1yb"]).astype(int),
-        0
+        _opm_q.notna() & _opm_1yb.notna(), (_opm_q > _opm_1yb).astype(int), 0
     )
 
-    # 9. Asset turnover improving (if available)
-    # We don't have asset_turnover_1yb directly, so we check ROCE direction as proxy
+    # F9: Asset turnover improving — ROCE direction used as proxy
     df["f_efficiency_improving"] = np.where(
-        df["roce"].notna() & df["roce_1yb"].notna(),
-        (df["roce"] > df["roce_1yb"]).astype(int),
-        0
+        _roce.notna() & _roce_1yb.notna(), (_roce > _roce_1yb).astype(int), 0
     )
 
-    # Sum exactly the 9 authentic Piotroski components — hard-coded to prevent
-    # fcf_yield, fcf_consistency, fcf_to_cfo_pct, fcf_growth (all start with "f_")
-    # from being included if those columns happen to be present in df.
+    # Sum exactly the 9 authentic Piotroski components — hard-coded list of actual column names
+    # created above. Prevents any other f_* columns (fcf_yield, fcf_to_cfo_pct, etc.) from
+    # being accidentally included if those columns happen to be present in df.
     _PIOTROSKI_COLS = [
-        "f_roa", "f_cfo", "f_accrual",
-        "f_leverage", "f_liquidity", "f_dilution",
-        "f_margin", "f_turnover", "f_roa_delta",
+        "f_roa_positive", "f_ocf_positive", "f_roa_improving",
+        "f_accrual_quality", "f_leverage_declining", "f_liquidity_improving",
+        "f_no_dilution", "f_margin_improving", "f_efficiency_improving",
     ]
     f_cols = [c for c in _PIOTROSKI_COLS if c in df.columns]
     df["piotroski_fscore"] = df[f_cols].sum(axis=1)
@@ -267,9 +285,12 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # When OCF is positive yet FCF is <15% of OCF, the company is a capital trap:
     # capex consumes nearly all operating cash, leaving nothing for debt repayment, dividends, or growth.
     # Distinct from rf_negative_fcf (which catches OCF < 0). This catches the "false abundance" case.
+    # Excluded when cwip_conversion > 0: CWIP actively converting to fixed assets = deliberate
+    # capacity expansion capex, not inefficiency. High-quality compounders in build phase fire this flag.
+    _cwip_conv_active = df.get("cwip_conversion", pd.Series(0.0, index=df.index)).fillna(0) > 0
     df["rf_fcf_to_cfo_low"] = np.where(
         df["free_cash_flow"].notna() & df["operating_cash_flow"].notna() &
-        (df["operating_cash_flow"] > 0),
+        (df["operating_cash_flow"] > 0) & ~_cwip_conv_active,
         (df["free_cash_flow"].fillna(0) / df["operating_cash_flow"] < 0.15).astype(int),
         0
     )
@@ -294,10 +315,13 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # 18. NFAT very low (extreme capital intensity — growth destroys shareholder value)
     # Vijay Malik Vol 3: PIX Transmissions — NFAT < 1.5 = every rupee of growth needs heavy capex.
     # SSGR turns negative, FCF turns negative, debt rises. Growth becomes value destruction.
-    # Only flag when nfat column exists and is populated.
+    # Financial sector excluded: banks/NBFCs have near-zero fixed assets relative to revenue —
+    # NFAT is structurally meaningless for them and would generate false flags.
+    _nfat_vals = df.get("nfat", pd.Series(np.nan, index=df.index))
+    _is_fin_nfat = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
     df["rf_nfat_very_low"] = np.where(
-        df.get("nfat", pd.Series(np.nan, index=df.index)).notna(),
-        (df.get("nfat", pd.Series(np.nan, index=df.index)) < 1.5).astype(int),
+        _nfat_vals.notna() & ~_is_fin_nfat,
+        (_nfat_vals < 1.5).astype(int),
         0
     )
 
@@ -452,9 +476,10 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     rf_cols = [c for c in df.columns if c.startswith("rf_")]
     df["red_flag_count"] = df[rf_cols].sum(axis=1)
 
-    # Forensic score: 100 = clean, 0 = maximum flags
-    max_flags = len(rf_cols)
-    df["forensic_score"] = ((max_flags - df["red_flag_count"]) / max_flags * 100).clip(0, 100)
+    # Forensic score: 100 = clean, 0 = maximum flags.
+    # Uses FORENSIC_MAX_FLAGS (config.py) — fixed denominator so scores don't shift when
+    # new flags are added. Update FORENSIC_MAX_FLAGS whenever a new rf_ column is added.
+    df["forensic_score"] = ((FORENSIC_MAX_FLAGS - df["red_flag_count"]) / FORENSIC_MAX_FLAGS * 100).clip(0, 100)
 
     # ── Study 24 (2019): Management Integrity Score (0-3) ──
     # "32% of stocks listed in 2014 fell 70%+ by 2019 — Sharp Practices destroyed value."
@@ -465,6 +490,16 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         (df.get("pledged_percentage", pd.Series(100, index=df.index)).fillna(100) < 5).astype(int) +
         (df.get("promoter_holdings", pd.Series(0, index=df.index)).fillna(0) >= 50).astype(int)
     )
+
+    # ── TWO SEPARATE FORENSIC SYSTEMS — both shown in the UI ──
+    # forensic_score (0-100): continuous score across ALL 25 red flags. Higher = cleaner.
+    #   Used by: fw_diamond (requires == 0), fw_dhandho (requires == 0), forensic_score column.
+    # forensic_label (text): WCS 24 hard-gate classification using 4 specific conditions:
+    #   CFO/PAT ≥ 80% + pledge < 10% + no dilution + zero red flags → "🟢 Clean"
+    #   Any one fails → "🚨 Sharp Practices Detected"
+    #   A stock CAN have forensic_score=95 (1 flag) but label="🚨 Sharp Practices Detected".
+    #   This is intentional: the label is a hard binary for the SQGLP integrity gate.
+    # ──────────────────────────────────────────────────────────────
 
     # Risk classification - WCS 24 Forensic Hard Gates Absolute Gatekeeper Model
     cfo_pat_valid = (df["cfo_to_pat"].fillna(0.0) >= 80.0)
@@ -560,6 +595,19 @@ def compute_cascading_forensic_filter(df: pd.DataFrame) -> pd.DataFrame:
             df["composite_score"] * df["forensic_multiplier"]
         ).clip(0, 100)
 
+        # Reassign conviction_tier after forensic multiplier may have reduced composite_score.
+        # Without this, a Crown Jewel (Tier 1, score 90) with 5 flags keeps Tier 1 label
+        # even though its score is now 45 — label and score become completely inconsistent.
+        conditions = []
+        choices = []
+        for tier in CONVICTION_TIERS:
+            conditions.append(df["composite_score"] >= tier["min"])
+            choices.append(tier["tier"])
+        df["conviction_tier"] = np.select(conditions, choices, default=5)
+        df["tier_label"] = df["conviction_tier"].map(
+            {t["tier"]: f"{t['emoji']} {t['label']}" for t in CONVICTION_TIERS}
+        )
+
     return df
 
 
@@ -571,10 +619,13 @@ def compute_cashflow_triangle(df: pd.DataFrame) -> pd.DataFrame:
     """Classify each stock's cashflow pattern into the Quality Triangle."""
     df = df.copy()
 
-    ocf_pos = df["operating_cash_flow"] > 0
-    icf_neg = df["investing_cash_flow"] < 0
-    fcf_neg = df["financing_cash_flow"] < 0
-    fcf_pos = df["financing_cash_flow"] > 0
+    _ocf = df.get("operating_cash_flow",  pd.Series(0.0, index=df.index)).fillna(0)
+    _icf = df.get("investing_cash_flow",  pd.Series(0.0, index=df.index)).fillna(0)
+    _fcf = df.get("financing_cash_flow",  pd.Series(0.0, index=df.index)).fillna(0)
+    ocf_pos = _ocf > 0
+    icf_neg = _icf < 0
+    fcf_neg = _fcf < 0
+    fcf_pos = _fcf > 0
 
     df["cf_triangle"] = np.select(
         [
