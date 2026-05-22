@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from config import COLORS
 
 # Graceful fallback for AgGrid
 try:
@@ -17,16 +18,19 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
         st.warning("No stocks match the current filters.")
         return
         
-    # Reorder columns — pattern-matched so pinned signals survive column renames/additions
+    # Reorder columns — exact name matching prevents "cash_machine" from pinning
+    # both cash_machine_score and cash_machine_label unintentionally
     all_cols = list(df.columns)
-    _PINNED = ["rank", "name", "corporate_class", "sector", "composite_score", "moat_growth", "cash_machine", "buy_zone"]
+    _PINNED = [
+        "rank", "name", "corporate_class", "sector", "composite_score",
+        "moat_growth_quad", "cash_score", "buy_zone_label",
+    ]
     seen: set = set()
     first_cols: list = []
-    for pattern in _PINNED:
-        for c in all_cols:
-            if pattern.lower() in c.lower() and c not in seen:
-                first_cols.append(c)
-                seen.add(c)
+    for col in _PINNED:
+        if col in all_cols and col not in seen:
+            first_cols.append(col)
+            seen.add(col)
     
     if priority_cols:
         for c in priority_cols:
@@ -67,14 +71,14 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
     
     grid_options = gb.build()
     
-    st.markdown("""
+    st.markdown(f"""
         <style>
         /* Only one AgGrid instance in this system — global scope is safe */
-        .ag-theme-streamlit {
-            --ag-header-background-color: #1E293B;
-            --ag-header-foreground-color: #F8FAFC;
-            --ag-row-hover-color: #334155;
-        }
+        .ag-theme-streamlit {{
+            --ag-header-background-color: {COLORS['bg_secondary']};
+            --ag-header-foreground-color: {COLORS['text_primary']};
+            --ag-row-hover-color: {COLORS['bg_tertiary']};
+        }}
         </style>
     """, unsafe_allow_html=True)
 
