@@ -25,6 +25,7 @@ from core import fetch_and_clean_data, run_full_scoring, run_forensic_analysis
 from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
+                render_financial_insights,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
                 render_radar_chart, render_tier_summary, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points)
@@ -327,6 +328,21 @@ with tabs[0]:
     render_tier_summary(df)
 
     st.markdown(f"<div class='sec-head'>🏆 Top Conviction Stocks ({len(filt)} filtered)</div>", unsafe_allow_html=True)
+    # Tier count summary chips
+    _tier_chips = ""
+    for _t in range(1, 6):
+        _t_cfg = next((x for x in CONVICTION_TIERS if x["tier"] == _t), None)
+        _t_cnt = int((filt["conviction_tier"] == _t).sum()) if "conviction_tier" in filt.columns else 0
+        if _t_cnt > 0 and _t_cfg:
+            _t_style = TIER_COLORS.get(_t, TIER_COLORS[5])
+            _tier_chips += (
+                f'<div class="m-chip" style="border-color:{_t_style["border"]};max-width:160px;">'
+                f'<div class="m-val" style="color:{_t_style["text"]};font-size:1.1rem;">{_t_cnt}</div>'
+                f'<div class="m-lbl">{_t_cfg["emoji"]} {_t_cfg["label"]}</div></div>'
+            )
+    if _tier_chips:
+        st.markdown(f'<div class="m-strip">{_tier_chips}</div>', unsafe_allow_html=True)
+
     for _, row in filt.head(20).iterrows():
         render_stock_card(row, show_scores=True)
 
@@ -383,15 +399,45 @@ with tabs[2]:
             </div>
             """, unsafe_allow_html=True)
 
+        # ── Conviction Tier Verdict Header ──
+        _tier_num = int(stock.get("conviction_tier", 5) or 5)
+        _tcfg = next((t for t in CONVICTION_TIERS if t["tier"] == _tier_num), CONVICTION_TIERS[-1])
+        _tc_style = TIER_COLORS.get(_tier_num, TIER_COLORS[5])
+        _f_lbl = str(stock.get("forensic_label", "🟢 Clean") or "🟢 Clean")
+        _mg_q  = str(stock.get("moat_growth_quad", "") or "N/A")
+        _comp  = float(stock.get("composite_score", 0) or 0)
+        _reg   = df.attrs.get("detected_market_regime", "SIDEWAYS")
+        _reg_txt = {"BULL": "🟢 Bull", "BEAR": "🔴 Bear"}.get(_reg, "🟡 Sideways")
+        st.markdown(f"""
+        <div style="background:{_tc_style['bg']};border:1px solid {_tc_style['border']};
+                    border-radius:10px;padding:12px 20px;margin:8px 0 14px 0;
+                    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <div>
+                <span style="font-size:1.0rem;font-weight:800;color:{_tc_style['text']};">
+                    {_tcfg['emoji']} {_tcfg['label']}
+                </span>
+                <span style="font-size:0.78rem;color:{COLORS['text_muted']};margin-left:12px;">
+                    {_mg_q} &nbsp;·&nbsp; {_f_lbl} &nbsp;·&nbsp; {_reg_txt}
+                </span>
+            </div>
+            <div style="font-size:1.9rem;font-weight:900;color:{_tc_style['text']};">
+                {_comp:.0f}<span style="font-size:0.62rem;color:{COLORS['text_muted']};font-weight:400;">&nbsp;/100</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         # TOP LEVEL: Radar & Core Profile
         c1, c2 = st.columns([1, 1])
         with c1:
             render_stock_card(stock, show_scores=True)
-            st.markdown(f"**Gate Status:** {'✅ All gates passed' if stock.get('gate_pass',0)==1 else '❌ Failed: ' + str(stock.get('failed_gates',''))}")
-            st.markdown(f"**Forensic:** {stock.get('forensic_label','')} · F-Score: {stock.get('piotroski_fscore','N/A')}/9")
-            st.markdown(f"**Smart Money Flow:** {stock.get('smart_money_flow', '⚪ Neutral')}")
-            st.markdown(f"**Cashflow Triangle:** {stock.get('cf_triangle','')}")
-            st.markdown(f"**Moat-Growth:** {stock.get('moat_growth_quad', 'N/A')}")
+            st.markdown(
+                f"**Piotroski F-Score:** {stock.get('piotroski_fscore', 'N/A')}/9 "
+                f"· {stock.get('piotroski_label', '')}",
+            )
+            st.markdown(
+                f"**Smart Money:** {stock.get('smart_money_flow', '⚪ Neutral')} "
+                f"· **CF:** {stock.get('cf_triangle', '')}",
+            )
         with c2:
             fig = render_radar_chart(stock, f"{selected} — Quality Profile")
             st.plotly_chart(fig, use_container_width=True)
@@ -410,54 +456,8 @@ with tabs[2]:
 
         st.markdown("---")
 
-        # ── Dr. Malik + WCS Signals ──
-        st.markdown(f"<div class='sec-head'>🕉️ Peaceful Investing Signals (Dr. Malik)</div>", unsafe_allow_html=True)
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Malik Score", f"{stock.get('malik_score', 0):.0f}/100", stock.get('malik_label', ''))
-        m2.metric("SSGR", f"{stock.get('ssgr', 0):.1f}%")
-        m3.metric("SSGR Cushion", f"{stock.get('ssgr_cushion', 0):.1f}%",
-                  "Self-Funded ✅" if stock.get('ssgr_self_funded', 0) == 1 else "Debt-Dependent ⚠️")
-        m4.metric("Interest Coverage", f"{stock.get('interest_coverage', 0):.1f}x")
-
-        m5, m6, m7, m8 = st.columns(4)
-        m5.metric("Tax Rate Est.", f"{stock.get('tax_rate_est', 0):.1f}%")
-        m6.metric("CFO/PAT", f"{stock.get('cfo_to_pat', 0):.1f}%")
-        m7.metric("Earnings Yield", f"{stock.get('earnings_yield', 0):.1f}%")
-        m8.metric("High Cash+Debt", "⚠️ Flagged" if stock.get('high_cash_high_debt', 0) == 1 else "Clean ✅")
-
-        st.markdown(f"<div class='sec-head'>💰 Wealth Creation Signals (MOSL WCS)</div>", unsafe_allow_html=True)
-        w1, w2, w3, w4 = st.columns(4)
-        w1.metric("Economic Profit", f"₹{stock.get('economic_profit', 0):.0f} Cr",
-                  "EP Positive ✅" if stock.get('economic_profit_positive', 0) == 1 else "EP Negative ❌")
-        w2.metric("QGLP Score", f"{stock.get('qglp_score', 0):.0f}/100")
-        w3.metric("Moat-Growth", stock.get('moat_growth_quad', 'N/A'))
-        w4.metric("Sales→Profit Conv", "✅ Positive Leverage" if stock.get('operating_leverage', 0) == 1 else "❌ Negative Leverage")
-
-        w5, w6, w7, w8 = st.columns(4)
-        pe_roe_mos = stock.get('pe_vs_roe_mos', 0)
-        w5.metric("P/E vs ROE (MoS)", f"{pe_roe_mos:.1f}", "Value Zone ✅" if pe_roe_mos > 0 else "Premium Zone ⚠️")
-        w6.metric("PEG Zone", stock.get('peg_zone', 'N/A'))
-        w7.metric("Capex Productive", "✅ Yes" if stock.get('capex_productive', 0) == 1 else "❌ No / Wait")
-        w8.metric("QGLP Pass", "✅ Yes" if stock.get('qglp_pass', 0) == 1 else "❌ No")
-
-        st.markdown(f"<div class='sec-head'>📋 Key Financials</div>", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("ROCE Med 10Y", f"{stock.get('roce_med_10y', 0):.1f}%")
-        c2.metric("ROE Med 10Y", f"{stock.get('roe_med_10y', 0):.1f}%")
-        c3.metric("CFO/PAT", f"{stock.get('cfo_to_pat', 0):.1f}%")
-        c4.metric("D/E Ratio", f"{stock.get('debt_to_equity', 0):.2f}")
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("PAT Gr 5Y", f"{stock.get('pat_gr_5y', 0):.1f}%")
-        c2.metric("Rev Gr 5Y", f"{stock.get('rev_gr_5y', 0):.1f}%")
-        c3.metric("NPM Med 5Y", f"{stock.get('npm_med_5y', 0):.1f}%")
-        c4.metric("PEG", f"{stock.get('peg', 0):.2f}")
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Promoter %", f"{stock.get('promoter_holdings', 0):.1f}%")
-        c2.metric("Pledge %", f"{stock.get('pledged_percentage', 0):.1f}%")
-        c3.metric("FII %", f"{stock.get('fii_holdings', 0):.1f}%")
-        c4.metric("CRS 50D", f"{stock.get('crs_50d', 0):.0f}")
+        # ── Business & Financial Analysis (Translated Insights) ──
+        render_financial_insights(stock)
 
         # ── SELL ALERTS (Baid's 3 Triggers) ──
         has_sell_alert = stock.get('sell_alert_any', 0) == 1
@@ -477,14 +477,52 @@ with tabs[2]:
         if stock.get('mean_reversion_risk', 0) == 1:
             st.warning("⚠️ **Marks Mean Reversion Risk:** Current margins are significantly above 5Y median — cyclical peak risk detected. Quality score penalized by 15%.")
 
-        # ── VALUATION ATTRACTIVENESS ──
-        st.markdown(f"<div class='sec-head'>💰 Valuation Attractiveness (Marks + Baid)</div>", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Valuation Score", f"{stock.get('valuation_score', 0):.0f}/100")
-        c2.metric("PE Discount vs 10Y", f"{stock.get('pe_discount', 0):.1f}%")
-        c3.metric("EV Compression", f"{stock.get('ev_compression', 0):.1f}")
-        c4.metric("FCF Yield", f"{stock.get('fcf_yield', 0):.1f}%")
-        
+        # ── RAW SIGNAL DATA (for deep divers) ──
+        with st.expander("📋 Raw Signal Data — All Metrics", expanded=False):
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Malik Score", f"{stock.get('malik_score', 0):.0f}/100", stock.get('malik_label', ''))
+            d2.metric("SSGR", f"{stock.get('ssgr', 0):.1f}%")
+            d3.metric("SSGR Cushion", f"{stock.get('ssgr_cushion', 0):.1f}%")
+            d4.metric("Interest Coverage", f"{stock.get('interest_coverage', 0):.1f}x")
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Tax Rate Est.", f"{stock.get('tax_rate_est', 0):.1f}%")
+            d2.metric("CFO/PAT", f"{stock.get('cfo_to_pat', 0):.1f}%")
+            d3.metric("High Cash+Debt", "⚠️ Flagged" if stock.get('high_cash_high_debt', 0) == 1 else "Clean ✅")
+            d4.metric("Earnings Yield", f"{stock.get('earnings_yield', 0):.1f}%")
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Economic Profit", f"₹{stock.get('economic_profit', 0):.0f} Cr",
+                      "EP+ ✅" if stock.get('economic_profit_positive', 0) == 1 else "EP- ❌")
+            d2.metric("QGLP Score", f"{stock.get('qglp_score', 0):.0f}/100")
+            d3.metric("QGLP Pass", "✅ Yes" if stock.get('qglp_pass', 0) == 1 else "❌ No")
+            d4.metric("Capex Productive", "✅ Yes" if stock.get('capex_productive', 0) == 1 else "❌ No")
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("ROCE Med 10Y", f"{stock.get('roce_med_10y', 0):.1f}%")
+            d2.metric("ROE Med 10Y", f"{stock.get('roe_med_10y', 0):.1f}%")
+            d3.metric("D/E Ratio", f"{stock.get('debt_to_equity', 0):.2f}")
+            d4.metric("Current Ratio", f"{stock.get('current_ratio', 0):.2f}")
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("PAT Gr 5Y", f"{stock.get('pat_gr_5y', 0):.1f}%")
+            d2.metric("Rev Gr 5Y", f"{stock.get('rev_gr_5y', 0):.1f}%")
+            d3.metric("NPM Med 5Y", f"{stock.get('npm_med_5y', 0):.1f}%")
+            d4.metric("PEG", f"{stock.get('peg', 0):.2f}")
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Promoter %", f"{stock.get('promoter_holdings', 0):.1f}%")
+            d2.metric("Pledge %", f"{stock.get('pledged_percentage', 0):.1f}%")
+            d3.metric("FII %", f"{stock.get('fii_holdings', 0):.1f}%")
+            d4.metric("CRS 50D", f"{stock.get('crs_50d', 0):.0f}")
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Valuation Score", f"{stock.get('valuation_score', 0):.0f}/100")
+            d2.metric("PE Discount vs 10Y", f"{stock.get('pe_discount', 0):.1f}%")
+            d3.metric("EV Compression", f"{stock.get('ev_compression', 0):.1f}")
+            d4.metric("FCF Yield", f"{stock.get('fcf_yield', 0):.1f}%")
+            d1, d2, d3, d4 = st.columns(4)
+            _pe_roe = float(stock.get('pe_vs_roe_mos', 0) or 0)
+            d1.metric("P/E vs ROE (MoS)", f"{_pe_roe:.1f}",
+                      "Value Zone ✅" if _pe_roe > 0 else "Premium Zone ⚠️")
+            d2.metric("PEG Zone", stock.get('peg_zone', 'N/A'))
+            d3.metric("Smart Money", stock.get('smart_money_flow', '⚪ Neutral'))
+            d4.metric("CF Triangle", stock.get('cf_triangle', ''))
+
         st.markdown("---")
         render_forensic_perimeter(stock)
 
