@@ -419,14 +419,11 @@ def render_score_bar(score: float, color: str = "#3fb950", label: str = ""):
 
 
 def render_stock_card(row: pd.Series, show_scores: bool = True):
-    """Render a premium stock card."""
+    """Render a premium stock card with score bars embedded inside the card."""
     tier = int(row.get("conviction_tier", 5))
     tc = TIER_COLORS.get(tier, TIER_COLORS[5])
 
-    gate_status = "✅ All gates passed" if row.get("gate_pass", 0) == 1 else f"❌ {int(row.get('gates_failed', 0))} gates failed"
-
     pills = ""
-    # Catalysts
     if row.get("cat_capacity", 0) == 1:
         pills += '<span class="pill pill-blue">🔥 Capacity Explosion</span>'
     if row.get("cat_oplev", 0) == 1:
@@ -435,21 +432,18 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
         pills += '<span class="pill pill-purple">🔥 Inst Discovery</span>'
     if row.get("cat_deleveraging", 0) == 1:
         pills += '<span class="pill pill-gold">🔥 Deleveraging Cycle</span>'
-        
-    # Frameworks
+
     fw_str = row.get("frameworks_passed", "None")
-    if fw_str != "None":
+    if fw_str and fw_str != "None":
         for fw in fw_str.split(", "):
-            pills += f'<span class="pill" style="border-color:rgba(255,255,255,0.4); color:#eee; background:rgba(255,255,255,0.05);">🏛️ {fw}</span>'
-            
-    # Legacy specific tags
+            if fw.strip():
+                pills += f'<span class="pill" style="border-color:rgba(255,255,255,0.4);color:#eee;background:rgba(255,255,255,0.05);">🏛️ {fw.strip()}</span>'
+
     if row.get("tsunami_signal", 0) == 1:
         pills += '<span class="pill pill-gold">🌊 Tsunami</span>'
     if row.get("net_debt_negative", 0) == 1:
-        pills += '<span class="pill pill-green">Net Cash</span>'
-        
-    # ── ALPHA VECTORS ──
-    # 1. Moat Growth Matrix
+        pills += '<span class="pill pill-green">💰 Net Cash</span>'
+
     mg_quad = row.get("moat_growth_quad", "")
     if "Wealth Creator" in mg_quad:
         pills += f'<span class="pill pill-green">{mg_quad}</span>'
@@ -459,26 +453,23 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
         pills += f'<span class="pill pill-blue">{mg_quad}</span>'
     elif "Destroyer" in mg_quad:
         pills += f'<span class="pill pill-red">{mg_quad}</span>'
-        
-    # 2. Cash Machine (Accrual Anomaly)
+
     cm_label = row.get("cash_machine_label", "")
     if "Cash Machine" in cm_label:
         pills += f'<span class="pill pill-green">{cm_label}</span>'
     elif "Paper Profits" in cm_label:
         pills += f'<span class="pill pill-red">{cm_label}</span>'
-        
-    # 3. Buy Zone (Actionability)
+
     bz_label = row.get("buy_zone_label", "")
     if "Perfect Entry" in bz_label:
         pills += f'<span class="pill pill-green">{bz_label}</span>'
     elif "Extended" in bz_label:
         pills += f'<span class="pill pill-red">{bz_label}</span>'
 
-    # 4. Bruised Blue Chip (WCS 29): use the engine-computed flag (P/B ≤2.0 + sector tailwind)
     if row.get("bruised_blue_chip_29", 0) == 1:
         pills += '<span class="pill pill-blue">💙 Bruised Blue Chip</span>'
 
-    # ── Verdict strip: gate + forensic + moat quadrant in one scannable line ──
+    # ── Verdict strip ──
     _gate_ok = row.get("gate_pass", 0) == 1
     _failed_esc = _html.escape(str(row.get("failed_gates", "") or ""))
     if _gate_ok:
@@ -514,40 +505,55 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     _verdict_parts = [_gate_v, _forensic_v] + ([_mg_v] if _mg_v else [])
     _verdict_strip = _dot.join(_verdict_parts)
 
+    # ── Embedded score bars (design-system aligned) ──
+    _score_bars_html = ""
+    if show_scores:
+        _bars = [
+            ("Moat",       row.get("moat_score",      0), COLORS["purple"]),
+            ("Growth",     row.get("growth_score",     0), COLORS["green"]),
+            ("Cash",       row.get("cash_score",       0), COLORS["blue"]),
+            ("Momentum",   row.get("momentum_score",   0), COLORS["orange"]),
+            ("Governance", row.get("governance_bonus", 0), COLORS["gold"]),
+        ]
+        bar_items = ""
+        for lbl, sc, clr in _bars:
+            _w = min(100, max(0, float(sc or 0)))
+            bar_items += (
+                f'<div style="flex:1;">'
+                f'<div style="font-size:0.57rem;color:{COLORS["text_secondary"]};margin-bottom:3px;'
+                f'text-transform:uppercase;letter-spacing:0.5px;">{lbl}</div>'
+                f'<div style="background:{COLORS["bg_tertiary"]};border-radius:4px;height:5px;overflow:hidden;">'
+                f'<div style="width:{_w:.0f}%;height:5px;border-radius:4px;background:{clr};"></div>'
+                f'</div>'
+                f'</div>'
+            )
+        _score_bars_html = (
+            f'<div style="display:flex;gap:6px;margin-top:11px;padding-top:10px;'
+            f'border-top:1px solid rgba(255,255,255,0.05);">{bar_items}</div>'
+        )
+
     card_html = f"""
-    <div class="stock-card" style="border-left: 3px solid {tc['border']};">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div style="flex:1;min-width:0;">
-                <div style="font-weight:800; font-size:1.05rem; color:{COLORS['text_primary']};">
-                    {row.get('tier_emoji', '')} #{int(row.get('rank', 0))} · {row.get('name', 'N/A')}
-                </div>
-                <div style="font-size:0.75rem; color:{COLORS['text_secondary']}; margin-top:2px;">
-                    {row.get('sector', '')} · {row.get('industry', '')} · ₹{row.get('market_cap', 0):,.0f} Cr · {row.get('market_category', '')}
-                </div>
-                <div style="margin-top:5px;">{_verdict_strip}</div>
-            </div>
-            <div style="text-align:right;flex-shrink:0;margin-left:12px;">
-                <div style="font-size:1.8rem; font-weight:900; color:{tc['text']};">{row.get('composite_score', 0):.0f}</div>
-                <div style="font-size:0.65rem; color:{COLORS['text_muted']};">COMPOSITE</div>
-            </div>
+    <div class="stock-card" style="border-left:3px solid {tc['border']};">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:800;font-size:1.05rem;color:{COLORS['text_primary']};">
+            {row.get('tier_emoji','')} #{int(row.get('rank',0))} · {row.get('name','N/A')}
+          </div>
+          <div style="font-size:0.75rem;color:{COLORS['text_secondary']};margin-top:2px;">
+            {row.get('sector','')} · {row.get('industry','')} · ₹{row.get('market_cap',0):,.0f} Cr · {row.get('market_category','')}
+          </div>
+          <div style="margin-top:5px;">{_verdict_strip}</div>
         </div>
-        <div style="margin-top:8px;">{pills}</div>
+        <div style="text-align:right;flex-shrink:0;margin-left:12px;">
+          <div style="font-size:1.8rem;font-weight:900;color:{tc['text']};">{row.get('composite_score',0):.0f}</div>
+          <div style="font-size:0.58rem;color:{COLORS['text_muted']};text-transform:uppercase;letter-spacing:0.8px;">COMPOSITE</div>
+        </div>
+      </div>
+      {f'<div style="margin-top:8px;line-height:2;">{pills}</div>' if pills else ""}
+      {_score_bars_html}
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
-
-    if show_scores:
-        cols = st.columns(5)
-        scores = [
-            ("Moat", row.get("moat_score", 0), COLORS["purple"]),
-            ("Growth", row.get("growth_score", 0), COLORS["green"]),
-            ("Cash", row.get("cash_score", 0), COLORS["blue"]),
-            ("Momentum", row.get("momentum_score", 0), COLORS["orange"]),
-            ("Governance", row.get("governance_bonus", 0), COLORS["gold"]),
-        ]
-        for col, (label, score, color) in zip(cols, scores):
-            with col:
-                render_score_bar(score, color, label)
 
 
 def render_radar_chart(row: pd.Series, title: str = "Quality Radar") -> go.Figure:
