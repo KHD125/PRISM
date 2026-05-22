@@ -468,10 +468,11 @@ with tabs[2]:
                 pio_lbl = str(stock.get("piotroski_label", "") or "")
                 pio_clr = (COLORS["green"] if pio_val is not None and pio_val >= 7 else
                            COLORS["gold"]  if pio_val is not None and pio_val >= 5 else
+                           COLORS["text_muted"] if pio_val is None else
                            COLORS["red"])
                 smart  = str(stock.get("smart_money_flow", "⚪ Neutral") or "⚪ Neutral")
                 cf_tri = str(stock.get("cf_triangle", "") or "")
-                badge_items = [(f"F-Score {pio_str} {pio_lbl}".strip(), pio_clr),
+                badge_items = [(f"F-Score {pio_str}", pio_clr),
                                (smart, COLORS["purple"])]
                 if cf_tri:
                     badge_items.append((cf_tri, COLORS["blue"]))
