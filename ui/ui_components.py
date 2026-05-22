@@ -214,7 +214,7 @@ def inject_css():
 
     /* ── Tsunami Card ── */
     .tsunami-card {{
-        background: linear-gradient(135deg, #12095C 0%, #3C3489 100%);
+        background: linear-gradient(135deg, {COLORS['gradient_start']} 0%, {COLORS['gradient_mid']} 100%);
         border: 1px solid rgba(139,92,246,0.4); border-radius: 14px;
         padding: 18px 20px; margin-bottom: 10px;
         box-shadow: 0 4px 20px rgba(139,92,246,0.15);
@@ -230,6 +230,152 @@ def inject_css():
                      border: 1px solid rgba(255,107,53,0.3); }}
     .risk-high {{ color: {COLORS['red']}; background: rgba(248,81,73,0.1);
                   border: 1px solid rgba(248,81,73,0.3); }}
+
+    /* ══════════════════════════════════════════════
+       TEARSHEET — Premium section styles
+       ══════════════════════════════════════════════ */
+
+    /* Hero header card */
+    .ts-hero {{
+        background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
+        border: 1px solid {COLORS['border']};
+        border-radius: 20px; padding: 28px 30px; margin-bottom: 14px;
+        position: relative; overflow: hidden;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+    }}
+    .ts-hero::before {{
+        content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: radial-gradient(ellipse at 85% 50%, rgba(88,166,255,0.06) 0%, transparent 55%),
+                    radial-gradient(ellipse at 10% 80%, rgba(139,92,246,0.04) 0%, transparent 50%);
+        pointer-events: none;
+    }}
+    .ts-score-ring {{
+        width: 110px; height: 110px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column; flex-shrink: 0;
+        border-width: 3px; border-style: solid;
+        box-shadow: 0 0 28px rgba(0,0,0,0.5);
+        position: relative;
+    }}
+    .ts-score-val {{
+        font-size: 2.6rem; font-weight: 900; line-height: 1;
+    }}
+    .ts-score-lbl {{
+        font-size: 0.5rem; letter-spacing: 1px; text-transform: uppercase;
+        margin-top: 2px; opacity: 0.7;
+    }}
+
+    /* Score strip grid */
+    .ts-score-strip {{
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px; margin: 10px 0 16px 0;
+    }}
+    .ts-score-cell {{
+        background: {COLORS['bg_secondary']};
+        border: 1px solid {COLORS['border']};
+        border-radius: 12px; padding: 12px 10px;
+        text-align: center; transition: border-color 0.2s ease;
+    }}
+    .ts-score-cell:hover {{ border-color: {COLORS['border_hover']}; }}
+    .ts-score-cell-lbl {{
+        font-size: 0.58rem; color: {COLORS['text_muted']};
+        text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px;
+    }}
+    .ts-score-cell-val {{
+        font-size: 1.9rem; font-weight: 900; line-height: 1;
+    }}
+    .ts-score-bar-bg {{
+        height: 3px; background: {COLORS['bg_tertiary']};
+        border-radius: 2px; margin-top: 7px; overflow: hidden;
+    }}
+    .ts-score-bar-fill {{
+        height: 3px; border-radius: 2px;
+    }}
+
+    /* Framework grid cards */
+    .ts-fw-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 8px; margin-top: 8px;
+    }}
+    .ts-fw-card {{
+        border-radius: 10px; padding: 11px 13px;
+        border-width: 1px; border-style: solid; transition: transform 0.15s ease;
+    }}
+    .ts-fw-card:hover {{ transform: translateY(-2px); }}
+    .ts-fw-card-head {{
+        display: flex; align-items: center; gap: 8px; margin-bottom: 5px;
+    }}
+    .ts-fw-card-name {{ font-weight: 700; font-size: 0.78rem; }}
+    .ts-fw-card-desc {{ font-size: 0.65rem; color: {COLORS['text_muted']}; line-height: 1.4; }}
+
+    /* Flag rows in forensics */
+    .ts-flag-row {{
+        display: flex; align-items: flex-start; gap: 12px;
+        padding: 9px 14px; border-radius: 6px; margin: 4px 0;
+        border-left-width: 3px; border-left-style: solid;
+    }}
+    .ts-flag-sev {{ font-size: 1rem; flex-shrink: 0; margin-top: 1px; }}
+    .ts-flag-title {{ font-size: 0.78rem; font-weight: 600; line-height: 1.3; }}
+    .ts-flag-sub {{ font-size: 0.66rem; color: {COLORS['text_muted']}; margin-top: 2px; line-height: 1.4; }}
+
+    /* Fisher proxy cards */
+    .ts-fisher-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 8px; margin-top: 10px;
+    }}
+    .ts-fisher-card {{
+        border-radius: 9px; padding: 10px 12px;
+        border-width: 1px; border-style: solid;
+    }}
+    .ts-fisher-head {{
+        display: flex; align-items: center; gap: 7px; margin-bottom: 4px;
+    }}
+    .ts-fisher-key {{ font-size: 0.68rem; font-weight: 700; }}
+    .ts-fisher-val {{ font-size: 0.85rem; font-weight: 800; }}
+
+    /* Sell alert banners */
+    .ts-sell-banner {{
+        border-radius: 12px; padding: 14px 18px; margin: 6px 0;
+        border-width: 1px; border-style: solid;
+        display: flex; align-items: flex-start; gap: 12px;
+    }}
+    .ts-sell-icon {{ font-size: 1.4rem; flex-shrink: 0; }}
+    .ts-sell-title {{ font-size: 0.88rem; font-weight: 800; margin-bottom: 2px; }}
+    .ts-sell-body {{ font-size: 0.75rem; }}
+
+    /* Raw data metric cell */
+    .ts-raw-cell {{
+        background: {COLORS['bg_secondary']};
+        border: 1px solid {COLORS['border']};
+        border-radius: 8px; padding: 10px 12px; text-align: center;
+    }}
+    .ts-raw-lbl {{
+        font-size: 0.6rem; color: {COLORS['text_muted']};
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }}
+    .ts-raw-val {{
+        font-size: 1.1rem; font-weight: 800;
+        color: {COLORS['text_primary']}; margin-top: 3px;
+    }}
+
+    /* KPI strip in forensics */
+    .ts-kpi-strip {{
+        display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+    }}
+    .ts-kpi-cell {{
+        background: {COLORS['bg_secondary']};
+        border: 1px solid {COLORS['border']};
+        border-radius: 10px; padding: 10px 16px;
+        min-width: 100px; text-align: center; flex: 1;
+    }}
+    .ts-kpi-val {{ font-size: 1.5rem; font-weight: 900; line-height: 1; }}
+    .ts-kpi-lbl {{
+        font-size: 0.58rem; color: {COLORS['text_muted']};
+        text-transform: uppercase; letter-spacing: 0.6px; margin-top: 3px;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -255,14 +401,18 @@ def render_metric_strip(metrics: list):
 
 
 def render_score_bar(score: float, color: str = "#3fb950", label: str = ""):
-    """Render a horizontal score bar."""
+    """Render a horizontal score bar. Clamps width to [0, 100] so bars never overflow.
+    Negative values (e.g. governance_bonus < 0) show a red penalty badge instead of invisible bar."""
+    _width = min(100, max(0, float(score or 0)))
+    _is_negative = float(score or 0) < 0
+    _display_val = f'<span style="color:{COLORS["red"]};font-weight:700;">⚠ {score:.0f}</span>' if _is_negative else f'<span style="font-size:0.75rem;font-weight:700;color:{color};min-width:30px;">{score:.0f}</span>'
     html = f"""
     <div style="display:flex; align-items:center; gap:8px; margin:2px 0;">
         <span style="font-size:0.7rem; color:{COLORS['text_secondary']}; min-width:50px;">{label}</span>
         <div class="score-bar-wrap" style="flex:1;">
-            <div class="score-bar" style="width:{score}%; background:{color};"></div>
+            <div class="score-bar" style="width:{_width:.1f}%; background:{color};"></div>
         </div>
-        <span style="font-size:0.75rem; font-weight:700; color:{color}; min-width:30px;">{score:.0f}</span>
+        {_display_val}
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
@@ -324,12 +474,8 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     elif "Extended" in bz_label:
         pills += f'<span class="pill pill-red">{bz_label}</span>'
 
-    # 4. Bruised Blue Chip (WCS 29): quality large-cap at PE discount
-    if (
-        row.get("market_cap", 0) >= 20_000
-        and row.get("roce_med_10y", 0) >= 20
-        and row.get("pe_discount", 0) >= 20
-    ):
+    # 4. Bruised Blue Chip (WCS 29): use the engine-computed flag (P/B ≤2.0 + sector tailwind)
+    if row.get("bruised_blue_chip_29", 0) == 1:
         pills += '<span class="pill pill-blue">💙 Bruised Blue Chip</span>'
 
     # ── Verdict strip: gate + forensic + moat quadrant in one scannable line ──
