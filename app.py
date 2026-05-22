@@ -656,94 +656,137 @@ with tabs[2]:
     if not all_stock_names:
         st.info("No stocks available. Check your data source.")
     else:
-        # ── Stock search bar ──────────────────────────────────────────────
-        c_search, c_sel = st.columns([1, 3])
-        with c_search:
+        # ── Stock selector: search + dropdown + prev/next navigation ──────
+        _ts_c1, _ts_c2, _ts_c3, _ts_c4 = st.columns([2, 4, 1, 1])
+        with _ts_c1:
             search_ticker = st.text_input(
-                "🔍 Search", placeholder="HDFC, Infosys, TATA…",
+                "Search", placeholder="🔍  HDFC, Infosys, TATA…",
                 key="search_ticker", label_visibility="collapsed",
             )
         _term  = (search_ticker or "").strip().upper()
         _names = [n for n in all_stock_names if _term in n.upper()] if _term else all_stock_names
         if not _names:
             _names = all_stock_names
-        _prev = st.session_state.get("xray_stock")
-        _idx  = _names.index(_prev) if _prev in _names else 0
-        with c_sel:
+        _prev_sel = st.session_state.get("xray_stock")
+        _ts_idx   = _names.index(_prev_sel) if _prev_sel in _names else 0
+        with _ts_c2:
             selected = st.selectbox(
-                "Stock",
-                _names, index=_idx, key="xray_stock",
+                "Stock", _names, index=_ts_idx, key="xray_stock",
                 label_visibility="collapsed",
             )
+        _cur_idx = _names.index(selected) if selected in _names else 0
+        with _ts_c3:
+            if st.button("◀ Prev", key="ts_prev", use_container_width=True,
+                         disabled=(_cur_idx == 0)):
+                st.session_state["xray_stock"] = _names[_cur_idx - 1]
+                st.rerun()
+        with _ts_c4:
+            if st.button("Next ▶", key="ts_next", use_container_width=True,
+                         disabled=(_cur_idx >= len(_names) - 1)):
+                st.session_state["xray_stock"] = _names[_cur_idx + 1]
+                st.rerun()
 
-        stock = df[df["name"] == selected].iloc[0]
+        stock   = df[df["name"] == selected].iloc[0]
         _regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
 
-        # ── Hard-gate rejection banner (above everything) ─────────────────
-        if stock.get("gate_pass", 0) == 0:
-            st.markdown(f"""
-            <div style="background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.5);
-                        border-radius:10px;padding:14px 18px;margin:6px 0 12px 0;">
-              <div style="font-size:0.88rem;font-weight:800;color:{COLORS['red']};margin-bottom:4px;">
-                ❌ SYSTEM REJECTED — Hard Gate Failure
-              </div>
-              <div style="font-size:0.78rem;color:{COLORS['text_secondary']};">
-                <strong>Reason(s):</strong> {stock.get('failed_gates', 'Unknown')}
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+        # ── Null-safe getter — available to ALL inner tabs ─────────────────
+        def _sg(k, d=0):
+            v = stock.get(k, d)
+            return d if (v is None or (isinstance(v, float) and np.isnan(v))) else v
 
-        # ── Sell alerts (prominent, above hero) ───────────────────────────
-        render_sell_alerts_panel(stock)
+        # Pre-compute verdict inputs once — reused across tabs
+        _gate_ok  = stock.get("gate_pass", 0) == 1
+        _sell_any = stock.get("sell_alert_any", 0) == 1
+        _mr_risk  = stock.get("mean_reversion_risk", 0) == 1
+        _tier_num = int(_sg("conviction_tier", 5))
+        _tc       = TIER_COLORS.get(_tier_num, TIER_COLORS[5])
+        _tier_cfg = next((t for t in CONVICTION_TIERS if t["tier"] == _tier_num), CONVICTION_TIERS[-1])
+        _comp_sc  = float(_sg("composite_score", 0))
 
-        # ── Mean reversion warning ────────────────────────────────────────
-        if stock.get('mean_reversion_risk', 0) == 1:
-            st.markdown(f"""
-            <div style="background:rgba(228,179,65,0.07);border:1px solid rgba(228,179,65,0.4);
-                        border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.78rem;">
-              ⚠️ <strong style="color:{COLORS['gold']};">Marks Mean Reversion Risk:</strong>
-              <span style="color:{COLORS['text_secondary']};">
-                Current margins significantly above 5Y median — cyclical peak risk detected.
-                Quality score penalized by 15%.
-              </span>
-            </div>
-            """, unsafe_allow_html=True)
+        # ── Verdict logic: one clear signal, always at the top ─────────────
+        if not _gate_ok:
+            _verdict     = "SYSTEM REJECTED"
+            _verdict_clr = COLORS["red"]
+            _verdict_bg  = "rgba(248,81,73,0.09)"
+            _verdict_reason = f"Hard Gate Failure — {stock.get('failed_gates', 'Unknown')}"
+        elif _sell_any:
+            _verdict     = "SELL ALERT"
+            _verdict_clr = COLORS["red"]
+            _verdict_bg  = "rgba(248,81,73,0.07)"
+            _verdict_reason = "One or more Baid sell triggers have fired — review Forensics tab."
+        elif _tier_num <= 2 and _comp_sc >= 70:
+            _verdict     = "BUY CANDIDATE"
+            _verdict_clr = COLORS["green"]
+            _verdict_bg  = "rgba(63,185,80,0.08)"
+            _verdict_reason = (
+                f"{_tier_cfg['emoji']} {_tier_cfg['label']} · "
+                f"Score {_comp_sc:.0f}/100 · All hard gates passed"
+            )
+        elif _tier_num <= 3 and _comp_sc >= 55:
+            _verdict     = "MONITOR"
+            _verdict_clr = COLORS["gold"]
+            _verdict_bg  = "rgba(228,179,65,0.07)"
+            _verdict_reason = (
+                f"{_tier_cfg['emoji']} {_tier_cfg['label']} · "
+                f"Score {_comp_sc:.0f}/100 · Watch for better entry point"
+            )
+        else:
+            _verdict     = "AVOID"
+            _verdict_clr = COLORS["text_muted"]
+            _verdict_bg  = "rgba(110,118,129,0.06)"
+            _verdict_reason = (
+                f"Tier {_tier_num} · Score {_comp_sc:.0f}/100 · "
+                f"Does not meet investment threshold"
+            )
 
-        # ── Hero card ─────────────────────────────────────────────────────
+        _mr_pill = (
+            f'<span style="font-size:0.67rem;font-weight:700;padding:2px 10px;'
+            f'border-radius:12px;background:rgba(228,179,65,0.15);color:{COLORS["gold"]};'
+            f'border:1px solid rgba(228,179,65,0.4);white-space:nowrap;">⚠️ Mean Reversion</span>'
+        ) if _mr_risk else ""
+
+        st.markdown(f"""
+        <div style="background:{_verdict_bg};border:1px solid {_verdict_clr}55;
+             border-left:4px solid {_verdict_clr};border-radius:10px;
+             padding:11px 16px;margin:6px 0 10px 0;display:flex;
+             align-items:center;gap:14px;flex-wrap:wrap;">
+          <span style="font-size:0.77rem;font-weight:900;color:{_verdict_clr};
+               letter-spacing:1.2px;white-space:nowrap;">{_verdict}</span>
+          <span style="font-size:0.75rem;color:{COLORS['text_secondary']};
+               flex:1;min-width:160px;">{_verdict_reason}</span>
+          {_mr_pill}
+          <span style="font-size:0.67rem;color:{COLORS['text_muted']};white-space:nowrap;">
+            {_cur_idx + 1}&thinsp;/&thinsp;{len(_names)}
+          </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Sell alerts panel — only rendered when active
+        if _sell_any:
+            render_sell_alerts_panel(stock)
+
+        # ── Hero + score strip ────────────────────────────────────────────
         render_stock_hero(stock, regime=_regime)
-
-        # ── Score strip ───────────────────────────────────────────────────
         render_score_strip(stock)
 
         # ── Inner tabs ────────────────────────────────────────────────────
         _itabs = st.tabs([
             "📋 Overview",
-            "🔬 Forensics & Accounting",
+            "🔬 Forensics",
             "🏛️ Frameworks",
             "📈 Matrix & WCS",
             "📊 All Data",
         ])
 
-        # ── Tab A: Overview ───────────────────────────────────────────────
+        # ══ Tab A: Overview ════════════════════════════════════════════════
         with _itabs[0]:
-            # Null-safe getter scoped to this stock row
-            def _sg(k, d=0):
-                v = stock.get(k, d)
-                return d if (v is None or (isinstance(v, float) and np.isnan(v))) else v
-
-            tier_num_ov = int(_sg("conviction_tier", 5))
-            tc_ov       = TIER_COLORS.get(tier_num_ov, TIER_COLORS[5])
-            tier_cfg_ov = next((t for t in CONVICTION_TIERS if t["tier"] == tier_num_ov),
-                               CONVICTION_TIERS[-1])
-            comp_ov     = float(_sg("composite_score", 0))
-
             col1, col2 = st.columns([1, 1])
 
             with col1:
                 fig = render_radar_chart(stock, f"{selected} — Quality Radar")
                 st.plotly_chart(fig, use_container_width=True)
 
-                # ── Elevated signal badges (replaces tiny caption text) ────
+                # Signal badges row
                 pio_raw = stock.get("piotroski_fscore", None)
                 pio_val = None
                 if pio_raw is not None and not (isinstance(pio_raw, float) and np.isnan(pio_raw)):
@@ -752,17 +795,17 @@ with tabs[2]:
                     except Exception:
                         pio_val = None
                 pio_str = f"{pio_val}/9" if pio_val is not None else "N/A"
-                pio_lbl = str(stock.get("piotroski_label", "") or "")
                 pio_clr = (COLORS["green"] if pio_val is not None and pio_val >= 7 else
                            COLORS["gold"]  if pio_val is not None and pio_val >= 5 else
-                           COLORS["text_muted"] if pio_val is None else
-                           COLORS["red"])
+                           COLORS["text_muted"] if pio_val is None else COLORS["red"])
                 smart  = str(stock.get("smart_money_flow", "⚪ Neutral") or "⚪ Neutral")
                 cf_tri = str(stock.get("cf_triangle", "") or "")
-                badge_items = [(f"F-Score {pio_str}", pio_clr),
-                               (smart, COLORS["purple"])]
+                quad   = str(stock.get("moat_growth_quad", "") or "")
+                badge_items = [(f"F-Score {pio_str}", pio_clr), (smart, COLORS["purple"])]
                 if cf_tri:
                     badge_items.append((cf_tri, COLORS["blue"]))
+                if quad:
+                    badge_items.append((quad, _tc["text"]))
                 bdgs = "".join(
                     f'<span style="display:inline-block;padding:3px 9px;border-radius:6px;'
                     f'font-size:0.68rem;font-weight:700;margin:2px 3px 2px 0;'
@@ -772,9 +815,7 @@ with tabs[2]:
                 st.markdown(bdgs, unsafe_allow_html=True)
 
             with col2:
-                # ── Key Decision Metrics — replaces redundant stock card ───
-                # Shows the 7 signals that answer "is this worth buying?" —
-                # new information not already visible in the hero or score strip.
+                # 7-KPI buy decision checklist
                 _roce_r = _sg("roce_med_10y", None)
                 roce_ov = float(_roce_r if _roce_r is not None else _sg("roce", 0))
                 pat5_ov = float(_sg("pat_gr_5y", 0))
@@ -789,9 +830,11 @@ with tabs[2]:
                     ico, clr = (("✅", COLORS["green"]) if passed is True else
                                 ("❌", COLORS["red"])   if passed is False else
                                 ("⚪", COLORS["text_muted"]))
-                    nh = (f'<span style="font-size:0.63rem;color:{COLORS["text_muted"]};'
-                          f'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;'
-                          f'white-space:nowrap;margin-left:6px;">{note}</span>') if note else ""
+                    nh = (
+                        f'<span style="font-size:0.63rem;color:{COLORS["text_muted"]};'
+                        f'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;'
+                        f'white-space:nowrap;margin-left:6px;">{note}</span>'
+                    ) if note else ""
                     return (
                         f'<div style="display:flex;align-items:center;gap:8px;padding:6px 0;'
                         f'border-bottom:1px solid rgba(255,255,255,0.04);">'
@@ -799,8 +842,7 @@ with tabs[2]:
                         f'<span style="font-size:0.74rem;color:{COLORS["text_secondary"]};'
                         f'width:128px;flex-shrink:0;">{label}</span>'
                         f'<span style="font-size:0.82rem;font-weight:700;color:{clr};'
-                        f'white-space:nowrap;flex-shrink:0;">'
-                        f'{val_str}</span>{nh}</div>'
+                        f'white-space:nowrap;flex-shrink:0;">{val_str}</span>{nh}</div>'
                     )
 
                 peg_str  = f"{peg_ov:.2f}×" if peg_ov > 0 else "N/A"
@@ -808,22 +850,22 @@ with tabs[2]:
                 pr_note  = f"⚠️ {plg_ov:.0f}% pledged" if plg_ov > 10 else "≥50% aligned"
 
                 kpi_html = (
-                    _krow("ROCE 10Y Median", f"{roce_ov:.1f}%",  roce_ov >= 15,    "≥15%")      +
-                    _krow("PAT CAGR 5Y",     f"{pat5_ov:.1f}%",  pat5_ov >= 15,    "≥15%")      +
-                    _krow("PEG Ratio",         peg_str,           peg_pass,        "Lynch ≤1.0") +
-                    _krow("CFO / PAT",       f"{cfo_ov:.1f}%",   cfo_ov >= 70,     "≥70% cash") +
-                    _krow("D / E Ratio",     f"{de_ov:.2f}",      de_ov < 0.5,     "<0.5 safe") +
-                    _krow("Promoter Hold.",  f"{prom_ov:.1f}%",   prom_ov >= 50,   pr_note)     +
-                    _krow("FCF Yield",       f"{fcfy_ov:.1f}%",   fcfy_ov >= 3,    "≥3% solid")
+                    _krow("ROCE 10Y Median", f"{roce_ov:.1f}%",  roce_ov >= 15,   "≥15%")      +
+                    _krow("PAT CAGR 5Y",     f"{pat5_ov:.1f}%",  pat5_ov >= 15,   "≥15%")      +
+                    _krow("PEG Ratio",         peg_str,           peg_pass,       "Lynch ≤1.0") +
+                    _krow("CFO / PAT",       f"{cfo_ov:.1f}%",   cfo_ov >= 70,    "≥70% cash") +
+                    _krow("D / E Ratio",     f"{de_ov:.2f}",      de_ov < 0.5,    "<0.5 safe") +
+                    _krow("Promoter Hold.",  f"{prom_ov:.1f}%",   prom_ov >= 50,  pr_note)     +
+                    _krow("FCF Yield",       f"{fcfy_ov:.1f}%",   fcfy_ov >= 3,   "≥3% solid")
                 )
 
                 st.markdown(f"""
                 <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                            border-left:3px solid {tc_ov['text']};border-radius:10px;
+                            border-left:3px solid {_tc['text']};border-radius:10px;
                             padding:14px 16px;">
-                  <div style="font-size:0.64rem;font-weight:800;color:{tc_ov['text']};
+                  <div style="font-size:0.64rem;font-weight:800;color:{_tc['text']};
                               text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px;">
-                    {tier_cfg_ov['emoji']} {tier_cfg_ov['label']} &nbsp;·&nbsp; Score {comp_ov:.0f} / 100
+                    {_tier_cfg['emoji']} {_tier_cfg['label']} &nbsp;·&nbsp; Score {_comp_sc:.0f} / 100
                   </div>
                   {kpi_html}
                 </div>
@@ -835,8 +877,41 @@ with tabs[2]:
             )
             render_financial_insights(stock)
 
-        # ── Tab B: Forensics & Accounting ─────────────────────────────────
+        # ══ Tab B: Forensics ═══════════════════════════════════════════════
         with _itabs[1]:
+            # ── Forensic KPI strip — F-Score · Red Flags · Forensic% · CF Triangle
+            _f_fscore  = int(_sg("piotroski_fscore", 0))
+            _f_flags   = int(_sg("red_flag_count", 0))
+            _f_forensic = float(_sg("forensic_score", 0))
+            _f_cftri   = str(stock.get("cf_triangle", "—") or "—")
+            _fkpi_data = [
+                (str(_f_fscore), "/9",  "F-Score",
+                 COLORS["green"] if _f_fscore >= 7 else COLORS["gold"] if _f_fscore >= 5 else COLORS["red"]),
+                (str(_f_flags),  "",    "Red Flags",
+                 COLORS["green"] if _f_flags == 0 else COLORS["gold"] if _f_flags <= 2 else COLORS["red"]),
+                (f"{_f_forensic:.0f}", "%", "Forensic",
+                 COLORS["green"] if _f_forensic >= 80 else COLORS["gold"] if _f_forensic >= 60 else COLORS["red"]),
+                (_f_cftri, "", "CF Triangle",
+                 COLORS["green"] if any(x in _f_cftri for x in ("✅", "🟢")) else
+                 COLORS["gold"]  if "🟡" in _f_cftri else COLORS["red"]),
+            ]
+            _fkpi_html = "".join(
+                f'<div style="flex:1;min-width:80px;background:{COLORS["bg_secondary"]};'
+                f'border:1px solid {COLORS["border"]};border-radius:10px;'
+                f'padding:10px 14px;text-align:center;">'
+                f'<div style="font-size:1.4rem;font-weight:900;color:{clr};line-height:1;">'
+                f'{val}<span style="font-size:0.75rem;color:{COLORS["text_muted"]};">{suf}</span></div>'
+                f'<div style="font-size:0.57rem;color:{COLORS["text_muted"]};text-transform:uppercase;'
+                f'letter-spacing:0.6px;margin-top:4px;">{lbl}</div>'
+                f'</div>'
+                for val, suf, lbl, clr in _fkpi_data
+            )
+            st.markdown(
+                f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">'
+                f'{_fkpi_html}</div>',
+                unsafe_allow_html=True,
+            )
+
             st.markdown(
                 f"<div class='sec-head'>🔬 Forensic Fraud Perimeter (25-Flag Cascade)</div>",
                 unsafe_allow_html=True,
@@ -849,14 +924,14 @@ with tabs[2]:
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f"<div class='sec-cap'>Phil Fisher's 15 qualitative points translated into "
-                f"strict quantitative proxies using pre-derived CSV columns. "
+                f"<div class='sec-cap'>Phil Fisher's 15 qualitative points translated into strict "
+                f"quantitative proxies using pre-derived CSV columns. "
                 f"100% automated — zero manual input.</div>",
                 unsafe_allow_html=True,
             )
             render_fisher_module(stock)
 
-        # ── Tab C: Guru Frameworks ────────────────────────────────────────
+        # ══ Tab C: Guru Frameworks ═════════════════════════════════════════
         with _itabs[2]:
             st.markdown(
                 f"<div class='sec-head'>🏛️ Guru Framework Alignment — 32 Frameworks</div>",
@@ -869,7 +944,7 @@ with tabs[2]:
             )
             render_guru_frameworks(stock)
 
-        # ── Tab D: Matrix & WCS ───────────────────────────────────────────
+        # ══ Tab D: Matrix & WCS ════════════════════════════════════════════
         with _itabs[3]:
             render_moat_growth_matrix(filt, highlight_stock=selected)
             st.markdown("<br>", unsafe_allow_html=True)
@@ -877,7 +952,7 @@ with tabs[2]:
             render_bruised_blue_chip_badge(stock)
             render_multitrillioncap_card(stock)
 
-        # ── Tab E: All Data ───────────────────────────────────────────────
+        # ══ Tab E: All Data ════════════════════════════════════════════════
         with _itabs[4]:
             st.markdown(
                 f"<div class='sec-head'>📊 Raw Signal Data — Full Universe Output</div>",
@@ -889,6 +964,17 @@ with tabs[2]:
                 unsafe_allow_html=True,
             )
             render_raw_signals(stock)
+            _stock_export = pd.DataFrame({
+                "Signal": df[df["name"] == selected].iloc[0].index,
+                "Value":  df[df["name"] == selected].iloc[0].values,
+            })
+            st.download_button(
+                f"📥 Export {selected} — All Signals",
+                data=_stock_export.to_csv(index=False),
+                file_name=f"{selected.replace(' ','_').replace(':','').lower()}_signals.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
