@@ -10,7 +10,10 @@ import pandas as pd
 import numpy as np
 import warnings
 from typing import Dict, Tuple, Optional
-from config import CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR, FINANCIAL_SECTORS, SSGR_DEP_RATES, COST_OF_EQUITY, EPOCH3_TAXONOMY, EPOCH5_MODERN
+from config import (CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR,
+                    FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES,
+                    SSGR_DEP_RATES, COST_OF_EQUITY,
+                    EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS)
 
 warnings.filterwarnings('ignore')
 np.seterr(all='ignore')
@@ -572,6 +575,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # FCF by ignoring CapEx, but far better than arbitrary 50th-pct neutral assignment).
     if "free_cash_flow" in df.columns and "operating_cash_flow" in df.columns:
         fcf_null_count = df["free_cash_flow"].isna().sum()
+        # Record which rows were imputed BEFORE filling — used below to suppress
+        # fcf_to_cfo_pct for these stocks (imputed FCF = OCF gives a misleading 100%).
+        df["fcf_imputed_flag"] = df["free_cash_flow"].isna().astype(int)
         df["free_cash_flow"] = df["free_cash_flow"].fillna(df["operating_cash_flow"])
         if fcf_null_count > 0:
             print(f"  ℹ️  FCF imputed from OCF for {fcf_null_count} stocks with null FCF")
@@ -798,8 +804,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── FINANCIAL SECTOR FLAG ──
-    df["is_financial"] = df["industry"].isin(FINANCIAL_SECTORS) | \
-                         df["sector"].fillna("").astype(str).str.contains("Bank|NBFC|Insurance|Finance", case=False, na=False)
+    # Uses two verified sets: FINANCIAL_SECTORS (industry column) + FINANCIAL_SECTOR_NAMES (sector column).
+    # Previous code used a phantom list (0/10 industry matches) + a regex that missed brokers/credit agencies.
+    df["is_financial"] = (
+        df["industry"].fillna("").isin(FINANCIAL_SECTORS)
+        | df["sector"].fillna("").isin(FINANCIAL_SECTOR_NAMES)
+    )
 
     # ── AGENT 3: SECTOR ISOLATION — NaN out working-capital metrics for financial stocks ──
     # Banks, NBFCs, and insurance companies have no inventory and no traditional CCC.
@@ -1381,17 +1391,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── Multi-Trillion Compounding Tipping Point (30th WCS — 2025 Theme) ──
-    _MULTITRILLIONCAP_SECTORS = frozenset({
-        "Banking", "NBFC", "Insurance", "Financial Services",
-        "Banks - Private Sector", "Banks - Public Sector",
-        "Capital Markets", "Asset Management",
-    })
+    # Industry names verified against 354 CSV values. Previous set had 0/8 matches (all sector names).
+    # FINANCIAL_SECTORS already contains the correct 17 financial industry names — reuse it.
     _mtc_in_sector = (
-        df["industry"].fillna("").isin(_MULTITRILLIONCAP_SECTORS) |
-        df["sector"].fillna("").astype(str).str.contains(
-            "Bank|Finance|Insurance|Capital Market|Consumer|Auto|Retail",
-            case=False, na=False
-        )
+        df["industry"].fillna("").isin(FINANCIAL_SECTORS)
+        | df["sector"].fillna("").isin(FINANCIAL_SECTOR_NAMES)
+        | df["sector"].fillna("").isin({"Consumer Durables", "Automobile", "Retail", "E-Commerce/App based Aggregator"})
     )
     _mtc_vol_surge     = df["vol_ratio"].fillna(0) >= 1.5
     _mtc_earnings_mom  = (
@@ -1450,8 +1455,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Finolex Cables: 76% — gold standard. PIX Transmissions: negative — capital trap.
     # Captures what FCF/PAT misses: how much of operating cash survives after capex.
     # Only meaningful when OCF is positive; when OCF < 0, rf_negative_fcf handles it.
+    _fcf_imputed = df.get("fcf_imputed_flag", pd.Series(0, index=df.index)).fillna(0).astype(bool)
     df["fcf_to_cfo_pct"] = np.where(
-        df["operating_cash_flow"].notna() & (df["operating_cash_flow"] > 0),
+        df["operating_cash_flow"].notna() & (df["operating_cash_flow"] > 0) & ~_fcf_imputed,
         df["free_cash_flow"].fillna(0) / df["operating_cash_flow"] * 100,
         np.nan
     )
@@ -1714,15 +1720,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Study 27 (2022): Sector Consistent/Volatile classification
     # MOSL classified 18 sectors as Consistent (sustained earnings compounding)
     # and 35+ sectors as Volatile across 697 companies over 2007-2022.
-    _CONSISTENT_SECTORS = {
-        "Agro Chemicals", "Auto Ancillaries", "Banks - Private Sector",
-        "Cement", "Chemicals", "Cigarettes", "Credit Rating Agencies",
-        "Diamonds/Gems/Jewellery", "Engineering", "Finance", "FMCG",
-        "IT", "Logistics", "Oil & Gas", "Paints/Varnish",
-        "Pharma", "Refineries", "Utilities"
-    }
+    # CONSISTENT_SECTORS imported from config — verified against 81 CSV sector names.
+    # Previous inline set had 7 wrong names: 292 stocks (all IT + all Pharma + Jewellery + Tobacco
+    # + Oil&Gas) were misclassified as "Volatile". Fixed names centralised in config.py.
     df["sector_consistent_type"] = np.where(
-        df["sector"].fillna("").isin(_CONSISTENT_SECTORS),
+        df["sector"].fillna("").isin(CONSISTENT_SECTORS),
         "Consistent", "Volatile"
     )
 
