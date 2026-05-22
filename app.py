@@ -163,14 +163,17 @@ _MANDATES = {
 _MANDATE_KEYS   = list(_MANDATES.keys())
 _MANDATE_LABELS = [f"{v['icon']} {k}" for k, v in _MANDATES.items()]
 
-# ── Mandate Radio (horizontal) ─────────────────────────────────
-_sel_label   = st.radio(
+# ── Mandate Selector ───────────────────────────────────────────
+_sel_label = st.segmented_control(
     "Investment Mandate",
     options=_MANDATE_LABELS,
-    horizontal=True,
+    default=st.session_state.get("_mandate_ctrl", _MANDATE_LABELS[0]),
+    selection_mode="single",
     label_visibility="collapsed",
-    key="_mandate_radio",
+    key="_mandate_ctrl",
 )
+if not _sel_label:
+    _sel_label = _MANDATE_LABELS[0]
 _sel_mandate = _MANDATE_KEYS[_MANDATE_LABELS.index(_sel_label)]
 
 # Reset advanced selectors when mandate changes — eliminates coupling bug
