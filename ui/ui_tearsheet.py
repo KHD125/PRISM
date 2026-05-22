@@ -55,7 +55,9 @@ _FLAG_DISPLAY = {
     "rf_cwip_bloat":        ("CWIP share of assets grew >50% YoY — IL&FS balance-sheet parking", "🟠"),
     "rf_capex_mirage":      ("Rev growth >20% but capex <0.5× dep — deferred-maintenance time bomb", "🟠"),
     "rf_tax_panic":         ("Effective tax rate <10% despite PAT >0 — Sharp Practices (WCS 24)", "🔴"),
-    "rf_receivables_bloat": ("DSO expansion >20 days above sector median — relative receivables manipulation", "🟡"),
+    "rf_receivables_bloat":        ("DSO expansion >20 days above sector median — relative receivables manipulation", "🟡"),
+    "rf_psu_value_destruction":    ("PSU Value-Destruction Loop — low capital spread + high payout + CWIP delays", "🟠"),
+    "rf_lease_inflation":          ("Ind AS 116 lease mirage — EBITDA inflated by RoU capitalisation (QSR/Retail/Aviation)", "🟡"),
 }
 
 
@@ -88,7 +90,7 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
         return
 
     # G9 FIX: viewport clips at 300% Growth — all points retained, canvas just zoomed.
-    x_max = min(float(plot_df["Growth_X"].max()) * 1.05, 300)
+    x_max = max(min(float(plot_df["Growth_X"].max()) * 1.05, 300), 50)  # floor 50 prevents axis collapse when all growth=0
 
     fig = px.scatter(
         plot_df, x="Growth_X", y="Moat_Y",
@@ -428,7 +430,7 @@ def render_multitrillioncap_card(stock: pd.Series):
 
 
 # ═══════════════════════════════════════════════════════════════
-# FORENSIC FRAUD PERIMETER — WCS 24 / 23-Flag Cascade
+# FORENSIC FRAUD PERIMETER — WCS 24 / 25-Flag Cascade
 # ═══════════════════════════════════════════════════════════════
 
 def render_forensic_perimeter(stock: pd.Series):
@@ -437,7 +439,7 @@ def render_forensic_perimeter(stock: pd.Series):
     Outputs structured, named red-flag badges (not just a count) for every fired
     forensic signal. Connects directly to the cascading forensic filter multiplier.
     """
-    st.markdown("<div class='sec-head'>🔬 Forensic Fraud Perimeter (23-Flag Cascade)</div>",
+    st.markdown("<div class='sec-head'>🔬 Forensic Fraud Perimeter (25-Flag Cascade)</div>",
                 unsafe_allow_html=True)
 
     flag_count     = int(_g(stock, "red_flag_count",         0))
@@ -458,70 +460,107 @@ def render_forensic_perimeter(stock: pd.Series):
                   "#ff6b35" if flag_count <= 4 else
                   "#f85149")
 
-    # ── Header KPI strip ─────────────────────────────────────────────────
+    # ── KPI strip ────────────────────────────────────────────────────────
+    pio_clr  = (COLORS["green"] if piotroski >= 7 else
+                COLORS["gold"]  if piotroski >= 5 else COLORS["red"])
+    fsc_clr  = (COLORS["green"] if forensic_score >= 80 else
+                COLORS["gold"]  if forensic_score >= 60 else COLORS["red"])
+
     st.markdown(f"""
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-        <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                    border-radius:10px;padding:10px 16px;min-width:120px;text-align:center;">
-            <div style="font-size:1.5rem;font-weight:900;color:{flag_color};">{flag_count}</div>
-            <div style="font-size:0.63rem;color:{COLORS['text_muted']};text-transform:uppercase;margin-top:2px;">Red Flags</div>
-        </div>
-        <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                    border-radius:10px;padding:10px 16px;min-width:120px;text-align:center;">
-            <div style="font-size:1.5rem;font-weight:900;color:{COLORS['green']};">{forensic_score:.0f}</div>
-            <div style="font-size:0.63rem;color:{COLORS['text_muted']};text-transform:uppercase;margin-top:2px;">Forensic Score</div>
-        </div>
-        <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                    border-radius:10px;padding:10px 16px;min-width:120px;text-align:center;">
-            <div style="font-size:1.5rem;font-weight:900;color:{mult_color};">{f_mult:.0%}</div>
-            <div style="font-size:0.63rem;color:{COLORS['text_muted']};text-transform:uppercase;margin-top:2px;">Score Multiplier</div>
-        </div>
-        <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                    border-radius:10px;padding:10px 16px;min-width:120px;text-align:center;">
-            <div style="font-size:1.5rem;font-weight:900;color:{COLORS['blue']};">{piotroski}/9</div>
-            <div style="font-size:0.63rem;color:{COLORS['text_muted']};text-transform:uppercase;margin-top:2px;">Piotroski</div>
-        </div>
-        <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                    border-radius:10px;padding:10px 16px;min-width:120px;text-align:center;">
-            <div style="font-size:1.5rem;font-weight:900;color:{COLORS['purple']};">{mgmt_int}/3</div>
-            <div style="font-size:0.63rem;color:{COLORS['text_muted']};text-transform:uppercase;margin-top:2px;">Mgmt Integrity</div>
-        </div>
+    <div class="ts-kpi-strip">
+      <div class="ts-kpi-cell" style="border-top:3px solid {flag_color};">
+        <div class="ts-kpi-val" style="color:{flag_color};">{flag_count}</div>
+        <div class="ts-kpi-lbl">Red Flags / 25</div>
+      </div>
+      <div class="ts-kpi-cell" style="border-top:3px solid {fsc_clr};">
+        <div class="ts-kpi-val" style="color:{fsc_clr};">{forensic_score:.0f}</div>
+        <div class="ts-kpi-lbl">Forensic Score</div>
+      </div>
+      <div class="ts-kpi-cell" style="border-top:3px solid {mult_color};">
+        <div class="ts-kpi-val" style="color:{mult_color};">{f_mult:.0%}</div>
+        <div class="ts-kpi-lbl">Score Multiplier</div>
+      </div>
+      <div class="ts-kpi-cell" style="border-top:3px solid {pio_clr};">
+        <div class="ts-kpi-val" style="color:{pio_clr};">{piotroski}/9</div>
+        <div class="ts-kpi-lbl">Piotroski F-Score</div>
+      </div>
+      <div class="ts-kpi-cell" style="border-top:3px solid {COLORS['purple']};">
+        <div class="ts-kpi-val" style="color:{COLORS['purple']};">{mgmt_int}/3</div>
+        <div class="ts-kpi-lbl">Mgmt Integrity</div>
+      </div>
+    </div>
+    <div style="font-size:0.72rem;color:{COLORS['text_muted']};margin-bottom:12px;">
+      Status: <strong style="color:{COLORS['text_primary']};">{_esc(forensic_label)}</strong>
+      &nbsp;·&nbsp; Piotroski: <strong style="color:{pio_clr};">{_esc(pio_label)}</strong>
     </div>
     """, unsafe_allow_html=True)
 
-    st.caption(f"**Status:** {_esc(forensic_label)} · **Piotroski:** {_esc(pio_label)}")
-
     if flag_count == 0:
-        st.success(
-            "✅ **Clean Bill of Health** — No forensic red flags across all 23 accounting "
-            "checks (17 Schilit/Malik shenanigans + 6 WCS 24 defensive protocols)."
-        )
+        st.markdown(f"""
+        <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.35);
+                    border-radius:10px;padding:14px 18px;text-align:center;">
+          <div style="font-size:1.2rem;margin-bottom:4px;">✅</div>
+          <div style="font-size:0.85rem;font-weight:700;color:{COLORS['green']};">
+            Clean Bill of Health
+          </div>
+          <div style="font-size:0.72rem;color:{COLORS['text_muted']};margin-top:4px;">
+            Zero forensic red flags across all 25 accounting checks —
+            17 Schilit/Malik shenanigans + 8 WCS 24 defensive protocols.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
         return
 
     if f_mult < 1.0:
-        st.warning(
-            f"⚠️ **Cascading Forensic Filter active:** composite score × {f_mult:.0%} "
-            f"({flag_count} flags fired). Engine multiplier preserves rank ordering while "
-            "proportionally penalising serial accounting risk."
-        )
+        st.markdown(f"""
+        <div style="background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.4);
+                    border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:0.78rem;">
+          ⚠️ <strong style="color:{COLORS['orange']};">Cascading Forensic Filter active:</strong>
+          <span style="color:{COLORS['text_secondary']};">
+            composite score × {f_mult:.0%} ({flag_count} flags fired).
+            Engine multiplier preserves rank ordering while proportionally penalising risk.
+          </span>
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown(f"**Active Red Flags — {flag_count} triggered:**")
+    # ── Flags grouped by severity ─────────────────────────────────────────
+    _SEV_ORDER = ["🔴", "🟠", "🟡"]
+    _SEV_META  = {
+        "🔴": (COLORS["red"],    "rgba(248,81,73,0.08)",   "rgba(248,81,73,0.5)",  "Critical"),
+        "🟠": (COLORS["orange"], "rgba(255,107,53,0.08)",  "rgba(255,107,53,0.5)", "High"),
+        "🟡": (COLORS["gold"],   "rgba(228,179,65,0.08)",  "rgba(228,179,65,0.5)", "Medium"),
+    }
 
-    for rf_col, (desc, sev) in _FLAG_DISPLAY.items():
-        if int(_g(stock, rf_col, 0)) != 1:
+    for sev in _SEV_ORDER:
+        sev_flags = [
+            (rf_col, desc)
+            for rf_col, (desc, s) in _FLAG_DISPLAY.items()
+            if s == sev and int(_g(stock, rf_col, 0)) == 1
+        ]
+        if not sev_flags:
             continue
-        bg  = ("rgba(248,81,73,0.09)"   if sev == "🔴" else
-               "rgba(255,107,53,0.09)"  if sev == "🟠" else
-               "rgba(228,179,65,0.09)")
-        brd = ("rgba(248,81,73,0.40)"   if sev == "🔴" else
-               "rgba(255,107,53,0.40)"  if sev == "🟠" else
-               "rgba(228,179,65,0.40)")
+
+        clr, bg, bdr, label = _SEV_META[sev]
         st.markdown(
-            f'<div style="background:{bg};border-left:3px solid {brd};'
-            f'border-radius:4px;padding:6px 14px;margin:3px 0;font-size:0.8rem;">'
-            f'{sev} <strong>{_esc(desc)}</strong></div>',
+            f'<div style="font-size:0.65rem;font-weight:800;color:{clr};'
+            f'text-transform:uppercase;letter-spacing:1px;margin:14px 0 6px 0;">'
+            f'{sev} {label} — {len(sev_flags)} flag{"s" if len(sev_flags)>1 else ""}</div>',
             unsafe_allow_html=True,
         )
+        for _, desc in sev_flags:
+            # Split into flag name and context (first ` — ` is the separator)
+            parts  = desc.split(" — ", 1)
+            title  = parts[0].strip()
+            detail = parts[1].strip() if len(parts) > 1 else ""
+            st.markdown(
+                f'<div class="ts-flag-row" style="background:{bg};border-left-color:{bdr};">'
+                f'<div class="ts-flag-sev">{sev}</div>'
+                f'<div>'
+                f'<div class="ts-flag-title" style="color:{clr};">{_esc(title)}</div>'
+                f'{"<div class=ts-flag-sub>" + _esc(detail) + "</div>" if detail else ""}'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -540,30 +579,83 @@ def render_guru_frameworks(stock: pd.Series):
     fw_list = [f.strip() for f in fw_str.split(",") if f.strip() and f.strip() != "None"]
 
     _FW_META = {
-        "Coffee Can":          (COLORS["gold"],   "☕", "ROCE ≥15% for 10Y + Rev CAGR ≥10% — Mukherjea"),
-        "QGLP":                (COLORS["purple"], "🏆", "Quality + Growth + Longevity + Price — Raamdeo"),
-        "Lynch PEG Dream":     (COLORS["green"],  "📈", "PEG ≤1.0 + Rev outpacing costs — Peter Lynch"),
-        "EP Hockey Stick":     (COLORS["green"],  "🚀", "Q2/Q3 ascending EP curve — 28th WCS"),
-        "Bruised Blue Chip 29":(COLORS["blue"],   "💙", "Elite ROCE + large-cap at P/B ≤2× — 29th WCS"),
-        "Multi-Trillion Cap":  (COLORS["purple"], "🌐", "Sunrise sector at compounding velocity — 30th WCS"),
+        # Names must match exactly what scoring_engine writes into frameworks_passed column
+        "Coffee Can":              (COLORS["gold"],   "☕", "ROCE ≥15% for 10Y + Rev CAGR ≥10% — Mukherjea"),
+        "QGLP":                    (COLORS["purple"], "🏆", "Quality + Growth + Longevity + Price — Raamdeo"),
+        "Lynch Dream":             (COLORS["green"],  "📈", "PEG ≤1.0 + Rev outpacing costs — Peter Lynch"),
+        "Magic Formula":           (COLORS["gold"],   "🧮", "High ROCE + High Earnings Yield — Joel Greenblatt"),
+        "SMILE":                   (COLORS["green"],  "😊", "Small cap + Moat + Institutional + Longevity + Earnings"),
+        "CAN SLIM":                (COLORS["blue"],   "📊", "O'Neil: EPS + Revenue + Institutional + Near High"),
+        "Bruised Blue Chip":       (COLORS["blue"],   "💙", "Fallen large-cap quality — original BBC"),
+        "EP Improver":             (COLORS["green"],  "📈", "Economic Profit expanding — moving up Power Curve"),
+        "Peaceful Investing":      (COLORS["gold"],   "🕊️", "Vijay Malik: NFAT + self-funded growth + clean accounts"),
+        "Unusual Billionaires":    (COLORS["purple"], "💰", "Saurabh Mukherjea: promoter-run compounders"),
+        "Fisher Quality":          (COLORS["green"],  "🎣", "Phil Fisher 15-point scuttlebutt quality check"),
+        "100-Bagger":              (COLORS["gold"],   "💯", "Mayer: owner-operator + small + high ROCE + low payout"),
+        "Diamond":                 (COLORS["cyan"],   "💎", "Deep value: Earnings Yield ≥ G-Sec + clean accounts"),
+        "Wide Moat":               (COLORS["purple"], "🏰", "Pat Dorsey: structural moat with ROCE expanding"),
+        "Outsider CEO":            (COLORS["orange"], "🎯", "Thorndike: buybacks + decentralised capital allocation"),
+        "Quality Compounder":      (COLORS["green"],  "⭐", "ROCE ≥ 20% + PAT CAGR ≥ 15% for 10Y — proven compounder"),
+        "Dhandho Asymmetry":       (COLORS["gold"],   "🎲", "Pabrai: Heads I win, tails I don't lose much"),
+        "Parikh Contrarian":       (COLORS["orange"], "🔄", "Rajeev Parikh: contrarian with forensic clean bill"),
+        "Baid Compounder":         (COLORS["green"],  "📚", "Pulak Prasad: conservative + predictable + high ROCE"),
+        "Long Game Quality":       (COLORS["purple"], "⏳", "10Y consistent PAT CAGR ≥ 15% + low volatility"),
+        "SEPA Momentum":           (COLORS["blue"],   "⚡", "Mark Minervini: Stage 2 + RS + Earnings acceleration"),
+        "Basant 30% Club":         (COLORS["gold"],   "🏅", "Basant Maheshwari: PAT CAGR ≥ 30% for 5Y + promoter"),
+        "Quality Momentum":        (COLORS["green"],  "🚀", "High quality fundamentals + price momentum confluence"),
+        "MOSL Wealth Creator":     (COLORS["gold"],   "🌟", "Raamdeo's Wealth Creator criteria from annual WCS"),
+        "Economic Moat":           (COLORS["purple"], "🏰", "Morningstar wide-moat: ROCE > WACC sustained 10Y+"),
+        "Blue Chip Quality":       (COLORS["blue"],   "💎", "Large-cap ≥ ₹20,000 Cr + ROCE ≥ 15% + clean accounts"),
+        "SQGLP Century Stock":     (COLORS["gold"],   "💯", "Epoch 4 SQGLP: all 5 pillars + Mid/Small cap entry"),
+        "CAP-GAP Compounder":      (COLORS["green"],  "📐", "Capital efficiency gap: ROCE expanding vs sector peers"),
+        "Consistent in Volatile":  (COLORS["orange"], "🌊", "27th WCS: consistent compounder in volatile sector — 19% CAGR"),
+        "EP Hockey Stick":         (COLORS["green"],  "🚀", "Q2/Q3 ascending EP Power Curve — 28th WCS"),
+        "Bruised Blue Chip 29":    (COLORS["blue"],   "💙", "Elite ROCE + large-cap at P/B ≤2× — 29th WCS"),
+        "Multi-Trillion Cap":      (COLORS["purple"], "🌐", "Sunrise sector at compounding velocity — 30th WCS"),
     }
 
     if not fw_list:
         st.info("No institutional Guru frameworks fully met in current market configuration.")
         return
 
+    total_fw = len(_FW_META)
+    passed_n = len(fw_list)
+    pct = int(passed_n / total_fw * 100)
+    bar_clr = COLORS["green"] if pct >= 30 else COLORS["gold"] if pct >= 10 else COLORS["orange"]
+
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;
+                background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
+                border-radius:10px;padding:12px 16px;">
+      <div style="font-size:1.8rem;font-weight:900;color:{bar_clr};">{passed_n}</div>
+      <div style="flex:1;">
+        <div style="font-size:0.75rem;font-weight:700;color:{COLORS['text_primary']};">
+          of {total_fw} Guru Frameworks Passed
+        </div>
+        <div style="height:6px;background:{COLORS['bg_tertiary']};border-radius:3px;
+                    margin-top:6px;overflow:hidden;">
+          <div style="width:{pct}%;height:6px;background:{bar_clr};border-radius:3px;"></div>
+        </div>
+      </div>
+      <div style="font-size:0.7rem;color:{COLORS['text_muted']};">{pct}%</div>
+    </div>
+    <div class="ts-fw-grid">
+    """, unsafe_allow_html=True)
+
     for fw in fw_list:
         color, icon, desc = _FW_META.get(fw, (COLORS["text_muted"], "✅", fw))
         st.markdown(
-            f'<div style="background:{color}14;border:1px solid {color}44;'
-            f'border-radius:8px;padding:8px 14px;margin:4px 0;display:flex;'
-            f'align-items:center;gap:10px;">'
+            f'<div class="ts-fw-card" style="background:{color}10;border-color:{color}40;">'
+            f'<div class="ts-fw-card-head">'
             f'<span style="font-size:1.1rem;">{icon}</span>'
-            f'<div><span style="font-weight:700;color:{color};">{_esc(fw)}</span>'
-            f'<span style="font-size:0.75rem;color:{COLORS["text_muted"]};margin-left:8px;">'
-            f'{_esc(desc)}</span></div></div>',
+            f'<span class="ts-fw-card-name" style="color:{color};">{_esc(fw)}</span>'
+            f'</div>'
+            f'<div class="ts-fw-card-desc">{_esc(desc)}</div>'
+            f'</div>',
             unsafe_allow_html=True,
         )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -619,41 +711,61 @@ def render_fisher_module(stock: pd.Series):
 
     # P15 — Management Integrity: forensic_label pre-classified by forensic_engine
     forensic_label = stock.get("forensic_label", "") or ""
-    p15_pass = forensic_label in ["🟢 Clean", "🟡 Watch"]
+    p15_pass = forensic_label == "🟢 Clean"
     proxies.append(("P15: Accounting Integrity (Clean/Watch)",
                     p15_pass, _esc(forensic_label)))
 
-    passed = sum(1 for _, is_pass, _ in proxies if is_pass)
-    total  = len(proxies)
+    passed     = sum(1 for _, is_pass, _ in proxies if is_pass)
+    total      = len(proxies)
+    score_pct  = (passed / total) * 100
+    gauge_color = (COLORS["green"] if score_pct >= 80 else
+                   COLORS["gold"]  if score_pct >= 50 else
+                   COLORS["red"])
 
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        st.markdown("**Automated Proxy Checks**")
-        for desc, is_pass, val in proxies:
-            icon = "✅" if is_pass else "❌"
-            st.markdown(f"{icon} **{_esc(desc)}**: `{_esc(val)}`")
-
-    with c2:
-        score_pct  = (passed / total) * 100
-        gauge_color = (COLORS["green"] if score_pct >= 80 else
-                       COLORS["gold"]  if score_pct >= 50 else
-                       COLORS["red"])
-        st.markdown(f"""
-        <div style="background:{COLORS['bg_tertiary']};border:1px solid {COLORS['border']};
-                    border-radius:12px;padding:20px;text-align:center;">
-            <div style="font-size:0.85rem;color:{COLORS['text_muted']};text-transform:uppercase;">
-                Fisher Quant Score
-            </div>
-            <div style="font-size:3rem;font-weight:900;color:{gauge_color};margin:10px 0;">
-                {passed}/{total}
-            </div>
-            <div style="font-size:0.9rem;color:{COLORS['text_primary']};">
-                {"🟢 High Alignment" if score_pct >= 80 else
-                 "🟡 Moderate" if score_pct >= 50 else
-                 "🔴 Low Alignment"}
-            </div>
+    # ── Score summary bar ─────────────────────────────────────────────────
+    verdict = ("🟢 High Quality Alignment" if score_pct >= 80 else
+               "🟡 Moderate Alignment"     if score_pct >= 50 else
+               "🔴 Low Alignment — Review Carefully")
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:16px;
+                background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
+                border-radius:10px;padding:12px 16px;margin-bottom:14px;">
+      <div style="font-size:2.2rem;font-weight:900;color:{gauge_color};">{passed}/{total}</div>
+      <div style="flex:1;">
+        <div style="font-size:0.75rem;font-weight:700;color:{COLORS['text_primary']};">{verdict}</div>
+        <div style="height:6px;background:{COLORS['bg_tertiary']};border-radius:3px;
+                    margin-top:6px;overflow:hidden;">
+          <div style="width:{score_pct:.0f}%;height:6px;background:{gauge_color};
+                      border-radius:3px;"></div>
         </div>
-        """, unsafe_allow_html=True)
+      </div>
+      <div style="font-size:0.7rem;color:{COLORS['text_muted']};">Fisher Score</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Card grid ─────────────────────────────────────────────────────────
+    cards_html = ""
+    for desc, is_pass, val in proxies:
+        clr  = COLORS["green"] if is_pass else COLORS["red"]
+        bg   = f"{clr}0d"
+        bdr  = f"{clr}40"
+        ico  = "✅" if is_pass else "❌"
+        # Extract short key (e.g. "P1: Market Potential" → "P1")
+        short = desc.split(":")[0].strip() if ":" in desc else desc[:4]
+        long  = desc.split(":", 1)[1].strip() if ":" in desc else desc
+        cards_html += (
+            f'<div class="ts-fisher-card" style="background:{bg};border-color:{bdr};">'
+            f'<div class="ts-fisher-head">'
+            f'<span style="font-size:0.85rem;">{ico}</span>'
+            f'<span class="ts-fisher-key" style="color:{clr};">{_esc(short)}</span>'
+            f'<span style="font-size:0.66rem;color:{COLORS["text_muted"]};">'
+            f'{_esc(long)}</span>'
+            f'</div>'
+            f'<div class="ts-fisher-val" style="color:{clr};">{_esc(val)}</div>'
+            f'</div>'
+        )
+
+    st.markdown(f'<div class="ts-fisher-grid">{cards_html}</div>', unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -846,8 +958,6 @@ def render_financial_insights(stock: pd.Series):
                f"Smart Money: {smart}")
 
     # ── Render in 2-column layout ──
-    st.markdown("<div class='sec-head'>📊 Business & Financial Analysis</div>",
-                unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(_card("Business Quality", "🏭", bq, COLORS["purple"]),
@@ -859,3 +969,357 @@ def render_financial_insights(stock: pd.Series):
                     unsafe_allow_html=True)
         st.markdown(_card("Ownership Alignment", "👥", ow, COLORS["blue"]),
                     unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# STOCK HERO HEADER — Premium identity card
+# ═══════════════════════════════════════════════════════════════
+
+def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: dict = None):
+    """
+    Full-width premium hero header. Displays stock identity, composite score ring,
+    tier badge, moat quad, forensic status, regime, and all active pills in one card.
+    Pure display — reads pre-computed columns only.
+    """
+    from config import CONVICTION_TIERS, TIER_COLORS
+
+    tier_num   = int(_g(stock, "conviction_tier", 5))
+    tc         = (tier_colors or TIER_COLORS).get(tier_num, TIER_COLORS[5])
+    tcfg       = next((t for t in CONVICTION_TIERS if t["tier"] == tier_num), CONVICTION_TIERS[-1])
+    comp       = float(_g(stock, "composite_score", 0))
+    name       = _esc(stock.get("name", "N/A") or "N/A")
+    rank       = int(_g(stock, "rank", 0))
+    sector     = _esc(stock.get("sector", "") or "")
+    industry   = _esc(stock.get("industry", "") or "")
+    mcap       = _g(stock, "market_cap", 0)
+    mcat       = _esc(stock.get("market_category", "") or "")
+    mg_quad    = _esc(stock.get("moat_growth_quad", "") or "")
+    f_lbl      = _esc(stock.get("forensic_label", "🟢 Clean") or "🟢 Clean")
+    reg_map    = {"BULL": ("🟢 Bull", COLORS["green"]), "BEAR": ("🔴 Bear", COLORS["red"])}
+    reg_txt, reg_clr = reg_map.get(regime, ("🟡 Sideways", COLORS["gold"]))
+
+    # Score ring color — matches tier
+    ring_clr = tc["text"]
+    ring_bdr = tc["border"]
+
+    # ── Active pills (catalysts + frameworks + special signals) ──
+    pill_items = []
+    _CAT_PILLS = [
+        ("cat_capacity",        COLORS["blue"],   "🔥 Capacity Explosion"),
+        ("cat_oplev",           COLORS["green"],  "🔥 OpLev Inflection"),
+        ("cat_inst_discovery",  COLORS["purple"], "🔥 Inst Discovery"),
+        ("cat_deleveraging",    COLORS["gold"],   "🔥 Deleveraging"),
+        ("cat_lynch_dream",     COLORS["green"],  "🔥 Lynch Dream"),
+    ]
+    for col, clr, lbl in _CAT_PILLS:
+        if int(_g(stock, col, 0)) == 1:
+            pill_items.append((lbl, clr))
+
+    if int(_g(stock, "tsunami_signal", 0)) == 1:
+        pill_items.append(("🌊 Tsunami", COLORS["purple"]))
+    if int(_g(stock, "net_debt_negative", 0)) == 1:
+        pill_items.append(("💰 Net Cash", COLORS["green"]))
+    if int(_g(stock, "bruised_blue_chip_29", 0)) == 1:
+        pill_items.append(("💙 Bruised Blue Chip", COLORS["blue"]))
+
+    fw_str  = stock.get("frameworks_passed", "None") or "None"
+    fw_list = [f.strip() for f in fw_str.split(",") if f.strip() and f.strip() != "None"]
+    for fw in fw_list[:8]:  # cap pills at 8 frameworks to avoid overflow
+        pill_items.append((f"🏛️ {fw}", COLORS["text_secondary"]))
+
+    pills_html = "".join(
+        f'<span style="display:inline-block;padding:3px 10px;border-radius:20px;'
+        f'font-size:0.68rem;font-weight:600;margin:2px 3px;'
+        f'background:{clr}18;border:1px solid {clr}55;color:{clr};">{lbl}</span>'
+        for lbl, clr in pill_items
+    )
+
+    # ── Tier / status badges ──
+    def _badge(txt, clr):
+        return (f'<span style="display:inline-flex;align-items:center;'
+                f'padding:4px 12px;border-radius:20px;font-size:0.72rem;font-weight:700;'
+                f'background:{clr}18;border:1px solid {clr}55;color:{clr};margin:2px 3px;">'
+                f'{txt}</span>')
+
+    badges_html = (
+        _badge(f"{tcfg['emoji']} {tcfg['label']}", ring_clr) +
+        _badge(mg_quad,   COLORS["green"] if "Wealth Creator" in mg_quad else
+                          COLORS["gold"]  if "Quality Trap"   in mg_quad else
+                          COLORS["blue"]  if "Growth Trap"    in mg_quad else COLORS["red"]) +
+        _badge(f_lbl,     COLORS["green"] if "Clean" in f_lbl else
+                          COLORS["gold"]  if "Watch" in f_lbl else
+                          COLORS["orange"] if "Caution" in f_lbl else COLORS["red"]) +
+        _badge(reg_txt, reg_clr)
+    )
+
+    st.markdown(f"""
+    <div class="ts-hero">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:20px;position:relative;">
+        <!-- Identity column -->
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.65rem;color:{COLORS['text_muted']};letter-spacing:2px;
+                      text-transform:uppercase;margin-bottom:5px;">
+            #{rank} &nbsp;·&nbsp; {sector} &nbsp;·&nbsp; {mcat}
+          </div>
+          <div style="font-size:2.1rem;font-weight:900;color:{COLORS['text_primary']};
+                      line-height:1.1;word-break:break-word;">{name}</div>
+          <div style="font-size:0.78rem;color:{COLORS['text_muted']};margin-top:4px;">
+            {industry} &nbsp;·&nbsp; ₹{mcap:,.0f} Cr
+          </div>
+          <div style="margin-top:12px;">{badges_html}</div>
+        </div>
+        <!-- Score ring -->
+        <div class="ts-score-ring" style="border-color:{ring_bdr};
+             box-shadow:0 0 30px {ring_bdr}88,inset 0 0 20px rgba(0,0,0,0.4);">
+          <div class="ts-score-val" style="color:{ring_clr};">{comp:.0f}</div>
+          <div class="ts-score-lbl" style="color:{ring_clr};">/ 100</div>
+        </div>
+      </div>
+      <!-- Pills row -->
+      <div style="margin-top:16px;border-top:1px solid {COLORS['border']};
+                  padding-top:12px;line-height:2.2;">
+        {pills_html if pills_html else
+         f'<span style="font-size:0.7rem;color:{COLORS["text_muted"]};">No active catalyst or framework signals</span>'}
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# SCORE STRIP — 5-score visual overview
+# ═══════════════════════════════════════════════════════════════
+
+def render_score_strip(stock: pd.Series):
+    """
+    Horizontal 5-cell strip: Moat · Growth · Cash · Momentum · Governance.
+    Each cell has big number + colored mini progress bar.
+    """
+    moat  = float(_g(stock, "moat_score",       0))
+    grow  = float(_g(stock, "growth_score",      0))
+    cash  = float(_g(stock, "cash_score",        0))
+    mom   = float(_g(stock, "momentum_score",    0))
+    gov   = float(_g(stock, "governance_bonus",  0))
+
+    def _cell(label: str, icon: str, val: float, color: str) -> str:
+        w = max(0.0, min(100.0, val))
+        neg = val < 0
+        disp = f"{val:+.0f}" if neg else f"{val:.0f}"
+        return (
+            f'<div class="ts-score-cell" style="border-top:3px solid {color};">'
+            f'<div class="ts-score-cell-lbl">{icon} {label}</div>'
+            f'<div class="ts-score-cell-val" style="color:{color};">{disp}</div>'
+            f'<div class="ts-score-bar-bg"><div class="ts-score-bar-fill" '
+            f'style="width:{w:.1f}%;background:{color};"></div></div>'
+            f'</div>'
+        )
+
+    cells = (
+        _cell("Moat",       "🏰", moat, COLORS["purple"]) +
+        _cell("Growth",     "🌱", grow, COLORS["green"])  +
+        _cell("Cash",       "💵", cash, COLORS["blue"])   +
+        _cell("Momentum",   "⚡", mom,  COLORS["orange"]) +
+        _cell("Governance", "👑", gov,  COLORS["gold"])
+    )
+    st.markdown(f'<div class="ts-score-strip">{cells}</div>', unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# SELL ALERTS PANEL — Prominent multi-alert display
+# ═══════════════════════════════════════════════════════════════
+
+def render_sell_alerts_panel(stock: pd.Series):
+    """
+    Renders sell alert banners prominently. No-op when no alerts are active.
+    Shows each fired alert as a distinct colored banner with explanation.
+    """
+    has_any = int(_g(stock, "sell_alert_any", 0)) == 1
+    if not has_any:
+        return
+
+    _ALERTS = [
+        ("sell_alert_thesis_broken",    COLORS["red"],    "🔴",
+         "Investment Thesis Broken",
+         "ROCE trajectory is declining structurally — the business moat is eroding. "
+         "Quality score is automatically penalized. Re-evaluate the competitive position."),
+        ("sell_alert_mgmt_deteriorated", COLORS["orange"], "🟠",
+         "Management Deterioration",
+         "Pledge rising + promoter selling + D/E rising simultaneously — "
+         "insider confidence is collapsing. Three independent signals, all firing together."),
+        ("sell_alert_cash_collapse",     COLORS["red"],    "🔴",
+         "Cash Quality Collapse",
+         "CFO/PAT dropped below 50% — reported profits are no longer backed by cash. "
+         "Baid's #1 red flag: earnings may be fictional."),
+        ("sell_alert_overvalued",        COLORS["gold"],   "🟡",
+         "Price Excess (Howard Marks)",
+         "PEG > 2.5 or P/E > 30% above own 10Y median. Even great businesses are terrible "
+         "investments at extreme prices. Howard Marks' extreme caution zone."),
+        ("sell_alert_treadmill",         COLORS["orange"], "🟠",
+         "Growth Treadmill (Mauboussin)",
+         "P/E > 50× implies 15-20 year CAP assumption, but growth is decelerating AND ROCE "
+         "is declining. The machine is priced for perfection and visibly slipping."),
+        ("sell_alert_sequential_decline", COLORS["red"],   "🔴",
+         "Sequential Revenue Collapse",
+         "Current year revenue negative + 3Y CAGR also negative + PAT declining. "
+         "Not a one-bad-year blip — this is structural multi-year collapse. Exit signal."),
+    ]
+
+    st.markdown(f"""
+    <div style="background:rgba(248,81,73,0.06);border:1px solid rgba(248,81,73,0.4);
+                border-radius:14px;padding:14px 18px;margin:8px 0 16px 0;">
+      <div style="font-size:0.72rem;font-weight:800;letter-spacing:1.5px;color:{COLORS['red']};
+                  text-transform:uppercase;margin-bottom:12px;">
+        🚨 &nbsp;Sell Alert(s) Active — Review Before Holding
+      </div>
+    """, unsafe_allow_html=True)
+
+    for col, clr, sev, title, body in _ALERTS:
+        if int(_g(stock, col, 0)) != 1:
+            continue
+        st.markdown(f"""
+        <div class="ts-sell-banner" style="background:{clr}0d;border-color:{clr}55;">
+          <div class="ts-sell-icon">{sev}</div>
+          <div>
+            <div class="ts-sell-title" style="color:{clr};">{title}</div>
+            <div class="ts-sell-body" style="color:{COLORS['text_secondary']};">{body}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# RAW SIGNALS PANEL — Structured metric grid (replaces expander)
+# ═══════════════════════════════════════════════════════════════
+
+def render_raw_signals(stock: pd.Series):
+    """
+    Renders all raw numeric signals in a clean labeled grid.
+    Grouped into logical clusters. Used inside the 'All Data' inner tab.
+    """
+    def _cell(label: str, val, fmt: str = "") -> str:
+        if isinstance(val, float) and np.isnan(val):
+            disp = "N/A"
+        elif fmt:
+            try:
+                disp = fmt.format(val)
+            except Exception:
+                disp = str(val)
+        else:
+            disp = str(val) if val is not None else "N/A"
+        return (
+            f'<div class="ts-raw-cell">'
+            f'<div class="ts-raw-lbl">{_esc(label)}</div>'
+            f'<div class="ts-raw-val">{_esc(disp)}</div>'
+            f'</div>'
+        )
+
+    def _section(title: str, color: str, cells_html: str):
+        st.markdown(
+            f'<div style="font-size:0.7rem;font-weight:800;color:{color};'
+            f'text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px 0;">'
+            f'{title}</div>'
+            f'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));'
+            f'gap:6px;">{cells_html}</div>',
+            unsafe_allow_html=True,
+        )
+
+    g = lambda k, d=0: _g(stock, k, d)
+
+    # Quality
+    _section("🏭 Business Quality", COLORS["purple"],
+        _cell("ROCE Current",  g("roce"),           "{:.1f}%") +
+        _cell("ROCE 10Y Med",  g("roce_med_10y"),   "{:.1f}%") +
+        _cell("ROCE 5Y Med",   g("roce_med_5y"),    "{:.1f}%") +
+        _cell("ROE Current",   g("roe"),            "{:.1f}%") +
+        _cell("ROE 10Y Med",   g("roe_med_10y"),    "{:.1f}%") +
+        _cell("NPM",           g("npm"),            "{:.1f}%") +
+        _cell("NPM 5Y Med",    g("npm_med_5y"),     "{:.1f}%") +
+        _cell("OPM",           g("opm"),            "{:.1f}%") +
+        _cell("Malik Score",   g("malik_score"),    "{:.0f}/100") +
+        _cell("Piotroski",     g("piotroski_fscore"),"{:.0f}/9")
+    )
+
+    # Growth
+    _section("🌱 Growth", COLORS["green"],
+        _cell("PAT 5Y CAGR",   g("pat_gr_5y"),      "{:.1f}%") +
+        _cell("PAT 3Y CAGR",   g("pat_gr_3y"),      "{:.1f}%") +
+        _cell("PAT YoY",       g("pat_gr_yoy"),     "{:.1f}%") +
+        _cell("Rev 10Y CAGR",  g("rev_gr_10y"),     "{:.1f}%") +
+        _cell("Rev 5Y CAGR",   g("rev_gr_5y"),      "{:.1f}%") +
+        _cell("Rev YoY",       g("rev_gr_yoy"),     "{:.1f}%") +
+        _cell("EPS 5Y CAGR",   g("eps_gr_5y"),      "{:.1f}%") +
+        _cell("EPS YoY",       g("eps_gr_yoy"),     "{:.1f}%") +
+        _cell("Q PAT YoY",     g("q_pat_yoy"),      "{:.1f}%") +
+        _cell("Op Leverage",   "Yes" if g("operating_leverage") == 1 else "No", "")
+    )
+
+    # Cash & Debt
+    _section("💵 Cash & Debt", COLORS["blue"],
+        _cell("CFO/PAT",       g("cfo_to_pat"),      "{:.1f}%") +
+        _cell("FCF Yield",     g("fcf_yield"),       "{:.1f}%") +
+        _cell("FCF/CFO",       g("fcf_to_cfo_pct"),  "{:.1f}%") +
+        _cell("FCF/PAT",       g("d28_fcf_to_pat_pct"), "{:.1f}%") +
+        _cell("SSGR",          g("ssgr"),            "{:.1f}%") +
+        _cell("SSGR Cushion",  g("ssgr_cushion"),    "{:.1f}%") +
+        _cell("D/E Ratio",     g("debt_to_equity"),  "{:.2f}") +
+        _cell("Int Coverage",  g("interest_coverage"),"{:.1f}×") +
+        _cell("Current Ratio", g("current_ratio"),   "{:.2f}") +
+        _cell("Tax Rate Est",  g("tax_rate_est"),    "{:.1f}%")
+    )
+
+    # Valuation
+    _section("💰 Valuation", COLORS["gold"],
+        _cell("PE",            g("pe"),              "{:.1f}×") +
+        _cell("PEG",           g("peg"),             "{:.2f}") +
+        _cell("PEG Zone",      stock.get("peg_zone","") or "", "") +
+        _cell("Earnings Yield",g("earnings_yield"),  "{:.1f}%") +
+        _cell("PE vs 10Y Med", g("pe_discount"),     "{:.1f}%") +
+        _cell("EV/EBITDA Dir", g("ev_ebitda_direction"), "{:.2f}") +
+        _cell("Payback Ratio", g("payback_ratio"),   "{:.1f}y") +
+        _cell("P/E vs ROE MoS",g("pe_vs_roe_mos"),  "{:.1f}") +
+        _cell("Valuation Scr", g("valuation_score"), "{:.0f}/100") +
+        _cell("Buy Zone",      stock.get("buy_zone_label","") or "", "")
+    )
+
+    # Ownership
+    _section("👥 Ownership & Governance", COLORS["orange"],
+        _cell("Promoter %",    g("promoter_holdings"),    "{:.1f}%") +
+        _cell("Pledge %",      g("pledged_percentage"),   "{:.1f}%") +
+        _cell("FII %",         g("fii_holdings"),         "{:.1f}%") +
+        _cell("DII %",         g("dii_holdings"),         "{:.1f}%") +
+        _cell("Promoter Chg", g("change_promoter_lq"),   "{:+.1f}%") +
+        _cell("FII Chg",       g("change_fii_lq"),        "{:+.1f}%") +
+        _cell("Smart Money",   stock.get("smart_money_flow","") or "","") +
+        _cell("Gov Bonus",     g("governance_bonus"),     "{:.0f}") +
+        _cell("Mgmt Integrity",g("management_integrity_score"),"{:.0f}/3") +
+        _cell("Dilution Flag", "Yes ⚠️" if g("dilution_flag") == 1 else "Clean ✅","")
+    )
+
+    # Technical
+    _section("⚡ Technical & Momentum", COLORS["cyan"],
+        _cell("CRS 50D",       g("crs_50d"),         "{:.0f}") +
+        _cell("CRS 26W",       g("crs_26w"),         "{:.0f}") +
+        _cell("CRS 52W",       g("crs_52w"),         "{:.0f}") +
+        _cell("RS Composite",  g("d47_rs_composite"),"{:.1f}") +
+        _cell("RSI 14D",       g("rsi_14d"),         "{:.1f}") +
+        _cell("Vol Ratio",     g("vol_ratio"),       "{:.2f}×") +
+        _cell("Dist 52WH",     g("dist_52wh"),       "{:.1f}%") +
+        _cell("VSTOP Green",   "Yes ✅" if g("vstop_green") == 1 else "No","") +
+        _cell("Breakout Scr",  g("breakout_score"),  "{:.0f}") +
+        _cell("Momentum Scr",  g("momentum_score"),  "{:.0f}/100")
+    )
+
+    # Forensic flags summary
+    _section("🔬 Forensic Summary", COLORS["red"],
+        _cell("Red Flags",     g("red_flag_count"),      "{:.0f}/25") +
+        _cell("Forensic Scr",  g("forensic_score"),      "{:.0f}/100") +
+        _cell("Forensic Mult", g("forensic_multiplier"), "{:.0%}") +
+        _cell("Piotroski",     g("piotroski_fscore"),    "{:.0f}/9") +
+        _cell("Econ Profit",   g("economic_profit"),     "₹{:,.0f} Cr") +
+        _cell("EP Quintile",   stock.get("ep_quintile","") or "","") +
+        _cell("QGLP Score",    g("qglp_score"),          "{:.0f}/100") +
+        _cell("QGLP Pass",     "Yes ✅" if g("qglp_pass") == 1 else "No","") +
+        _cell("Composite Scr", g("composite_score"),     "{:.0f}/100") +
+        _cell("Conviction Tier",g("conviction_tier"),    "Tier {:.0f}")
+    )
