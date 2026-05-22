@@ -892,103 +892,218 @@ with tabs[2]:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 4: MARKET PULSE (Tsunami, QGLP, Sectors)
+# TAB 4: MARKET PULSE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tabs[3]:
-    st.markdown(f"<div class='sec-head'>🌊 Market Pulse — Alpha Strategies</div>", unsafe_allow_html=True)
-    
-    st.markdown("#### 🌊 Tsunami Signals (Max Conviction)")
-    st.markdown(f"<div class='sec-cap'>Stocks where ALL conviction layers fire simultaneously: Quality + Momentum + Governance + Technical</div>", unsafe_allow_html=True)
 
-    tsunami_df = df[df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
+    # ── Pre-compute section datasets ───────────────────────────────
+    _mp_ts   = (df[df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
+                if "tsunami_signal" in df.columns else df.iloc[:0])
+    _mp_qglp = (filt[filt["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
+                if "qglp_pass" in filt.columns else filt.iloc[:0])
+    _mp_qual = df[df["gate_pass"] == 1] if "gate_pass" in df.columns else df
 
-    if len(tsunami_df) == 0:
-        st.info("🌊 No tsunami signals detected in current market conditions. This is rare and by design — these are the highest-conviction setups.")
-    else:
-        render_metric_strip([
-            (str(len(tsunami_df)), "Tsunami Signals", "m-purple"),
-            (str(int(tsunami_df["tsunami_undiscovered"].sum())), "Undiscovered (Tier C)", "m-gold"),
-            (f"{tsunami_df['composite_score'].mean():.0f}", "Avg Score", "m-green"),
-        ])
-        for _, row in tsunami_df.iterrows():
-            st.markdown(f"""<div class="tsunami-card">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <div style="font-weight:800; font-size:1.1rem; color:#E8E3FF;">
-                            🌊 {row['name']}
-                        </div>
-                        <div style="font-size:0.75rem; color:#A8A3D8; margin-top:2px;">
-                            {row.get('sector','')} · ₹{row.get('market_cap',0):,.0f} Cr · {row.get('market_category','')}
-                        </div>
-                    </div>
-                    <div style="font-size:2rem; font-weight:900; color:#FFD700;">{row['composite_score']:.0f}</div>
+    _bbc_mask = (
+        (df["market_cap"].fillna(0)   >= 20_000 if "market_cap"   in df.columns else pd.Series(False, index=df.index)) &
+        (df["roce_med_10y"].fillna(0) >= 20      if "roce_med_10y" in df.columns else pd.Series(False, index=df.index)) &
+        (df["pe_discount"].fillna(0)  >= 20      if "pe_discount"  in df.columns else pd.Series(False, index=df.index))
+    )
+    _bbc_cnt = int(_bbc_mask.sum())
+
+    # ── Top summary strip ──────────────────────────────────────────
+    render_metric_strip([
+        (str(len(_mp_ts)),   "🌊 Tsunami",     "m-purple"),
+        (str(len(_mp_qglp)), "🏛️ QGLP",        "m-gold"),
+        (str(_mp_qual["sector"].nunique() if "sector" in _mp_qual.columns else 0), "📈 Sectors", "m-blue"),
+        (str(_bbc_cnt),      "💙 Blue Chips",  "m-green"),
+    ])
+
+    # ── Inner navigation tabs ──────────────────────────────────────
+    _mp_tabs = st.tabs([
+        "🌊 Tsunami",
+        "🏛️ QGLP",
+        "📈 Sectors",
+        "💙 Blue Chips",
+        "🚀 Tipping Points",
+    ])
+
+    # ══ Tsunami ════════════════════════════════════════════════════
+    with _mp_tabs[0]:
+        st.markdown(
+            f"<div class='sec-cap'>All 7 conviction conditions fire together: Quality + Momentum + "
+            f"Governance + Technical. Rare by design.</div>",
+            unsafe_allow_html=True,
+        )
+        if len(_mp_ts) == 0:
+            st.info("🌊 No tsunami signals in current conditions — all 7 gates must fire simultaneously.")
+        else:
+            _ts_undi = int(_mp_ts["tsunami_undiscovered"].sum()) if "tsunami_undiscovered" in _mp_ts.columns else 0
+            _ts_avg  = float(_mp_ts["composite_score"].mean())   if "composite_score"      in _mp_ts.columns else 0
+            st.markdown(f"""
+            <div style="display:flex;gap:20px;padding:8px 2px 12px 2px;
+                 border-bottom:1px solid {COLORS['border']};margin-bottom:10px;flex-wrap:wrap;">
+              <span style="font-size:0.82rem;font-weight:800;color:{COLORS['purple']};">
+                🌊 {len(_mp_ts)} Tsunami signals
+              </span>
+              <span style="font-size:0.78rem;color:{COLORS['gold']};">
+                🏆 {_ts_undi} undiscovered
+              </span>
+              <span style="font-size:0.78rem;color:{COLORS['text_muted']};">
+                Avg score <strong style="color:{COLORS['green']}">{_ts_avg:.0f}</strong>
+              </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            _ts_cols = [c for c in ["rank","name","sector","market_category","market_cap",
+                                    "composite_score","quality_score","momentum_score",
+                                    "piotroski_fscore","smart_money_flow","buy_zone_label"]
+                        if c in _mp_ts.columns]
+            _ts_sel = st.dataframe(
+                _mp_ts[_ts_cols].reset_index(drop=True),
+                column_config={
+                    "composite_score": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
+                    "quality_score":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
+                    "momentum_score":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
+                    "piotroski_fscore": st.column_config.NumberColumn("F-Score",   format="%.0f/9"),
+                    "market_cap":      st.column_config.NumberColumn("MCap ₹Cr",   format="%.0f"),
+                    "rank":            st.column_config.NumberColumn("Rank",        format="%.0f"),
+                },
+                use_container_width=True,
+                height=min(480, 80 + len(_mp_ts) * 35 + 40),
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+            )
+            _ts_rows = _ts_sel.selection.rows if _ts_sel and hasattr(_ts_sel, "selection") else []
+            if _ts_rows:
+                _ts_pick = _mp_ts.iloc[_ts_rows[0]]["name"]
+                st.session_state["xray_stock"] = _ts_pick
+                st.markdown(f"""
+                <div style="padding:9px 14px;margin-top:8px;background:rgba(139,92,246,0.07);
+                     border:1px solid rgba(139,92,246,0.3);border-radius:8px;font-size:0.8rem;">
+                  🔬 <strong style="color:{COLORS['text_primary']};">{_ts_pick}</strong>
+                  set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
                 </div>
-            </div>""", unsafe_allow_html=True)
-            render_stock_card(row, show_scores=True)
+                """, unsafe_allow_html=True)
 
+    # ══ QGLP ═══════════════════════════════════════════════════════
+    with _mp_tabs[1]:
+        st.markdown(
+            "<div class='sec-cap'>Raamdeo Agrawal's framework: ROCE>15%, PAT growth>15%, "
+            "Promoter>50%, reasonable valuation. Strict gates. Filtered by sidebar.</div>",
+            unsafe_allow_html=True,
+        )
+        if len(_mp_qglp) == 0:
+            st.info("No stocks pass the strict QGLP gates with current sidebar filters.")
+        else:
+            _q_avg = float(_mp_qglp["qglp_score"].mean()) if "qglp_score" in _mp_qglp.columns else 0
+            st.markdown(f"""
+            <div style="display:flex;gap:20px;padding:8px 2px 12px 2px;
+                 border-bottom:1px solid {COLORS['border']};margin-bottom:10px;flex-wrap:wrap;">
+              <span style="font-size:0.82rem;font-weight:800;color:{COLORS['gold']};">
+                🏛️ {len(_mp_qglp)} QGLP compounders
+              </span>
+              <span style="font-size:0.78rem;color:{COLORS['text_muted']};">
+                Avg QGLP score <strong style="color:{COLORS['blue']}">{_q_avg:.0f}</strong>
+              </span>
+            </div>
+            """, unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("#### 🏛️ QGLP Compounders (Motilal Oswal Framework)")
-    st.markdown(f"<div class='sec-cap'>Quality + Growth + Longevity + Price. Exclusive to strictly vetted compounders with ROCE > 15%, EPS/PAT Growth > 15%, and reasonable valuations.</div>", unsafe_allow_html=True)
-    
-    qglp_df = filt[filt["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
-    
-    if len(qglp_df) == 0:
-        st.info("No stocks pass the strict QGLP gates right now.")
-    else:
-        render_metric_strip([
-            (str(len(qglp_df)), "QGLP Stocks", "m-gold"),
-            (f"{qglp_df['qglp_score'].mean():.0f}", "Avg QGLP Score", "m-blue"),
-        ])
-        
-        display_cols = ["rank","name","sector","market_cap","qglp_score","qglp_quality","qglp_growth", "qglp_longevity", "qglp_price", "smart_money_flow"]
-        avail_cols = [c for c in display_cols if c in qglp_df.columns]
-        st.dataframe(qglp_df[avail_cols].reset_index(drop=True), use_container_width=True, height=500,
-                     column_config={
-                         "qglp_score": st.column_config.ProgressColumn("QGLP", min_value=0, max_value=100, format="%.0f"),
-                         "qglp_quality": st.column_config.ProgressColumn("Quality", min_value=0, max_value=100, format="%.0f"),
-                         "qglp_growth": st.column_config.ProgressColumn("Growth", min_value=0, max_value=100, format="%.0f"),
-                         "qglp_price": st.column_config.ProgressColumn("Price (PEG)", min_value=0, max_value=100, format="%.0f"),
-                     })
+            _q_cols = [c for c in ["rank","name","sector","market_cap","qglp_score",
+                                   "qglp_quality","qglp_growth","qglp_longevity","qglp_price",
+                                   "smart_money_flow","buy_zone_label"]
+                       if c in _mp_qglp.columns]
+            _q_sel = st.dataframe(
+                _mp_qglp[_q_cols].reset_index(drop=True),
+                column_config={
+                    "qglp_score":     st.column_config.ProgressColumn("QGLP",      min_value=0, max_value=100, format="%.0f"),
+                    "qglp_quality":   st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
+                    "qglp_growth":    st.column_config.ProgressColumn("Growth",    min_value=0, max_value=100, format="%.0f"),
+                    "qglp_longevity": st.column_config.ProgressColumn("Longevity", min_value=0, max_value=100, format="%.0f"),
+                    "qglp_price":     st.column_config.ProgressColumn("Price/PEG", min_value=0, max_value=100, format="%.0f"),
+                    "market_cap":     st.column_config.NumberColumn("MCap ₹Cr",    format="%.0f"),
+                    "rank":           st.column_config.NumberColumn("Rank",         format="%.0f"),
+                },
+                use_container_width=True,
+                height=min(500, 80 + len(_mp_qglp) * 35 + 40),
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+            )
+            _q_rows = _q_sel.selection.rows if _q_sel and hasattr(_q_sel, "selection") else []
+            if _q_rows:
+                _q_pick = _mp_qglp.iloc[_q_rows[0]]["name"]
+                st.session_state["xray_stock"] = _q_pick
+                st.markdown(f"""
+                <div style="padding:9px 14px;margin-top:8px;background:rgba(228,179,65,0.07);
+                     border:1px solid rgba(228,179,65,0.3);border-radius:8px;font-size:0.8rem;">
+                  🔬 <strong style="color:{COLORS['text_primary']};">{_q_pick}</strong>
+                  set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
+                </div>
+                """, unsafe_allow_html=True)
 
+    # ══ Sectors ════════════════════════════════════════════════════
+    with _mp_tabs[2]:
+        if len(_mp_qual) == 0:
+            st.info("No gate-qualified stocks to analyse.")
+        else:
+            _sec_stats = (
+                _mp_qual.groupby("sector").agg(
+                    stocks=("name", "count"),
+                    avg_quality=("quality_score",   "mean"),
+                    avg_momentum=("momentum_score",  "mean"),
+                    avg_composite=("composite_score","mean"),
+                    crown_jewels=("conviction_tier", lambda x: (x == 1).sum()),
+                ).sort_values("avg_composite", ascending=False).head(15)
+            )
 
-    st.markdown("---")
-    st.markdown(f"#### 📈 Sector Intelligence", unsafe_allow_html=True)
-    qual_df = df[df["gate_pass"] == 1]
+            _sc1, _sc2 = st.columns([2, 3])
+            with _sc1:
+                st.dataframe(
+                    _sec_stats.reset_index(),
+                    column_config={
+                        "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
+                        "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
+                        "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
+                        "crown_jewels":  st.column_config.NumberColumn("👑 T1",      format="%.0f"),
+                        "stocks":        st.column_config.NumberColumn("Count",      format="%.0f"),
+                    },
+                    use_container_width=True,
+                    height=470,
+                    hide_index=True,
+                )
+            with _sc2:
+                _bar_clrs = [
+                    COLORS["green"] if v >= 65 else COLORS["gold"] if v >= 50 else COLORS["red"]
+                    for v in _sec_stats["avg_composite"]
+                ]
+                _fig_sec = go.Figure(go.Bar(
+                    x=list(_sec_stats.index),
+                    y=list(_sec_stats["avg_composite"]),
+                    marker_color=_bar_clrs,
+                    text=[f"{v:.0f}" for v in _sec_stats["avg_composite"]],
+                    textposition="outside",
+                    textfont=dict(color=COLORS["text_primary"], size=11),
+                ))
+                _fig_sec.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color=COLORS["text_primary"], size=10),
+                    height=470,
+                    margin=dict(t=10, b=90, l=30, r=10),
+                    xaxis=dict(tickangle=-35, gridcolor=COLORS["border"], tickfont=dict(size=10)),
+                    yaxis=dict(gridcolor=COLORS["border"], range=[0, 105]),
+                    showlegend=False,
+                )
+                st.plotly_chart(_fig_sec, use_container_width=True)
 
-    if len(qual_df) > 0:
-        sector_stats = qual_df.groupby("sector").agg(
-            count=("name", "count"),
-            avg_quality=("quality_score", "mean"),
-            avg_momentum=("momentum_score", "mean"),
-            avg_composite=("composite_score", "mean"),
-            best_stock=("composite_score", "idxmax"),
-            tier1_count=("conviction_tier", lambda x: (x == 1).sum()),
-        ).sort_values("avg_composite", ascending=False).head(20)
+    # ══ Bruised Blue Chips ═════════════════════════════════════════
+    with _mp_tabs[3]:
+        render_bruised_blue_chips(df)
 
-        # Get best stock names
-        sector_stats["top_stock"] = sector_stats["best_stock"].map(df["name"])
-        sector_stats = sector_stats.drop(columns=["best_stock"])
-
-        st.dataframe(sector_stats.reset_index(), use_container_width=True, height=500,
-                     column_config={
-                         "avg_quality": st.column_config.ProgressColumn("Avg Quality", min_value=0, max_value=100, format="%.0f"),
-                         "avg_composite": st.column_config.ProgressColumn("Avg Composite", min_value=0, max_value=100, format="%.0f"),
-                     })
-
-        fig_sec = px.bar(sector_stats.head(15).reset_index(), x="sector", y="avg_composite",
-                        color="avg_quality", color_continuous_scale="Viridis",
-                        title="Top 15 Sectors by Average Composite Score")
-        fig_sec.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                             font=dict(color=COLORS['text_primary']), height=400,
-                             xaxis_tickangle=-45)
-        st.plotly_chart(fig_sec, use_container_width=True)
-
-    st.markdown("---")
-    render_bruised_blue_chips(df)
-
-    st.markdown("---")
-    render_multi_trillion_tipping_points(df)
+    # ══ Tipping Points ═════════════════════════════════════════════
+    with _mp_tabs[4]:
+        render_multi_trillion_tipping_points(df)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
