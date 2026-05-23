@@ -32,11 +32,14 @@ from config import (
 # ═══════════════════════════════════════════════════════════════
 
 def _pct_rank(series: pd.Series, ascending: bool = True) -> pd.Series:
-    """Percentile rank (0–100) with NaN preserved.
+    """Percentile rank (0–100) with NaN preserved. Inf coerced to NaN before ranking.
     ascending=True means higher values get higher rank.
     ascending=False means lower values get higher rank.
+    Inf purge: any ratio computation producing +/-inf (e.g. divide by near-zero) would
+    otherwise rank as the universe maximum/minimum, injecting a spurious signal.
+    Coercing to NaN lets fillna(50) assign neutral instead of a false extreme rank.
     """
-    return series.rank(pct=True, ascending=ascending, na_option='keep') * 100
+    return series.replace([np.inf, -np.inf], np.nan).rank(pct=True, ascending=ascending, na_option='keep') * 100
 
 
 def _safe_clip(series: pd.Series, lo: float = 0, hi: float = 100) -> pd.Series:
@@ -70,7 +73,8 @@ def _sector_pct_rank(df: pd.DataFrame, col: str, sector_col: str = "sector",
         return _pct_rank(df[col], ascending=ascending).fillna(fillna_val)
     sector_grp = df[sector_col].fillna("Unknown")
     return (
-        df.groupby(sector_grp)[col]
+        df[col].replace([np.inf, -np.inf], np.nan)
+        .groupby(sector_grp)
         .rank(pct=True, ascending=ascending, na_option="keep")
         .mul(100)
         .fillna(fillna_val)
@@ -221,6 +225,23 @@ def _compute_growth_score(df: pd.DataFrame) -> pd.Series:
     Weights: long-term signals 0.94 + quarterly freshness 0.06 = 1.00"""
     score = pd.Series(0.0, index=df.index)
 
+    def _pct_rank_w(col: str) -> pd.Series:
+        """Winsorized percentile rank: clips at p01-p99 before ranking.
+        Prevents extreme outliers (e.g. IOC PAT YoY +528%, COFORGE EPS +1068%)
+        from compressing the remaining 2,100+ stocks' rank distribution.
+        A stock with 25% growth would score near the median when a handful of
+        stocks have >500% growth — winsorization restores discrimination power.
+        Requires ≥ 20 non-null values to be meaningful; falls back to raw rank.
+        Source: Coffee Can compendium D3 data quality protocol."""
+        if col not in df.columns:
+            return pd.Series(50.0, index=df.index)
+        s = df[col]
+        n_valid = s.notna().sum()
+        if n_valid < 20:
+            return _pct_rank(s, ascending=True).fillna(50)
+        lo, hi = s.quantile(0.01), s.quantile(0.99)
+        return _pct_rank(s.clip(lower=lo, upper=hi), ascending=True).fillna(50)
+
     signals = {
         "pat_gr_5y":           (True, 0.17),   # -0.03 to fund quarterly freshness layer
         "pat_gr_10y":          (True, 0.10),
@@ -234,9 +255,11 @@ def _compute_growth_score(df: pd.DataFrame) -> pd.Series:
     }
     # Signals sum: 0.17+0.10+0.17+0.10+0.15+0.10+0.06+0.05+0.04 = 0.94
 
-    for col, (ascending, weight) in signals.items():
-        if col in df.columns:
-            score += _pct_rank(df[col], ascending=ascending).fillna(50) * weight
+    # Use winsorized rank for all growth signals to prevent outlier compression.
+    # Acceleration signals (pat_acceleration, rev_acceleration, ebitda_acceleration)
+    # are differences of CAGR values — far smaller magnitude, still benefit from winsorization.
+    for col, (_ascending, weight) in signals.items():
+        score += _pct_rank_w(col) * weight
 
     # Quarterly freshness (6%): latest-quarter YoY — 4-6 months fresher than annual data.
     # q_pat_yoy drives 60% (profit is the bottom line); q_rev_yoy drives 40% (top-line health).
@@ -1089,36 +1112,64 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     fw_qglp = df.get("qglp_pass", pd.Series(0, index=df.index)).fillna(0) == 1
 
     # 2. Coffee Can (Saurabh Mukherjea) — Mukherjea's exact Twin Filters + Clean Accounts:
-    #    (a) ROE median ≥ 15% — the book specifies ROE, NOT ROCE. The D/E gate below
-    #        separately disqualifies high-leverage ROE (Mukherjea: "ROE via leverage is rejected").
+    #    (a) Capital efficiency — Mukherjea Ch.2: "for capital-heavy businesses, use ROCE
+    #        above 20% instead of ROE. High ROE via leverage is disqualified."
+    #        Non-financial: ROCE 10Y/5Y ≥ 15% — removes leverage from the equation.
+    #        Financial:     ROE  10Y/5Y ≥ 15% — banks structurally use leverage; ROE is correct.
+    #        The D/E < 1.0 gate below is a secondary guard, but ROE itself is a flawed metric
+    #        for non-financials: a manufacturer at D/E=0.9 can post ROE=18% on ROCE=9%.
     #    (b) Revenue growth CONSISTENCY across 3 CAGR windows — Mukherjea requires EVERY
-    #        year to show ≥ 10% growth. Without year-level data, the best proxy is:
-    #        10Y CAGR ≥ 10% (sustained long-run), 5Y CAGR ≥ 8% (recent, 8% allows for one
-    #        COVID-year averaging without penalising genuine compounders), YoY ≥ 0
-    #        (not currently contracting — the most forward-looking signal).
-    #    (c) CFO/EBITDA ≥ 90% — the "Clean Accounts" filter. cfo_to_ebitda in CSV is a
-    #        PERCENTAGE (e.g. 73.06 = 73%), so threshold is 90 not 0.9.
-    #    (d) D/E < 1.0 for non-financials — Mukherjea explicitly disqualifies companies whose
-    #        ROE is driven by leverage. Financial sector is structurally exempt.
+    #        year to show ≥ 10% growth. Best proxy with available data:
+    #        10Y CAGR ≥ 10% (sustained), 5Y CAGR ≥ 8% (recent, 8% absorbs one COVID year),
+    #        YoY ≥ 0 (not currently contracting).
+    #    (c) CFO/EBITDA ≥ 90% — Clean Accounts master signal (Ch.3). Stored as percentage.
+    #    (d) D/E < 1.0 for non-financials (Mukherjea: high-leverage ROE is disqualified).
+    #    (e) Pledge < 10% (governance pre-filter: Ch.5, ">10% requires investigation").
     _cc_nan = pd.Series(np.nan, index=df.index)
-    roe_med_cc    = df.get("roe_med_10y", _cc_nan).fillna(df.get("roe_med_5y", _cc_nan))
-    roe_rec_cc    = df.get("roe_med_5y",  _cc_nan).fillna(df.get("roe",         _cc_nan))
+    is_fin_cc     = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
+    # Capital efficiency: ROCE for non-financials, ROE for financials
+    _cc_roce_10y  = df.get("roce_med_10y", _cc_nan)
+    _cc_roce_5y   = df.get("roce_med_5y",  _cc_nan)
+    _cc_roe_10y   = df.get("roe_med_10y",  _cc_nan).fillna(df.get("roe_med_5y", _cc_nan))
+    _cc_roe_rec   = df.get("roe_med_5y",   _cc_nan).fillna(df.get("roe",        _cc_nan))
+    _cc_cap_eff_nonfin = (
+        (_cc_roce_10y.fillna(0) >= 15) &  # ROCE 10Y ≥ 15%: decade-long un-leveraged efficiency
+        (_cc_roce_5y.fillna(0)  >= 15)    # ROCE 5Y  ≥ 15%: recent consistency — no collapse
+    )
+    _cc_cap_eff_fin = (
+        (_cc_roe_10y.fillna(0)  >= 15) &  # ROE 10Y ≥ 15%: bank/NBFC capital returns
+        (_cc_roe_rec.fillna(0)  >= 15)    # ROE recent ≥ 15%: book specifies 15% (not 12%)
+    )
+    _cc_efficiency = pd.Series(
+        np.where(is_fin_cc, _cc_cap_eff_fin, _cc_cap_eff_nonfin),
+        index=df.index
+    )
     rev_10y_cc    = df.get("rev_gr_10y",  _cc_nan)
     rev_5y_cc     = df.get("rev_gr_5y",   _cc_nan)
     rev_yoy_cc    = df.get("rev_gr_yoy",  _cc_nan)
     cfo_ebitda_cc = df.get("cfo_to_ebitda", _cc_nan)
     de_cc         = df.get("debt_to_equity", _cc_nan)
-    pledge_cc     = df.get("pledged_percentage", _cc_nan)  # correct column: pledged_percentage
-    is_fin_cc     = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
+    pledge_cc     = df.get("pledged_percentage", _cc_nan)
+    # Individual year revenue growth checks (years 2-5 back).
+    # Book: "revenue growth of 10% every year for ten consecutive years" (Ch.2, p.48).
+    # StockScan provides Revenue 2-5YB → we verify years 2-5 individually; years 6-10 via CAGR.
+    # fillna(10): missing year data doesn't penalize — treated as meeting the threshold.
+    _cc_y2 = df.get("rev_gr_y2", _cc_nan).fillna(10)
+    _cc_y3 = df.get("rev_gr_y3", _cc_nan).fillna(10)
+    _cc_y4 = df.get("rev_gr_y4", _cc_nan).fillna(10)
+    _cc_y5 = df.get("rev_gr_y5", _cc_nan).fillna(10)
+    _cc_each_year = (
+        (_cc_y2 >= 10) & (_cc_y3 >= 10) & (_cc_y4 >= 10) & (_cc_y5 >= 10)
+    )
     fw_coffee_can = (
-        (roe_med_cc.fillna(0)    >= 15) &          # ROE 10Y/5Y median ≥ 15%
-        (roe_rec_cc.fillna(0)    >= 12) &          # ROE ≥ 12% recent — no collapse allowed
-        (rev_10y_cc.fillna(0)    >= 10) &          # 10Y revenue CAGR ≥ 10% (sustained)
-        (rev_5y_cc.fillna(0)     >= 8)  &          # 5Y revenue CAGR ≥ 8% (recent consistency)
-        (rev_yoy_cc.fillna(-1)   >= 0)  &          # YoY not contracting — no current crisis
-        (cfo_ebitda_cc.fillna(0) >= 90) &          # Clean Accounts: CFO/EBITDA ≥ 90%
-        (is_fin_cc | (de_cc.fillna(999) < 1.0)) &  # D/E < 1 for non-financials
-        (pledge_cc.fillna(0)     < 10)             # Governance: pledge < 10% (>20% = disqualify)
+        _cc_efficiency                            &  # ROCE (non-fin) / ROE (fin) hurdle
+        (rev_10y_cc.fillna(0)    >= 10)           &  # 10Y revenue CAGR ≥ 10%
+        (rev_5y_cc.fillna(0)     >= 8)            &  # 5Y revenue CAGR ≥ 8%
+        (rev_yoy_cc.fillna(-1)   >= 0)            &  # not currently contracting (year 1)
+        _cc_each_year                             &  # years 2-5: each ≥ 10% (book requirement)
+        (cfo_ebitda_cc.fillna(0) >= 90)           &  # CFO/EBITDA ≥ 90% (Clean Accounts)
+        (is_fin_cc | (de_cc.fillna(999) < 1.0))   &  # D/E < 1 for non-financials
+        (pledge_cc.fillna(0)     < 10)               # pledge < 10% governance gate
     )
 
     # 3. Magic Formula (Joel Greenblatt) — high Earnings Yield + high ROCE
@@ -1256,22 +1307,43 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #    annual data. Best proxy: BOTH the 10Y and 5Y ROCE medians clear 15% (two overlapping
     #    windows, harder to fake than a single average). Same logic for revenue.
     _ub_nan     = pd.Series(np.nan, index=df.index)
+    is_fin_ub   = df.get("is_financial",       pd.Series(False, index=df.index)).fillna(False)
+    # Capital efficiency gate: ROCE for non-financials, ROE for financials.
+    # Banks/NBFCs have no traditional "capital employed" → roce_med_10y is NaN or near-zero.
+    # fillna(0) on NaN ROCE → 0 >= 15 = False → every elite bank silently fails without this routing.
+    # Book Ch.1: "for BFSI companies: ROE ≥ 15% and loan growth ≥ 15% every year."
     roce_10y_ub = df.get("roce_med_10y",       _ub_nan)
     roce_5y_ub  = df.get("roce_med_5y",        _ub_nan)
+    roe_10y_ub  = df.get("roe_med_10y",        _ub_nan).fillna(df.get("roe_med_5y", _ub_nan))
+    roe_5y_ub   = df.get("roe_med_5y",         _ub_nan).fillna(df.get("roe",        _ub_nan))
+    ub_cap_eff_nonfin = (
+        (roce_10y_ub.fillna(0) >= 15) &  # ROCE 10Y ≥ 15%: decade-long capital efficiency proven
+        (roce_5y_ub.fillna(0)  >= 15)    # ROCE 5Y  ≥ 15%: moat still intact in recent window
+    )
+    ub_cap_eff_fin = (
+        (roe_10y_ub.fillna(0)  >= 15) &  # ROE 10Y ≥ 15%: bank/NBFC capital returns over cycle
+        (roe_5y_ub.fillna(0)   >= 15)    # ROE 5Y  ≥ 15%: returns sustained (not just historical)
+    )
+    ub_efficiency_gate = pd.Series(
+        np.where(is_fin_ub, ub_cap_eff_fin, ub_cap_eff_nonfin),
+        index=df.index
+    )
     rev_10y_ub  = df.get("rev_gr_10y",         _ub_nan)
     rev_5y_ub   = df.get("rev_gr_5y",          _ub_nan)
     de_ub       = df.get("debt_to_equity",     _ub_nan)
     pledge_ub   = df.get("pledged_percentage", _ub_nan)
     opm_st_ub   = df.get("opm_stable",         pd.Series(0, index=df.index)).fillna(0)
-    is_fin_ub   = df.get("is_financial",       pd.Series(False, index=df.index)).fillna(False)
+    # Sector-routed Greatness Formula growth hurdle (UB/Coffee Can unified research base):
+    # financial companies (banks/NBFCs) must show 15% expansion; industrials need 10%.
+    ub_growth_hurdle = pd.Series(np.where(is_fin_ub, 15.0, 10.0), index=df.index)
     fw_unusual_billionaires = (
-        (roce_10y_ub.fillna(0) >= 15) &            # Greatness: ROCE 10Y median ≥ 15% — moat proven
-        (roce_5y_ub.fillna(0)  >= 15) &            # Greatness: ROCE 5Y median ≥ 15% — moat still intact
-        (rev_10y_ub.fillna(0)  >= 10) &            # Greatness: Revenue 10Y CAGR ≥ 10% (sustained demand)
-        (rev_5y_ub.fillna(0)   >= 8)  &            # Greatness: Revenue not decelerating badly in recent window
-        (opm_st_ub == 1)               &           # Moat proxy: OPM stable through cycles (pricing power)
-        (is_fin_ub | (de_ub.fillna(999) < 1.0)) &  # Capital discipline: D/E < 1 for non-financials
-        (pledge_ub.fillna(0)   < 10)               # Governance / integrity pillar: pledge < 10%
+        ub_efficiency_gate             &                     # ROCE (non-fin) / ROE (fin) ≥ 15% — book exact
+        (rev_10y_ub.fillna(0)  >= ub_growth_hurdle) &       # Greatness: sector-routed 10/15% growth hurdle
+        (rev_5y_ub.fillna(0)   >= 8)  &                     # Greatness: no recent sharp deceleration
+        _cc_each_year                  &                     # Year-by-year: each of years 2-5 ≥ 10% growth
+        (opm_st_ub == 1)               &                     # Moat proxy: OPM stable through cycles
+        (is_fin_ub | (de_ub.fillna(999) < 1.0)) &           # Capital discipline: D/E < 1 for non-financials
+        (pledge_ub.fillna(0)   < 10)                         # Governance pillar: pledge < 10%
     )
 
     # 11. Fisher Quality (Philip Fisher) — Systematic quantitative proxies for Fisher's key measurable criteria.
