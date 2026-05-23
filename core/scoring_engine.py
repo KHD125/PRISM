@@ -1371,37 +1371,48 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (oplev_fi == 1)                           # P4:  Operating leverage — profit growing faster than sales
     )
 
-    # 12. 100-Bagger Candidate (Christopher Mayer / SQGLP) — Small-cap owner-operator compounder
-    #    The SQGLP framework: Small size + Quality + Growth + Longevity + Price.
-    #    Key distinctions vs existing frameworks:
-    #      - SMILE uses market cap < ₹15,000 Cr — far too wide for 100× math
-    #      - QGLP has no size filter at all — a ₹50,000 Cr company passes
-    #      - THIS framework: ₹200–₹3,000 Cr + promoter holding ≥ 50% — BOTH are new signals
-    #    The S (Small size ₹200–₹3,000 Cr): 100× math is mathematically strained above ₹3,000 Cr.
-    #    Below ₹200 Cr: too early-stage, unproven model, illiquid stock (Mayer explicitly excludes).
-    #    Promoter holding ≥ 50%: the #1 owner-operator alignment signal in Indian markets.
-    #    Founder with 50%+ stake thinks in decades, not quarters — the promoter IS the moat.
-    #    CFO/PAT > 0: earnings must be backed by real cash (positive OCF proxy).
-    #    Unit note: market_cap in Crores; promoter_holdings as percentage (55.3 = 55.3%).
-    _hb_nan    = pd.Series(np.nan, index=df.index)
-    mcap_hb    = df.get("market_cap",        _hb_nan)
-    roce_hb    = df.get("roce_med_5y",       _hb_nan)
-    rev_3y_hb  = df.get("rev_gr_3y",         _hb_nan)
-    pat_3y_hb  = df.get("pat_gr_3y",         _hb_nan)
-    de_hb      = df.get("debt_to_equity",    _hb_nan)
-    promo_hb   = df.get("promoter_holdings", _hb_nan)  # % e.g. 55.3 = 55.3%
-    cfo_pat_hb = df.get("cfo_to_pat",        _hb_nan)  # PERCENTAGE
-    is_fin_hb  = df.get("is_financial",      pd.Series(False, index=df.index)).fillna(False)
+    # 12. 100-Bagger Hunter (Christopher Mayer — Hybrid Spec) — Early-stage Indian compounder
+    #    Hybrid design: long-cycle quality (7Y ROCE) + early-stage growth momentum (3Y PAT)
+    #    + governance gates. Spec ledger: docs/hundred_bagger_specs.json.
+    #    S (Size): ₹200–₹3,000 Cr. ₹3k Cr × 100 = ₹3 Lakh Cr — historically achievable runway
+    #      (Eicher Motors: ₹800 Cr → ₹1.1 Lakh Cr; Bajaj Finance: ₹1,200 Cr → ₹4.7 Lakh Cr).
+    #    Q (Quality): ROCE 7Y median ≥ 15% — full business-cycle capital efficiency, not a 5Y spike.
+    #    G (Growth): Revenue 5Y CAGR ≥ 15% (data-available for full universe) AND
+    #                PAT 3Y CAGR ≥ 20% — the "engine-fire" signal that the compounding is active NOW.
+    #    B (Balance sheet): D/E < 0.5 — fortress balance sheet; financial sector exempted (banks use
+    #      leverage structurally — ROCE/ROE gates already capture quality for them).
+    #    O (Owner-Operator): promoter ≥ 50% — majority control; founder thinks in decades, not quarters.
+    #    C (Cash): CFO/PAT > 0 (PERCENTAGE) — real cash backs earnings; anti-fraud gate, not strict ≥80%.
+    #      Small-caps in expansion phase can have CFO/PAT 50–70% (working capital absorption) — that
+    #      is normal. What we reject is CFO/PAT ≤ 0: negative OCF on positive PAT = accounting concern.
+    #    P (Price): PEG 0–2.0 — valuation discipline. Premium permitted for explosive growth but not
+    #      unbounded. No annual stumble check — Mayer explicitly studies companies with messy early
+    #      years; the annual stumble filter belongs to Baid Compounder, not this framework.
+    #    Unit note: market_cap in Crores; promoter_holdings and cfo_to_pat as % (50.0 = 50%).
+    _hb_nan     = pd.Series(np.nan,  index=df.index)
+    _hb_peg_nan = pd.Series(999.0,   index=df.index)
+    mcap_hb     = df.get("market_cap",        _hb_nan)
+    roce_7y_hb  = df.get("roce_med_7y",       _hb_nan)
+    rev_5y_hb   = df.get("rev_gr_5y",         _hb_nan)
+    pat_3y_hb   = df.get("pat_gr_3y",         _hb_nan)
+    de_hb       = df.get("debt_to_equity",    _hb_nan)
+    promo_hb    = df.get("promoter_holdings", _hb_nan)   # % e.g. 55.3 = 55.3%
+    cfo_pat_hb  = df.get("cfo_to_pat",        _hb_nan)   # PERCENTAGE: 73.0 = 73%, not 0.73
+    is_fin_hb   = df.get("is_financial",      pd.Series(False, index=df.index)).fillna(False)
+    peg_hb      = df.get("peg",               _hb_peg_nan)
     fw_100_bagger = (
-        (mcap_hb.fillna(0)    >= 200)  &           # S: not pre-revenue micro-cap (too early-stage)
-        (mcap_hb.fillna(9999) <= 3000) &           # S: 100× math strained above ₹3,000 Cr
-        (roce_hb.fillna(0)    >= 15)   &           # Q: ROCE 5Y median ≥ 15% — capital efficiency proven
-        (rev_3y_hb.fillna(0)  >= 18)   &           # G: Revenue 3Y CAGR ≥ 18% — accelerating growth
-        (pat_3y_hb.fillna(0)  >= 20)   &           # G: Earnings 3Y CAGR ≥ 20% — the compounding engine
-        (is_fin_hb | (de_hb.fillna(999) < 0.5)) &  # Q: D/E < 0.5 — clean balance sheet
-        (promo_hb.fillna(0)   >= 50)   &           # Q: Promoter ≥ 50% — owner-operator, skin in game
-        (cfo_pat_hb.fillna(-1) > 0)                # Q: CFO positive — earnings backed by real cash
+        (mcap_hb.fillna(0)     >= 200.0)  &       # S: ₹200 Cr floor — proven model, liquid stock
+        (mcap_hb.fillna(9999)  <= 3000.0) &       # S: ₹3,000 Cr ceiling — 100× math achievable
+        (roce_7y_hb.fillna(0)  >= 15.0)   &       # Q: ROCE 7Y ≥ 15% — cycle-proof capital efficiency
+        (rev_5y_hb.fillna(0)   >= 15.0)   &       # G: Revenue 5Y CAGR ≥ 15% — sustained top-line demand
+        (pat_3y_hb.fillna(0)   >= 20.0)   &       # G: PAT 3Y CAGR ≥ 20% — earnings engine firing now
+        (is_fin_hb | (de_hb.fillna(999) < 0.5)) & # B: D/E < 0.5 — fortress balance sheet
+        (promo_hb.fillna(0)    >= 50.0)   &       # O: Promoter ≥ 50% — majority control, skin in game
+        (cfo_pat_hb.fillna(-1) >  0.0)    &       # C: CFO/PAT > 0 — real cash, not fraudulent earnings
+        (peg_hb.fillna(999)    >  0.0)    &       # P: positive earnings required (no loss-maker)
+        (peg_hb.fillna(999)    <= 2.0)            # P: PEG ≤ 2.0 — disciplined valuation entry
     )
+    df["hundred_bagger_pass"] = fw_100_bagger.astype(int)
 
     # 13. Diamond Field Guide (Saurabh Mukherjea) — forensic-verified compounders
     #    Three-lens framework: Stage 1 Screen → Gate Zero → Lens 1 (Accounts) → Lens 2 (Moat) → Lens 3 (Capex)
@@ -1642,34 +1653,55 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (dist_wh_pk                 >=  30)               # Parikh Stage 4: fallen 30%+ — contrarian anti-herd entry
     )
 
-    # 19. Baid Compounder (Gautam Baid — The Compounding Codex)
-    #    Baid's "Nirvana" framework: long-duration compounders with ZERO revenue shortfalls.
-    #    The defining uniqueness: rev_gr_yoy >= 5 enforces the "no single year below 5%" rule —
-    #    Baid explicitly rejects stocks that stumble even once, as it signals moat fragility.
-    #    Chapter 4 (Identifying Compounders), Chapter 6 (Valuation Discipline), Chapter 15 (Sell).
-    #    PEG 0–1.5 = Baid's reasonable entry ("between fair and cheap") — no other framework uses 1.5.
-    #    cfo_to_pat >= 80 = Baid's "FCF-to-PAT above 0.8" (PERCENTAGE: 80.0 = 80%).
-    #    fcf_yield >= 3 = PERCENTAGE: unique between Quality Compounder's 2% and Dorsey's 5%.
+    # 19. Baid Compounder (Gautam Baid — The Joys of Compounding, 2020)
+    #    Baid's "Nirvana" = long-term ownership of competitively advantaged businesses with
+    #    significant reinvestment potential (p.298, Ch.23 "The Market Is Efficient Most of the Time").
+    #    All thresholds are engineering proxies from Ch.14 qualitative checklist (pp.180-193)
+    #    — the book provides directional guidance ("higher is better"), NOT explicit percentages.
+    #    See docs/baid_financial_specs.json for full audit and Gemini fabrication log.
+    #
+    #    Engineering proxy rationale:
+    #    roce_med_7y >= 15: 7Y window spans full business cycle (more robust than prior 5Y)
+    #    rev_gr_10y >= 12:  10Y CAGR aligns with long-horizon compounding philosophy
+    #    _bd_each_year:     y2-y5 each >= 5% — no-stumble consistency (mirrors _cc_each_year at 5%)
+    #    fcf_yield hurdle:  size-aware (3% large / 4% mid-small) — risk-adjusted margin of safety
+    #    PEG 0–1.5:         unique entry corridor — no other framework uses exactly 1.5
+    #    cfo_to_pat >= 80:  PERCENTAGE (80.0 = 80%); earnings quality gate
     _bd_nan      = pd.Series(np.nan, index=df.index)
-    roce_5y_bd   = df.get("roce_med_5y",     _bd_nan)
-    rev_5y_bd    = df.get("rev_gr_5y",       _bd_nan)   # 5Y revenue CAGR
-    rev_yoy_bd   = df.get("rev_gr_yoy",      _bd_nan)   # UNIQUE: current-year revenue floor (no stumble allowed)
+    roce_7y_bd   = df.get("roce_med_7y",     _bd_nan)   # 7Y median — full business cycle window
+    rev_10y_bd   = df.get("rev_gr_10y",      _bd_nan)   # 10Y revenue CAGR — long-horizon compounding
+    rev_yoy_bd   = df.get("rev_gr_yoy",      _bd_nan)   # current-year floor
     fcf_yield_bd = df.get("fcf_yield",       _bd_nan)   # PERCENTAGE: 3.0 = 3%
     cfo_pat_bd   = df.get("cfo_to_pat",      _bd_nan)   # PERCENTAGE: 80.0 = 80%
     de_bd        = df.get("debt_to_equity",  _bd_nan)
     mcap_bd      = df.get("market_cap",      _bd_nan)
     peg_bd       = df.get("peg",             _bd_nan)
     is_fin_bd    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
+    mcap_tier_bd = df.get("mcap_tier",       pd.Series("", index=df.index)).fillna("")
+    # Size-aware FCF yield hurdle: 3% for Mega/Large Cap, 4% for Mid/Small/Micro/Nano
+    is_large_bd         = mcap_tier_bd.isin(["Mega Cap", "Large Cap"])
+    baid_fcf_yield_hurdle = pd.Series(
+        np.where(is_large_bd, 3.0, 4.0), index=df.index
+    )
+    # No-stumble annual velocity: each visible back-year >= 5% (compounding-consistency proxy)
+    _bd_y2 = df.get("rev_gr_y2", _bd_nan).fillna(5)
+    _bd_y3 = df.get("rev_gr_y3", _bd_nan).fillna(5)
+    _bd_y4 = df.get("rev_gr_y4", _bd_nan).fillna(5)
+    _bd_y5 = df.get("rev_gr_y5", _bd_nan).fillna(5)
+    _bd_each_year = (
+        (_bd_y2 >= 5) & (_bd_y3 >= 5) & (_bd_y4 >= 5) & (_bd_y5 >= 5)
+    )
     fw_baid = (
-        (roce_5y_bd.fillna(0)   >= 15) &              # Chapter 4: ROCE > 15% sustained for 5Y — capital allocation proof
-        (rev_5y_bd.fillna(0)    >= 12) &              # Chapter 4: revenue CAGR ≥ 12% over 5Y — compounding velocity
-        (rev_yoy_bd.fillna(0)   >=  5) &              # UNIQUE — Chapter 4: current year ≥ 5%; no single year shortfall allowed
-        (fcf_yield_bd.fillna(0) >=  3) &              # Chapter 6: FCF yield ≥ 3% — Baid's cash payback discipline
-        (cfo_pat_bd.fillna(0)   >= 80) &              # Chapter 4: CFO/PAT ≥ 80% — Baid's "earnings quality" threshold
-        (is_fin_bd | (de_bd.fillna(999) < 0.5)) &    # Chapter 4: D/E < 0.5 fortress balance sheet (fin exempt)
-        (mcap_bd.fillna(0)      >= 500) &             # Chapter 4: proven size filter — avoids micro-cap noise
-        (peg_bd.fillna(999)     >   0) &              # Chapter 6: PEG > 0 — must have positive earnings
-        (peg_bd.fillna(999)     <= 1.5)               # Chapter 6: PEG ≤ 1.5 — Baid's "reasonable" entry (UNIQUE threshold)
+        (roce_7y_bd.fillna(0)   >= 15) &              # 7Y ROCE ≥ 15% — sustained capital efficiency over full cycle
+        (rev_10y_bd.fillna(0)   >= 12) &              # 10Y revenue CAGR ≥ 12% — long-horizon compounding velocity
+        (rev_yoy_bd.fillna(0)   >=  5) &              # current year ≥ 5% — not actively decelerating
+        _bd_each_year                  &              # years 2-5 each ≥ 5% — no-stumble annual consistency
+        (fcf_yield_bd.fillna(0) >= baid_fcf_yield_hurdle) &  # size-aware FCF yield (3% large / 4% mid-small)
+        (cfo_pat_bd.fillna(0)   >= 80) &              # CFO/PAT ≥ 80% — earnings are real cash (PERCENTAGE)
+        (is_fin_bd | (de_bd.fillna(999) < 0.5)) &    # D/E < 0.5 fortress (financials exempt)
+        (mcap_bd.fillna(0)      >= 500) &             # ≥ 500 Cr — proven size, avoids micro-cap noise
+        (peg_bd.fillna(999)     >   0) &              # PEG > 0 — positive earnings required
+        (peg_bd.fillna(999)     <= 1.5)               # PEG ≤ 1.5 — unique entry corridor (UNIQUE threshold)
     )
 
     # 20. Long Game Quality (Vishal Khandelwal — The Long Game)
