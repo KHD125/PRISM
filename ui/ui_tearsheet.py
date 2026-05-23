@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import html as _html
-from config import COLORS
+from config import COLORS, CONVICTION_TIERS, TIER_COLORS
 
 
 # ─── Display Utilities ──────────────────────────────────────────────────────
@@ -1093,8 +1093,6 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     tier badge, moat quad, forensic status, regime, and all active pills in one card.
     Pure display — reads pre-computed columns only.
     """
-    from config import CONVICTION_TIERS, TIER_COLORS
-
     tier_num   = int(_g(stock, "conviction_tier", 5))
     tc         = (tier_colors or TIER_COLORS).get(tier_num, TIER_COLORS[5])
     tcfg       = next((t for t in CONVICTION_TIERS if t["tier"] == tier_num), CONVICTION_TIERS[-1])
