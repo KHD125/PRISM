@@ -1416,40 +1416,45 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
 
     # 13. Diamond Field Guide (Saurabh Mukherjea) — forensic-verified compounders
     #    Three-lens framework: Stage 1 Screen → Gate Zero → Lens 1 (Accounts) → Lens 2 (Moat) → Lens 3 (Capex)
+    #    Spec ledger: docs/diamonds_financial_specs.json
     #    Key distinctions from other Mukherjea frameworks:
     #      - D/E < 0.5: STRICTEST of all three Mukherjea books (Coffee Can < 1.0, Unusual Billionaires < 1.0)
-    #      - CFO/PAT ≥ 75%: Lens 1 cash earnings quality (Coffee Can uses CFO/EBITDA — different denominator)
+    #      - CFO/PAT ≥ 80%: Lens 1 cash earnings quality (book: 0.8 ratio; Coffee Can uses CFO/EBITDA)
+    #      - DSO delta ≤ 15 days: Lens 1 channel-stuffing guard (1Y proxy — no 3YB receivable data in CSV)
     #      - FCF/CFO ≥ 25%: Lens 3 capital allocation surplus — new signal absent in all prior frameworks
     #      - forensic_score == 0: mandatory clean accounts — most frameworks don't hard-require this
     #      - Market cap ≥ ₹500 Cr: quality size floor (not in Coffee Can or Unusual Billionaires)
-    #    NOT implementable (no CSV data): year-by-year CFO/PAT, DSO 3Y trend, contingent liabilities,
-    #    depreciation consistency, auditor quality, RPT ratios, GNPA/CASA (banks), moat durability scoring
-    _dm_nan    = pd.Series(np.nan, index=df.index)
-    roce_10y_dm = df.get("roce_med_10y",       _dm_nan)
-    roce_5y_dm  = df.get("roce_med_5y",        _dm_nan)
-    rev_10y_dm  = df.get("rev_gr_10y",         _dm_nan)
-    rev_5y_dm   = df.get("rev_gr_5y",          _dm_nan)
-    de_dm       = df.get("debt_to_equity",     _dm_nan)
-    cfo_pat_dm  = df.get("cfo_to_pat",         _dm_nan)   # PERCENTAGE: 75.0 = 75%, not 0.75
-    fcf_cfo_dm  = df.get("fcf_to_cfo_pct",    _dm_nan)   # PERCENTAGE: 25.0 = 25%
-    mcap_dm     = df.get("market_cap",         _dm_nan)   # Crores
-    promo_dm    = df.get("promoter_holdings",  _dm_nan)   # % e.g. 40.0 = 40%
-    pledge_dm   = df.get("pledged_percentage", pd.Series(100.0, index=df.index)).fillna(100)
-    fscore_dm   = df.get("forensic_score",     pd.Series(999, index=df.index)).fillna(999)
-    is_fin_dm   = df.get("is_financial",       pd.Series(False, index=df.index)).fillna(False)
+    #    NOT implementable (no CSV data): year-by-year CFO/PAT 10Y series, depreciation consistency,
+    #    RPT ratios, auditor quality, GNPA/CASA (banks), moat durability scoring
+    _dm_nan     = pd.Series(np.nan, index=df.index)
+    roce_10y_dm = df.get("roce_med_10y",          _dm_nan)
+    roce_5y_dm  = df.get("roce_med_5y",           _dm_nan)
+    rev_10y_dm  = df.get("rev_gr_10y",            _dm_nan)
+    rev_5y_dm   = df.get("rev_gr_5y",             _dm_nan)
+    de_dm       = df.get("debt_to_equity",        _dm_nan)
+    cfo_pat_dm  = df.get("cfo_to_pat",            _dm_nan)   # PERCENTAGE: 80.0 = 80%, not 0.80
+    fcf_cfo_dm  = df.get("cumulative_fcf_to_ccfo", _dm_nan)  # PERCENTAGE proxy: 25.0 = 25%
+    dso_delta_dm = df.get("dso_delta_3y",         _dm_nan)   # DAYS: 1Y delta proxy for 3Y window
+    mcap_dm     = df.get("market_cap",            _dm_nan)   # Crores
+    promo_dm    = df.get("promoter_holdings",     _dm_nan)   # % e.g. 40.0 = 40%
+    pledge_dm   = df.get("pledged_percentage",    pd.Series(100.0, index=df.index)).fillna(100)
+    fscore_dm   = df.get("red_flag_count",         pd.Series(999, index=df.index)).fillna(999)  # integer count; 0 = clean
+    is_fin_dm   = df.get("is_financial",          pd.Series(False, index=df.index)).fillna(False)
     fw_diamond = (
-        (roce_10y_dm.fillna(0) >= 15) &                     # Lens 2: ROCE > 15% 10Y — moat proven over full cycle
-        (roce_5y_dm.fillna(0)  >= 15) &                     # Lens 2: ROCE > 15% 5Y — moat sustained recently
-        (rev_10y_dm.fillna(0)  >= 10) &                     # Stage 1: Revenue growth 10Y > 10%
-        (rev_5y_dm.fillna(0)   >=  8) &                     # Stage 1: Recent growth not decelerating sharply
-        (is_fin_dm | (de_dm.fillna(999) < 0.5)) &           # Stage 1: D/E < 0.5 — strictest Mukherjea filter
-        (cfo_pat_dm.fillna(0)  >= 75) &                     # Lens 1: CFO/PAT ≥ 75% cash earnings quality
-        (fcf_cfo_dm.fillna(0)  >= 25) &                     # Lens 3: FCF/CFO ≥ 25% capital allocation surplus
-        (mcap_dm.fillna(0)     >= 500) &                    # Stage 1: ≥ ₹500 Cr proven business scale
-        (promo_dm.fillna(0)    >= 40) &                     # Gate Zero: Promoter ≥ 40% alignment
-        (pledge_dm             <  10) &                     # Gate Zero: Pledge < 10%
-        (fscore_dm             ==  0)                       # Lens 1: Zero forensic red flags
+        (roce_10y_dm.fillna(0)   >= 15)   &   # Lens 2: ROCE > 15% 10Y — moat proven over full cycle
+        (roce_5y_dm.fillna(0)    >= 15)   &   # Lens 2: ROCE > 15% 5Y — moat sustained recently
+        (rev_10y_dm.fillna(0)    >= 10)   &   # Stage 1: Revenue growth 10Y > 10%
+        (rev_5y_dm.fillna(0)     >=  8)   &   # Stage 1: Recent growth not decelerating sharply
+        (is_fin_dm | (de_dm.fillna(999) < 0.5)) &  # Stage 1: D/E < 0.5 — strictest Mukherjea filter
+        (cfo_pat_dm.fillna(0)    >= 80.0) &   # Lens 1: CFO/PAT ≥ 80% cash earnings quality (book: 0.8)
+        (dso_delta_dm.fillna(999) <= 15.0) &  # Lens 1: DSO 1Y rise ≤ 15 days (channel-stuffing guard)
+        (fcf_cfo_dm.fillna(0)    >= 25)   &   # Lens 3: FCF/CFO ≥ 25% capital allocation surplus
+        (mcap_dm.fillna(0)       >= 500)  &   # Stage 1: ≥ ₹500 Cr proven business scale
+        (promo_dm.fillna(0)      >= 40)   &   # Gate Zero: Promoter ≥ 40% alignment
+        (pledge_dm               <  10)   &   # Gate Zero: Pledge < 10%
+        (fscore_dm               ==  0)       # Lens 1: Zero forensic red flags
     )
+    df["diamonds_pass"] = fw_diamond.astype(int)
 
     # 14. Dorsey Wide Moat (Pat Dorsey — The Moat Investor's Codex)
     #    Confirmed Wide Moat at an attractive free-cash-flow price.
