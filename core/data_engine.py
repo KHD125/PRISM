@@ -12,7 +12,7 @@ import warnings
 from typing import Dict, Tuple, Optional
 from config import (CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR,
                     FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES,
-                    SSGR_DEP_RATES, COST_OF_EQUITY, INDIA_GSEC_YIELD,
+                    COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS)
 
 warnings.filterwarnings('ignore')
@@ -128,6 +128,10 @@ INCOME_COLS = {
     "EBITDA 1 Year Back":     "ebitda_1yb",
     "Revenue":                "revenue",
     "Revenue 1 Year Back":    "revenue_1yb",
+    "Revenue 2 Years Back":   "revenue_2yb",
+    "Revenue 3 Years Back":   "revenue_3yb",
+    "Revenue 4 Years Back":   "revenue_4yb",
+    "Revenue 5 Years Back":   "revenue_5yb",
     "Expenses":               "expenses",
     "Expenses 1 Year Back":   "expenses_1yb",
 }
@@ -533,6 +537,18 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── INCOME DERIVED ──
+    # Year-by-year revenue growth for Coffee Can individual-year consistency check.
+    # Mukherjea requires ≥ 10% every single year for 10 years; we can verify years 2-5.
+    for _yr, (_num, _den) in enumerate(
+        [("revenue_1yb", "revenue_2yb"), ("revenue_2yb", "revenue_3yb"),
+         ("revenue_3yb", "revenue_4yb"), ("revenue_4yb", "revenue_5yb")], start=2
+    ):
+        _col = f"rev_gr_y{_yr}"
+        df[_col] = np.where(
+            df[_den].notna() & (df[_den].abs() > 0),
+            (df[_num] - df[_den]) / df[_den].abs() * 100,
+            np.nan
+        )
     df["pat_acceleration"]    = df["pat_gr_3y"]    - df["pat_gr_5y"]
     df["rev_acceleration"]    = df["rev_gr_3y"]    - df["rev_gr_5y"]
     df["ebitda_acceleration"] = df["ebitda_gr_3y"] - df["ebitda_gr_5y"]
@@ -853,18 +869,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _dpr_pct = _dpr_raw.fillna(25.0).clip(0, 100)     # DPR in % (e.g. 25.0 = 25%)
     dpr_approx = (_dpr_pct / 100.0).values             # decimal for SSGR formula
 
-    # Depreciation rate: sector-specific lookup (Indian Companies Act Schedule II + industry norms).
-    # IT/Software: 25% (3-4yr useful life). Infrastructure: 4% (25yr+ assets). Default: 10%.
-    default_dep = SSGR_DEP_RATES["_default"]
-    if "industry" in df.columns:
-        sector_dep = df["industry"].map(SSGR_DEP_RATES).fillna(default_dep)
-    else:
-        sector_dep = pd.Series(default_dep, index=df.index)
-    dep_rate = np.where(fa > 0, sector_dep, 0.0)
-
-    # G4 FIX: removed "- dep_rate" which was double-deducting depreciation.
-    # NPM is already NET of depreciation (dep reduced profit in P&L).
-    # Vijay Malik SSGR = NPM × NFAT × (1 - DPR), no further dep adjustment.
+    # Vijay Malik SSGR = NPM × NFAT × (1 - DPR).
+    # NPM is already net of depreciation — no separate dep_rate term needed.
     ssgr_raw = nfat * npm_decimal * (1 - dpr_approx)
     df["ssgr"] = pd.Series(ssgr_raw * 100, index=df.index).clip(-50, 100)
 
@@ -1162,6 +1168,36 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["d19_cwip_conversion"] = df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)
     df["cwip_conversion"] = df["d19_cwip_conversion"]
 
+    # ── John Kay IBAS Moat Engine ──
+    # Four-factor structural moat intensity model (The Unusual Billionaires, Appendix 1).
+    # Proxied entirely from existing CSV-derived signals — no new data required.
+    #
+    # 1. Reputation/Brand: stable OPM (pricing power) + NPM above own 5Y median (sustaining premium)
+    df["ibas_reputation_score"] = (
+        df["opm_stable"].fillna(0) * 50.0
+        + (df["d11_npm_above_5y_med"].fillna(0) > 0).astype(float) * 50.0
+    )
+    # 2. Architecture/Network: negative CCC = company collects cash BEFORE paying suppliers
+    #    (HUL/Nestle/Asian Paints pattern — Kay's "relational contract" moat).
+    #    CCC is nulled for financials — fillna(0) → 0 < 0 = False → architecture = 0 (correct).
+    df["ibas_architecture_score"] = (df["ccc"].fillna(0) < 0).astype(float) * 100.0
+    # 3. Innovation/Efficiency: asset-light business model (NFAT > 4 = revenue is 4× net FA)
+    #    + growth self-funded from internal cash (no dilution required)
+    df["ibas_innovation_score"] = (
+        (df["nfat"].fillna(0) > 4.0).astype(float) * 50.0
+        + df["ssgr_self_funded"].fillna(0) * 50.0
+    )
+    # 4. Strategic Assets: CWIP actively converting to productive fixed assets (D19 > 0)
+    #    = capital is being deployed into real capacity, not parking in incomplete projects.
+    df["ibas_strategic_assets_score"] = (df["d19_cwip_conversion"].fillna(0) > 0).astype(float) * 100.0
+    # Composite: equal-weight average across all four Kay moat types (0–100 scale)
+    df["ibas_moat_score"] = (
+        df["ibas_reputation_score"]
+        + df["ibas_architecture_score"]
+        + df["ibas_innovation_score"]
+        + df["ibas_strategic_assets_score"]
+    ) / 4.0
+
     # ── D20: Fixed Asset CAGR 3Y (%) ──
     df["d20_fa_cagr_3y"] = np.where(
         df["fixed_assets_3yb"].notna() & (df["fixed_assets_3yb"] > 0) & (df["fixed_assets"].fillna(0) > 0),
@@ -1428,13 +1464,38 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _bbc_cheap    = df["d32_pe_vs_median"].fillna(0) < -25
     df["bruised_blue_chip"] = (_bbc_fallen & _bbc_quality & _bbc_cheap).astype(int)
 
-    # ── Bruised Blue Chip 29th WCS (Agent 9 — Large-Cap Elite ROCE + P/B ≤ 2x) ──
+    # ── Bruised Blue Chip 29th WCS (Large-Cap Elite ROCE + PE Discount + P/B ≤ 3x) ──
+    # Canonical definition: all three must hold simultaneously.
+    # pe_discount = (10Y mean PE - current PE) / 10Y mean PE × 100 (positive = cheaper than history)
     _bbc29_largecap   = df["market_cap"].fillna(0) >= 20_000
     _bbc29_elite_roce = df["roce_med_10y"].fillna(0) >= 20
-    _bbc29_bruised_pb = df["pb_ratio"].fillna(999) <= 2.0
-    _bbc29_tailwind   = df.get("sector_tailwind", pd.Series(0, index=df.index)).fillna(0) == 1
+    _bbc29_pe_bruised = df["pe_discount"].fillna(0) >= 20
+    _bbc29_pb_check   = df["pb_ratio"].fillna(999) <= 3.0
     df["bruised_blue_chip_29"] = (
-        _bbc29_largecap & _bbc29_elite_roce & _bbc29_bruised_pb & _bbc29_tailwind
+        _bbc29_largecap & _bbc29_elite_roce & _bbc29_pe_bruised & _bbc29_pb_check
+    ).astype(int)
+
+    # ── Coffee Can Twin Filter + Clean Accounts Pass Flag ──
+    # Mukherjea "Coffee Can Investing" Ch.2 + Ch.3 — the complete entry criterion:
+    #   Twin Filter A: Revenue CAGR ≥ 10% sustained (rev_gr_10y ≥ 10)
+    #   Twin Filter B: Capital efficiency ≥ 15% for 10 consecutive years
+    #     Non-financial: ROCE 10Y median ≥ 15% (roce_med_10y ≥ 15)
+    #     Financial:     ROE  10Y median ≥ 15% (roe_med_10y  ≥ 15) — banks use ROE, not ROCE
+    #   Clean Accounts: CFO/EBITDA ≥ 90% (the master earnings quality signal — Ch.3)
+    #   Balance Sheet:  D/E ≤ 1.0 (already a hard gate, replicated here for composite completeness)
+    # fillna(0): missing 10Y data → fails the filter (conservative — no history = no proof).
+    # fillna(999): D/E null → fails fortress check (unknown debt = not a fortress).
+    # Result: 20–40 stocks expected to pass from 2,100+ universe (matches book's prediction).
+    _cc_rev_ok      = df["rev_gr_10y"].fillna(0) >= 10.0
+    _cc_de_ok       = df["debt_to_equity"].fillna(999) <= 1.0
+    _cc_cfo_ebitda  = df.get("cfo_to_ebitda", pd.Series(0.0, index=df.index)).fillna(0) >= 90.0
+    _cc_fin         = df["is_financial"]
+    _cc_roce_ok     = df["roce_med_10y"].fillna(0) >= 15.0   # non-financial
+    _cc_roe_ok      = df.get("roe_med_10y", pd.Series(0.0, index=df.index)).fillna(0) >= 15.0  # financial
+    _cc_efficiency  = np.where(_cc_fin, _cc_roe_ok, _cc_roce_ok)
+    df["coffee_can_pass"] = (
+        _cc_rev_ok & _cc_de_ok & _cc_cfo_ebitda &
+        pd.Series(_cc_efficiency.astype(bool), index=df.index)
     ).astype(int)
 
     # ── Identity D: Macro Tipping Point Velocity (30th WCS — India Multi-Trillion Engine) ──
