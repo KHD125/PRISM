@@ -73,11 +73,13 @@ RATIO_COLS = {
     "Price To Earnings":            "pe",
     "Industry PE Median":           "industry_pe",
     # EFFICIENCY — WORKING CAPITAL
-    # CCC aggregates the 3 components; 2yb is redundant with trend already captured by 1yb delta
-    "Cash Conversion Cycle":              "ccc",
-    "Cash Conversion Cycle 1 Year Back":  "ccc_1yb",
-    "Days Receivable":              "days_receivable",
-    "Days Receivable 1 Year Back":  "days_receivable_1yb",
+    "Cash Conversion Cycle":               "ccc",
+    "Cash Conversion Cycle 1 Year Back":   "ccc_1yb",
+    "Cash Conversion Cycle 3 Years Back":  "ccc_3yb",     # CCC 3Y trend for forensic quality
+    "Days Receivable":               "days_receivable",
+    "Days Receivable 1 Year Back":   "days_receivable_1yb",
+    "Days Receivable 2 Years Back":  "days_receivable_2yb",
+    "Days Receivable 3 Years Back":  "days_receivable_3yb",  # Mukherjea Lens 1: true 3Y DSO window
     # Days Payable/Inventory raw + 1yb dropped — CCC already aggregates; granular components add noise
     "Asset Turnover":               "asset_turnover",
     "Asset Turnover 1 Year Back":   "asset_turnover_1yb",
@@ -1528,6 +1530,22 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["free_cash_flow"].fillna(0) / df["operating_cash_flow"] * 100,
         np.nan
     )
+
+    # ── DSO Delta 3Y — Diamonds Lens 1 (channel-stuffing detector, true 3Y window) ──
+    # Book: DSO must not rise > 15 days over any 3-year trailing window (Mukherjea Ch.3).
+    # days_receivable_3yb now available in CSV — computes the exact 3Y delta the book specifies.
+    # fillna(np.nan): missing data handled in fw_diamond with fillna(999) → fails gate conservatively.
+    df["dso_delta_3y"] = np.where(
+        df["days_receivable"].notna() & df["days_receivable_3yb"].notna(),
+        df["days_receivable"] - df["days_receivable_3yb"],
+        np.nan
+    )
+
+    # ── Cumulative FCF/CFO — Diamonds Lens 3 proxy (self-sufficiency test) ──
+    # Book: 10Y cumulative FCF / 10Y cumulative CFO >= 25% (Mukherjea Ch.5).
+    # CSV lacks 10Y cumulative series. Proxy: fcf_to_cfo_pct (point-in-time FCF/CFO %).
+    # Aliased here so fw_diamond reads a semantically correct column name.
+    df["cumulative_fcf_to_ccfo"] = df.get("fcf_to_cfo_pct", pd.Series(np.nan, index=df.index))
 
     # ── Inventory Days (complement to ITR already in CSV) ──
     # Malik: <50 days = excellent, 50-80 = watch, >80 = red flag
