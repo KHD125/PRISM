@@ -652,18 +652,9 @@ def render_bruised_blue_chips(df: pd.DataFrame):
         unsafe_allow_html=True,
     )
 
-    _mcap   = df["market_cap"].fillna(0)   if "market_cap"    in df.columns else pd.Series(0,   index=df.index)
-    _roce   = df["roce_med_10y"].fillna(0) if "roce_med_10y"  in df.columns else pd.Series(0,   index=df.index)
-    _pe_d   = df["pe_discount"].fillna(0)  if "pe_discount"   in df.columns else pd.Series(0,   index=df.index)
-    _pb_ok  = (
-        (df["pb_ratio"].fillna(0) > 0) & (df["pb_ratio"].fillna(0) <= 3.0)
-        if "pb_ratio" in df.columns
-        else pd.Series(True, index=df.index)
-    )
-
-    bbc = df[(_mcap >= 20_000) & (_roce >= 20) & (_pe_d >= 20) & _pb_ok].sort_values(
-        "pe_discount", ascending=False
-    )
+    bbc = df[
+        df.get("bruised_blue_chip_29", pd.Series(0, index=df.index)).fillna(0) == 1
+    ].sort_values("pe_discount", ascending=False)
 
     if bbc.empty:
         st.info("💙 No Bruised Blue Chips detected. Quality large-caps are either fairly valued or not yet discounted enough.")
