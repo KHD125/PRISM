@@ -1839,6 +1839,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         1.0 - (df["dividend_payout_ratio"].fillna(0) / 100.0)
     ).clip(0.0, 1.0)
 
+    # Mayer 100-Bagger companion: Retention Rate as PERCENTAGE (distinct from reinvestment_rate above).
+    # retention_rate = 100 - DPR. Used by fw_100_bagger gate (>= 80.0%). DPR fillna(0) → full
+    # retention assumed for stocks with missing dividend data (conservative: they pass the gate).
+    df["retention_rate"] = (
+        100.0 - df.get("dividend_payout_ratio", pd.Series(0.0, index=df.index)).fillna(0.0)
+    ).clip(0.0, 100.0)
+
     # Identity B (Agent 8): Fundamental Growth Capacity g = ROE × RR.
     # Theoretical organic growth ceiling without external funding.
     # Actual growth >> g over multi-years → company is debt/dilution-dependent.
