@@ -444,7 +444,22 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # 25. PSU Value-Destruction Loop (Epoch 3)
     df["rf_psu_value_destruction"] = df.get("psu_value_destruction_flag", pd.Series(0, index=df.index)).fillna(0).astype(int)
 
-    # 26. Ind AS 116 Lease Inflation — D4 forensic shield
+    # 26. CFO/EBITDA Below Coffee Can Clean Accounts Floor
+    # Saurabh Mukherjea "Coffee Can Investing" Ch.3: "CFO/EBITDA must be above 0.9
+    # for every one of the last 10 years." Below 0.9 (= 90%) for any year demands
+    # investigation; below 0.8 is a disqualifying signal — cash is not backing profits.
+    # Distinct from rf_low_cfo_pat (which checks OCF vs PAT, not vs EBITDA):
+    #   CFO/PAT ≥ 70% checks that profit converts to cash.
+    #   CFO/EBITDA ≥ 90% checks that EBITDA itself is not artificially inflated
+    #   via receivables stuffing, aggressive revenue recognition, or RPT revenue.
+    # cfo_to_ebitda stored as percentage in CSV (e.g. 92.4 = 92.4%). Threshold = 90.0.
+    df["rf_low_cfo_ebitda"] = np.where(
+        df.get("cfo_to_ebitda", pd.Series(np.nan, index=df.index)).notna(),
+        (df.get("cfo_to_ebitda", pd.Series(100.0, index=df.index)) < FORENSIC["cfo_ebitda_clean_threshold"]).astype(int),
+        0
+    )
+
+    # 27. Ind AS 116 Lease Inflation — D4 forensic shield
     # Ind AS 116 (effective FY2020) forces companies to capitalise operating leases as Right-of-Use
     # (RoU) assets. Lease rentals move out of "Other Expenses" into Depreciation + Finance Costs.
     # Net effect: EBITDA looks inflated (rentals no longer in opex), OCF looks depressed (lease
@@ -457,6 +472,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "Quick Service Restaurant",
         "Air Transport Service",
         "Hotels & Restaurants",
+        "Logistics",
     ]
     _in_lease_sector = df.get("sector", pd.Series("", index=df.index)).fillna("").isin(_lease_sectors)
     _ebitda_vals     = df.get("ebitda", pd.Series(np.nan, index=df.index)).fillna(0)
@@ -540,6 +556,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_receivables_bloat":        "DSO expansion >20 days above sector median — sector-relative receivables manipulation",
         "rf_psu_value_destruction":    "PSU Value-Destruction Loop (low spread, high payout, CWIP delays)",
         "rf_lease_inflation":          "Ind AS 116 lease mirage — EBITDA inflated by RoU capitalisation (QSR/Retail/Aviation)",
+        "rf_low_cfo_ebitda":           "CFO/EBITDA <90% — Coffee Can clean accounts failure (Mukherjea master signal)",
     }
 
 
