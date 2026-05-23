@@ -283,7 +283,22 @@ with st.sidebar:
     sel_sector = st.selectbox("Sector", sectors, key="sb_sector")
     sel_tier = st.multiselect("Conviction Tier", [1,2,3,4,5], default=[1,2,3], key="sb_tier")
     sel_mcap = st.multiselect("Market Category", ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], default=["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], key="sb_mcap")
-    
+
+    # Framework Filter — shows stocks passing ANY of the selected frameworks.
+    # Labels extracted live from frameworks_passed column; empty selection = no filter (show all).
+    if "frameworks_passed" in df.columns:
+        _all_fw = sorted(set(
+            fw.strip()
+            for cell in df["frameworks_passed"].dropna()
+            if cell != "None"
+            for fw in cell.split(",")
+            if fw.strip()
+        ))
+    else:
+        _all_fw = []
+    sel_fw = st.multiselect("Framework", _all_fw, default=[], key="sb_fw",
+                             help="Show stocks passing ANY selected framework. Empty = all stocks.")
+
     # The All-Time Best Filter: Moat-Growth Matrix
     moat_options = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
     sel_moat = st.multiselect("Moat", moat_options, default=["⭐ Wealth Creator"], key="sb_moat")
@@ -304,6 +319,11 @@ if sel_tier:
     filt = filt[filt["conviction_tier"].isin(sel_tier)]
 if sel_mcap:
     filt = filt[filt["market_category"].isin(sel_mcap)]
+if sel_fw and "frameworks_passed" in filt.columns:
+    _fw_mask = pd.Series(False, index=filt.index)
+    for _fw in sel_fw:
+        _fw_mask = _fw_mask | filt["frameworks_passed"].str.contains(_fw, regex=False, na=False)
+    filt = filt[_fw_mask]
 if sel_moat:
     filt = filt[filt["moat_growth_quad"].isin(sel_moat)]
 if smart_sweep:
