@@ -213,10 +213,7 @@ with st.expander("⚙️ Advanced: Override Mandate Defaults", expanded=False):
     )
     st.caption(MASTER_PROFILES[scoring_profile]["description"])
 
-# Final values — expander code always executes even when collapsed
-analysis_mode   = st.session_state.get("adv_mode",    _MANDATES[_sel_mandate]["mode"])
-scoring_profile = st.session_state.get("adv_profile", _MANDATES[_sel_mandate]["profile"])
-profile_cfg     = MASTER_PROFILES[scoring_profile]
+profile_cfg = MASTER_PROFILES[scoring_profile]
 
 # ── Scoring ────────────────────────────────────────────────────
 _score_key = f"{file_sig}::{analysis_mode}::{scoring_profile}"
@@ -452,7 +449,9 @@ with tabs[0]:
     )
 
     # ── Stock cards with tearsheet shortcut ────────────────────────
-    for _di, (_, _drow) in enumerate(_disc_df.head(_shown_n).iterrows()):
+    _disc_slice = _disc_df.head(_shown_n)
+    for _di in range(len(_disc_slice)):
+        _drow = _disc_slice.iloc[_di]
         render_stock_card(_drow, show_scores=True)
         _, _btn_c = st.columns([8, 2])
         with _btn_c:
@@ -975,12 +974,8 @@ with tabs[3]:
                 if "qglp_pass" in filt.columns else filt.iloc[:0])
     _mp_qual = df[df["gate_pass"] == 1] if "gate_pass" in df.columns else df
 
-    _bbc_mask = (
-        (df["market_cap"].fillna(0)   >= 20_000 if "market_cap"   in df.columns else pd.Series(False, index=df.index)) &
-        (df["roce_med_10y"].fillna(0) >= 20      if "roce_med_10y" in df.columns else pd.Series(False, index=df.index)) &
-        (df["pe_discount"].fillna(0)  >= 20      if "pe_discount"  in df.columns else pd.Series(False, index=df.index))
-    )
-    _bbc_cnt = int(_bbc_mask.sum())
+    _bbc_mask = df.get("bruised_blue_chip_29", pd.Series(0, index=df.index)).fillna(0) == 1
+    _bbc_cnt  = int(_bbc_mask.sum())
 
     # ── Top summary strip ──────────────────────────────────────────
     render_metric_strip([
@@ -1196,7 +1191,7 @@ with tabs[4]:
                    "margin": "Fisher", "balance_sheet": "Baid", "valuation": "Marks+Baid"}
             st.markdown(f"- {k.replace('_',' ').title()} ({src.get(k,'')}): **{v*100:.0f}%**")
     with c2:
-        st.markdown("**Hard Gates (7 Frameworks)**")
+        st.markdown("**Hard Gates (10 Criteria)**")
         for name, cfg in HARD_GATES.items():
             st.markdown(f"- {cfg['description']}")
         st.markdown("**Momentum Sub-Weights (CAN-SLIM)**")
