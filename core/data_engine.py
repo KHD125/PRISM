@@ -537,16 +537,20 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── INCOME DERIVED ──
-    # Year-by-year revenue growth for Coffee Can individual-year consistency check.
-    # Mukherjea requires ≥ 10% every single year for 10 years; we can verify years 2-5.
+    # Year-by-year revenue growth for Coffee Can / Baid individual-year consistency checks.
+    # Uses .get() fallback: if the CSV is missing a Revenue N Years Back column,
+    # the corresponding rev_gr_yN is NaN (no KeyError, no silent wrong value).
+    _rev_nan = pd.Series(np.nan, index=df.index)
     for _yr, (_num, _den) in enumerate(
         [("revenue_1yb", "revenue_2yb"), ("revenue_2yb", "revenue_3yb"),
          ("revenue_3yb", "revenue_4yb"), ("revenue_4yb", "revenue_5yb")], start=2
     ):
-        _col = f"rev_gr_y{_yr}"
+        _col   = f"rev_gr_y{_yr}"
+        _num_s = df.get(_num, _rev_nan)
+        _den_s = df.get(_den, _rev_nan)
         df[_col] = np.where(
-            df[_den].notna() & (df[_den].abs() > 0),
-            (df[_num] - df[_den]) / df[_den].abs() * 100,
+            _den_s.notna() & (_den_s.abs() > 0),
+            (_num_s - _den_s) / _den_s.abs() * 100,
             np.nan
         )
     df["pat_acceleration"]    = df["pat_gr_3y"]    - df["pat_gr_5y"]
