@@ -167,48 +167,6 @@ HARD_GATES = {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# SSGR DEPRECIATION RATES BY INDUSTRY (approximate SLM rates)
-# Used in SSGR formula: dep_rate = asset depreciation as % of fixed assets/year
-# Source: Indian Companies Act Schedule II + industry norms
-# ═══════════════════════════════════════════════════════════════
-SSGR_DEP_RATES = {
-    # Capital-light / Software / IT
-    "Information Technology": 0.25,
-    "IT - Software": 0.25,
-    "Computers - Software": 0.25,
-    "IT Services & Consulting": 0.25,
-    "BPO/KPO": 0.25,
-    # Pharma & Biotech
-    "Pharmaceuticals": 0.15,
-    "Pharmaceuticals - Indian - Bulk Drugs": 0.15,
-    "Biotechnology": 0.15,
-    "Healthcare": 0.15,
-    # Specialty Chemicals
-    "Specialty Chemicals": 0.10,
-    "Agrochemicals": 0.10,
-    # FMCG / Consumer
-    "FMCG": 0.10,
-    "Consumer Durables": 0.10,
-    "Food - Processing": 0.10,
-    # Capital Goods / Engineering
-    "Capital Goods": 0.07,
-    "Engineering": 0.07,
-    "Industrial Machinery": 0.07,
-    # Manufacturing / Auto
-    "Automobile": 0.08,
-    "Auto Ancillaries": 0.08,
-    "Textiles": 0.07,
-    "Cement": 0.06,
-    "Steel": 0.06,
-    "Metals - Non Ferrous": 0.06,
-    # Power / Infrastructure
-    "Power": 0.04,
-    "Infrastructure": 0.04,
-    "Construction": 0.05,
-    "Telecom": 0.10,
-    # Default for unlisted / unmapped sectors
-    "_default": 0.10,
-}
 
 # Financial sector stocks get a separate gate set
 # Exact INDUSTRY names for df["industry"].isin() — verified against 354 CSV industry values.
@@ -788,7 +746,7 @@ EPOCH4_SQGLP = {
 # ═══════════════════════════════════════════════════════════════
 EPOCH5_MODERN = {
     "bbc_roce_floor":    20.0,          # 29th WCS: minimum 10Y median ROCE for BBC flag
-    "bbc_pb_ceiling":    2.0,           # 29th WCS: maximum P/B for deep-value BBC entry
+    "bbc_pb_ceiling":    3.0,           # 29th WCS: maximum P/B for deep-value BBC entry (unified with bruised_blue_chip_29)
     "tipping_sectors": [                # 30th WCS: sectors hitting multi-trillion tipping point
         # Names verified against CSV Sector column (81 unique values)
         "Financial Services",
@@ -798,6 +756,20 @@ EPOCH5_MODERN = {
         "Quick Service Restaurant",     # CSV has no trailing 's'
     ],
     "max_volatility_ratio": 0.40,       # 27th WCS: Consistency Coefficient ceiling for Consistents
+}
+
+# ═══════════════════════════════════════════════════════════════
+# EPOCH 3.5: UNUSUAL BILLIONAIRES — Greatness Formula Config
+# Source: Mukherjea, "The Unusual Billionaires" (2016)
+# Sector-routed growth hurdles: non-financials use revenue CAGR;
+# financials use loan-book expansion proxy (same Greatness Formula
+# research base as Coffee Can's explicit 15% financial hurdle).
+# ═══════════════════════════════════════════════════════════════
+EPOCH35_UNUSUAL_BILLIONAIRES = {
+    "non_financial_growth_hurdle": 10.0,  # Revenue CAGR ≥ 10% for industrials/consumer/pharma
+    "financial_growth_hurdle":     15.0,  # Loan/Revenue CAGR ≥ 15% for banks and NBFCs
+    "capital_efficiency_hurdle":   15.0,  # ROCE (non-fin) / ROE (fin) ≥ 15% — Greatness Formula floor
+    "min_promoter_stake":          45.0,  # Owner-operator alignment barrier (UB case studies)
 }
 
 # 27th WCS: Sectors MOSL classified as Consistent compounders (sustained earnings 2007–2022).
@@ -831,10 +803,14 @@ CONSISTENT_SECTORS = frozenset([
 # ═══════════════════════════════════════════════════════════════
 # Fixed denominator for forensic_score: (max_flags - red_flag_count) / max_flags × 100.
 # Must be updated manually when a new rf_ flag is added to forensic_engine.py.
-# Current flags: 25 active (rf_psu_value_destruction, rf_lease_inflation added recently).
-FORENSIC_MAX_FLAGS = 25
+# Current flags: 26 active (rf_low_cfo_ebitda added — Coffee Can master clean accounts signal).
+FORENSIC_MAX_FLAGS = 26
 FORENSIC = {
-    "cfo_pat_alert":         70.0,  # below this = Level 1 red flag (percentage, e.g. 73.04 = 73%)
+    "cfo_pat_alert":              70.0,   # below this = Level 1 red flag (percentage, e.g. 73.04 = 73%)
+    # Coffee Can Clean Accounts master signal (Mukherjea Ch.3): CFO/EBITDA must be > 0.9 (ratio)
+    # = 90.0 when cfo_to_ebitda is stored as percentage. "Below 0.9 for even a single year demands
+    # investigation; below 0.8 is a disqualifying signal — something is seriously wrong."
+    "cfo_ebitda_clean_threshold": 90.0,  # percentage threshold; rf_low_cfo_ebitda fires below this
     "receivable_rise_days":  15,    # DSO rising more than this = flag
     "inventory_vs_revenue":  True,  # inv growth > rev growth = flag
     "capex_depr_ratio_max":  3.0,   # capex/depr > 3 without rev jump
