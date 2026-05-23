@@ -1178,7 +1178,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #
     # 1. Reputation/Brand: stable OPM (pricing power) + NPM above own 5Y median (sustaining premium)
     df["ibas_reputation_score"] = (
-        df["opm_stable"].fillna(0) * 50.0
+        df.get("opm_stable", pd.Series(0, index=df.index)).fillna(0) * 50.0
         + (df["d11_npm_above_5y_med"].fillna(0) > 0).astype(float) * 50.0
     )
     # 2. Architecture/Network: negative CCC = company collects cash BEFORE paying suppliers
