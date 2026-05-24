@@ -1171,6 +1171,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (is_fin_cc | (de_cc.fillna(999) < 1.0))   &  # D/E < 1 for non-financials
         (pledge_cc.fillna(0)     < 10)               # pledge < 10% governance gate
     )
+    df["coffee_can_pass"] = fw_coffee_can.astype(int)  # overwrites data_engine simple version with full-logic
 
     # 3. Magic Formula (Joel Greenblatt) — high Earnings Yield + high ROCE
     ey_mf   = df.get("earnings_yield", pd.Series(np.nan, index=df.index)).fillna(0)
@@ -1345,6 +1346,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (is_fin_ub | (de_ub.fillna(999) < 1.0)) &           # Capital discipline: D/E < 1 for non-financials
         (pledge_ub.fillna(0)   < 10)                         # Governance pillar: pledge < 10%
     )
+    df["ub_pass"] = fw_unusual_billionaires.astype(int)
 
     # 11. Fisher Quality (Philip Fisher) — Systematic quantitative proxies for Fisher's key measurable criteria.
     #    Fisher's framework is 90% qualitative (scuttlebutt, channel checks, management DNA) —
@@ -1708,6 +1710,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (peg_bd.fillna(999)     >   0) &              # PEG > 0 — positive earnings required
         (peg_bd.fillna(999)     <= 1.5)               # PEG ≤ 1.5 — unique entry corridor (UNIQUE threshold)
     )
+    df["baid_pass"] = fw_baid.astype(int)
 
     # 20. Long Game Quality (Vishal Khandelwal — The Long Game)
     #    Khandelwal's "fortress compounder": a business that generates REAL free cash after ALL reinvestment.
