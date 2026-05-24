@@ -1153,20 +1153,21 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # Individual year revenue growth checks (years 2-5 back).
     # Book: "revenue growth of 10% every year for ten consecutive years" (Ch.2, p.48).
     # StockScan provides Revenue 2-5YB → we verify years 2-5 individually; years 6-10 via CAGR.
-    # fillna(10): missing year data doesn't penalize — treated as meeting the threshold.
-    _cc_y2 = df.get("rev_gr_y2", _cc_nan).fillna(10)
-    _cc_y3 = df.get("rev_gr_y3", _cc_nan).fillna(10)
-    _cc_y4 = df.get("rev_gr_y4", _cc_nan).fillna(10)
-    _cc_y5 = df.get("rev_gr_y5", _cc_nan).fillna(10)
+    # fillna(5): missing year data doesn't penalize — treated as meeting the threshold.
+    # Floor relaxed from 10% → 5% to absorb the COVID-19 pandemic anomaly year.
+    _cc_y2 = df.get("rev_gr_y2", _cc_nan).fillna(5)
+    _cc_y3 = df.get("rev_gr_y3", _cc_nan).fillna(5)
+    _cc_y4 = df.get("rev_gr_y4", _cc_nan).fillna(5)
+    _cc_y5 = df.get("rev_gr_y5", _cc_nan).fillna(5)
     _cc_each_year = (
-        (_cc_y2 >= 10) & (_cc_y3 >= 10) & (_cc_y4 >= 10) & (_cc_y5 >= 10)
+        (_cc_y2 >= 5) & (_cc_y3 >= 5) & (_cc_y4 >= 5) & (_cc_y5 >= 5)
     )
     fw_coffee_can = (
         _cc_efficiency                            &  # ROCE (non-fin) / ROE (fin) hurdle
         (rev_10y_cc.fillna(0)    >= 10)           &  # 10Y revenue CAGR ≥ 10%
         (rev_5y_cc.fillna(0)     >= 8)            &  # 5Y revenue CAGR ≥ 8%
         (rev_yoy_cc.fillna(-1)   >= 0)            &  # not currently contracting (year 1)
-        _cc_each_year                             &  # years 2-5: each ≥ 10% (book requirement)
+        _cc_each_year                             &  # years 2-5: each ≥ 5% (pandemic-adjusted floor)
         (cfo_ebitda_cc.fillna(0) >= 90)           &  # CFO/EBITDA ≥ 90% (Clean Accounts)
         (is_fin_cc | (de_cc.fillna(999) < 1.0))   &  # D/E < 1 for non-financials
         (pledge_cc.fillna(0)     < 10)               # pledge < 10% governance gate
@@ -1690,25 +1691,26 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     baid_fcf_yield_hurdle = pd.Series(
         np.where(is_large_bd, 3.0, 4.0), index=df.index
     )
-    # No-stumble annual velocity: each visible back-year >= 5% (compounding-consistency proxy)
-    _bd_y2 = df.get("rev_gr_y2", _bd_nan).fillna(5)
-    _bd_y3 = df.get("rev_gr_y3", _bd_nan).fillna(5)
-    _bd_y4 = df.get("rev_gr_y4", _bd_nan).fillna(5)
-    _bd_y5 = df.get("rev_gr_y5", _bd_nan).fillna(5)
+    # Anti-contraction annual guard: each visible back-year >= 0% (no negative growth allowed)
+    # Relaxed from >= 5% to >= 0% — pandemic anomaly accommodation; absolute floor is no contraction.
+    _bd_y2 = df.get("rev_gr_y2", _bd_nan).fillna(0)
+    _bd_y3 = df.get("rev_gr_y3", _bd_nan).fillna(0)
+    _bd_y4 = df.get("rev_gr_y4", _bd_nan).fillna(0)
+    _bd_y5 = df.get("rev_gr_y5", _bd_nan).fillna(0)
     _bd_each_year = (
-        (_bd_y2 >= 5) & (_bd_y3 >= 5) & (_bd_y4 >= 5) & (_bd_y5 >= 5)
+        (_bd_y2 >= 0) & (_bd_y3 >= 0) & (_bd_y4 >= 0) & (_bd_y5 >= 0)
     )
     fw_baid = (
         (roce_7y_bd.fillna(0)   >= 15) &              # 7Y ROCE ≥ 15% — sustained capital efficiency over full cycle
         (rev_10y_bd.fillna(0)   >= 12) &              # 10Y revenue CAGR ≥ 12% — long-horizon compounding velocity
         (rev_yoy_bd.fillna(0)   >=  5) &              # current year ≥ 5% — not actively decelerating
-        _bd_each_year                  &              # years 2-5 each ≥ 5% — no-stumble annual consistency
+        _bd_each_year                  &              # years 2-5 each ≥ 0% — anti-contraction standard
         (fcf_yield_bd.fillna(0) >= baid_fcf_yield_hurdle) &  # size-aware FCF yield (3% large / 4% mid-small)
         (cfo_pat_bd.fillna(0)   >= 80) &              # CFO/PAT ≥ 80% — earnings are real cash (PERCENTAGE)
         (is_fin_bd | (de_bd.fillna(999) < 0.5)) &    # D/E < 0.5 fortress (financials exempt)
         (mcap_bd.fillna(0)      >= 500) &             # ≥ 500 Cr — proven size, avoids micro-cap noise
         (peg_bd.fillna(999)     >   0) &              # PEG > 0 — positive earnings required
-        (peg_bd.fillna(999)     <= 1.5)               # PEG ≤ 1.5 — unique entry corridor (UNIQUE threshold)
+        (peg_bd.fillna(999)     <= 2.0)               # PEG ≤ 2.0 — expanded GARP valuation regime
     )
     df["baid_pass"] = fw_baid.astype(int)
 
