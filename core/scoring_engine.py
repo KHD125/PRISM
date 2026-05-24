@@ -1208,51 +1208,102 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     )
 
     # 6. CAN SLIM (William O'Neill) — earnings acceleration + technical leadership
-    #    C: Quarterly EPS growth ≥ 25% YoY (book: "at least 25%", best are 40-100%+)
-    #    A: Annual EPS 5Y CAGR ≥ 25% (FIXED: was 20%; book specifies 25%) + ROE ≥ 17%
+    #    C: Quarterly EPS growth ≥ 25% YoY AND quarterly sales ≥ 25% YoY (Ch.3: top-line confirmation
+    #       required — EPS spikes without revenue growth are value traps)
+    #    A: Annual EPS 5Y CAGR ≥ 25% + ROE ≥ 17% + 3-year consistency (eps_gr_3y ≥ 0 AND
+    #       eps_gr_yoy ≥ 0) — O'Neill specifies unbroken annual increases (Ch.4)
     #    N: Near 52W high — within 15% (book: "10-15% of 52-week high")
     #    S: Supply/Demand — vol_ratio ≥ 1.5 (book: "40-50% above average" = 1.4–1.5x)
+    #       S-bonus: equity_shares <= equity_shares_1yb (float retraction / share buyback active)
     #    L: Leader — RS percentile ≥ 80 (book: "RS Rating 80+, average of winners = 87")
-    #       Approximated via _pct_rank(d47_rs_composite) — percentile rank across all 2108 stocks
+    #       IBD-weighted via d47_rs_composite: 50D×40% + 26W×30% + 52W×30% (data_engine.py D47)
+    #       _pct_rank(d47_rs_composite, ascending=True) → percentile rank across all 2108 stocks
     #    I: Institutional sponsorship — FII or DII buying (best proxy for A/B A-D rating)
-    #    M: Market direction — NOT IMPLEMENTABLE (requires market index data absent from stock CSV)
+    #    M: Market direction — detect_market_regime(df) breadth consensus already computed in
+    #       run_full_scoring() and stored in df.attrs["detected_market_regime"] before this function
+    #       is called. BEAR regime blocks ALL new CAN SLIM entries (O'Neil Ch.9: 3/4 stocks follow
+    #       market direction — buying in a bear market leads to immediate capital drawdown).
     #    Sources: CAN SLIM Mastery Guide Chapter 1 (C,A), Chapter 2 (N,S), Chapter 3 (L,I), Chapter 6 (M)
-    pat_lq_cs    = df.get("pat_lq",          pd.Series(np.nan, index=df.index)).fillna(np.nan)
-    pat_pyq_cs   = df.get("pat_pyq",         pd.Series(np.nan, index=df.index)).fillna(np.nan)
+    #    Spec: docs/canslim_technical_specs.json
+    # ── C criterion: use precomputed q_eps_yoy (EPS per share YoY) from data_engine.py.
+    # O'Neil Ch.3 specifies EPS (per share), not total PAT. q_eps_yoy = (eps_lq - eps_pyq) /
+    # abs(eps_pyq) * 100, with zero-base guard applied at source (data_engine.py:583).
+    # fillna(0) → missing EPS history conservatively fails (0 < 25). No inline ratio
+    # computation needed here — clean precomputed series only (noise-exclusion principle).
+    q_eps_cs     = df.get("q_eps_yoy",       pd.Series(np.nan, index=df.index)).fillna(0)    # C: EPS per share gate
+    q_rev_cs     = df.get("q_rev_yoy",       pd.Series(np.nan, index=df.index)).fillna(0)    # C: sales gate
     eps_gr_cs    = df.get("eps_gr_5y",        pd.Series(np.nan, index=df.index)).fillna(0)
+    eps_gr_3y_cs = df.get("eps_gr_3y",        pd.Series(np.nan, index=df.index)).fillna(-1)  # A: consistency
+    eps_yoy_cs   = df.get("eps_gr_yoy",       pd.Series(np.nan, index=df.index)).fillna(-1)  # A: consistency
     roe_cs       = df.get("roe",              pd.Series(np.nan, index=df.index)).fillna(0)    # A: ROE ≥ 17%
     dist_wh_cs   = df.get("dist_52wh",        pd.Series(999.0,  index=df.index)).fillna(999)
     vol_r_cs     = df.get("vol_ratio",        pd.Series(np.nan, index=df.index)).fillna(1.0)
     rs_comp_cs   = df.get("d47_rs_composite", pd.Series(np.nan, index=df.index)).fillna(0)
     fii_cs       = df.get("change_fii_lq",    pd.Series(0.0,    index=df.index)).fillna(0)
     dii_cs       = df.get("change_dii_lq",    pd.Series(0.0,    index=df.index)).fillna(0)
-    # L: Percentile rank of composite RS (50D+26W+52W avg) across universe — approximates IBD RS Rating
+    # A: PAT step-growth — 3 consecutive years of unbroken profit increase (O'Neil Ch.4)
+    # NaN comparisons in pandas return False → missing back-year data conservatively fails gate.
+    # Note: uses PAT (total profit). O'Neil specifies EPS per share; PAT does not account for
+    # dilution. Combined with eps_gr_3y_cs >= 0 and eps_yoy_cs >= 0 (EPS-based proxies above),
+    # this adds direct year-by-year step verification as a complementary hard gate.
+    pat_cs      = df.get("pat",     pd.Series(np.nan, index=df.index))
+    pat_1yb_cs  = df.get("pat_1yb", pd.Series(np.nan, index=df.index))
+    pat_2yb_cs  = df.get("pat_2yb", pd.Series(np.nan, index=df.index))
+    pat_3yb_cs  = df.get("pat_3yb", pd.Series(np.nan, index=df.index))
+    pat_step_ok = (
+        (pat_cs     > pat_1yb_cs) &   # current year > 1 year ago
+        (pat_1yb_cs > pat_2yb_cs) &   # 1 year ago > 2 years ago
+        (pat_2yb_cs > pat_3yb_cs)     # 2 years ago > 3 years ago
+    )
+    # S-bonus: float retraction — equity_shares <= equity_shares_1yb (O'Neil Ch.6: supply constraint)
+    # Share buybacks reduce outstanding float → structural supply-demand tilt toward price appreciation.
+    # Added to can_slim_score only (not fw_can_slim hard gate) — O'Neil's primary S gate is volume surge.
+    # Both values must be present; missing data = False (conservative: no buyback assumed).
+    eq_shr_cs     = df.get("equity_shares",     pd.Series(np.nan, index=df.index))
+    eq_shr_1yb_cs = df.get("equity_shares_1yb", pd.Series(np.nan, index=df.index))
+    buyback_cs = (
+        eq_shr_cs.notna() & eq_shr_1yb_cs.notna() &
+        (eq_shr_cs <= eq_shr_1yb_cs)
+    )
+    # L: Percentile rank of IBD-weighted RS composite (50D×40% + 26W×30% + 52W×30%)
     # ascending=True: higher RS composite → higher rank → top 20% = RS Rating ≥ 80
     rs_pctrank_cs = _pct_rank(rs_comp_cs, ascending=True).fillna(50)
-    # C: Quarterly EPS growth: (pat_lq / pat_pyq - 1) >= 0.25, guarded against zero/negative base
-    qtr_growth_ok = np.where(
-        pat_lq_cs.notna() & pat_pyq_cs.notna() & (pat_pyq_cs > 0),
-        ((pat_lq_cs / pat_pyq_cs - 1) >= 0.25),
-        False
-    )
+    # M: Market direction gate — stored in df.attrs by run_full_scoring() before this call.
+    # detect_market_regime() is called before compute_qglp_score() in run_full_scoring().
+    # Fallback to SIDEWAYS (pass) when called outside run_full_scoring() (e.g. unit tests).
+    _regime_cs  = df.attrs.get("detected_market_regime", "SIDEWAYS")
+    market_ok_cs = (_regime_cs != "BEAR")   # scalar bool — broadcasts across all rows
     fw_can_slim = (
-        qtr_growth_ok &                    # C: quarterly earnings +25%+ YoY
-        (eps_gr_cs        >= 25) &         # A: annual EPS 5Y CAGR ≥ 25% (FIXED: was 20%)
-        (roe_cs           >= 17) &         # A: ROE ≥ 17% (O'Neill's explicit A-criterion requirement)
-        (dist_wh_cs       <= 15) &         # N: within 15% of 52W high
-        (vol_r_cs         >= 1.5) &        # S: volume ≥ 1.5× avg (40-50%+ above average)
-        (rs_pctrank_cs    >= 80) &         # L: RS Rating ≥ 80 (top 20% of universe by RS composite)
-        ((fii_cs > 0) | (dii_cs > 0))     # I: institutional buying confirmed
+        (q_eps_cs         >= 25.0)  &   # C: quarterly EPS per share +25%+ YoY (O'Neil Ch.3: EPS not PAT)
+        (q_rev_cs         >= 25.0)  &   # C: quarterly sales +25%+ YoY (top-line validation)
+        (eps_gr_cs        >= 25)    &   # A: annual EPS 5Y CAGR ≥ 25%
+        (roe_cs           >= 17)    &   # A: ROE ≥ 17% (O'Neill's explicit A-criterion)
+        (eps_gr_3y_cs     >= 0)     &   # A: 3Y EPS CAGR not negative — net positive trajectory
+        (eps_yoy_cs       >= 0)     &   # A: not currently declining YoY — no recent contraction
+        pat_step_ok                 &   # A: PAT grew each year for 3 consecutive years (O'Neil Ch.4)
+        (dist_wh_cs       <= 15)    &   # N: within 15% of 52W high
+        (vol_r_cs         >= 1.5)   &   # S: volume ≥ 1.5× avg (40-50%+ above average)
+        (rs_pctrank_cs    >= 80)    &   # L: IBD-weighted RS percentile ≥ 80 (top 20% of universe)
+        ((fii_cs > 0) | (dii_cs > 0)) & # I: institutional buying confirmed
+        market_ok_cs                    # M: not in BEAR regime (breadth consensus)
     )
-    # CAN SLIM criteria count (0-7): useful for partial-pass display and ranking within non-full-pass stocks
+    df["can_slim_pass"] = fw_can_slim.astype(int)
+    # CAN SLIM criteria count (0-12 components): useful for partial-pass display and ranking.
+    # C has 2 components, A has 5 (CAGR + ROE + 3Y + YoY + PAT step-growth), S has 2 (volume + buyback bonus).
     df["can_slim_score"] = (
-        pd.Series(qtr_growth_ok, index=df.index).astype(int) +   # C
-        (eps_gr_cs >= 25).astype(int) +                           # A1: EPS CAGR
-        (roe_cs    >= 17).astype(int) +                           # A2: ROE
-        (dist_wh_cs <= 15).astype(int) +                          # N
-        (vol_r_cs   >= 1.5).astype(int) +                         # S
-        (rs_pctrank_cs >= 80).astype(int) +                       # L
-        ((fii_cs > 0) | (dii_cs > 0)).astype(int)                # I
+        (q_eps_cs   >= 25.0).astype(int)  +                       # C1: quarterly EPS per share
+        (q_rev_cs   >= 25.0).astype(int)  +                       # C2: quarterly sales
+        (eps_gr_cs  >= 25).astype(int)    +                       # A1: EPS 5Y CAGR
+        (roe_cs     >= 17).astype(int)    +                       # A2: ROE
+        (eps_gr_3y_cs >= 0).astype(int)   +                       # A3: 3Y EPS consistency
+        (eps_yoy_cs >= 0).astype(int)     +                       # A4: YoY not declining
+        pat_step_ok.astype(int)           +                       # A5: PAT step-growth (3 consecutive years)
+        (dist_wh_cs <= 15).astype(int)    +                       # N
+        (vol_r_cs   >= 1.5).astype(int)   +                       # S1: volume surge
+        buyback_cs.astype(int)            +                       # S2-bonus: float retraction / share buyback
+        (rs_pctrank_cs >= 80).astype(int) +                       # L: IBD-weighted RS percentile
+        ((fii_cs > 0) | (dii_cs > 0)).astype(int) +              # I
+        pd.Series(int(market_ok_cs), index=df.index)              # M
     )
 
     # 7. Bruised Blue Chip (29th MOSL Study) — quality company fallen hard + cheap vs history
