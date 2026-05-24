@@ -1441,7 +1441,10 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     mcap_dm     = df.get("market_cap",            _dm_nan)   # Crores
     promo_dm    = df.get("promoter_holdings",     _dm_nan)   # % e.g. 40.0 = 40%
     pledge_dm   = df.get("pledged_percentage",    pd.Series(100.0, index=df.index)).fillna(100)
-    fscore_dm   = df.get("red_flag_count",         pd.Series(999, index=df.index)).fillna(999)  # integer count; 0 = clean
+    # Diamond-specific forensic gate: only the 6 flags directly mapped to Mukherjea's
+    # Three-Lens Framework. rf_low_cfo_ebitda (Coffee Can) and all Malik/WCS24/sector
+    # flags are excluded — they belong to other frameworks, not Diamonds in the Dust.
+    fscore_dm   = df.get("dm_forensic_flag_count", pd.Series(999, index=df.index)).fillna(999)
     is_fin_dm   = df.get("is_financial",          pd.Series(False, index=df.index)).fillna(False)
     fw_diamond = (
         (roce_10y_dm.fillna(0)   >= 15)   &   # Lens 2: ROCE > 15% 10Y — moat proven over full cycle
@@ -1450,12 +1453,12 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (rev_5y_dm.fillna(0)     >=  8)   &   # Stage 1: Recent growth not decelerating sharply
         (is_fin_dm | (de_dm.fillna(999) < 0.5)) &  # Stage 1: D/E < 0.5 — strictest Mukherjea filter
         (cfo_pat_dm.fillna(0)    >= 80.0) &   # Lens 1: CFO/PAT ≥ 80% cash earnings quality (book: 0.8)
-        (dso_delta_dm.fillna(999) <= 15.0) &  # Lens 1: DSO 1Y rise ≤ 15 days (channel-stuffing guard)
+        (dso_delta_dm.fillna(999) <= 15.0) &  # Lens 1: DSO rise ≤ 15 days over 3Y (channel-stuffing guard)
         (fcf_cfo_dm.fillna(0)    >= 25)   &   # Lens 3: FCF/CFO ≥ 25% capital allocation surplus
         (mcap_dm.fillna(0)       >= 500)  &   # Stage 1: ≥ ₹500 Cr proven business scale
         (promo_dm.fillna(0)      >= 40)   &   # Gate Zero: Promoter ≥ 40% alignment
         (pledge_dm               <  10)   &   # Gate Zero: Pledge < 10%
-        (fscore_dm               ==  0)       # Lens 1: Zero forensic red flags
+        (fscore_dm               ==  0)       # Lens 1: Zero Diamond-specific forensic flags (dm_forensic_flag_count)
     )
     df["diamonds_pass"] = fw_diamond.astype(int)
 
