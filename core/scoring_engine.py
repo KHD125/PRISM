@@ -2000,6 +2000,9 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         df.get("multitrillioncap_tipping_point", pd.Series(0, index=df.index)).fillna(0) == 1
     )
 
+    # Schilit Financial Shenanigans clean-pass flag (pre-computed in forensic_engine)
+    fw_schilit = df.get("schilit_pass", pd.Series(0, index=df.index)).fillna(0).astype(bool)
+
     # Build comma-separated framework string — fully vectorized, zero apply
     fw_str = (
         np.where(fw_qglp,                   "QGLP|",                       "") +
@@ -2033,7 +2036,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_consistent_volatile,    "Consistent in Volatile|",     "") +
         np.where(fw_ep_hockey_stick,        "EP Hockey Stick|",            "") +
         np.where(fw_bruised_bb_29,          "Bruised Blue Chip 29|",       "") +
-        np.where(fw_multitrillioncap,       "Multi-Trillion Cap|",         "")
+        np.where(fw_multitrillioncap,       "Multi-Trillion Cap|",         "") +
+        np.where(fw_schilit,               "Financial Shenanigans|",       "")
     )
     df["frameworks_passed"] = (
         pd.Series(fw_str, index=df.index)
@@ -2154,9 +2158,10 @@ def run_full_scoring(
     # Ensure forensic data is present for framework checks (fw_diamond, fw_dhandho need forensic_score).
     # Guard: skip if run_forensic_analysis already ran (avoids double computation on every scoring run).
     if "forensic_score" not in df.columns:
-        from core.forensic_engine import compute_piotroski_fscore, compute_red_flags
+        from core.forensic_engine import compute_piotroski_fscore, compute_red_flags, compute_schilit_forensic_score
         df = compute_piotroski_fscore(df)
         df = compute_red_flags(df)
+        df = compute_schilit_forensic_score(df)  # Schilit 4-checker overlay
 
     mode = ANALYSIS_MODES.get(analysis_mode, ANALYSIS_MODES["Hybrid"])
 
