@@ -134,6 +134,10 @@ INCOME_COLS = {
     "PBT 1 Year Back":        "pbt_1yb",
     "EBITDA":                 "ebitda",
     "EBITDA 1 Year Back":     "ebitda_1yb",
+    # EBIT is present in the Screener.in Income Statement CSV — adding here enables
+    # the D&A derivation (D&A = EBITDA − EBIT) used in Schilit Signal 6 (EMS #4).
+    "EBIT":                   "ebit",
+    "EBIT 1 Year Back":       "ebit_1yb",
     "Revenue":                "revenue",
     "Revenue 1 Year Back":    "revenue_1yb",
     "Revenue 2 Years Back":   "revenue_2yb",
@@ -595,6 +599,35 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["expense_ratio_1yb"] = np.where(
         df["revenue_1yb"].notna() & (df["revenue_1yb"] > 0),
         df["expenses_1yb"] / df["revenue_1yb"],
+        np.nan
+    )
+
+    # ── DEPRECIATION & AMORTIZATION (Schilit EMS #4 Foundation) ──────────────────
+    # D&A = EBITDA − EBIT. This is the exact accounting identity:
+    #   EBITDA − EBIT = Depreciation + Amortization (confirmed for Screener.in P&L format)
+    # Both columns are now in INCOME_COLS ("EBIT" and "EBIT 1 Year Back" added 2026-05-24).
+    # clip(lower=0): rare negative values are data artefacts in Screener.in — e.g. when their
+    # "Other Income" is netted into EBITDA but excluded from EBIT in a non-standard way.
+    # Conservative: treat artefacts as zero D&A rather than propagate negative depreciation.
+    # NaN propagation: if either EBITDA or EBIT is NaN, result is NaN (safe — no false signals).
+    _ebit_da    = df.get("ebit",     pd.Series(np.nan, index=df.index))
+    _ebit_1yb_da = df.get("ebit_1yb", pd.Series(np.nan, index=df.index))
+    df["depreciation"]     = (df["ebitda"].fillna(np.nan)     - _ebit_da).clip(lower=0)
+    df["depreciation_1yb"] = (df["ebitda_1yb"].fillna(np.nan) - _ebit_1yb_da).clip(lower=0)
+
+    # dep_rate: D&A as percentage of gross fixed assets (scale-invariant)
+    # Used in Schilit Signal 6 (forensic_engine.py): if fixed assets grow but dep_rate falls,
+    # management has extended accounting useful lives to reduce D&A expense and inflate EBIT/PAT.
+    # Book anchor: Qwest (Schilit Ch.6) extended asset lives from 14→40yr → $1B earnings boost.
+    # NaN when fixed_assets = 0 — asset-light companies (no FA base, dep/FA is undefined).
+    df["dep_rate"] = np.where(
+        df["fixed_assets"].notna() & (df["fixed_assets"] > 0) & df["depreciation"].notna(),
+        df["depreciation"] / df["fixed_assets"] * 100,
+        np.nan
+    )
+    df["dep_rate_1yb"] = np.where(
+        df["fixed_assets_1yb"].notna() & (df["fixed_assets_1yb"] > 0) & df["depreciation_1yb"].notna(),
+        df["depreciation_1yb"] / df["fixed_assets_1yb"] * 100,
         np.nan
     )
 
