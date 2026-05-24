@@ -618,6 +618,217 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════
+# SCHILIT FINANCIAL SHENANIGANS — 4-CHECKER FORENSIC OVERLAY
+# ═══════════════════════════════════════════════════════════════
+
+def compute_schilit_forensic_score(df: pd.DataFrame) -> pd.DataFrame:
+    """Howard Schilit Financial Shenanigans — 4 independent vectorized gimmick checkers.
+
+    Source: Financial Shenanigans (Schilit/Perler/Engelhart) + India Forensic Edition.
+    Spec:   docs/schilit_forensic_specs.json
+
+    Scoring:
+        schilit_forensic_score = 100.0 − (15.0 × number_of_checkers_fired)
+        schilit_pass           = 1 if schilit_forensic_score >= 70.0 (≤ 2 checkers fired)
+
+    4 Checkers (one per Schilit category):
+        1. ems_revenue_expense_manipulation  — EMS #1/3/4/7: accruals, inv/rev gap, OPM volatility,
+                                               NPM−OPM > 5pp (non-op income), AT↓+OPM↑ (expense cap)
+        2. cfs_cash_flow_distortion          — CFS #1-3: earnings-cash divergence, Paper Profits label,
+                                               cfo_to_ebitda < 60% (OCF/EBITDA weakness)
+        3. kms_balance_sheet_leverage_trap   — KMS #6, EMS #5: hidden obligations, high-cash-high-debt
+        4. kms_inventory_receivables_bloat   — EMS #1, KMS #3: DSO expansion, inventory bloat,
+                                               absolute DSO > 90 days (Schilit Ch.3/4/14)
+           (Checker 4 excludes _HIGH_DSO_SECTORS and financial stocks — see forensic_engine.py header)
+
+    Architecture: fully vectorized Pandas/NumPy — zero apply(), zero iterrows().
+    All column access via df.get() with safe NaN / zero defaults.
+    """
+    df = df.copy()
+    _nan_f    = pd.Series(np.nan, index=df.index, dtype=float)
+    _zero_i   = pd.Series(0,      index=df.index, dtype=int)
+    _str_e    = pd.Series("",     index=df.index, dtype=object)
+    # Shared financial-sector exclusion mask — used by Checker 2 (CFS signal 3) and Checker 4
+    _is_fin_g = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
+
+    # ── Checker 1: EMS — Revenue & Expense Manipulation ────────────────────────
+    # EMS #1 (revenue too early), EMS #3 (one-time income), EMS #4 (expense cap), EMS #7 (big bath)
+    # Signal 1: accruals_ratio > 5% of total assets (Beneish TATA, highest fraud coefficient 4.679)
+    # Signal 2: inventory growing >20pp faster than revenue (channel stuffing / demand concealment)
+    # Signal 3: OPM >30% off 5Y median (volatile margins = commodity trap or manipulation)
+    # Signal 4: NPM − OPM > 5pp (non-operating income inflating PAT — EMS #3, Schilit Ch.5)
+    # Signal 5: asset turnover ↓ 0.10+ while OPM ↑ 2pp+ (expense capitalisation — EMS #4, Schilit Ch.6)
+    _accruals_warn  = df.get("accruals_warning",  _zero_i).fillna(0).astype(bool)
+    _inv_rev_gap    = df.get("inv_vs_rev_gap",    _nan_f).fillna(0)
+    _opm_stab       = df.get("opm_stability",     _nan_f).fillna(0)
+
+    # Signal 4 (EMS #3): Non-operating income inflating PAT — Schilit Ch.5
+    # When NPM exceeds OPM by 5+ percentage points, the company is relying heavily on
+    # non-operating income (investment gains, asset sales, insurance settlements) to
+    # boost reported PAT above what operations generate.
+    # Book cases: Intel (option-income boosting EPS, Ch.5), Marvell (tax-rate engineering),
+    #             Sunbeam (insurance settlement as recurring operating income, Ch.5)
+    # NaN subtraction → NaN > 5.0 → False in pandas (missing data never fires — safe by design)
+    _npm_vals    = df.get("npm", _nan_f)           # current annual Net Profit Margin (%)
+    _opm_vals    = df.get("opm", _nan_f)           # current annual Operating Profit Margin (%)
+    _other_income_inflate = (_npm_vals - _opm_vals) > 5.0
+
+    # Signal 5 (EMS #4): Expense capitalisation proxy — AOL pattern (Schilit Ch.6, Ch.9)
+    # AOL capitalised subscriber acquisition costs → OPM improved dramatically while asset
+    # base grew (asset turnover fell). Pattern: asset turnover declining by 0.10+ units
+    # AND OPM simultaneously improving by 2pp+ = operating costs being moved off the P&L
+    # onto the balance sheet as "assets" to suppress reported expense ratios.
+    # WorldCom case (Ch.9 EMS#7): $3.8B capex reclassification depressed asset turnover
+    # while showing inflated EBITDA margins — the same dual-signal fingerprint.
+    # NaN in any column → False (safe; only fires when both data points are available)
+    _at_curr     = df.get("asset_turnover",     _nan_f)   # current asset turnover ratio
+    _at_1yb_val  = df.get("asset_turnover_1yb", _nan_f)   # asset turnover 1 year back
+    _opm_1yb_val = df.get("opm_1yb",            _nan_f)   # OPM 1 year back (%)
+    _expense_cap_proxy = (
+        ((_at_1yb_val - _at_curr) > 0.10) &     # asset turnover declined by 0.10+ units
+        ((_opm_vals   - _opm_1yb_val) > 2.0)    # AND OPM simultaneously improved by 2pp+
+    )
+
+    # Signal 6 (EMS #4): Depreciation Rate Manipulation — Schilit Ch.6
+    # When fixed assets grow (company is actively investing) but the D&A / Fixed Assets ratio
+    # simultaneously falls, management has extended the accounting useful lives of assets to
+    # reduce D&A expense and artificially inflate EBIT and PAT.
+    #
+    # Book cases (Schilit Ch.6 EMS #4 / Ch.9 EMS #7):
+    #   Qwest Communications: extended cable asset lives from 14 → 40 years → reduced D&A by
+    #     ~$1 billion/year. FA grew; dep/FA fell from ~7.1% to ~2.5%. SEC settled for $100M.
+    #   WorldCom: reclassified $3.8B of operating line costs as "capital assets", then depreciated
+    #     over 10-40 years instead of expensing immediately. FA grew; dep_rate fell. Led to
+    #     bankruptcy and $11B restatement — largest accounting fraud in US history at the time.
+    #   Sunbeam (Ch.5 EMS#3+EMS#4): extended intangible and fixed asset lives alongside aggressive
+    #     restructuring charges to boost subsequent years' earnings.
+    #
+    # Data source: dep_rate = D&A / Fixed_Assets (%) — pre-computed in data_engine.py.
+    #   D&A = EBITDA − EBIT (exact accounting identity; EBIT now mapped from Income Statement CSV).
+    #
+    # Threshold logic:
+    #   FA grew >5%  → confirms company is investing in assets (eliminates declining-FA / retiring-
+    #                  assets cases where dep/FA naturally rises as denominator shrinks)
+    #   dep/FA fell >20% → effective useful life extended by at least 25% (10yr asset → 12.5yr min)
+    #                      This catches the Qwest-scale manipulations (14→40yr = 65% dep/FA fall)
+    #
+    # Financial stocks excluded via _is_fin_g: banks have near-zero fixed assets relative to
+    # their balance sheet — dep/FA is structurally tiny and unstable, not a manipulation signal.
+    # NaN in dep_rate or dep_rate_1yb → NaN comparison → False (safe, does not fire on missing data).
+    _fa_scht     = df.get("fixed_assets",     _nan_f)   # current gross fixed assets (Cr)
+    _fa_1yb_scht = df.get("fixed_assets_1yb", _nan_f)   # fixed assets 1 year back (Cr)
+    _dep_rt_curr = df.get("dep_rate",         _nan_f)   # D&A / FA %, current year
+    _dep_rt_1yb  = df.get("dep_rate_1yb",     _nan_f)   # D&A / FA %, 1 year back
+    _dep_rate_manip = (
+        (_fa_scht    > _fa_1yb_scht * 1.05) &   # FA grew >5% (material — not rounding noise)
+        (_dep_rt_curr < _dep_rt_1yb  * 0.80) &  # dep/FA fell >20% (life extension fingerprint)
+        ~_is_fin_g                               # financial stocks excluded (no FA base)
+    )
+
+    ems_revenue_expense_manipulation = (
+        _accruals_warn                  |   # Signal 1: accruals_warning == 1
+        (_inv_rev_gap > 20.0)           |   # Signal 2: inv_vs_rev_gap > 20.0 pp
+        (_opm_stab    > 30.0)           |   # Signal 3: opm_stability > 30.0 % deviation
+        _other_income_inflate           |   # Signal 4: NPM − OPM > 5pp (EMS #3: non-op income)
+        _expense_cap_proxy              |   # Signal 5: AT ↓ + OPM ↑ (EMS #4: expense cap proxy)
+        _dep_rate_manip                     # Signal 6: FA ↑ but dep_rate ↓ (EMS #4: life extension)
+    )
+
+    # ── Checker 2: CFS — Cash Flow Distortion ──────────────────────────────────
+    # CFS #1 (financing→operating reclassification), CFS #2 (unsustainable OCF boosts),
+    # CFS #3 (boosting CFFO via working capital / AR sales / DPO stretching)
+    # Signal 1: PAT growing >15% while OCF simultaneously shrinks >15% (accrual divergence)
+    # Signal 2: cash_machine_label == "📄 Paper Profits" (cfo_to_pat <= 80%)
+    # Signal 3: cfo_to_ebitda < 60% (OCF converts <60% of EBITDA — Schilit Ch.12 CFS #3)
+    _pat_gr   = df.get("pat_gr_yoy",        _nan_f).fillna(0)
+    _ocf_gr   = df.get("ocf_growth",        _nan_f).fillna(0)
+    _cash_lbl = df.get("cash_machine_label", _str_e).fillna("")
+
+    # Signal 3 (CFS #3): CFO/EBITDA weakness — OCF converts <60% of EBITDA (Schilit Ch.12)
+    # Book cases used to anchor the 60% threshold:
+    #   Cardinal Health: sold $800M of AR to a bank → CFFO jumped $971M in one quarter; OCF/EBITDA
+    #     spiked temporarily, then collapsed — the structural level was far below 60% (Ch.12 CFS#2)
+    #   Tesla Model 3: customer deposits $350M = 88% of total OCF improvement (Ch.12 CFS#3)
+    #   Home Depot: DPO stretched 23→34 days = $3B unsustainable CFFO inflation (Ch.11 CFS#2)
+    #   Sun Microsystems: one-time settlements inflating CFFO (Ch.12)
+    # These cases share a pattern: EBITDA is nominal but OCF is structurally far below EBITDA
+    # because working capital is burning cash (payables stretching, AR inflation, deposit games).
+    # Threshold: 60.0% (stored as percentage — e.g. 73.04 means 73%). Financial stocks excluded
+    # because for banks/NBFCs operating cash flow vs EBITDA is structurally incomparable.
+    # NaN → NaN < 60.0 = False (pandas/numpy semantics — safe, does not fire on missing data)
+    _cfo_ebitda      = df.get("cfo_to_ebitda", _nan_f)   # percentage form (e.g. 73.04)
+    _cfo_ebitda_weak = (_cfo_ebitda < 60.0) & ~_is_fin_g
+
+    cfs_cash_flow_distortion = (
+        ((_pat_gr > 15.0) & (_ocf_gr < -15.0))     |   # Signal 1: earnings-cash divergence
+        (_cash_lbl == "📄 Paper Profits")           |   # Signal 2: cfo_to_pat <= 80%
+        _cfo_ebitda_weak                                # Signal 3: CFS #3 — OCF < 60% of EBITDA
+    )
+
+    # ── Checker 3: KMS — Balance Sheet Leverage Trap ───────────────────────────
+    # KMS #6 (balance sheet distortion), EMS #5 (hidden obligations / IL&FS pattern)
+    # Signal A: total liabilities growing faster than debt = hidden off-BS obligations
+    # Signal B: high cash AND high debt simultaneously = optically strong, structurally risky
+    _hid_oblig   = df.get("hidden_obligation_growth", _zero_i).fillna(0).astype(bool)
+    _hi_cash_dbt = df.get("high_cash_high_debt",      _zero_i).fillna(0).astype(bool)
+
+    kms_balance_sheet_leverage_trap = (
+        _hid_oblig      |   # hidden_obligation_growth == 1
+        _hi_cash_dbt        # high_cash_high_debt == 1
+    )
+
+    # ── Checker 4: KMS — Inventory & Receivables Bloat ─────────────────────────
+    # EMS #1 (DSO rising = revenue manipulation), KMS #2 (distorted Balance Sheet metrics)
+    # Excluded: IT/Pharma/Healthcare (_HIGH_DSO_SECTORS) + financial stocks
+    #   Rationale: 60-90d billing cycles are contractual/structural — not manipulation signals.
+    #
+    # Signal 3 (absolute DSO) sourced directly from Schilit 4th Ed. book chapters:
+    #   Ch.3  (EMS #1): Computer Associates — DSO hit 247 days; 20-day YoY rise triggered detection
+    #   Ch.4  (EMS #2): Hanergy Solar — DSO ballooned to 500 days; 57% trade receivables past due
+    #   Ch.14 (KMS #2): Symbol Technologies — DSO 94→119→90 days (cosmetically lowered via AR→notes conversion)
+    #   Ch.14 (KMS #2): UTStarcom — DSO distorted by reclassifying AR as "bank notes" in cash section
+    #   Threshold 90d: for non-IT/Pharma/Healthcare, >90 days indicates collection failure or revenue manipulation.
+    _sector      = df.get("sector",      pd.Series("", index=df.index)).fillna("")
+    _is_high_dso = _sector.isin(_HIGH_DSO_SECTORS)
+    _eligible    = ~_is_high_dso & ~_is_fin_g   # _is_fin_g computed at function top (shared)
+
+    _dso_delta3y = df.get("dso_delta_3y",          _nan_f).fillna(0)
+    _inv_day_chg = df.get("inventory_days_change",  _nan_f).fillna(0)
+    _days_recv   = df.get("days_receivable",         _nan_f).fillna(0)   # absolute DSO level
+
+    kms_inventory_receivables_bloat = (
+        _eligible &
+        (
+            (_dso_delta3y > 15.0)   |   # dso_delta_3y > 15.0 days over 3 years (EMS #1, trend signal)
+            (_inv_day_chg > 20.0)   |   # inventory_days_change > 20.0 days YoY (channel stuffing)
+            (_days_recv   > 90.0)       # ABSOLUTE DSO > 90 days (Schilit Ch.3/4/14: CA=247d, Hanergy=500d)
+        )
+    )
+
+    # ── Score: 100.0 − 15.0 per fired checker ──────────────────────────────────
+    # Each checker deducts 15.0 points. 4 checkers = max 60 deduction → min score 40.
+    # clip(0, 100) ensures no score escapes valid range from unexpected edge cases.
+    _score = (
+        100.0
+        - ems_revenue_expense_manipulation.astype(float) * 15.0
+        - cfs_cash_flow_distortion.astype(float)         * 15.0
+        - kms_balance_sheet_leverage_trap.astype(float)  * 15.0
+        - kms_inventory_receivables_bloat.astype(float)  * 15.0
+    ).clip(lower=0.0, upper=100.0)
+
+    # ── Output columns ──────────────────────────────────────────────────────────
+    df["schilit_ems_flag"]         = ems_revenue_expense_manipulation.astype(int)
+    df["schilit_cfs_flag"]         = cfs_cash_flow_distortion.astype(int)
+    df["schilit_kms_lev_flag"]     = kms_balance_sheet_leverage_trap.astype(int)
+    df["schilit_kms_bloat_flag"]   = kms_inventory_receivables_bloat.astype(int)
+    df["schilit_forensic_score"]   = _score
+    # schilit_pass = 1 if score >= 70.0 (at most 2 of 4 checkers fired)
+    df["schilit_pass"]             = (_score >= 70.0).astype(int)
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════
 # CASCADING FORENSIC FILTER
 # ═══════════════════════════════════════════════════════════════
 
@@ -709,6 +920,7 @@ def run_forensic_analysis(df: pd.DataFrame) -> pd.DataFrame:
 
     df = compute_piotroski_fscore(df)
     df = compute_red_flags(df)
+    df = compute_schilit_forensic_score(df)      # Schilit 4-checker overlay
     df = compute_cashflow_triangle(df)
     df = compute_cascading_forensic_filter(df)
 
