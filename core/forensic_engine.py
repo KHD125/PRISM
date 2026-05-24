@@ -492,6 +492,43 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     rf_cols = [c for c in df.columns if c.startswith("rf_")]
     df["red_flag_count"] = df[rf_cols].sum(axis=1)
 
+    # ── Diamond-Specific Forensic Subset ───────────────────────────────────────
+    # fw_diamond uses dm_forensic_flag_count == 0 instead of red_flag_count == 0.
+    # Only 6 of the 27 flags are directly relevant to Mukherjea's Three-Lens Framework
+    # (Diamonds in the Dust). The other 21 flags belong to Malik, Coffee Can, WCS24,
+    # Ind AS 116, CWIP-specific, and other frameworks — applying them to Diamond would
+    # penalise companies for failing standards that the Diamond book never checks.
+    #
+    # FLAG CLASSIFICATION:
+    #   Lens 1 (Clean Accounts — what Diamonds explicitly checks):
+    #     rf_low_cfo_pat        — CFO/PAT < 70%: core cash quality signal (Diamond uses CFO/PAT)
+    #     rf_high_accruals      — Beneish TATA > 5%: strongest single fraud predictor; PAT not cash-backed
+    #     rf_high_receivables   — Absolute DSO > threshold: channel-stuffing detection
+    #     rf_receivables_bloat  — DSO expanding faster than sector peers: systematic manipulation
+    #   Gate Zero extension (governance trajectory, beyond the static direct gates):
+    #     rf_rising_debt        — D/E trend rising: balance sheet deterioration even when level < 0.5
+    #     rf_dilution           — Share dilution ≥ 3%: promoter misalignment via equity erosion
+    #
+    #   NOT included:
+    #     rf_low_cfo_ebitda  — Coffee Can Investing standard (CFO/EBITDA); Diamond uses CFO/PAT
+    #     rf_pledge_elevated — Redundant: pledge < 10 is already a direct gate in fw_diamond
+    #     rf_negative_fcf    — Redundant: FCF/CFO ≥ 25% direct gate already excludes these
+    #     rf_fcf_to_cfo_low  — Redundant: FCF/CFO ≥ 25% direct gate already stricter
+    #     All Malik flags    — Vijay Malik's framework; not cited in Diamonds in the Dust
+    #     rf_opm_volatile, rf_nfat_very_low, rf_ssgr_deficit — Bakshi/Malik-specific
+    #     rf_cwip_bloat, rf_capex_mirage, rf_lease_inflation — Sector/Ind AS specific
+    #     rf_psu_value_destruction, rf_tax_panic — WCS24/PSU specific
+    _DIAMOND_FLAGS = [
+        "rf_low_cfo_pat",        # Lens 1: cash earnings quality
+        "rf_high_accruals",      # Lens 1: Beneish TATA — highest fraud coefficient
+        "rf_high_receivables",   # Lens 1: absolute DSO channel-stuffing guard
+        "rf_receivables_bloat",  # Lens 1: sector-relative DSO expansion
+        "rf_rising_debt",        # Gate Zero: D/E trajectory (level gate already in fw_diamond)
+        "rf_dilution",           # Gate Zero: promoter dilution signal
+    ]
+    dm_flag_cols = [c for c in _DIAMOND_FLAGS if c in df.columns]
+    df["dm_forensic_flag_count"] = df[dm_flag_cols].sum(axis=1).astype(int)
+
     # Forensic score: 100 = clean, 0 = maximum flags.
     # Uses FORENSIC_MAX_FLAGS (config.py) — fixed denominator so scores don't shift when
     # new flags are added. Update FORENSIC_MAX_FLAGS whenever a new rf_ column is added.
