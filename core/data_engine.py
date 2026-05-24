@@ -114,16 +114,22 @@ INCOME_COLS = {
     "Revenue Growth YoY":     "rev_gr_yoy",
     "EBITDA Growth 5 Years":  "ebitda_gr_5y",
     "EBITDA Growth 3 Years":  "ebitda_gr_3y",
-    # QUARTERLY — freshest timing signals (6 columns)
+    # QUARTERLY — freshest timing signals (8 columns; EPS LQ added for quarterly EPS YoY signal)
     "PAT Latest Quarter":              "pat_lq",
     "PAT Preceding Year Quarter":      "pat_pyq",
     "Revenue Latest Quarter":          "rev_lq",
     "Revenue Preceding Year Quarter":  "rev_pyq",
     "EBITDA Latest Quarter":           "ebitda_lq",
     "EBITDA Preceding Year Quarter":   "ebitda_pyq",
-    # RAW ANNUAL — minimum needed for derived signals (11 columns)
+    "EPS Latest Quarter":              "eps_lq",    # enables quarterly EPS YoY (eps_lq vs eps_pyq)
+    "EPS Preceding Year Quarter":      "eps_pyq",
+    # METADATA — result freshness (days since last published result; staleness guard)
+    "Days From Result":                "days_from_result",
+    # RAW ANNUAL — minimum needed for derived signals (13 columns)
     "PAT":                    "pat",
     "PAT 1 Year Back":        "pat_1yb",
+    "PAT 2 Years Back":       "pat_2yb",   # A criterion: step-growth verification (O'Neil Ch.4)
+    "PAT 3 Years Back":       "pat_3yb",   # A criterion: step-growth verification (O'Neil Ch.4)
     "PBT":                    "pbt",
     "PBT 1 Year Back":        "pbt_1yb",
     "EBITDA":                 "ebitda",
@@ -572,6 +578,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["q_ebitda_yoy"] = np.where(
         df["ebitda_pyq"].notna() & (df["ebitda_pyq"].abs() > 0),
         (df["ebitda_lq"] - df["ebitda_pyq"]) / df["ebitda_pyq"].abs() * 100,
+        np.nan
+    )
+    # Quarterly EPS YoY growth — eps_lq vs eps_pyq (same quarter prior year)
+    # Completes the quarterly set: q_pat_yoy, q_rev_yoy, q_ebitda_yoy, q_eps_yoy
+    df["q_eps_yoy"] = np.where(
+        df["eps_pyq"].notna() & (df["eps_pyq"].abs() > 0),
+        (df["eps_lq"] - df["eps_pyq"]) / df["eps_pyq"].abs() * 100,
         np.nan
     )
     df["expense_ratio"] = np.where(
@@ -1294,12 +1307,16 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (df["adx_14w"].fillna(0) > 20).astype(int)
     )
 
-    # ── D47: RS Composite (average of 3 CRS timeframes) ──
-    # Lower is better (closer to 0 or negative = underperforming = bearish)
-    # But for universe ranking, a higher CRS composite = stronger relative strength
+    # ── D47: RS Composite — IBD-weighted (40% recent / 30% mid / 30% long) ──
+    # IBD RS Rating formula: most recent quarter receives double weight vs prior periods.
+    # Mapping: crs_50d (~10W) ≈ recent quarter → 40%; crs_26w (6M) → 30%; crs_52w (12M) → 30%.
+    # Weights sum to 1.0 — preserves the CRS scale for percentile ranking in scoring_engine.py.
+    # Used by: CAN SLIM L criterion (_pct_rank → rs_pctrank_cs >= 80) and Quant Momentum sub-score.
     df["d47_rs_composite"] = (
-        df["crs_50d"].fillna(0) + df["crs_26w"].fillna(0) + df["crs_52w"].fillna(0)
-    ) / 3.0
+        df["crs_50d"].fillna(0) * 0.40 +
+        df["crs_26w"].fillna(0) * 0.30 +
+        df["crs_52w"].fillna(0) * 0.30
+    )
 
     # ── D48: Breakout Readiness (categorical) ──
     df["d48_breakout_readiness"] = np.select(
