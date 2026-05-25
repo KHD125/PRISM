@@ -1516,3 +1516,233 @@ def render_raw_signals(stock: pd.Series):
         _cell("Composite Scr", g("composite_score"),     "{:.0f}/100") +
         _cell("Conviction Tier",g("conviction_tier"),    "Tier {:.0f}")
     )
+
+    # CAN SLIM pillar cells
+    _section("📊 CAN SLIM® Pillars", COLORS["blue"],
+        _cell("C — Qtr EPS",      "✅" if g("can_slim_c") == 1 else "❌", "") +
+        _cell("A — Annual Gr",    "✅" if g("can_slim_a") == 1 else "❌", "") +
+        _cell("N — Near High",    "✅" if g("can_slim_n") == 1 else "❌", "") +
+        _cell("S — Volume",       "✅" if g("can_slim_s") == 1 else "❌", "") +
+        _cell("L — RS Leader",    "✅" if g("can_slim_l") == 1 else "❌", "") +
+        _cell("I — Institution",  "✅" if g("can_slim_i") == 1 else "❌", "") +
+        _cell("M — Market",       "✅" if g("can_slim_m") == 1 else "❌", "") +
+        _cell("VCP Dryup",        "✅" if g("can_slim_vcp") == 1 else "—", "") +
+        _cell("RS Uptrend",       "✅" if g("can_slim_rs_trend") == 1 else "—", "") +
+        _cell("CAN SLIM Score",   g("can_slim_score"), "{:.0f}/17") +
+        _cell("Market Regime",    stock.get("market_regime", "—") or "—", "")
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# CAN SLIM® TACTICAL MOMENTUM RADAR — O'Neil
+# ═══════════════════════════════════════════════════════════════
+
+def render_canslim_radar(stock: pd.Series):
+    """
+    Renders William O'Neil's 7-pillar CAN SLIM tactical momentum radar panel.
+    PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
+    Zero threshold re-computation; zero scoring logic; immune to parameter drift.
+    """
+    st.markdown("<div class='sec-head'>📊 CAN SLIM® Tactical Momentum Radar</div>",
+                unsafe_allow_html=True)
+
+    cs_pass  = int(_g(stock, "can_slim_pass", 0))
+    cs_score = int(_g(stock, "can_slim_score", 0))
+    regime   = str(stock.get("market_regime", "SIDEWAYS") or "SIDEWAYS").upper()
+
+    pillars = [
+        ("C", "Current Earnings", int(_g(stock, "can_slim_c", 0)) == 1,
+         "Quarterly EPS & Sales Growth ≥ 25% YoY"),
+        ("A", "Annual Growth",    int(_g(stock, "can_slim_a", 0)) == 1,
+         "5Y EPS CAGR ≥ 25% · ROE ≥ 17% · 3Y Unbroken Step"),
+        ("N", "New Breakout",     int(_g(stock, "can_slim_n", 0)) == 1,
+         "Price Within 15% of 52-Week High"),
+        ("S", "Supply & Demand",  int(_g(stock, "can_slim_s", 0)) == 1,
+         "Breakout Session Volume Surge ≥ 1.5×"),
+        ("L", "Leader / Laggard", int(_g(stock, "can_slim_l", 0)) == 1,
+         "IBD RS Composite Percentile Rank ≥ 80"),
+        ("I", "Institutional",    int(_g(stock, "can_slim_i", 0)) == 1,
+         "Active Smart-Money Inflow (FII or DII +)"),
+        ("M", "Market Direction", int(_g(stock, "can_slim_m", 0)) == 1,
+         f"Regime: {_esc(regime)} — PAUSED if BEAR"),
+    ]
+
+    vcp_active = int(_g(stock, "can_slim_vcp",      0)) == 1
+    rs_active  = int(_g(stock, "can_slim_rs_trend", 0)) == 1
+
+    hdr_color  = COLORS["blue"] if cs_pass else COLORS["text_muted"]
+    status_msg = "🟢 PASSED BREAKOUT GATE" if cs_pass else "⚪ Tactical Sieve Hold"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);
+                border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
+                border-radius:12px;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+            O'Neil Momentum Compliance Profile
+          </div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Status: <strong style="color:{hdr_color};">{status_msg}</strong>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
+            {cs_score}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 17</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">Total Tactical Components</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    grid_html = ""
+    for letter, title, passed, baseline in pillars:
+        # Critical pillars (C, A, M) get red on failure; others get muted grey
+        clr = COLORS["green"] if passed else ("#f85149" if letter in ("C", "A", "M") else "#8b949e")
+        bg_opacity = "15" if passed else "08"
+        ico = "✅" if passed else "❌"
+
+        desc = baseline
+        if letter == "S" and vcp_active:
+            desc += " <span style='color:#bc8cff;'>(🔥 VCP Dryup)</span>"
+        if letter == "L" and rs_active:
+            desc += " <span style='color:#58a6ff;'>(🔥 RS Uptrend)</span>"
+
+        grid_html += (
+            f"<div style='background:{clr}{bg_opacity};border:1px solid {clr}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"white-space:nowrap;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>{desc}</div>"
+            f"<div style='font-size:1.0rem;margin-top:4px;'>{ico}</div>"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{grid_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# SCHILIT FORENSIC SHIELD — Accounting Shenanigans Audit
+# ═══════════════════════════════════════════════════════════════
+
+def _get_schilit_context(stock: pd.Series, checker_col: str) -> str:
+    """Returns a compact metric string to show beneath an active Schilit flag."""
+    if checker_col == "schilit_ems_flag":
+        aw  = int(_g(stock, "accruals_warning", 0))
+        igp = _g(stock, "inv_vs_rev_gap", 0)
+        return f"accruals_warning: {aw}  ·  inv_gap: {igp:.1f}%"
+    if checker_col == "schilit_cfs_flag":
+        pg  = _g(stock, "pat_gr_yoy",  0)
+        ocf = _g(stock, "ocf_growth",  0)
+        return f"pat_gr_yoy: {pg:.1f}%  ·  ocf_growth: {ocf:.1f}%"
+    if checker_col == "schilit_kms_lev_flag":
+        hcd = int(_g(stock, "high_cash_high_debt", 0))
+        return f"high_cash_high_debt: {hcd}"
+    if checker_col == "schilit_kms_bloat_flag":
+        dso = _g(stock, "dso_delta_3y",           0)
+        idc = _g(stock, "inventory_days_change",  0)
+        return f"dso_delta_3y: {dso:.0f}d  ·  inventory_days_change: {idc:.0f}d"
+    return ""
+
+
+def render_schilit_shield(stock: pd.Series):
+    """
+    Renders Howard Schilit's Financial Shenanigans Accounting Audit Shield.
+    PURE DISPLAY — Reads pre-materialized boolean flags from forensic_engine.py.
+    All 6 column names verified against forensic_engine.py lines 820-826.
+    """
+    st.markdown("<div class='sec-head'>🛡️ Schilit Accounting Anomaly Shield</div>",
+                unsafe_allow_html=True)
+
+    f_score = _g(stock, "schilit_forensic_score", 100.0)
+    f_pass  = int(_g(stock, "schilit_pass", 1))
+
+    checkers = [
+        ("EMS Anomaly Gimmick",
+         int(_g(stock, "schilit_ems_flag",       0)) == 1,
+         "schilit_ems_flag",
+         "Revenue Recognition / Expense Capitalization Metrics"),
+        ("CFS Cash Flow Trap",
+         int(_g(stock, "schilit_cfs_flag",       0)) == 1,
+         "schilit_cfs_flag",
+         "Operating Cash Divergence / Paper Profit Shifts"),
+        ("KMS Leverage Mirage",
+         int(_g(stock, "schilit_kms_lev_flag",   0)) == 1,
+         "schilit_kms_lev_flag",
+         "Off-Balance Sheet Guarantees & Pledged Cash Mismatches"),
+        ("KMS Operational Bloat",
+         int(_g(stock, "schilit_kms_bloat_flag", 0)) == 1,
+         "schilit_kms_bloat_flag",
+         "Channel Stuffing / Asset Aging Accumulation"),
+    ]
+
+    shield_clr  = COLORS["green"] if f_pass else COLORS["red"]
+    status_txt  = ("🛡️ PERIMETER SECURE — CLEAN AUDIT"
+                   if f_pass else
+                   "🚨 COGNITIVE RISK CAPTURED — SHENANIGAN ALERT")
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);
+                border:2px solid {shield_clr}40;border-left:6px solid {shield_clr};
+                border-radius:12px;padding:14px 20px;margin-bottom:14px;
+                box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:15px;">
+        <div>
+          <div style="font-size:0.65rem;color:#8b949e;letter-spacing:1.5px;
+                      text-transform:uppercase;">Accounting Security Shield</div>
+          <div style="font-size:1.15rem;font-weight:900;color:{shield_clr};margin-top:2px;">
+            {status_txt}
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.6rem;font-weight:900;color:{shield_clr};line-height:1.0;">
+            {f_score:.0f}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 100</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">Forensic Credibility</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    cells_html = ""
+    for title, triggered, col_name, narrative in checkers:
+        clr = COLORS["red"] if triggered else COLORS["green"]
+        ico = "⚠️ Triggered" if triggered else "🎯 Clear"
+        bg  = f"{clr}0d"
+        bdr = f"{clr}30"
+
+        ctx_val = _get_schilit_context(stock, col_name) if triggered else ""
+        sub_desc = (
+            f"<div style='font-size:0.58rem;color:{clr};font-weight:700;margin-top:2px;'>"
+            f"{_esc(ctx_val)}</div>"
+            if ctx_val else
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;'>"
+            f"{_esc(narrative)}</div>"
+        )
+
+        cells_html += (
+            f"<div style='background:{bg};border:1px solid {bdr};border-radius:8px;"
+            f"padding:10px;flex:1;min-width:220px;'>"
+            f"<div style='display:flex;align-items:center;justify-content:space-between;'>"
+            f"<span style='font-size:0.78rem;font-weight:800;color:#f0f6fc;'>"
+            f"{_esc(title)}</span>"
+            f"<span style='font-size:0.68rem;font-weight:700;color:{clr};"
+            f"background:{clr}15;padding:2px 8px;border-radius:12px;'>{ico}</span>"
+            f"</div>"
+            f"{sub_desc}"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{cells_html}</div>",
+        unsafe_allow_html=True,
+    )
