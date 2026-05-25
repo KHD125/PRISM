@@ -19,6 +19,8 @@ try:
         render_score_strip,
         render_sell_alerts_panel,
         render_raw_signals,
+        render_canslim_radar,
+        render_schilit_shield,
     )
 except ImportError as e:
     import traceback
@@ -39,6 +41,8 @@ except ImportError as e:
     render_score_strip = _stub
     render_sell_alerts_panel = _stub
     render_raw_signals = _stub
+    render_canslim_radar = _stub
+    render_schilit_shield = _stub
 
 from .ui_components import (
     inject_css,
@@ -67,6 +71,8 @@ __all__ = [
     "render_score_strip",
     "render_sell_alerts_panel",
     "render_raw_signals",
+    "render_canslim_radar",
+    "render_schilit_shield",
     "inject_css",
     "render_hero_banner",
     "render_metric_strip",
