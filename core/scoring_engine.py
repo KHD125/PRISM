@@ -2049,6 +2049,55 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         df.get("multitrillioncap_tipping_point", pd.Series(0, index=df.index)).fillna(0) == 1
     )
 
+    # ── Framework 33: fw_fisher_scalability — Fisher Operating Leverage & Scalability (Philip Fisher) ──
+    # Vectorized proxies for Fisher's 4 most measurable scalability criteria from
+    # "Common Stocks and Uncommon Profits." Fisher's framework is 90% qualitative
+    # (scuttlebutt, management DNA) — these are the 4 points with reliable CSV proxies.
+    # Distinct from fw_fisher (Fisher Quality, Framework 11):
+    #   Fisher Quality: forensic integrity + NPM + CFO/PAT + zero dilution_flag (7 gates)
+    #   Fisher Scalability: operating leverage inflection + revenue runway + pricing power + capital discipline (4 gates)
+    # Output columns: fisher_pass (1/0) and fisher_score (0-4, one per sub-gate).
+    # Spec ledger: docs/fisher_quality_specs.json
+    # NaN strategy: revenue/oplev fillna(0) → gate fails if data absent; dilution fillna(999) → conservative exclusion.
+    _fs_nan      = pd.Series(np.nan, index=df.index)
+    rev_3y_fs    = df.get("rev_gr_3y",            _fs_nan)   # Revenue Growth 3Y CAGR (%)
+    rev_yoy_fs   = df.get("rev_gr_yoy",           _fs_nan)   # Revenue Growth YoY (%)
+    oplev_fs     = df.get("d05_rev_minus_exp_gr",  _fs_nan)   # Rev − Expense growth delta (%)
+    opm_acc_fs   = df.get("opm_acceleration",      _fs_nan)   # OPM vs 1Y back (margin pts)
+    npm_acc_fs   = df.get("npm_acceleration",      _fs_nan)   # NPM vs 1Y back (margin pts)
+    dilut_pct_fs = df.get("dilution_pct",          _fs_nan)   # Share count growth YoY (%)
+    # 4 sub-gate boolean masks (each 0/1 → fisher_score 0-4)
+    _fs_rev_runway  = (rev_3y_fs.fillna(0) >= 12.0) & (rev_yoy_fs.fillna(0) >= 10.0)  # Points 1 & 2: multi-year + current demand runway
+    _fs_op_lev      = oplev_fs.fillna(0) >= 2.0                                         # Points 5 & 6: revenue outpacing overhead (2pp threshold)
+    _fs_pricing     = (opm_acc_fs.fillna(0) >= 0) | (npm_acc_fs.fillna(0) >= 0)         # Point 4: OR logic — either margin not declining
+    _fs_anti_dilut  = dilut_pct_fs.fillna(999) <= 1.0                                   # Point 13: ≤1% annual share dilution (999 = missing = excluded)
+    fw_fisher_scalability = _fs_rev_runway & _fs_op_lev & _fs_pricing & _fs_anti_dilut
+    df["fisher_pass"]  = fw_fisher_scalability.astype(int)
+    df["fisher_score"] = (
+        _fs_rev_runway.astype(int) +
+        _fs_op_lev.astype(int)     +
+        _fs_pricing.astype(int)    +
+        _fs_anti_dilut.astype(int)
+    )
+    # Fisher Quality pass column — mirrors fisher_pass symmetry for cross-strategy filtering.
+    # fw_fisher is computed earlier (Framework 11); safe to reference here.
+    # Pattern: consistent with ub_pass, baid_pass, diamonds_pass, hundred_bagger_pass.
+    df["fisher_quality_pass"] = fw_fisher.astype(int)
+    # 4-Quadrant Fisher Lifecycle Matrix — fully vectorized np.select, zero loops.
+    # Classifies every stock by its combined Fisher dual-engine state.
+    # ⚪ Laggard:          neither quality nor scalability gate clears
+    # ⚡ Catalyst Play:    scalability inflection firing but structural quality absent (trading candidate)
+    # 🐢 Steady Compounder: quality proven, no current inflection (steady-state long-term hold)
+    # 👑 Apex Winner:      elite quality business at its operating leverage peak (prime entry)
+    _lc_conds = [
+        (df["fisher_quality_pass"] == 0) & (df["fisher_pass"] == 0),
+        (df["fisher_quality_pass"] == 0) & (df["fisher_pass"] == 1),
+        (df["fisher_quality_pass"] == 1) & (df["fisher_pass"] == 0),
+        (df["fisher_quality_pass"] == 1) & (df["fisher_pass"] == 1),
+    ]
+    _lc_labels = ["⚪ Laggard", "⚡ Catalyst Play", "🐢 Steady Compounder", "👑 Apex Winner"]
+    df["fisher_lifecycle_quadrant"] = np.select(_lc_conds, _lc_labels, default="⚪ Laggard")
+
     # Schilit Financial Shenanigans clean-pass flag (pre-computed in forensic_engine)
     fw_schilit = df.get("schilit_pass", pd.Series(0, index=df.index)).fillna(0).astype(bool)
 
@@ -2086,6 +2135,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_ep_hockey_stick,        "EP Hockey Stick|",            "") +
         np.where(fw_bruised_bb_29,          "Bruised Blue Chip 29|",       "") +
         np.where(fw_multitrillioncap,       "Multi-Trillion Cap|",         "") +
+        np.where(fw_fisher_scalability,    "Fisher Scalability|",          "") +
         np.where(fw_schilit,               "Financial Shenanigans|",       "")
     )
     df["frameworks_passed"] = (
