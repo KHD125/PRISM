@@ -23,7 +23,7 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
     all_cols = list(df.columns)
     _PINNED = [
         "rank", "name", "corporate_class", "sector", "composite_score",
-        "moat_growth_quad", "cash_score", "buy_zone_label",
+        "moat_growth_quad", "fisher_lifecycle_quadrant", "cash_score", "buy_zone_label",
     ]
     seen: set = set()
     first_cols: list = []
