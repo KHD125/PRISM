@@ -1517,6 +1517,27 @@ def render_raw_signals(stock: pd.Series):
         _cell("Conviction Tier",g("conviction_tier"),    "Tier {:.0f}")
     )
 
+    # Dorsey Wide Moat pillar cells
+    _section("🏰 Dorsey Wide Moat Pillars", COLORS["purple"],
+        _cell("M — Moat Level",   "✅" if g("dorsey_moat_level")    == 1 else "❌", "") +
+        _cell("D — Direction",    "✅" if g("dorsey_moat_direction") == 1 else "❌", "") +
+        _cell("V — FCF Yield",    "✅" if g("dorsey_fcf_valuation")  == 1 else "❌", "") +
+        _cell("Q — Cash Quality", "✅" if g("dorsey_cash_quality")   == 1 else "❌", "") +
+        _cell("C — Cap Structure","✅" if g("dorsey_cap_structure")  == 1 else "❌", "") +
+        _cell("Dorsey Score",     g("dorsey_score"),  "{:.0f}/5") +
+        _cell("Dorsey Pass",      "Yes ✅" if g("dorsey_pass") == 1 else "No", "")
+    )
+
+    # Outsider CEO capital allocation pillar cells
+    _section("🏆 Outsider CEO Pillars", "#f0a500",
+        _cell("S — Share Retire", "✅" if g("outsider_share_retirement") == 1 else "❌", "") +
+        _cell("D — Debt Discip",  "✅" if g("outsider_debt_discipline")  == 1 else "❌", "") +
+        _cell("C — Cash Gen",     "✅" if g("outsider_cash_generation")  == 1 else "❌", "") +
+        _cell("R — Capital Ret",  "✅" if g("outsider_capital_returns")  == 1 else "❌", "") +
+        _cell("Outsider Score",   g("outsider_score"), "{:.0f}/4") +
+        _cell("Outsider Pass",    "Yes ✅" if g("outsider_pass") == 1 else "No", "")
+    )
+
     # CAN SLIM pillar cells
     _section("📊 CAN SLIM® Pillars", COLORS["blue"],
         _cell("C — Qtr EPS",      "✅" if g("can_slim_c") == 1 else "❌", "") +
@@ -1744,5 +1765,178 @@ def render_schilit_shield(stock: pd.Series):
 
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{cells_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# PAT DORSEY WIDE MOAT RADAR — 5-Pillar Economic Moat Audit
+# ═══════════════════════════════════════════════════════════════
+
+def render_dorsey_radar(stock: pd.Series):
+    """
+    Renders Pat Dorsey's Wide Moat 5-pillar economic moat audit card.
+    PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
+    Zero threshold re-computation; zero scoring logic; immune to parameter drift.
+    Source: docs/dorsey_moat_specs.json
+    """
+    st.markdown("<div class='sec-head'>🏰 Dorsey Wide Moat Radar</div>",
+                unsafe_allow_html=True)
+
+    d_pass  = int(_g(stock, "dorsey_pass",  0))
+    d_score = int(_g(stock, "dorsey_score", 0))
+
+    pillars = [
+        ("M", "Moat Return Level",
+         int(_g(stock, "dorsey_moat_level",    0)) == 1,
+         "Wide Moat Return Hurdle: 10Y & 5Y ROCE ≥ 20%"),
+        ("D", "Moat Trajectory",
+         int(_g(stock, "dorsey_moat_direction", 0)) == 1,
+         "Advantage Direction: Stable or Widening Trajectory"),
+        ("V", "FCF Valuation Yield",
+         int(_g(stock, "dorsey_fcf_valuation",  0)) == 1,
+         "Margin of Safety Floor: Free Cash Flow Yield ≥ 5%"),
+        ("Q", "Cash Realization Quality",
+         int(_g(stock, "dorsey_cash_quality",   0)) == 1,
+         "Earnings Conversion Base: CFO/PAT Conversion ≥ 80%"),
+        ("C", "Capital Structure Cushion",
+         int(_g(stock, "dorsey_cap_structure",  0)) == 1,
+         "Leverage Cushion Guard: D/E < 1.0 / Financial Exempt"),
+    ]
+
+    hdr_color  = COLORS["purple"] if d_pass else COLORS["text_muted"]
+    status_msg = "🏰 CONFIRMED WIDE MOAT" if d_pass else "⚪ Moat Unconfirmed"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);
+                border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
+                border-radius:12px;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+            Pat Dorsey Economic Moat Compliance Profile
+          </div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Status: <strong style="color:{hdr_color};">{status_msg}</strong>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
+            {d_score}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 5</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">Moat Gates Cleared</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    grid_html = ""
+    for letter, title, passed, baseline in pillars:
+        # All 5 pillars are equal weight — red on failure (each is a hard gate)
+        clr = COLORS["purple"] if passed else "#f85149"
+        bg_opacity = "15" if passed else "08"
+        ico = "✅" if passed else "❌"
+
+        grid_html += (
+            f"<div style='background:{clr}{bg_opacity};border:1px solid {clr}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"white-space:nowrap;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
+            f"{_esc(baseline)}</div>"
+            f"<div style='font-size:1.0rem;margin-top:4px;'>{ico}</div>"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{grid_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# WILLIAM THORNDIKE OUTSIDER CEO RADAR — 4-Pillar Capital Allocation Audit
+# ═══════════════════════════════════════════════════════════════
+
+def render_outsider_radar(stock: pd.Series):
+    """
+    Renders William Thorndike Outsider CEO 4-pillar capital allocation audit card.
+    PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
+    Zero threshold re-computation; zero scoring logic; immune to parameter drift.
+    Source: docs/outsider_specs.json
+    """
+    st.markdown("<div class='sec-head'>🏆 Thorndike Outsider CEO Radar</div>",
+                unsafe_allow_html=True)
+
+    o_pass  = int(_g(stock, "outsider_pass",  0))
+    o_score = int(_g(stock, "outsider_score", 0))
+
+    pillars = [
+        ("S", "Share Retirement",
+         int(_g(stock, "outsider_share_retirement", 0)) == 1,
+         "Anti-Dilution Shield: share count stable or active repurchases"),
+        ("D", "Debt Discipline",
+         int(_g(stock, "outsider_debt_discipline",  0)) == 1,
+         "Deleveraging Trend: 3Y D/E slope declining or stable"),
+        ("C", "Cash Generation",
+         int(_g(stock, "outsider_cash_generation",  0)) == 1,
+         "Realization Floor: CFO/PAT conversion ≥ 85% (strictest base)"),
+        ("R", "Capital Efficiency",
+         int(_g(stock, "outsider_capital_returns",  0)) == 1,
+         "Full-Cycle Returns: 10-Year ROCE Median ≥ 15%"),
+    ]
+
+    _OUTSIDER_GOLD = "#f0a500"
+    hdr_color  = _OUTSIDER_GOLD if o_pass else COLORS["text_muted"]
+    status_msg = "🏆 CONFIRMED OUTSIDER CEO" if o_pass else "⚪ Outsider Standard Not Met"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#1a1400 100%);
+                border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
+                border-radius:12px;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+            Thorndike Capital Allocation Compliance Profile
+          </div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Status: <strong style="color:{hdr_color};">{status_msg}</strong>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
+            {o_score}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 4</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">Capital Gates Cleared</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    grid_html = ""
+    for letter, title, passed, baseline in pillars:
+        clr        = _OUTSIDER_GOLD if passed else "#f85149"
+        bg_opacity = "18" if passed else "08"
+        ico        = "✅" if passed else "❌"
+
+        grid_html += (
+            f"<div style='background:{clr}{bg_opacity};border:1px solid {clr}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"white-space:nowrap;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
+            f"{_esc(baseline)}</div>"
+            f"<div style='font-size:1.0rem;margin-top:4px;'>{ico}</div>"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{grid_html}</div>",
         unsafe_allow_html=True,
     )
