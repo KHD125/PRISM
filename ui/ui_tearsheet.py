@@ -1538,6 +1538,16 @@ def render_raw_signals(stock: pd.Series):
         _cell("Outsider Pass",    "Yes ✅" if g("outsider_pass") == 1 else "No", "")
     )
 
+    # Howard Marks Cycle & Risk Defensive Shield pillar cells
+    _section("🛡️ Marks Cycle Shield Pillars", "#00CED1",
+        _cell("M — Margin",       "✅" if g("marks_margin_spike")   == 1 else "❌", "") +
+        _cell("P — Price/Value",  "✅" if g("marks_price_value")    == 1 else "❌", "") +
+        _cell("L — Leverage",     "✅" if g("marks_leverage_trap")  == 1 else "❌", "") +
+        _cell("D — Defensive",    "✅" if g("marks_defensive_base") == 1 else "❌", "") +
+        _cell("Marks Score",      g("marks_score"), "{:.0f}/4") +
+        _cell("Marks Pass",       "Yes ✅" if g("marks_pass") == 1 else "No", "")
+    )
+
     # CAN SLIM pillar cells
     _section("📊 CAN SLIM® Pillars", COLORS["blue"],
         _cell("C — Qtr EPS",      "✅" if g("can_slim_c") == 1 else "❌", "") +
@@ -1921,6 +1931,91 @@ def render_outsider_radar(stock: pd.Series):
     grid_html = ""
     for letter, title, passed, baseline in pillars:
         clr        = _OUTSIDER_GOLD if passed else "#f85149"
+        bg_opacity = "18" if passed else "08"
+        ico        = "✅" if passed else "❌"
+
+        grid_html += (
+            f"<div style='background:{clr}{bg_opacity};border:1px solid {clr}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"white-space:nowrap;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
+            f"{_esc(baseline)}</div>"
+            f"<div style='font-size:1.0rem;margin-top:4px;'>{ico}</div>"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{grid_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# MARKS MARKET CYCLE & RISK DEFENSIVE SHIELD — Howard Marks
+# ═══════════════════════════════════════════════════════════════
+
+def render_marks_radar(stock: pd.Series):
+    """
+    Renders Howard Marks Market Cycle & Risk Defensive 4-pillar shield card.
+    PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
+    Zero threshold re-computation; zero scoring logic; immune to parameter drift.
+    Source: docs/marks_cycle_specs.json
+    """
+    st.markdown("<div class='sec-head'>🛡️ Howard Marks Cycle & Risk Defensive Radar</div>",
+                unsafe_allow_html=True)
+
+    m_pass  = int(_g(stock, "marks_pass",  0))
+    m_score = int(_g(stock, "marks_score", 0))
+
+    pillars = [
+        ("M", "Margin Extreme",
+         int(_g(stock, "marks_margin_spike",   0)) == 1,
+         "Pendulum Spike Guard: margins sit within sustainable historical limits"),
+        ("P", "Price vs Value",
+         int(_g(stock, "marks_price_value",    0)) == 1,
+         "Asymmetry Margin: asset trades within a disciplined entry buy zone"),
+        ("L", "Leverage Cushion",
+         int(_g(stock, "marks_leverage_trap",  0)) == 1,
+         "Risk Avoidance Line: balance sheet debt stays safely below caps"),
+        ("D", "Defensive Cushion",
+         int(_g(stock, "marks_defensive_base", 0)) == 1,
+         "Margin for Error Base: CFO/PAT cash generation clears 70% floor"),
+    ]
+
+    _MARKS_CYAN = "#00CED1"
+    hdr_color  = _MARKS_CYAN if m_pass else COLORS["text_muted"]
+    status_msg = "🛡️ MARKS CYCLE SHIELD CONFIRMED" if m_pass else "⚪ Cycle Shield Not Cleared"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#001a1a 100%);
+                border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
+                border-radius:12px;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+            Howard Marks Cycle Defence Compliance Profile
+          </div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Status: <strong style="color:{hdr_color};">{status_msg}</strong>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
+            {m_score}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 4</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">Cycle Gates Cleared</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    grid_html = ""
+    for letter, title, passed, baseline in pillars:
+        clr        = _MARKS_CYAN if passed else "#f85149"
         bg_opacity = "18" if passed else "08"
         ico        = "✅" if passed else "❌"
 
