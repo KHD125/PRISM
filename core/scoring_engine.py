@@ -1355,6 +1355,29 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         pd.Series(int(market_ok_cs), index=df.index)              # M
     )
 
+    # ── CAN SLIM Pillar Materialization ────────────────────────────────────────
+    # Materialize individual pillar pass/fail flags as named DataFrame columns.
+    # Single source of truth: all scoring logic lives here; ui_tearsheet.py reads
+    # these flat 0/1 integers (pure display, zero threshold re-computation in UI).
+    # M pillar broadcasts the scalar market_ok_cs across all rows via pd.Series.
+    # market_regime stores the string regime tag for display (e.g., "BULL"/"BEAR").
+    df["can_slim_c"]        = ((q_eps_cs >= 25.0) & (q_rev_cs >= 25.0)).astype(int)
+    df["can_slim_a"]        = (
+        (eps_gr_cs    >= 25)  &   # A1: EPS 5Y CAGR
+        (roe_cs       >= 17)  &   # A2: ROE
+        (eps_gr_3y_cs >= 0)   &   # A3: 3Y EPS consistency
+        (eps_yoy_cs   >= 0)   &   # A4: YoY not declining
+        pat_step_ok               # A5: PAT step-growth 3 consecutive years
+    ).astype(int)
+    df["can_slim_n"]        = (dist_wh_cs  <= 15).astype(int)
+    df["can_slim_s"]        = (vol_r_cs    >= 1.5).astype(int)
+    df["can_slim_l"]        = (rs_pctrank_cs >= 80).astype(int)
+    df["can_slim_i"]        = ((fii_cs > 0) | (dii_cs > 0)).astype(int)
+    df["can_slim_m"]        = pd.Series(int(market_ok_cs), index=df.index)
+    df["market_regime"]     = pd.Series(str(_regime_cs).upper(), index=df.index)
+    df["can_slim_vcp"]      = vcp_vol_cs.astype(int)       # S-bonus: Minervini VCP dryup
+    df["can_slim_rs_trend"] = rs_uptrend_cs.astype(int)    # L-bonus: RS line ascending
+
     # 7. Bruised Blue Chip (29th MOSL Study) — quality company fallen hard + cheap vs history
     #    Criteria: ROCE ≥ 15% sustained + PAT CAGR ≥ 10% + fallen >40% from 52W high
     #              + current PE ≥ 25% below own 10Y median PE
