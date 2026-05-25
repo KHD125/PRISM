@@ -711,6 +711,7 @@ def render_guru_frameworks(stock: pd.Series):
         "Peaceful Investing":      (COLORS["gold"],   "🕊️", "Vijay Malik: NFAT + self-funded growth + clean accounts"),
         "Unusual Billionaires":    (COLORS["purple"], "💰", "Saurabh Mukherjea: promoter-run compounders"),
         "Fisher Quality":          (COLORS["green"],  "🎣", "Phil Fisher 15-point scuttlebutt quality check"),
+        "Fisher Scalability":      (COLORS["purple"], "📡", "Fisher operating leverage inflection — Rev runway + OpLev + Pricing + Anti-dilution"),
         "100-Bagger":              (COLORS["gold"],   "💯", "Mayer: owner-operator + small + high ROCE + low payout"),
         "Diamond":                 (COLORS["cyan"],   "💎", "Deep value: Earnings Yield ≥ G-Sec + clean accounts"),
         "Wide Moat":               (COLORS["purple"], "🏰", "Pat Dorsey: structural moat with ROCE expanding"),
@@ -786,6 +787,61 @@ def render_fisher_module(stock: pd.Series):
     proxies using ONLY pre-derived CSV columns. Zero manual input; zero re-computation.
     Columns read directly from the pre-computed stock row (data_engine outputs).
     """
+    # ── Fisher Lifecycle Quadrant Banner ─────────────────────────────────────
+    # Materialised by scoring_engine fw_fisher_scalability + fw_fisher dual-engine.
+    # Placed at the TOP of the Fisher module so the strategic classification is
+    # the first thing a user reads before the P1-P15 proxy detail below it.
+    quadrant = stock.get("fisher_lifecycle_quadrant", "⚪ Laggard") or "⚪ Laggard"
+    f_score  = int(float(_g(stock, "fisher_score", 0)))
+
+    _q_colors = {
+        "👑 Apex Winner":       "#bc8cff",   # purple  — quality + scalability firing
+        "🐢 Steady Compounder": "#58a6ff",   # blue    — quality proven, no inflection
+        "⚡ Catalyst Play":     "#d29922",   # gold    — inflection without structural quality
+        "⚪ Laggard":           "#8b949e",   # grey    — neither gate passing
+    }
+    _q_descriptions = {
+        "👑 Apex Winner":       "Elite quality business AT its operating leverage peak — prime entry signal",
+        "🐢 Steady Compounder": "Structural quality proven; no current scalability inflection — steady long hold",
+        "⚡ Catalyst Play":     "Inflection firing but structural quality absent — trading candidate, cap position size",
+        "⚪ Laggard":           "Fails both Fisher Quality and Scalability gates — structural irrelevance",
+    }
+    q_clr  = _q_colors.get(quadrant, "#8b949e")
+    q_desc = _q_descriptions.get(quadrant, "")
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117,#161b22);
+                border:1px solid {q_clr}44;
+                border-left:4px solid {q_clr};
+                border-radius:12px;
+                padding:14px 20px;margin-bottom:16px;
+                box-shadow:0 2px 12px {q_clr}22;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <div style="flex:1;">
+          <div style="font-size:0.62rem;font-weight:800;color:{q_clr};
+                      text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px;">
+            Fisher Lifecycle Quadrant
+          </div>
+          <div style="font-size:1.05rem;font-weight:900;color:{q_clr};">
+            {_esc(quadrant)}
+          </div>
+          <div style="font-size:0.71rem;color:#8b949e;margin-top:4px;">
+            {_esc(q_desc)}
+          </div>
+        </div>
+        <div style="text-align:center;flex-shrink:0;">
+          <div style="font-size:1.5rem;font-weight:900;color:{q_clr};line-height:1;">
+            {f_score}/4
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.8px;margin-top:2px;">
+            Scalability Gates
+          </div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     proxies = []
 
     # P1 — Market Potential: Revenue growth → rev_gr_5y (pre-computed 5Y CAGR)
@@ -1372,7 +1428,9 @@ def render_raw_signals(stock: pd.Series):
         _cell("NPM 5Y Med",    g("npm_med_5y"),     "{:.1f}%") +
         _cell("OPM",           g("opm"),            "{:.1f}%") +
         _cell("Malik Score",   g("malik_score"),    "{:.0f}/100") +
-        _cell("Piotroski",     g("piotroski_fscore"),"{:.0f}/9")
+        _cell("Piotroski",     g("piotroski_fscore"),"{:.0f}/9") +
+        _cell("Fisher Scal. Score", g("fisher_score"),   "{:.0f}/4") +
+        _cell("Fisher Quadrant",    stock.get("fisher_lifecycle_quadrant", "⚪ Laggard") or "⚪ Laggard", "")
     )
 
     # Growth
