@@ -1427,7 +1427,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("NPM",           g("npm"),            "{:.1f}%") +
         _cell("NPM 5Y Med",    g("npm_med_5y"),     "{:.1f}%") +
         _cell("OPM",           g("opm"),            "{:.1f}%") +
-        _cell("Malik Score",   g("malik_score"),    "{:.0f}/100") +
+        _cell("Malik Score",   g("malik_score"),    "{:.0f}/5") +
+        _cell("Malik Pass",    "Yes ✅" if g("malik_pass") == 1 else "No", "") +
         _cell("Piotroski",     g("piotroski_fscore"),"{:.0f}/9") +
         _cell("Fisher Scal. Score", g("fisher_score"),   "{:.0f}/4") +
         _cell("Fisher Quadrant",    stock.get("fisher_lifecycle_quadrant", "⚪ Laggard") or "⚪ Laggard", "")
@@ -1961,7 +1962,9 @@ def render_marks_radar(stock: pd.Series):
     Renders Howard Marks Market Cycle & Risk Defensive 4-pillar shield card.
     PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
     Zero threshold re-computation; zero scoring logic; immune to parameter drift.
-    Source: docs/marks_cycle_specs.json
+    Source: docs/marks_cycle_specs.json v1.1-marks-cycle-codex-india-calibrated
+    Thresholds (v1.1 India-calibrated): see docs/marks_cycle_specs.json for exact values.
+    Companion Ch.9: D/E and CFO/PAT gates tightened for India defensive floor.
     """
     st.markdown("<div class='sec-head'>🛡️ Howard Marks Cycle & Risk Defensive Radar</div>",
                 unsafe_allow_html=True)
@@ -2033,5 +2036,100 @@ def render_marks_radar(stock: pd.Series):
 
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{grid_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# DR. VIJAY MALIK PEACEFUL INVESTING RADAR — 5-Pillar Financial Quality Audit
+# ═══════════════════════════════════════════════════════════════
+
+def render_malik_radar(stock: pd.Series):
+    """
+    Renders Dr. Vijay Malik's Peaceful Investing 5-pillar financial quality audit card.
+    PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
+    Zero threshold re-computation; zero scoring logic; immune to parameter drift.
+    Source: docs/malik_peaceful_specs.json v1.0-malik-peaceful-codex (all thresholds there).
+    Pillars (G/P/F/C/S):
+      G — Growth Runway:    malik_growth_runway    (Sales CAGR gate; see pillar_g_growth_runway)
+      P — Margin Stability: malik_profit_stability (NPM stable gate; see pillar_p_profit_stability)
+      F — Debt Fortress:    malik_debt_fortress    (ICR + D/E + CR; fin exempt; see pillar_f_debt_fortress)
+      C — Cash Realization: malik_cash_generation  (CFO/PAT PERCENTAGE gate; see pillar_c_cash_generation)
+      S — Self-Funded:      malik_self_funded      (SSGR binary flag; see pillar_s_self_funded)
+    """
+    st.markdown("<div class='sec-head'>🕊️ Dr. Vijay Malik — Peaceful Investing Radar</div>",
+                unsafe_allow_html=True)
+
+    m_pass  = int(_g(stock, "malik_pass",  0))
+    m_score = int(_g(stock, "malik_score", 0))
+
+    pillars = [
+        ("G", "Growth Runway",
+         int(_g(stock, "malik_growth_runway",    0)) == 1,
+         "Sales Growth Hurdle: 10Y/5Y revenue CAGR clears the self-funding floor"),
+        ("P", "Margin Stability",
+         int(_g(stock, "malik_profit_stability", 0)) == 1,
+         "Pricing Power Shield: current NPM stable and prior year not deteriorating"),
+        ("F", "Debt Fortress",
+         int(_g(stock, "malik_debt_fortress",    0)) == 1,
+         "Leverage Cushion Gate: ICR, D/E, and Current Ratio all within safe range"),
+        ("C", "Cash Realization",
+         int(_g(stock, "malik_cash_generation",  0)) == 1,
+         "Audited Reality Floor: operating cash flow substantively backs reported profit"),
+        ("S", "Self-Funded Growth",
+         int(_g(stock, "malik_self_funded",      0)) == 1,
+         "Sustainable Growth Core: SSGR covers actual sales growth without new debt"),
+    ]
+
+    _MALIK_GREEN = "#2ecc71"
+    hdr_color  = _MALIK_GREEN if m_pass else COLORS["text_muted"]
+    status_msg = "PEACEFUL INVESTING CERTIFIED" if m_pass else "Peaceful Investing Criteria Not Met"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#0b1a0f 100%);
+                border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
+                border-radius:12px;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+            Vijay Malik Financial Quality Compliance Profile
+          </div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Status: <strong style="color:{hdr_color};">{_esc(status_msg)}</strong>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
+            {m_score}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 5</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">Peaceful Parameters Cleared</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _mk_grid = ""
+    for letter, title, passed, baseline in pillars:
+        clr_mk     = _MALIK_GREEN if passed else "#f85149"
+        bg_mk      = "18" if passed else "08"
+        ico_mk     = "✅" if passed else "❌"
+
+        _mk_grid += (
+            f"<div style='background:{clr_mk}{bg_mk};border:1px solid {clr_mk}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:{clr_mk};line-height:1.1;'>"
+            f"{_esc(letter)}</div>"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"white-space:nowrap;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
+            f"{_esc(baseline)}</div>"
+            f"<div style='font-size:1.0rem;margin-top:4px;'>{ico_mk}</div>"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{_mk_grid}</div>",
         unsafe_allow_html=True,
     )
