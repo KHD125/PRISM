@@ -1412,14 +1412,49 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # NPM stability: current ≥ 8% AND (prior year ≥ 6% OR prior year data unavailable)
     # Guards against one-year NPM spike that doesn't reflect the business's true earning power.
     npm_stable_mk = (npm_mk.fillna(0) >= 8) & (npm_1yb_mk.isna() | (npm_1yb_mk.fillna(0) >= 6))
+    # ── Pillar flags — 5 independent materialized binary columns ─────────────
+    # Each pillar maps to one of Malik's 8 financial parameters or the SSGR signature.
+    # Financial sector (is_fin_mk) is fully exempt from the Debt Fortress sub-gates.
+    # Spec: docs/malik_peaceful_specs.json
+
+    df["malik_growth_runway"] = (
+        rev_gr_mk.fillna(0) >= 10.0               # P1: Sales CAGR ≥ 10% (10Y primary, 5Y fallback)
+    ).astype(int)
+
+    df["malik_profit_stability"] = (
+        npm_stable_mk                              # P2: NPM ≥ 8% AND prior ≥ 6% (or unavailable)
+    ).astype(int)
+
+    df["malik_debt_fortress"] = (
+        is_fin_mk | (                              # Financial sector exempt
+            (ic_mk.fillna(0)   >= 3.0) &          # P4: Interest coverage ≥ 3×
+            (de_mk.fillna(999) <= 0.5) &           # P5: D/E ≤ 0.5 — Malik's stricter standard
+            (cr_mk.fillna(0)   >= 1.25)            # P6: Current ratio ≥ 1.25
+        )
+    ).astype(int)
+
+    df["malik_cash_generation"] = (
+        cfo_pat_mk.fillna(0) >= 70.0               # P8: CFO/PAT ≥ 70% — PERCENTAGE (70.0 not 0.70)
+    ).astype(int)
+
+    df["malik_self_funded"] = (
+        ssgr_mk == 1                               # SSGR: growth self-funded — Malik's signature signal
+    ).astype(int)
+
     fw_malik_peaceful = (
-        (rev_gr_mk.fillna(0)  >= 10) &                   # P1: Sales CAGR ≥ 10% (10Y primary, 5Y fallback)
-        npm_stable_mk &                                   # P2: NPM ≥ 8% stable, not a one-year spike
-        (is_fin_mk | (ic_mk.fillna(0)   >= 3)) &         # P4: Interest coverage ≥ 3× (fin exempt)
-        (is_fin_mk | (de_mk.fillna(999) <= 0.5)) &       # P5: D/E ≤ 0.5 — Malik's stricter standard
-        (is_fin_mk | (cr_mk.fillna(0)   >= 1.25)) &      # P6: Current ratio ≥ 1.25 (fin exempt)
-        (cfo_pat_mk.fillna(0) >= 70) &                   # P8: CFO/PAT ≥ 70% — cash backs earnings
-        (ssgr_mk == 1)                                    # SSGR: growth is self-funded (Malik's signature)
+        (df["malik_growth_runway"]   == 1) &
+        (df["malik_profit_stability"] == 1) &
+        (df["malik_debt_fortress"]    == 1) &
+        (df["malik_cash_generation"]  == 1) &
+        (df["malik_self_funded"]      == 1)
+    )
+    df["malik_pass"]  = fw_malik_peaceful.astype(int)
+    df["malik_score"] = (                          # 0-5: count of Malik pillars cleared
+        df["malik_growth_runway"]    +
+        df["malik_profit_stability"] +
+        df["malik_debt_fortress"]    +
+        df["malik_cash_generation"]  +
+        df["malik_self_funded"]
     )
 
     # 10. Unusual Billionaires (Saurabh Mukherjea) — The Greatness Formula
