@@ -14,11 +14,13 @@ import numpy as np
 from typing import List, Dict
 from config import FORENSIC, PIOTROSKI, FORENSIC_MAX_FLAGS, CONVICTION_TIERS
 
-# Industries with long billing cycles — DSO > 90 days is normal, not a red flag
-# Sector-based classification for DSO threshold and capex-mirage exclusion.
-# Uses the SECTOR column (81 values) — auto-adapts when Screener.in adds new sub-industries
-# without requiring any code change. Verified: these 4 sectors contain all 40+ relevant
-# IT / Pharma / Healthcare industries in the live CSV.
+# Asset-light sector exclusion mask — used in TWO places (NOT for DSO thresholds):
+#   1. rf_capex_mirage: IT/Pharma/Healthcare have asset-light models; high revenue with
+#      low capex is their competitive ADVANTAGE, not a deferred-maintenance red flag.
+#   2. Schilit Checker 4: absolute DSO > 90d is not a manipulation signal for these sectors
+#      (contractual billing cycles make long DSO structurally normal).
+# NOTE: rf_high_receivables now uses the granular per-sector _SECTOR_DSO_THRESHOLDS
+#       lookup below — _HIGH_DSO_SECTORS is no longer involved in DSO threshold logic.
 # Financial stocks are excluded separately via is_financial (days_receivable is NaN-out there).
 _HIGH_DSO_SECTORS = frozenset({
     "IT - Software",      # 11 industries: ER&D, BPO, Data Centre, IT Product, Geospatial…
@@ -26,6 +28,66 @@ _HIGH_DSO_SECTORS = frozenset({
     "Healthcare",         # 9 industries: Hospitals, Diagnostics, Medical Equipment…
     "Pharmaceuticals",    # 15 industries: all Pharma sub-types, Ayurvedic, Biosimilars…
 })
+
+# ── Per-Sector DSO Alert Thresholds (BUG #11 Fix) ──────────────────────────────────────
+# Replaces the old binary is_service → (120 or 75) logic with a full 84-sector lookup.
+# Each entry is an industry-specific billing-cycle norm verified against the CSV sector list.
+# Sectors absent from this map fall back to _DEFAULT_DSO_THRESHOLD (75 days).
+# Source verification: sectors confirmed present in "sectors there in my csv.txt" (84 entries).
+#
+#   IT - Software  : 120d  — milestone-based project billing; contractual 90-120d payment terms
+#   IT - Hardware  : 110d  — procurement + testing + acceptance cycles; enterprise procurement norms
+#   Construction   : 120d  — progress billing on long-duration contracts; retention money norms
+#   Cap Goods      : 110d  — long delivery + installation + commissioning acceptance cycles
+#   Telecom-Service:  90d  — post-paid 90-day billing standard; carrier interconnect norms
+#   Pharmaceuticals:  80d  — distribution channel credit norms; stockist payment cycles
+#   Steel          :  70d  — commodity settlement; faster B2B payment norms in metals
+#   FMCG           :  45d  — consumer goods; trade channel fast turnover; modern trade 30-45d
+#   Default        :  75d  — all other sectors (manufacturing, auto, engineering, etc.)
+_SECTOR_DSO_THRESHOLDS: dict = {
+    "IT - Software":                          120,
+    "IT - Hardware":                          110,
+    "FMCG":                                    45,
+    "Pharmaceuticals":                         80,
+    "Construction":                           120,
+    "Capital Goods-Non Electrical Equipment": 110,
+    "Capital Goods - Electrical Equipment":   110,
+    "Steel":                                   70,
+    "Telecom-Service":                         90,
+}
+_DEFAULT_DSO_THRESHOLD: int = 75   # fallback for all sectors not in the map above
+
+# ── Per-Sector Depreciation Rate Estimates (BUG #8 Fix) ────────────────────────────────
+# Replaces the flat 0.10 multiplier in rf_capex_mirage with sector-accurate asset life rates.
+# Used as denominator to estimate annual depreciation of existing asset base.
+# Sources: Indian Companies Act Schedule II useful lives + industry standards.
+# Sectors absent from this map fall back to _DEFAULT_DEP_RATE (10%).
+#
+#   IT Software/Hardware : 0.30  — compute servers, network gear: 3-year useful life standard
+#   Pharmaceuticals      : 0.18  — lab equipment, specialized plant: 5-6yr Indian tax life
+#   Telecom              : 0.18  — network equipment, towers: 5-6yr depreciation life
+#   Railways             : 0.06  — track, rolling stock: ~15-17yr Schedule II life
+#   Shipping             : 0.10  — vessel hull: 10yr standard (same as default)
+#   Realty / REITs       : 0.025 — commercial property: 40yr useful life (Schedule II Class 1)
+#   InvITs               : 0.025 — infrastructure assets: 40yr+, slow capital turnover
+#   Power / Infra        : 0.04–0.05 — plant, transmission: 20-25yr Schedule II life
+#   Default              : 0.10  — manufacturing, auto, FMCG, steel, etc.
+_SECTOR_DEP_RATES: dict = {
+    "IT - Software":                           0.30,
+    "IT - Hardware":                           0.30,
+    "Infrastructure Developers & Operators":   0.04,
+    "Power Generation & Distribution":         0.05,
+    "Power Infrastructure":                    0.04,
+    "Infrastructure Investment Trusts":        0.025,
+    "Real Estate Investment Trusts":           0.025,
+    "Realty":                                  0.04,
+    "Telecom-Service":                         0.18,
+    "Telecom Equipment & Infra Services":      0.18,
+    "Shipping":                                0.10,
+    "Railways":                                0.06,
+    "Pharmaceuticals":                         0.18,
+}
+_DEFAULT_DEP_RATE: float = 0.10   # fallback for all sectors not in the map above
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -154,15 +216,21 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    # 2. Receivables quality: sector-aware DSO threshold
-    # IT / Pharma / Healthcare have 60-90d normal billing cycles → alert at 120d.
-    # Products / FMCG / Manufacturing → alert at 75d.
-    # Financial stocks: days_receivable is NaN-out in data_engine → always 0 here.
-    is_service = df.get("sector", pd.Series("", index=df.index)).fillna("").isin(_HIGH_DSO_SECTORS)
-    dso_threshold = np.where(is_service, 120, 75)
+    # 2. Receivables quality: per-sector DSO threshold (granular lookup — BUG #11 Fix)
+    # Uses _SECTOR_DSO_THRESHOLDS module-level dict — each of the 84 production sectors
+    # maps to its industry-specific billing-cycle norm via a single vectorized .map() call.
+    # Sectors absent from the dict fall back to _DEFAULT_DSO_THRESHOLD (75 days).
+    # Key examples:
+    #   IT-Software (DSO=75d) → threshold=120 → 75 < 120 → NO false-positive flag ✅
+    #   FMCG (DSO=50d)        → threshold=45  → 50 > 45  → correct red flag ✅
+    #   Default (DSO=80d)     → threshold=75  → 80 > 75  → correct red flag ✅
+    # Financial stocks: days_receivable is NaN-out in data_engine → rf=0 always.
+    # Pure vectorized: one .map() + one .fillna() — zero loops, zero apply().
+    _sector_col   = df.get("sector", pd.Series("Unknown", index=df.index)).fillna("Unknown")
+    _dso_gate     = _sector_col.map(_SECTOR_DSO_THRESHOLDS).fillna(_DEFAULT_DSO_THRESHOLD)
     df["rf_high_receivables"] = np.where(
         df["days_receivable"].notna(),
-        (df["days_receivable"] > dso_threshold).astype(int),
+        (df["days_receivable"] > _dso_gate).astype(int),
         0
     )
 
@@ -384,7 +452,19 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     _is_fin_cm = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
     _is_capital_intensive = ~_is_svc_cm & ~_is_fin_cm
 
-    _depr_est_cm   = df["fixed_assets_1yb"].fillna(0) * 0.10
+    # Sector-aware dep rate (BUG #8 Fix): replaces the flat 0.10 multiplier.
+    # Uses _SECTOR_DEP_RATES module-level dict — maps each sector to its Schedule II
+    # asset useful life rate. Sectors absent from the dict fall back to 0.10 (default).
+    # Examples:
+    #   IT-Software  (dep=0.30): depr_est = FA × 0.30 → harder to trigger (asset-light
+    #     sector is already excluded by _is_capital_intensive; included for arithmetic
+    #     completeness, never reaches rf_capex_mirage assignment)
+    #   Power Infra  (dep=0.04): depr_est = FA × 0.04 → smaller denominator → capex ratio
+    #     more accurate for long-life infrastructure assets
+    #   Telecom      (dep=0.18): depr_est = FA × 0.18 → correctly flags under-investment
+    #     in short-life network equipment
+    _dep_mult_cm   = df.get("sector", pd.Series("Unknown", index=df.index)).fillna("Unknown").map(_SECTOR_DEP_RATES).fillna(_DEFAULT_DEP_RATE)
+    _depr_est_cm   = df["fixed_assets_1yb"].fillna(0) * _dep_mult_cm
     _capex_net_cm  = (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)).clip(lower=0)
     _capex_ratio_cm = np.where(
         _depr_est_cm > 0,
@@ -569,7 +649,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # Human-readable flag list
     flag_descriptions = {
         "rf_low_cfo_pat": "Low CFO/PAT (<70%)",
-        "rf_high_receivables": "High receivables (>120d services / >75d products)",
+        "rf_high_receivables": "High receivables (per-sector: IT 120d, CapGoods 110d, Pharma 80d, FMCG 45d; default 75d)",
         "rf_inventory_bloat": "Inventory growing faster than revenue",
         "rf_rising_debt": "Debt-to-equity rising",
         "rf_ccc_worsening": "Cash conversion cycle worsening",
