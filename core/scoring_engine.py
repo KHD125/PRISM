@@ -1602,58 +1602,98 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     _dw_nan      = pd.Series(np.nan, index=df.index)
     roce_10y_dw  = df.get("roce_med_10y",    _dw_nan)
     roce_5y_dw   = df.get("roce_med_5y",     _dw_nan)
-    rev_5y_dw    = df.get("rev_gr_5y",       _dw_nan)
     cfo_pat_dw   = df.get("cfo_to_pat",      _dw_nan)   # PERCENTAGE: 80.0 = 80%
     fcf_yield_dw = df.get("fcf_yield",       _dw_nan)   # PERCENTAGE: 5.0 = 5%
     roce_dir_dw  = df.get("d35_roce_trend",  _dw_nan)   # positive = ROCE improving vs 1Y ago
     de_dw        = df.get("debt_to_equity",  _dw_nan)
     is_fin_dw    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
-    fw_dorsey = (
-        (roce_10y_dw.fillna(0) >= 20) &              # Confirmed Wide Moat: ROIC > 20% over full cycle
-        (roce_5y_dw.fillna(0)  >= 20) &              # Confirmed Wide Moat: sustained in recent window
-        (rev_5y_dw.fillna(0)   >= 10) &              # Moat enables durable revenue compounding
-        (cfo_pat_dw.fillna(0)  >= 80) &              # Earnings quality: CFO/PAT ≥ 80% (genuine profits)
-        (fcf_yield_dw.fillna(0) >= 5) &              # Wide moat at attractive price: FCF yield ≥ 5%
-        (roce_dir_dw.fillna(-1) >= 0) &              # Moat direction: ROCE not eroding vs 1Y ago
-        (is_fin_dw | (de_dw.fillna(999) < 1.0))      # Capital discipline: < 1.0 (allows asset-heavy moats)
-    )
 
-    # 15. Outsiders on Dalal Street — Capital Allocation Excellence
-    #    The Outsider CEO fingerprint: deleveraging + zero dilution + high cash conversion.
-    #    Three signals unique across all 15 frameworks:
-    #      1. de_slope_3y <= 0: D/E actively declining over 3Y — the ONLY framework to reward
-    #         deleveraging as a positive quality signal (others use D/E as static threshold)
-    #      2. dilution_flag == 0 as PRIMARY hard gate — Outsider DNA = per-share value creation,
-    #         not empire building. Fisher also requires it, but among 7 other conditions.
-    #      3. CFO/PAT ≥ 85%: highest cash quality threshold in the entire system
-    #         (Diamond=75%, Dorsey=80%, Outsiders=85%)
-    #    D/E < 0.75: book's explicit Stage 1 threshold — unique value (between Diamond's 0.5 and
-    #         Coffee Can's 1.0; a deleveraging company at 0.7 passes here, fails Diamond)
-    #    Market cap ≥ ₹1,000 Cr: book's explicit size floor (larger than Diamond's 500 Cr)
-    #    de_slope_3y fillna(1): if D/E trend data missing/restatement suspected → exclude
-    #         (cannot verify deleveraging = won't award the Outsider badge)
-    #    NOT implementable: HQ cost < 0.5% FCF (not in CSV), CEO communication quality,
-    #         decentralisation structure, acquisition ROIC vs hurdle (no M&A data)
-    _os_nan      = pd.Series(np.nan, index=df.index)
-    roce_10y_os  = df.get("roce_med_10y",    _os_nan)
-    roce_5y_os   = df.get("roce_med_5y",     _os_nan)
-    rev_10y_os   = df.get("rev_gr_10y",      _os_nan).fillna(df.get("rev_gr_5y", _os_nan))
-    cfo_pat_os   = df.get("cfo_to_pat",      _os_nan)   # PERCENTAGE: 85.0 = 85%, not 0.85
-    dilut_os     = df.get("dilution_flag",   pd.Series(1, index=df.index)).fillna(1)
-    de_os        = df.get("debt_to_equity",  _os_nan)
-    de_slope_os  = df.get("de_slope_3y",     pd.Series(1.0, index=df.index)).fillna(1)
-    mcap_os      = df.get("market_cap",      _os_nan)   # Crores
-    is_fin_os    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
-    fw_outsider = (
-        (roce_10y_os.fillna(0) >= 15) &             # Quality business: ROIC above cost of capital 10Y
-        (roce_5y_os.fillna(0)  >= 15) &             # Quality business: ROIC sustained recently
-        (rev_10y_os.fillna(0)  >=  8) &             # Business still compounding revenue
-        (cfo_pat_os.fillna(0)  >= 85) &             # Cash conversion: CFO/PAT ≥ 85% (highest bar in system)
-        (dilut_os              ==  0) &             # Zero dilution: per-share value, not empire building
-        (de_slope_os           <=  0) &             # Deleveraging: D/E declining/stable over 3Y (Outsider DNA)
-        (is_fin_os | (de_os.fillna(999) < 0.75)) &  # Stage 1: D/E < 0.75 (book's explicit threshold)
-        (mcap_os.fillna(0)     >= 1000)              # Stage 1: ≥ ₹1,000 Cr established business
+    # ── Dorsey Pillar Materialization ──────────────────────────────────────────
+    # Single source of truth: all scoring logic lives here; ui_tearsheet reads
+    # these flat 0/1 integers (pure display — zero threshold re-computation in UI).
+    # M — Wide Moat Return Level: both 10Y AND 5Y ROCE ≥ 20% (Dorsey Ch.7: 'confirmed wide moat')
+    df["dorsey_moat_level"]    = ((roce_10y_dw.fillna(0) >= 20.0) & (roce_5y_dw.fillna(0) >= 20.0)).astype(int)
+    # D — Moat Direction: ROCE trajectory stable or widening (Dorsey Ch.7: direction matters as much as level)
+    df["dorsey_moat_direction"] = (roce_dir_dw.fillna(-1) >= 0).astype(int)
+    # V — FCF Valuation Yield: FCF yield ≥ 5% (Dorsey Ch.9: 'above 5% = attractive for Wide Moat')
+    df["dorsey_fcf_valuation"]  = (fcf_yield_dw.fillna(0) >= 5.0).astype(int)
+    # Q — Cash Realization Quality: CFO/PAT ≥ 80% (Dorsey Ch.8: 'above 0.8 = genuine earnings')
+    df["dorsey_cash_quality"]   = (cfo_pat_dw.fillna(0) >= 80.0).astype(int)
+    # C — Capital Structure Cushion: D/E < 1.0 (Dorsey Ch.8: allows capital-intensive moats); fin exempt
+    df["dorsey_cap_structure"]  = (is_fin_dw | (de_dw.fillna(999) < 1.0)).astype(int)
+
+    # Combine 5 materialized pillars into the pass flag and score
+    fw_dorsey = (
+        (df["dorsey_moat_level"]    == 1) &
+        (df["dorsey_moat_direction"] == 1) &
+        (df["dorsey_fcf_valuation"]  == 1) &
+        (df["dorsey_cash_quality"]   == 1) &
+        (df["dorsey_cap_structure"]  == 1)
     )
+    df["dorsey_pass"]  = fw_dorsey.astype(int)
+    df["dorsey_score"] = (
+        df["dorsey_moat_level"]    +
+        df["dorsey_moat_direction"] +
+        df["dorsey_fcf_valuation"]  +
+        df["dorsey_cash_quality"]   +
+        df["dorsey_cap_structure"]
+    )  # 0-5 sub-gate count; enables partial-pass ranking
+
+    # 15. Outsiders on Dalal Street — Capital Allocation Excellence (Thorndike)
+    #    4-Pillar Materialized Architecture — each pillar is an independent observable column.
+    #    Source: docs/outsider_specs.json
+    #
+    #    Pillar S (Share Retirement): dilution_flag == 0
+    #      Thorndike’s core finding: the best CEOs never diluted per-share value. Singleton
+    #      repurchased 90% of Teledyne at 8× earnings; Graham/Washington Post reduced share count
+    #      by 43%. fillna(1) = missing data → diluted assumed → conservative exclusion.
+    #
+    #    Pillar D (Debt Discipline): de_slope_3y <= 0
+    #      3-year D/E slope flat or declining = management is deleveraging from cash generation,
+    #      not leveraging up for empire-building. The ONLY framework rewarding deleveraging
+    #      trajectory (all others use static D/E level). fillna(999) = trend unconfirmed → excluded.
+    #
+    #    Pillar C (Cash Generation): cfo_to_pat >= 85% (HIGHEST threshold in the entire system)
+    #      Diamond=75%, Dorsey=80%, Outsiders=85%. True Outsider CEOs manage for cash, never
+    #      reported earnings. cfo_to_pat is PERCENTAGE in CSV (85.0 = 85%). fillna(0) → excluded.
+    #
+    #    Pillar R (Capital Returns): roce_med_10y >= 15%
+    #      Full-cycle hurdle rate: 10Y median ROCE above India WACC (≈12-13%). fillna(0) → excluded.
+    #
+    #    NOT implementable: HQ cost < 0.5% FCF (not in CSV), CEO communication quality,
+    #    decentralisation structure, acquisition ROIC vs hurdle (no M&A data in CSV).
+
+    # ── Pillar Materialization (vectorized, zero loops) ────────────────────────
+    df["outsider_share_retirement"] = (
+        df.get("dilution_flag", pd.Series(1, index=df.index)).fillna(1) == 0
+    ).astype(int)
+
+    df["outsider_debt_discipline"] = (
+        df.get("de_slope_3y", pd.Series(999, index=df.index)).fillna(999) <= 0.0
+    ).astype(int)
+
+    df["outsider_cash_generation"] = (
+        df.get("cfo_to_pat", pd.Series(0, index=df.index)).fillna(0) >= 85.0
+    ).astype(int)
+
+    df["outsider_capital_returns"] = (
+        df.get("roce_med_10y", pd.Series(0, index=df.index)).fillna(0) >= 15.0
+    ).astype(int)
+
+    # ── Pass flag: AND of all 4 pillars ────────────────────────────────────
+    fw_outsider = (
+        (df["outsider_share_retirement"] == 1) &
+        (df["outsider_debt_discipline"]  == 1) &
+        (df["outsider_cash_generation"]  == 1) &
+        (df["outsider_capital_returns"]  == 1)
+    )
+    df["outsider_pass"]  = fw_outsider.astype(int)
+    df["outsider_score"] = (
+        df["outsider_share_retirement"] +
+        df["outsider_debt_discipline"]  +
+        df["outsider_cash_generation"]  +
+        df["outsider_capital_returns"]
+    )  # 0-4 sub-gate count; enables partial-pass ranking (3/4 = one gate blocking)
 
     # 16. Quality Investing Codex (AKO Capital) — Three-Circle Quality Compounder
     #    Three-Circle Framework: Business Quality + Management Quality + Growth Quality must ALL pass.
