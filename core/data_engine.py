@@ -245,6 +245,7 @@ TECHNICAL_COLS = {
     "Breakout Window": "breakout_window",
     # VOLUME — institutional entry detector + liquidity gate
     "Volume": "volume",
+    "Volume SMA 5D":  "vol_sma_5d",   # VCP dryup check: 5D avg < 20D avg = volume contracting in base
     "Volume SMA 20D": "vol_sma_20d",
     # TREND CONFIRMATION
     "Last Goldencrossover 50D 200D": "golden_cross_days",
