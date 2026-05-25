@@ -2164,6 +2164,67 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # Schilit Financial Shenanigans clean-pass flag (pre-computed in forensic_engine)
     fw_schilit = df.get("schilit_pass", pd.Series(0, index=df.index)).fillna(0).astype(bool)
 
+    # ── Marks Market Cycle & Risk Defensive Shield (Howard Marks) ─────────────
+    # 4-Pillar Materialized Architecture — each pillar is an independent observable column.
+    # Source: docs/marks_cycle_specs.json
+    #
+    #    Pillar M (Margin Spike Guard): mean_reversion_risk == 0
+    #      Marks: "Extremes revert toward average." (Ch.4 MEAN_REVERSION config)
+    #      OPM or NPM >130% of 5Y median = cyclical peak risk (pendulum at greed extreme).
+    #      fillna(0) = missing spike data → 0 → no spike confirmed → gate passes.
+    #
+    #    Pillar P (Price vs Value): buy_zone_label == "🟢 Perfect Entry (Low Risk)"
+    #      dist_to_vstop <= 5% = maximum asymmetric risk/reward entry zone.
+    #      Marks: "The ONLY time to act decisively is when price is below intrinsic value."
+    #      fillna('') = missing label → fails (cannot confirm in buy zone).
+    #
+    #    Pillar L (Leverage Discipline): debt_to_equity < 0.5
+    #      Marks: "Borrowed money amplifies ALL other risks." (Ch.2 Risk Type 4)
+    #      Companion Ch.9 Pillar 1: "D/E < 0.5" — India-adapted Marks defensive floor.
+    #      fillna(999) = missing D/E → 999 ≥ 0.5 → fails (leverage unconfirmed).
+    #
+    #    Pillar D (Defensive Cash): cfo_to_pat >= 80.0
+    #      Marks: "Only companies generating real cash survive cycle downturns." (Ch.9 Pillar 1)
+    #      Companion Ch.9 Pillar 1: "CFO/PAT > 0.8" = 80% in percentage-unit CSV data.
+    #      cfo_to_pat is PERCENTAGE in CSV (73.04 = 73%). Threshold 80.0 not 0.80.
+    #      fillna(0) = missing CFO/PAT → 0 < 80 → fails.
+    #
+    #    NOT implementable: 5-Dimension Market Temperature Score (macro data not in CSV),
+    #    Second-Level Thinking score, psychological enemy detection, concentration risk,
+    #    liquidity risk, contrarian opportunity score — see docs/marks_cycle_specs.json.
+
+    # ── Pillar Materialization (vectorized, zero loops) ────────────────────────
+    df["marks_margin_spike"] = (
+        df.get("mean_reversion_risk", pd.Series(0, index=df.index)).fillna(0) == 0
+    ).astype(int)
+
+    df["marks_price_value"] = (
+        df.get("buy_zone_label", pd.Series("", index=df.index)).fillna("") == "🟢 Perfect Entry (Low Risk)"
+    ).astype(int)
+
+    df["marks_leverage_trap"] = (
+        df.get("debt_to_equity", pd.Series(999, index=df.index)).fillna(999) < 0.5
+    ).astype(int)
+
+    df["marks_defensive_base"] = (
+        df.get("cfo_to_pat", pd.Series(0, index=df.index)).fillna(0) >= 80.0
+    ).astype(int)
+
+    # ── Pass flag: AND of all 4 pillars ────────────────────────────────────────
+    fw_marks_cycle = (
+        (df["marks_margin_spike"]   == 1) &
+        (df["marks_price_value"]    == 1) &
+        (df["marks_leverage_trap"]  == 1) &
+        (df["marks_defensive_base"] == 1)
+    )
+    df["marks_pass"]  = fw_marks_cycle.astype(int)
+    df["marks_score"] = (
+        df["marks_margin_spike"]   +
+        df["marks_price_value"]    +
+        df["marks_leverage_trap"]  +
+        df["marks_defensive_base"]
+    )  # 0-4 sub-gate count; enables partial-pass ranking (3/4 = one cycle gate blocking)
+
     # Build comma-separated framework string — fully vectorized, zero apply
     fw_str = (
         np.where(fw_qglp,                   "QGLP|",                       "") +
@@ -2199,7 +2260,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_bruised_bb_29,          "Bruised Blue Chip 29|",       "") +
         np.where(fw_multitrillioncap,       "Multi-Trillion Cap|",         "") +
         np.where(fw_fisher_scalability,    "Fisher Scalability|",          "") +
-        np.where(fw_schilit,               "Financial Shenanigans|",       "")
+        np.where(fw_schilit,               "Financial Shenanigans|",       "") +
+        np.where(fw_marks_cycle,           "Marks Cycle Shield|",           "")
     )
     df["frameworks_passed"] = (
         pd.Series(fw_str, index=df.index)
