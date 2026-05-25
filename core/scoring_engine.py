@@ -1265,6 +1265,51 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         eq_shr_cs.notna() & eq_shr_1yb_cs.notna() &
         (eq_shr_cs <= eq_shr_1yb_cs)
     )
+    # C+A bonus: EPS annual acceleration — eps_gr_yoy > eps_gr_3y means the MOST RECENT annual
+    # EPS growth rate is HIGHER than the 3-year CAGR baseline, confirming the business is in
+    # an acceleration phase (not a decelerating compounder riding prior-year momentum).
+    # O'Neil Ch.3+Ch.4: "The rate of earnings increase should be getting larger in each of the
+    # past few quarters or years — look for two or three periods of accelerating earnings growth."
+    # Score bonus only (not fw_can_slim hard gate) — a great business can temporarily dip below
+    # its 3Y CAGR while still growing 30%+ YoY (one-off high-base effect). Both series use the
+    # same fillna strategy already applied above: eps_yoy_cs = fillna(-1), eps_gr_3y_cs = fillna(-1).
+    eps_accel_cs = (eps_yoy_cs > eps_gr_3y_cs)   # C+A: current YoY EPS > 3Y CAGR = accelerating
+    # A bonus: OPM expansion — O'Neil Ch.4: "Look for annual pre-tax profit margins at new peak
+    # levels. This confirms pricing power and cost discipline, not just topline revenue growth."
+    # Uses annual OPM (operating profit margin %) vs its prior year level.
+    # fillna(0) neutral — missing margin data neither awarded nor penalized (not a hard gate).
+    opm_cs      = df.get("opm",     pd.Series(np.nan, index=df.index)).fillna(0)
+    opm_1yb_cs  = df.get("opm_1yb", pd.Series(np.nan, index=df.index)).fillna(0)
+    opm_expand_cs = (opm_cs > opm_1yb_cs)         # A: OPM improving YoY → margin at new peak
+    # S3-bonus: Minervini Volume Contraction Pattern (VCP) — volume drying up recently, then
+    # surging on breakout. O'Neil Ch.6 + Minervini SEPA: the highest-conviction institutional
+    # entries follow a period of volume contraction (supply absorbed quietly) then explosive
+    # expansion on the pivot day. vol_sma_5d < vol_sma_20d confirms recent drying-up; vol_r_cs
+    # >= 1.5 confirms the breakout surge is already firing. Both SMA series must be present and
+    # positive — missing data fails conservatively (no dryup assumed).
+    # Score bonus only — not a fw_can_slim hard gate (VCP is a setup quality enhancer).
+    _vcp_5d  = df.get("vol_sma_5d",  pd.Series(np.nan, index=df.index))
+    _vcp_20d = df.get("vol_sma_20d", pd.Series(np.nan, index=df.index))
+    vcp_vol_cs = (
+        _vcp_5d.notna() & _vcp_20d.notna() & (_vcp_20d > 0) &
+        (_vcp_5d  < _vcp_20d) &   # S3: 5D avg < 20D avg → volume contracting in recent days
+        (vol_r_cs >= 1.5)          # AND current session is surging ≥ 1.5× 20D baseline
+    )
+    # L2-bonus: RS line uptrend across all three CRS timeframes — crs_50d > crs_26w > crs_52w.
+    # Static rs_pctrank_cs >= 80 measures WHERE the RS line is. This measures DIRECTION — whether
+    # the RS line is rising. O'Neil: the strongest setups show RS lines making new highs BEFORE
+    # price breaks out. crs_50d > crs_26w > crs_52w = short-term outperformance exceeds medium
+    # which exceeds long-term → full ascending RS line. All three must be present; any missing
+    # value fails conservatively (direction unconfirmed = no bonus).
+    # Score bonus only — complements rs_pctrank_cs >= 80 hard gate (level + direction together).
+    _rs_50d = df.get("crs_50d", pd.Series(np.nan, index=df.index))
+    _rs_26w = df.get("crs_26w", pd.Series(np.nan, index=df.index))
+    _rs_52w = df.get("crs_52w", pd.Series(np.nan, index=df.index))
+    rs_uptrend_cs = (
+        _rs_50d.notna() & _rs_26w.notna() & _rs_52w.notna() &
+        (_rs_50d > _rs_26w) &   # L2: short-term RS > medium-term RS
+        (_rs_26w > _rs_52w)     # medium-term RS > long-term RS → ascending RS line confirmed
+    )
     # L: Percentile rank of IBD-weighted RS composite (50D×40% + 26W×30% + 52W×30%)
     # ascending=True: higher RS composite → higher rank → top 20% = RS Rating ≥ 80
     rs_pctrank_cs = _pct_rank(rs_comp_cs, ascending=True).fillna(50)
@@ -1288,20 +1333,24 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         market_ok_cs                    # M: not in BEAR regime (breadth consensus)
     )
     df["can_slim_pass"] = fw_can_slim.astype(int)
-    # CAN SLIM criteria count (0-12 components): useful for partial-pass display and ranking.
-    # C has 2 components, A has 5 (CAGR + ROE + 3Y + YoY + PAT step-growth), S has 2 (volume + buyback bonus).
+    # CAN SLIM criteria count (0-17 components): useful for partial-pass display and ranking.
+    # C: 2 hard + 1 bonus | A: 5 hard + 1 bonus | N: 1 | S: 1 hard + 2 bonus | L: 1 hard + 1 bonus | I: 1 | M: 1
     df["can_slim_score"] = (
         (q_eps_cs   >= 25.0).astype(int)  +                       # C1: quarterly EPS per share
         (q_rev_cs   >= 25.0).astype(int)  +                       # C2: quarterly sales
+        eps_accel_cs.astype(int)          +                       # C+A bonus: EPS acceleration (YoY > 3Y CAGR)
         (eps_gr_cs  >= 25).astype(int)    +                       # A1: EPS 5Y CAGR
         (roe_cs     >= 17).astype(int)    +                       # A2: ROE
         (eps_gr_3y_cs >= 0).astype(int)   +                       # A3: 3Y EPS consistency
         (eps_yoy_cs >= 0).astype(int)     +                       # A4: YoY not declining
         pat_step_ok.astype(int)           +                       # A5: PAT step-growth (3 consecutive years)
+        opm_expand_cs.astype(int)         +                       # A bonus: OPM expanding YoY (margin at peak)
         (dist_wh_cs <= 15).astype(int)    +                       # N
-        (vol_r_cs   >= 1.5).astype(int)   +                       # S1: volume surge
+        (vol_r_cs   >= 1.5).astype(int)   +                       # S1: volume surge hard gate
         buyback_cs.astype(int)            +                       # S2-bonus: float retraction / share buyback
-        (rs_pctrank_cs >= 80).astype(int) +                       # L: IBD-weighted RS percentile
+        vcp_vol_cs.astype(int)            +                       # S3-bonus: Minervini VCP (dryup + surge)
+        (rs_pctrank_cs >= 80).astype(int) +                       # L1: IBD-weighted RS percentile hard gate
+        rs_uptrend_cs.astype(int)         +                       # L2-bonus: RS line ascending (50D>26W>52W)
         ((fii_cs > 0) | (dii_cs > 0)).astype(int) +              # I
         pd.Series(int(market_ok_cs), index=df.index)              # M
     )
