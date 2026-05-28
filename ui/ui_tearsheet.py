@@ -1429,6 +1429,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("OPM",           g("opm"),            "{:.1f}%") +
         _cell("Malik Score",   g("malik_score"),    "{:.0f}/5") +
         _cell("Malik Pass",    "Yes ✅" if g("malik_pass") == 1 else "No", "") +
+        _cell("Lynch Score",   g("lynch_score"),    "{:.0f}/4") +
+        _cell("Lynch Pass",    "Yes ✅" if g("lynch_pass") == 1 else "No", "") +
         _cell("Piotroski",     g("piotroski_fscore"),"{:.0f}/9") +
         _cell("Fisher Scal. Score", g("fisher_score"),   "{:.0f}/4") +
         _cell("Fisher Quadrant",    stock.get("fisher_lifecycle_quadrant", "⚪ Laggard") or "⚪ Laggard", "")
@@ -1547,6 +1549,15 @@ def render_raw_signals(stock: pd.Series):
         _cell("D — Defensive",    "✅" if g("marks_defensive_base") == 1 else "❌", "") +
         _cell("Marks Score",      g("marks_score"), "{:.0f}/4") +
         _cell("Marks Pass",       "Yes ✅" if g("marks_pass") == 1 else "No", "")
+    )
+
+    _section("🚀 Lynch Fast Grower Pillars", "#e74c3c",
+        _cell("V — Growth Vel",   "✅" if g("lynch_growth_velocity") == 1 else "❌", "") +
+        _cell("P — PEG Spot",     "✅" if g("lynch_valuation_peg")   == 1 else "❌", "") +
+        _cell("D — Pre-Discov",   "✅" if g("lynch_pre_discovery")   == 1 else "❌", "") +
+        _cell("F — Fortress Own", "✅" if g("lynch_fortress_owner")  == 1 else "❌", "") +
+        _cell("Lynch Score",      g("lynch_score"), "{:.0f}/4") +
+        _cell("Lynch Pass",       "Yes ✅" if g("lynch_pass") == 1 else "No", "")
     )
 
     # CAN SLIM pillar cells
@@ -2131,5 +2142,96 @@ def render_malik_radar(stock: pd.Series):
 
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{_mk_grid}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PETER LYNCH FAST GROWER RADAR — 4-Pillar Tenbagger Discovery Audit
+# ══════════════════════════════════════════════════════════════════════════════
+
+def render_lynch_radar(stock: pd.Series):
+    """
+    Renders Peter Lynch's Fast Grower 4-pillar tenbagger discovery audit card.
+    PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
+    Zero threshold re-computation; zero scoring logic; immune to parameter drift.
+    Source: docs/lynch_growth_specs.json v1.1-india-calibrated-fastgrower (all thresholds there).
+    Pillars (V/P/D/F):
+      V — Growth Velocity: lynch_growth_velocity (Rev 5Y CAGR + EPS per share + FCF cash gate)
+      P — Valuation PEG:   lynch_valuation_peg   (positive PEG in sweet spot corridor)
+      D — Pre-Discovery:   lynch_pre_discovery   (FII+DII combined below institutional threshold)
+      F — Fortress Owner:  lynch_fortress_owner  (D/E balance sheet + promoter level OR active buying)
+    """
+    st.markdown("<div class='sec-head'>🚀 Peter Lynch — Fast Grower Tenbagger Radar</div>",
+                unsafe_allow_html=True)
+
+    l_pass  = int(_g(stock, "lynch_pass",  0))
+    l_score = int(_g(stock, "lynch_score", 0))
+
+    pillars = [
+        ("V", "Growth Velocity",
+         int(_g(stock, "lynch_growth_velocity", 0)) == 1,
+         "Hyper-Growth Runway: revenue speed confirmed by EPS per share acceleration and positive free cash flow"),
+        ("P", "PEG Sweet Spot",
+         int(_g(stock, "lynch_valuation_peg",   0)) == 1,
+         "GARP Entry Corridor: growth significantly outpaces the price paid for it"),
+        ("D", "Pre-Discovery",
+         int(_g(stock, "lynch_pre_discovery",   0)) == 1,
+         "Combined Institutional Weight: FII plus DII below the pre-discovery threshold"),
+        ("F", "Fortress Owner",
+         int(_g(stock, "lynch_fortress_owner",  0)) == 1,
+         "Skin In The Game Shield: conservative balance sheet and owner conviction by level or active buying"),
+    ]
+
+    _LYNCH_RED  = "#e74c3c"
+    hdr_color   = _LYNCH_RED if l_pass else COLORS["text_muted"]
+    status_msg  = "LYNCH TENBAGGER CERTIFIED" if l_pass else "Lynch Fast Grower Criteria Not Met"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#1a0a0a 100%);
+                border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
+                border-radius:12px;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+            Peter Lynch Fast Grower Tenbagger Discovery Profile
+          </div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Status: <strong style="color:{hdr_color};">{_esc(status_msg)}</strong>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
+            {l_score}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 4</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">Lynch Gates Cleared</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _ly_grid = ""
+    for letter, title, passed, baseline in pillars:
+        clr_ly  = _LYNCH_RED if passed else COLORS["text_muted"]
+        bg_ly   = "18" if passed else "08"
+        ico_ly  = "✅" if passed else "❌"
+
+        _ly_grid += (
+            f"<div style='background:{clr_ly}{bg_ly};border:1px solid {clr_ly}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:{clr_ly};line-height:1.1;'>"
+            f"{_esc(letter)}</div>"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"white-space:nowrap;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
+            f"{_esc(baseline)}</div>"
+            f"<div style='font-size:1.0rem;margin-top:4px;'>{ico_ly}</div>"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{_ly_grid}</div>",
         unsafe_allow_html=True,
     )
