@@ -29,6 +29,7 @@ from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_mo
                 render_sell_alerts_panel, render_raw_signals,
                 render_canslim_radar, render_schilit_shield, render_dorsey_radar,
                 render_outsider_radar, render_marks_radar, render_malik_radar,
+                render_lynch_radar,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points)
@@ -968,6 +969,9 @@ with tabs[2]:
 
             st.markdown("<br>", unsafe_allow_html=True)
             render_malik_radar(stock)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            render_lynch_radar(stock)
 
         # ══ Tab D: Matrix & WCS ════════════════════════════════════════════
         with _itabs[3]:
