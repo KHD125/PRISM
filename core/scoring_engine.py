@@ -1184,27 +1184,82 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     pat_gr_sm = df.get("pat_gr_5y", pd.Series(np.nan, index=df.index)).fillna(0)
     fw_smile = (mcap_sm < 15000) & (pat_gr_sm >= 20) & (roce_mf >= 20)
 
-    # 5. Lynch Fast Grower (Peter Lynch — One Up on Dalal Street)
-    # Pattern DNA from 20 Indian tenbagger case files in the book:
-    # Rev CAGR > 20% + PEG < 0.75 (Lynch's preferred sweet spot, not just fair value at 1.0)
-    # + pre-institutional discovery (FII < 10%) + owner-operator promoter ≥ 45%
-    # fii_holdings fillna(50): if data missing, assume already discovered → exclude
-    _ly_nan   = pd.Series(np.nan, index=df.index)
-    peg_ly    = df.get("peg",               pd.Series(999.0, index=df.index)).fillna(999)
-    rev_ly    = df.get("rev_gr_5y",         _ly_nan)
-    pat3y_ly  = df.get("pat_gr_3y",         _ly_nan)
-    debt_ly   = df.get("debt_to_equity",    _ly_nan)
-    fii_ly    = df.get("fii_holdings",      pd.Series(50.0, index=df.index)).fillna(50)
-    promo_ly  = df.get("promoter_holdings", _ly_nan)
-    is_fin_ly = df.get("is_financial",      pd.Series(False, index=df.index)).fillna(False)
+    # 5. Lynch Fast Grower v1.1 — One Up on Wall Street (Ch7+Ch10+Ch13+Ch15) + India Calibration
+    # v1.1 book-grounded improvements over v1.0:
+    #   EPS per share (Ch15) replaces PAT total; FCF cash gate (Ch13 p196) added to Pillar V
+    #   FII+DII combined < 20% (Ch9/Ch15: "institutional ownership") replaces FII < 10%
+    #   Promoter buying OR level (Ch15 p208+213: "insider buying positive sign") in Pillar F
+    #   Inventory surge disqualifier (Ch13 p197: "inventories grow faster than sales = red flag")
+    # fii/dii fillna(50): if data missing, assume already discovered → conservative gate failure
+    # Spec: docs/lynch_growth_specs.json v1.1-india-calibrated-fastgrower
+    _ly_nan      = pd.Series(np.nan, index=df.index)
+    peg_ly       = df.get("peg",                pd.Series(999.0, index=df.index)).fillna(999)
+    rev_ly       = df.get("rev_gr_5y",          _ly_nan)
+    # V1.1: EPS per share — 5Y preferred, 3Y fallback (Lynch Ch15: "earnings growth rate")
+    eps5y_ly     = df.get("eps_gr_5y",          _ly_nan)
+    eps3y_ly     = df.get("eps_gr_3y",          _ly_nan)
+    eps_ly       = eps5y_ly.fillna(eps3y_ly)    # 5Y preferred; 3Y fallback
+    # V1.1: FCF verification — Lynch Ch13 p196: "make sure it's free cash flow"
+    fcf_ly       = df.get("free_cash_flow",     _ly_nan)
+    fcfy_ly      = df.get("fcf_yield",          _ly_nan)
+    debt_ly      = df.get("debt_to_equity",     _ly_nan)
+    fii_ly       = df.get("fii_holdings",       pd.Series(50.0, index=df.index)).fillna(50)
+    # V1.1: DII added — Lynch Ch9/Ch15: "institutional ownership" = ALL institutions
+    dii_ly       = df.get("dii_holdings",       pd.Series(50.0, index=df.index)).fillna(50)
+    promo_ly     = df.get("promoter_holdings",  _ly_nan)
+    # V1.1: Promoter buying — Lynch Ch15 p208+213: "insider buying is a positive sign"
+    chg_promo_ly = df.get("change_promoter_1y", _ly_nan)
+    is_fin_ly    = df.get("is_financial",       pd.Series(False, index=df.index)).fillna(False)
+    # V1.1: Inventory surge — Lynch Ch13 p197: "inventories growing faster than sales = red flag"
+    inv_gr_ly    = df.get("inv_growth",         _ly_nan)   # pre-computed in data_engine.py
+
+    # ── Pillar V: Growth Velocity — Revenue speed + EPS per share + positive FCF ─
+    _cash_ok_ly  = (fcf_ly.fillna(-1) > 0) | (fcfy_ly.fillna(-1) > 0)
+    df["lynch_growth_velocity"] = (
+        (rev_ly.fillna(0)  >= 20.0) &    # V1: Revenue 5Y CAGR ≥ 20% — Fast Grower definition
+        (eps_ly.fillna(0)  >= 15.0) &    # V2: EPS per share ≥ 15% — dilution-adjusted earnings
+        _cash_ok_ly                      # V3: FCF > 0 or FCF yield > 0 — cash verification
+    ).astype(int)
+
+    # ── Pillar P: PEG Sweet Spot ────────────────────────────────────────────────
+    df["lynch_valuation_peg"] = (
+        (peg_ly > 0) &                   # PEG must be positive (no earnings = not a Fast Grower yet)
+        (peg_ly <= 0.75)                 # Lynch sweet spot: price trades at ≤ 0.75× growth rate
+    ).astype(int)
+
+    # ── Pillar D: Pre-Discovery — FII+DII combined < 20% ───────────────────────
+    df["lynch_pre_discovery"] = (
+        (fii_ly + dii_ly) < 20.0        # Combined institutional weight < 20% pre-discovery phase
+    ).astype(int)
+
+    # ── Pillar F: Fortress Balance Sheet + Owner Conviction (level OR active buying)
+    _promo_ok_ly = (promo_ly.fillna(0) >= 45.0) | (chg_promo_ly.fillna(-1) > 0)
+    df["lynch_fortress_owner"] = (
+        (is_fin_ly | (debt_ly.fillna(999) < 0.5)) &   # Balance sheet: D/E < 0.5 (fin. sector exempt)
+        _promo_ok_ly                                   # Owner conviction: ≥ 45% OR actively buying
+    ).astype(int)
+
+    # ── Inventory surge disqualifier — vetos lynch_pass but NOT lynch_score ────
+    # Lynch Ch13 p197: "when inventories grow faster than sales — red flag"
+    # A company with all 4 pillars green but ballooning inventory gets pass=0 while score=4
+    _inv_surge_disq = (
+        inv_gr_ly.notna() &
+        (inv_gr_ly > (rev_ly.fillna(0) + 20.0))
+    )
+
     fw_lynch = (
-        (rev_ly.fillna(0)    >= 20) &                    # Fast Grower: 20%+ revenue CAGR
-        (peg_ly > 0)                &                    # PEG must be positive (real growth)
-        (peg_ly <= 0.75)            &                    # Lynch sweet spot: price ≤ 0.75× growth rate
-        (pat3y_ly.fillna(0)  >= 15) &                    # Earnings confirming the revenue story
-        (is_fin_ly | (debt_ly.fillna(999) < 0.5)) &      # Clean balance sheet
-        (fii_ly < 10)               &                    # Pre-discovery: institutions < 10%
-        (promo_ly.fillna(0)  >= 45)                      # Owner-operator conviction
+        (df["lynch_growth_velocity"] == 1) &
+        (df["lynch_valuation_peg"]   == 1) &
+        (df["lynch_pre_discovery"]   == 1) &
+        (df["lynch_fortress_owner"]  == 1) &
+        (~_inv_surge_disq)
+    )
+    df["lynch_pass"]  = fw_lynch.astype(int)
+    df["lynch_score"] = (               # 0-4: pillar count only; inventory surge excluded from score
+        df["lynch_growth_velocity"] +
+        df["lynch_valuation_peg"]   +
+        df["lynch_pre_discovery"]   +
+        df["lynch_fortress_owner"]
     )
 
     # 6. CAN SLIM (William O'Neill) — earnings acceleration + technical leadership
