@@ -26,6 +26,7 @@ try:
         render_marks_radar,
         render_malik_radar,
         render_lynch_radar,
+        render_mauboussin_radar,
     )
 except ImportError as e:
     import traceback
@@ -50,9 +51,10 @@ except ImportError as e:
     render_schilit_shield = _stub
     render_dorsey_radar = _stub
     render_outsider_radar = _stub
-    render_marks_radar    = _stub
-    render_malik_radar    = _stub
-    render_lynch_radar    = _stub
+    render_marks_radar       = _stub
+    render_malik_radar       = _stub
+    render_lynch_radar       = _stub
+    render_mauboussin_radar  = _stub
 
 from .ui_components import (
     inject_css,
@@ -88,6 +90,7 @@ __all__ = [
     "render_marks_radar",
     "render_malik_radar",
     "render_lynch_radar",
+    "render_mauboussin_radar",
     "inject_css",
     "render_hero_banner",
     "render_metric_strip",
