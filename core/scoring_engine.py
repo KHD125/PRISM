@@ -2315,6 +2315,61 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         df["marks_defensive_base"]
     )  # 0-4 sub-gate count; enables partial-pass ranking (3/4 = one cycle gate blocking)
 
+    # 34. Mauboussin Expectations Investing Framework
+    # Spec Reference: docs/mauboussin_expectations_specs.json v1.1-fixed-nopat-precision
+    # PIE Framework: read what current price implies about competitive advantage duration (CAP).
+    # Alpha = identifying where implied CAP is too optimistic vs business fundamentals.
+    _pe_ly   = df.get("pe",  pd.Series(0.0, index=df.index)).fillna(0.0)
+    _rr_ly   = df.get("reinvestment_rate", pd.Series(0.0, index=df.index)).fillna(0.0)
+    # reinvestment_rate is decimal [0,1] — no /100 (v1.0 bug: was dividing again, killing the signal)
+
+    # NOPAT Margin: EBIT × (1 − eff_tax) / Revenue × 100 — capital-structure-neutral profitability
+    _pbt_v   = df.get("pbt",     pd.Series(np.nan, index=df.index))
+    _pat_v   = df.get("pat",     pd.Series(0.0,    index=df.index)).fillna(0.0)
+    _ebit_v  = df.get("ebit",    pd.Series(0.0,    index=df.index)).fillna(0.0)
+    _rev_v   = df.get("revenue", pd.Series(np.nan, index=df.index))
+    _eff_tax = ((_pbt_v.fillna(0) - _pat_v) / _pbt_v.replace(0, np.nan)).clip(0, 0.50).fillna(0.25)
+    df["mauboussin_nopat_margin"] = np.where(
+        _rev_v.fillna(0) > 0,
+        _ebit_v * (1 - _eff_tax) / _rev_v * 100,
+        np.nan
+    )
+    _nopat_m_ly = df["mauboussin_nopat_margin"].fillna(0.0) / 100.0
+
+    # Layer 1: Implied CAP mathematical approximation (loop-free Pandas)
+    df["mauboussin_implied_cap"] = _pe_ly * _nopat_m_ly * _rr_ly
+
+    # Pillar T: Treadmill breach (1 = safe; treadmill sell alert not firing)
+    df["mauboussin_treadmill_breach"] = np.where(
+        df.get("sell_alert_treadmill", pd.Series(0, index=df.index)).fillna(0) == 1, 0, 1
+    )
+
+    # Pillar O: Operating leverage drift (1 = revenue converting efficiently to profit)
+    df["mauboussin_oplev_drift"] = np.where(
+        df.get("operating_leverage", pd.Series(1, index=df.index)).fillna(1) == 0, 0, 1
+    )
+
+    # Layer 2: CAP trap — structural 3-year slope replaces volatile 1-year delta (v1.0 noise bug)
+    _roce_v      = df.get("roce",        pd.Series(np.nan, index=df.index)).fillna(0.0)
+    _roce_med3y  = df.get("roce_med_3y", pd.Series(np.nan, index=df.index)).fillna(_roce_v)
+    _roce_slope_3y = (_roce_v - _roce_med3y) / 2.0
+    df["mauboussin_cap_trap"] = (
+        (df["mauboussin_implied_cap"] > 15.0) & (_roce_slope_3y < -1.0)
+    ).astype(int)
+
+    # Strategy pass flag: both operational gates clear AND not caught in expectations trap
+    fw_mauboussin = (
+        (df["mauboussin_treadmill_breach"] == 1) &
+        (df["mauboussin_oplev_drift"]      == 1) &
+        (df["mauboussin_cap_trap"]         == 0)
+    )
+    df["mauboussin_pass"]  = fw_mauboussin.astype(int)
+    df["mauboussin_score"] = (
+        df["mauboussin_treadmill_breach"] +
+        df["mauboussin_oplev_drift"] +
+        (df["mauboussin_cap_trap"] == 0).astype(int)
+    )  # 0-3; score==3 ↔ pass==1 (bidirectional — no asymmetric disqualifier)
+
     # Build comma-separated framework string — fully vectorized, zero apply
     fw_str = (
         np.where(fw_qglp,                   "QGLP|",                       "") +
@@ -2351,7 +2406,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_multitrillioncap,       "Multi-Trillion Cap|",         "") +
         np.where(fw_fisher_scalability,    "Fisher Scalability|",          "") +
         np.where(fw_schilit,               "Financial Shenanigans|",       "") +
-        np.where(fw_marks_cycle,           "Marks Cycle Shield|",           "")
+        np.where(fw_marks_cycle,           "Marks Cycle Shield|",           "") +
+        np.where(fw_mauboussin,            "Expectations Matrix|",           "")
     )
     df["frameworks_passed"] = (
         pd.Series(fw_str, index=df.index)
