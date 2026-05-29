@@ -40,6 +40,7 @@ RATIO_COLS = {
     "ROCE Median 10 Years": "roce_med_10y",
     "ROCE Median 7 Years":  "roce_med_7y",
     "ROCE Median 5 Years":  "roce_med_5y",
+    "ROCE Median 3 Years":  "roce_med_3y",
     "ROCE":                 "roce",
     "ROCE 1 Year Back":     "roce_1yb",
     # CAPITAL EFFICIENCY — ROE
