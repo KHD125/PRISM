@@ -1560,6 +1560,15 @@ def render_raw_signals(stock: pd.Series):
         _cell("Lynch Pass",       "Yes ✅" if g("lynch_pass") == 1 else "No", "")
     )
 
+    _section("🔮 Mauboussin Expectations Pillars", "#8b5cf6",
+        _cell("T — Treadmill",    "✅" if g("mauboussin_treadmill_breach") == 1 else "❌", "") +
+        _cell("O — Op Leverage",  "✅" if g("mauboussin_oplev_drift")      == 1 else "❌", "") +
+        _cell("C — CAP Trap",     "✅ Clear" if g("mauboussin_cap_trap") == 0 else "❌ Trap", "") +
+        _cell("Implied CAP",      g("mauboussin_implied_cap"), "{:.2f}") +
+        _cell("Mauboussin Score", g("mauboussin_score"), "{:.0f}/3") +
+        _cell("Mauboussin Pass",  "Yes ✅" if g("mauboussin_pass") == 1 else "No", "")
+    )
+
     # CAN SLIM pillar cells
     _section("📊 CAN SLIM® Pillars", COLORS["blue"],
         _cell("C — Qtr EPS",      "✅" if g("can_slim_c") == 1 else "❌", "") +
@@ -2233,5 +2242,143 @@ def render_lynch_radar(stock: pd.Series):
 
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{_ly_grid}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# MAUBOUSSIN EXPECTATIONS INVESTING RADAR — Framework 34
+# ═══════════════════════════════════════════════════════════════
+
+def render_mauboussin_radar(stock: pd.Series):
+    """
+    Renders Mauboussin & Rappaport's Expectations Investing 3-layer audit card.
+    PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
+    Zero threshold re-computation; zero scoring logic; immune to parameter drift.
+    Source: docs/mauboussin_expectations_specs.json v1.1-fixed-nopat-precision.
+    Pillars (T/O/C):
+      T — Treadmill Safety:      mauboussin_treadmill_breach (sell_alert_treadmill gate)
+      O — OpLev Integrity:       mauboussin_oplev_drift      (operating_leverage gate)
+      C — CAP Trap Clear:        mauboussin_cap_trap==0      (implied_cap > 15 + ROCE 3Y slope < -1)
+    Layer 3: Interactive Reverse DCF Expected Value Calculator (on-demand, single-stock only).
+    """
+    _MAUB_COLOR = "#8b5cf6"
+
+    st.markdown("<div class='sec-head'>🔮 Mauboussin — Expectations Investing Radar</div>",
+                unsafe_allow_html=True)
+
+    m_pass   = int(_g(stock, "mauboussin_pass",         0))
+    m_score  = int(_g(stock, "mauboussin_score",        0))
+    m_cap    = _g(stock, "mauboussin_implied_cap",      0.0)
+    _nopat_raw = _g(stock, "mauboussin_nopat_margin",   None)
+    m_nopat_str = f"{_nopat_raw:.1f}%" if _nopat_raw is not None and _nopat_raw == _nopat_raw else "—"
+
+    pillars = [
+        ("T", "Treadmill Safety",
+         int(_g(stock, "mauboussin_treadmill_breach", 0)) == 1,
+         "Expectations Treadmill Safe: stock not priced for indefinite perfection requiring continuous positive surprises"),
+        ("O", "OpLev Integrity",
+         int(_g(stock, "mauboussin_oplev_drift",      0)) == 1,
+         "Operating Leverage Intact: incremental revenue converting efficiently to profit — economic engine healthy"),
+        ("C", "CAP Trap Clear",
+         int(_g(stock, "mauboussin_cap_trap",         0)) == 0,
+         "Competitive Advantage Period Realistic: no high-CAP expectations paired with ROCE deceleration"),
+    ]
+
+    hdr_color  = _MAUB_COLOR if m_pass else COLORS["text_muted"]
+    status_msg = "EXPECTATIONS MATRIX CERTIFIED" if m_pass else "Expectations Investing Criteria Not Met"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#120a1a 100%);
+                border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
+                border-radius:12px;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+            Mauboussin Price-Implied Expectations (PIE) Audit
+          </div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Implied CAP Proxy: <strong style="color:{hdr_color};">{m_cap:.2f}</strong>
+            &nbsp;·&nbsp;
+            NOPAT Margin: <strong style="color:{hdr_color};">{m_nopat_str}</strong>
+            &nbsp;·&nbsp;
+            Status: <strong style="color:{hdr_color};">{_esc(status_msg)}</strong>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
+            {m_score}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 3</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">Expectations Gates Cleared</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _mb_grid = ""
+    for letter, title, passed, baseline in pillars:
+        clr_mb = _MAUB_COLOR if passed else COLORS["text_muted"]
+        bg_mb  = "18" if passed else "08"
+        ico_mb = "✅" if passed else "❌"
+
+        _mb_grid += (
+            f"<div style='background:{clr_mb}{bg_mb};border:1px solid {clr_mb}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:{clr_mb};line-height:1.1;'>"
+            f"{_esc(letter)}</div>"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"white-space:nowrap;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
+            f"{_esc(baseline)}</div>"
+            f"<div style='font-size:1.0rem;margin-top:4px;'>{ico_mb}</div>"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{_mb_grid}</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Layer 3: Interactive Reverse DCF Expected Value Calculator ───────────
+    st.markdown(
+        f"<div style='font-size:0.7rem;font-weight:800;color:{_MAUB_COLOR};"
+        f"text-transform:uppercase;letter-spacing:1px;margin:10px 0 8px 0;'>"
+        f"🧮 Reverse DCF — Expected Value Calculator</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div style='font-size:0.65rem;color:#8b949e;margin-bottom:8px;'>"
+        "Mauboussin Expected Value = P(Upside) × Upside% + P(Downside) × Downside%"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    _c1, _c2, _c3, _c4 = st.columns(4)
+    with _c1:
+        p_up  = st.number_input("P(Upside) %",   min_value=0.0, max_value=100.0,
+                                value=60.0, step=5.0, key="maub_p_up")
+    with _c2:
+        up_pct = st.number_input("Upside %",      min_value=0.0, max_value=500.0,
+                                 value=40.0, step=5.0, key="maub_up_pct")
+    with _c3:
+        p_dn  = st.number_input("P(Downside) %", min_value=0.0, max_value=100.0,
+                                value=40.0, step=5.0, key="maub_p_dn")
+    with _c4:
+        dn_pct = st.number_input("Downside %",    min_value=0.0, max_value=100.0,
+                                 value=20.0, step=5.0, key="maub_dn_pct")
+
+    ev = (p_up / 100.0 * up_pct) - (p_dn / 100.0 * dn_pct)
+    ev_color = _MAUB_COLOR if ev > 0 else "#e74c3c"
+    ev_label = "POSITIVE EV — Asymmetric Opportunity" if ev > 0 else "NEGATIVE EV — Unfavorable Odds"
+
+    st.markdown(
+        f"<div style='background:#0d1117;border:1px solid {ev_color}40;"
+        f"border-radius:8px;padding:10px 14px;margin-top:8px;'>"
+        f"<span style='font-size:0.7rem;color:#8b949e;'>Expected Value: </span>"
+        f"<strong style='font-size:1.1rem;color:{ev_color};'>{ev:+.1f}%</strong>"
+        f"<span style='font-size:0.65rem;color:{ev_color};margin-left:8px;'>{_esc(ev_label)}</span>"
+        f"</div>",
         unsafe_allow_html=True,
     )
