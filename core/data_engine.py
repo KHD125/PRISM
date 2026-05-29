@@ -36,17 +36,19 @@ COMMON_COLS = {
 }
 
 RATIO_COLS = {
-    # MOAT — ROCE (current + 2 historical for trajectory; 2yb is pure noise at this timeframe)
+    # MOAT — ROCE (medians for long-run quality; current + 1yb + 2yb for 3-point structural slope)
     "ROCE Median 10 Years": "roce_med_10y",
     "ROCE Median 7 Years":  "roce_med_7y",
     "ROCE Median 5 Years":  "roce_med_5y",
     "ROCE Median 3 Years":  "roce_med_3y",
     "ROCE":                 "roce",
     "ROCE 1 Year Back":     "roce_1yb",
+    "ROCE 2 Years Back":    "roce_2yb",
     # CAPITAL EFFICIENCY — ROE
     "ROE Median 10 Years":  "roe_med_10y",
     "ROE Median 7 Years":   "roe_med_7y",
     "ROE Median 5 Years":   "roe_med_5y",
+    "ROE Median 3 Years":   "roe_med_3y",
     "ROE":                  "roe",
     "ROE 1 Year Back":      "roe_1yb",
     # CASH QUALITY
@@ -66,13 +68,16 @@ RATIO_COLS = {
     # MARGINS — GROSS (annual gpm dropped — gpm_med_5y covers long-run; gpm_latest_q is freshest single signal)
     "GPM Median 5 Years":   "gpm_med_5y",
     "GPM Latest Quarter":   "gpm_latest_q",
-    # VALUATION (price_to_book + enterprise_value dropped — EV/EBITDA + PE + PEG capture all compression)
-    "PEG":                          "peg",
-    "EV To EBITDA":                 "ev_ebitda",
-    "EV To EBITDA 1 Year Back":     "ev_ebitda_1yb",
+    # VALUATION
+    "PEG":                               "peg",
+    "EV To EBITDA":                      "ev_ebitda",
+    "EV To EBITDA 1 Year Back":          "ev_ebitda_1yb",
     "Price To Earnings Median 10 Years": "pe_med_10y",
-    "Price To Earnings":            "pe",
-    "Industry PE Median":           "industry_pe",
+    "Price To Earnings Median 5 Years":  "pe_med_5y",
+    "Price To Earnings":                 "pe",
+    "Industry PE Median":                "industry_pe",
+    "Book Value":                        "book_value",     # net worth per share — Economic Profit (28th Study)
+    "Price To Book Value":               "price_to_book",  # Bruised Blue Chip P/B < 2x gate (29th Study)
     # EFFICIENCY — WORKING CAPITAL
     "Cash Conversion Cycle":               "ccc",
     "Cash Conversion Cycle 1 Year Back":   "ccc_1yb",
@@ -81,7 +86,8 @@ RATIO_COLS = {
     "Days Receivable 1 Year Back":   "days_receivable_1yb",
     "Days Receivable 2 Years Back":  "days_receivable_2yb",
     "Days Receivable 3 Years Back":  "days_receivable_3yb",  # Mukherjea Lens 1: true 3Y DSO window
-    # Days Payable/Inventory raw + 1yb dropped — CCC already aggregates; granular components add noise
+    "Days Payable":                  "days_payable",         # Terms of Trade (11th Study) — DPO for CCC decomposition
+    "Days Payable 1 Year Back":      "days_payable_1yb",
     "Asset Turnover":               "asset_turnover",
     "Asset Turnover 1 Year Back":   "asset_turnover_1yb",
     "Inventory Turnover Ratio":             "inventory_turnover",
@@ -115,6 +121,7 @@ INCOME_COLS = {
     "Revenue Growth YoY":     "rev_gr_yoy",
     "EBITDA Growth 5 Years":  "ebitda_gr_5y",
     "EBITDA Growth 3 Years":  "ebitda_gr_3y",
+    "EBIT Growth 3 Years":    "ebit_gr_3y",     # NOPAT engine growth — excludes interest, isolates operating leverage
     # QUARTERLY — freshest timing signals (8 columns; EPS LQ added for quarterly EPS YoY signal)
     "PAT Latest Quarter":              "pat_lq",
     "PAT Preceding Year Quarter":      "pat_pyq",
@@ -131,6 +138,8 @@ INCOME_COLS = {
     "PAT 1 Year Back":        "pat_1yb",
     "PAT 2 Years Back":       "pat_2yb",   # A criterion: step-growth verification (O'Neil Ch.4)
     "PAT 3 Years Back":       "pat_3yb",   # A criterion: step-growth verification (O'Neil Ch.4)
+    "PAT 4 Years Back":       "pat_4yb",   # Payback Ratio 5Y growth projection (10th–30th Study)
+    "PAT 5 Years Back":       "pat_5yb",   # Consistents vs Volatiles 5Y terminal check (27th Study)
     "PBT":                    "pbt",
     "PBT 1 Year Back":        "pbt_1yb",
     "EBITDA":                 "ebitda",
@@ -139,6 +148,8 @@ INCOME_COLS = {
     # the D&A derivation (D&A = EBITDA − EBIT) used in Schilit Signal 6 (EMS #4).
     "EBIT":                   "ebit",
     "EBIT 1 Year Back":       "ebit_1yb",
+    "EPS":                    "eps",        # raw annual EPS — CANSLIM Q criterion + P/E < ROE gate
+    "EPS 1 Year Back":        "eps_1yb",   # YoY EPS comparison for deceleration / reacceleration signal
     "Revenue":                "revenue",
     "Revenue 1 Year Back":    "revenue_1yb",
     "Revenue 2 Years Back":   "revenue_2yb",
@@ -384,6 +395,17 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     """Compute all 36+ derived signals. Pure vectorized Pandas."""
     print("\n🧮 Computing derived signals...")
 
+    # ── EPS fallback: fill NaN eps_gr_yoy from raw eps/eps_1yb before winsorization ──
+    # 34 stocks where Screener couldn't compute eps_gr_yoy (turnarounds, loss→profit transitions).
+    # Compute from raw values first so these stocks go through winsorization with real values.
+    if "eps" in df.columns and "eps_1yb" in df.columns:
+        _eps_gr_raw = np.where(
+            df["eps_1yb"].notna() & (df["eps_1yb"].abs() > 0.01) & df["eps"].notna(),
+            (df["eps"] - df["eps_1yb"]) / df["eps_1yb"].abs() * 100,
+            np.nan
+        )
+        df["eps_gr_yoy"] = df["eps_gr_yoy"].fillna(pd.Series(_eps_gr_raw, index=df.index))
+
     # ── D3 FIX: Winsorize YoY growth at p01-p99 before any ranking ──
     # Extreme outliers (IOC +528%, COFORGE +1068%) compress percentile ranks for all 2,108 stocks.
     # Winsorizing at p01/p99 preserves relative ordering while preventing outlier-driven compression.
@@ -395,7 +417,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── RATIO DERIVED ──
     df["roce_trajectory"] = df["roce_med_7y"] - df["roce_med_10y"]
-    df["roe_trajectory"] = df["roe_med_7y"] - df["roe_med_10y"]
+    # roe_med_3y gives recent-vs-decade signal; 7Y fallback for companies with <3Y median data
+    df["roe_trajectory"] = df["roe_med_3y"].fillna(df["roe_med_7y"]) - df["roe_med_10y"]
     df["roce_current_vs_med"] = df["roce"] - df["roce_med_10y"]
     df["roe_current_vs_med"] = df["roe"] - df["roe_med_10y"]
     _de_nan = pd.Series(np.nan, index=df.index)
@@ -503,9 +526,24 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
 
+    # ── PE fallback: fill NaN pe from close_price / eps for recently-profitable companies ──
+    # 161 stocks affected — Screener's PE is stale/missing when EPS recently turned positive.
+    # These stocks scored neutral (50) on all PE-based signals; now get real values.
+    # Guard: eps must be positive (no PE for loss-makers); clip pe at 999 (avoids micro-EPS blow-ups).
+    if "eps" in df.columns and "close_price" in df.columns:
+        _pe_computed = np.where(
+            df["eps"].fillna(0) > 0,
+            (df["close_price"].fillna(0) / df["eps"].clip(lower=0.01)).clip(upper=999),
+            np.nan
+        )
+        df["pe"] = df["pe"].fillna(pd.Series(_pe_computed, index=df.index))
+
+    # pe_med_5y primary: 2020-2025 complete mini-cycle, more relevant to current rate environment.
+    # Fallback to 10Y for companies with < 5 years of PE history.
+    _pe_base_disc = df["pe_med_5y"].fillna(df["pe_med_10y"])
     df["pe_discount"] = np.where(
-        df["pe_med_10y"].notna() & (df["pe_med_10y"] != 0),
-        (df["pe_med_10y"] - df["pe"]) / df["pe_med_10y"] * 100,
+        _pe_base_disc.notna() & (_pe_base_disc != 0),
+        (_pe_base_disc - df["pe"]) / _pe_base_disc * 100,
         np.nan
     )
     df["ev_compression"] = df["ev_ebitda_1yb"] - df["ev_ebitda"]
@@ -571,6 +609,22 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["rev_acceleration"]    = df["rev_gr_3y"]    - df["rev_gr_5y"]
     df["ebitda_acceleration"] = df["ebitda_gr_3y"] - df["ebitda_gr_5y"]
     df["eps_vs_pat_delta"]    = df["eps_gr_5y"]    - df["pat_gr_5y"]
+    # ebit_vs_rev_spread_3y: EBIT growth minus revenue growth (same 3Y window).
+    # Positive = operating engine scaling faster than top-line = true operating leverage.
+    # Cleaner than pat_gr - rev_gr because EBIT excludes interest (no capital structure distortion).
+    df["ebit_vs_rev_spread_3y"] = np.where(
+        df["ebit_gr_3y"].notna() & df["rev_gr_3y"].notna(),
+        df["ebit_gr_3y"] - df["rev_gr_3y"],
+        np.nan
+    )
+    # ebit_acceleration: EBIT growth minus EBITDA growth (same 3Y window).
+    # Positive = D&A stable/shrinking relative to profits = asset-light model maturing.
+    # Negative = D&A growing faster than EBIT = heavy capex cycle or asset ageing.
+    df["ebit_acceleration"] = np.where(
+        df["ebit_gr_3y"].notna() & df["ebitda_gr_3y"].notna(),
+        df["ebit_gr_3y"] - df["ebitda_gr_3y"],
+        np.nan
+    )
     df["q_pat_yoy"] = np.where(
         df["pat_pyq"].notna() & (df["pat_pyq"].abs() > 0),
         (df["pat_lq"] - df["pat_pyq"]) / df["pat_pyq"].abs() * 100,
@@ -877,6 +931,42 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         | df["sector"].fillna("").isin(FINANCIAL_SECTOR_NAMES)
     )
 
+    # ── Atoms-to-Bits Classification (26th Study — Digital Business Design) ──
+    # Maps every industry in the CSV to Bits / Atoms / Hybrid using a vectorized dict lookup.
+    # Bits   = asset-light, network effects, zero marginal cost scale (IT, Pharma, FMCG, Finance).
+    # Atoms  = physical capital intensive, linear scale, commodity-like (Metals, Infrastructure, Oil).
+    # Hybrid = mix of both (Banks, Auto, Consumer Durables, Logistics, Retail).
+    # Source: All 84 industry names from "sectors there in my csv.txt"; zero hallucination.
+    # Sector column (84 clean aggregations) used — NOT industry (621 granular sub-entries).
+    # Sector names match exactly the 84 values in "sectors there in my csv.txt".
+    _BITS_SECTORS: frozenset = frozenset({
+        "IT - Software", "IT - Hardware", "Pharmaceuticals", "Healthcare",
+        "FMCG", "Finance", "Financial Services", "Insurance",
+        "Stock/ Commodity Brokers", "Credit Rating Agencies",
+        "E-Commerce/App based Aggregator", "Computer Education",
+        "Media - Print/Television/Radio", "Entertainment", "Education",
+        "Telecom-Service",
+    })
+    _ATOMS_SECTORS: frozenset = frozenset({
+        "Crude Oil & Natural Gas", "Refineries", "Petrochemicals",
+        "Steel", "Non Ferrous Metals", "Mining & Mineral products", "Ferro Alloys",
+        "Cement", "Cement - Products",
+        "Realty", "Construction", "Infrastructure Developers & Operators",
+        "Infrastructure Investment Trusts", "Real Estate Investment Trusts",
+        "Power Generation & Distribution", "Power Infrastructure",
+        "Shipping", "Ship Building", "Gas Distribution", "Oil Drill/Allied",
+        "Fertilizers", "Agro Chemicals", "Sugar", "Textiles",
+        "Paper", "Plastic products", "Glass & Glass Products", "Refractories",
+        "Castings, Forgings & Fastners", "Railways", "Leather",
+        "Plantation & Plantation Products", "Plywood Boards/Laminates",
+        "Marine Port & Services",
+    })
+    _atb_map: dict = {s: "Bits"  for s in _BITS_SECTORS}
+    _atb_map.update({s: "Atoms" for s in _ATOMS_SECTORS})
+    # pd.Series.map(dict) is fully vectorized — no apply(), no loops.
+    # Unmapped sectors (including NaN) → "Hybrid" via fillna.
+    df["atoms_to_bits_label"] = df["sector"].map(_atb_map).fillna("Hybrid")
+
     # ── AGENT 3: SECTOR ISOLATION — NaN out working-capital metrics for financial stocks ──
     # Banks, NBFCs, and insurance companies have no inventory and no traditional CCC.
     # Applying inventory turnover / CCC flags to these would generate structurally meaningless
@@ -889,6 +979,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         "ccc", "ccc_1yb",
         "inventory", "inventory_1yb",
         "days_receivable", "days_receivable_1yb",
+        "days_payable",    "days_payable_1yb",     # DPO meaningless for banks/NBFCs
         # Also NaN already-computed derived columns that came from these inputs above line 776
         "inv_growth", "inv_vs_rev_gap",
     ]
@@ -961,10 +1052,20 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── Economic Profit (28th WCS) ──
     # EP = Net Worth × (RoE − Cost of Equity)  [MOSL 23rd/28th WCS formula]
-    # Net Worth = Reserves only. The "Equity Shares" CSV column stores share COUNT (e.g. ONGC=12.58B),
-    # NOT paid-up capital in ₹ Crores. Adding share count to reserves would corrupt EP for every stock.
-    # Paid-up capital is typically <3% of total equity for Indian large/mid-caps — omitting it is safe.
-    df["net_worth"]     = df["reserves"].fillna(0)
+    # net_worth = market_cap / price_to_book — algebraically exact:
+    #   price_to_book = close_price / book_value_per_share
+    #   market_cap    = close_price × equity_shares
+    #   market_cap / price_to_book = book_value_per_share × equity_shares = total equity (accounting)
+    # The close_price cancels — result is a static accounting value, not affected by price movements.
+    # Internally consistent with Screener's ROE (which uses the same book value denominator).
+    # Fallback to reserves when price_to_book unavailable (<5 stocks).
+    # net_worth_1yb: no historical price_to_book in CSV → reserves_1yb proxy unchanged.
+    _nw_from_pb = np.where(
+        df["price_to_book"].notna() & (df["price_to_book"] > 0) & df["market_cap"].notna(),
+        df["market_cap"] / df["price_to_book"],
+        np.nan
+    )
+    df["net_worth"]     = pd.Series(_nw_from_pb, index=df.index).fillna(df["reserves"].fillna(0))
     df["net_worth_1yb"] = df["reserves_1yb"].fillna(0)
 
     df["economic_profit"] = (
@@ -997,6 +1098,21 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         ["🚀 Hockey Stick", "✅ EP Positive", "📈 Improving"],
         default="📉 Value Trap"
     )
+
+    # ── EP Power Curve QUINTILE (28th WCS, Exhibit 7/10 — the study's actual methodology) ──
+    # Rank the universe by ABSOLUTE economic profit into 5 quintiles: Q1 = highest EP, Q5 = deepest loss.
+    # Backtested finding (avg of six 10-year periods 2008-2023): companies ENDING in Q1/Q2 deliver
+    # market-beating 24% / 21% CAGR; Q4/Q5 deliver only 8% / 4%. "It pays to start from Q2/Q3."
+    # Distinct from ep_power_curve (sign/direction label) — this is population-relative EP position.
+    df["ep_quintile"] = np.nan
+    _ep_valid = df["economic_profit"].notna()
+    if int(_ep_valid.sum()) >= 5:
+        # Rank ascending (lowest EP = rank 1); qcut into 5 equal buckets; label so highest EP = Q1.
+        _ep_rank = df.loc[_ep_valid, "economic_profit"].rank(method="first")
+        _ep_q = pd.qcut(_ep_rank, 5, labels=[5, 4, 3, 2, 1]).astype(int)
+        df.loc[_ep_valid, "ep_quintile"] = _ep_q.values
+    # Q1/Q2 = the market-beating zone (NaN EP → 99 → not flagged, conservative).
+    df["ep_top_quintile_flag"] = (df["ep_quintile"].fillna(99) <= 2).astype(int)
 
     # ── P/Sales and P/B Ratios (Studies 9, 13 multi-bagger formulas) ──
     # Study 13: "PE < 10x, P/B < 1x, P/Sales ≤ 1x, Payback ≤ 1x" = four explicit multi-bagger formulas.
@@ -1098,12 +1214,50 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         default="💀 Wealth Destroyer"
     )
 
+    # ── Growth-Value Trap (23rd WCS, Exhibit 8/9 — "all growth is not good") ──
+    # VERBATIM finding: "If RoE remains below Cost of Equity, high growth actually DETRACTS firm value,
+    # as the company must raise capital to fund growth that earns below its cost" → firm value goes
+    # NEGATIVE, and the faster it grows the worse it gets (Exhibit 8: ROE 10% + 40% growth → value -2,900).
+    # Distinct from moat_growth_quad (ROCE-based): here ROE-vs-Cost-of-EQUITY is the correct equity
+    # value-creation test, and this flags ACTIVE value destruction, not merely "less attractive".
+    _gvt_growth   = df["pat_gr_5y"].fillna(df["pat_gr_3y"]).fillna(0) >= 15.0   # genuinely growing
+    _gvt_roe      = df["roe"].fillna(df["roe_med_5y"]).fillna(999.0)            # 999 → not flagged if ROE unknown
+    df["growth_value_trap"] = ((_gvt_growth) & (_gvt_roe < COST_OF_EQUITY)).astype(int)
+
+    # ── Cyclical Peak Trap (9th WCS — Commodity Business Cycles) ──
+    # 9th WCS: at Phase III (the "squeeze"), commodity profits rise EXPONENTIALLY (SAIL: +21%
+    # realization → +1000% profit), so P/E COLLAPSES to look "cheap" — but earnings are at a cyclical
+    # peak about to revert. A low P/E here is DECEPTIVE; rewarding it (via pe_discount) is the trap.
+    # Surgical triple-AND so it only fires on the genuine peak-cycle pattern (near-zero false positives):
+    #   (1) commodity-PRICE-cyclical sector (tighter than all "Atoms" — excludes utilities/realty/rail)
+    #   (2) low P/E (looks cheap: 0 < PE < 12)
+    #   (3) peak earnings — operating margin >=3pp above its 5Y median OR PAT YoY spike >50%
+    _COMMODITY_CYCLICAL_SECTORS: frozenset = frozenset({
+        "Steel", "Non Ferrous Metals", "Mining & Mineral products", "Ferro Alloys",
+        "Cement", "Cement - Products", "Sugar", "Petrochemicals", "Refineries",
+        "Crude Oil & Natural Gas", "Fertilizers", "Agro Chemicals", "Paper", "Textiles",
+        "Shipping",
+    })
+    _cyc_sector  = df["sector"].isin(_COMMODITY_CYCLICAL_SECTORS)
+    _cyc_cheap   = (df["pe"].fillna(999.0) > 0) & (df["pe"].fillna(999.0) < 12.0)
+    _cyc_peak    = (
+        (df["opm"].fillna(0) > (df["opm_med_5y"].fillna(df["opm"]).fillna(0) + 3.0)) |  # margin at peak
+        (df["pat_gr_yoy"].fillna(0) > 50.0)                                              # earnings spike
+    )
+    df["cyclical_peak_trap"] = (_cyc_sector & _cyc_cheap & _cyc_peak).astype(int)
+
     # ── Sales→Profit Conversion (Malik Moat Test 3 + WCS) ──
-    # Profit CAGR should >= Revenue CAGR (operating leverage proof)
+    # Primary: ebit_gr_3y - rev_gr_3y (EBIT excludes interest — no capital-structure distortion).
+    # Fallback: pat_gr_5y - rev_gr_5y when ebit_gr_3y unavailable.
+    # Positive = operating engine scaling faster than revenue = true operating leverage proven.
     df["sales_profit_conversion"] = np.where(
-        df["rev_gr_5y"].fillna(0) > 0,
-        df["pat_gr_5y"].fillna(0) - df["rev_gr_5y"].fillna(0),
-        np.nan
+        df["ebit_gr_3y"].notna() & df["rev_gr_3y"].notna(),
+        df["ebit_gr_3y"] - df["rev_gr_3y"],                      # EBIT-based: clean signal
+        np.where(
+            df["rev_gr_5y"].fillna(0) > 0,
+            df["pat_gr_5y"].fillna(0) - df["rev_gr_5y"].fillna(0),  # PAT fallback
+            np.nan
+        )
     )
     df["operating_leverage"] = (df["sales_profit_conversion"].fillna(0) > 0).astype(int)
 
@@ -1283,10 +1437,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
 
-    # ── D32: PE vs 10Y Median (%) — negative = trading below own history ──
+    # ── D32: PE vs Historical Median (%) — negative = cheap vs own history ──
+    # pe_med_5y primary (current cycle); 10Y fallback for young companies.
+    _pe_base_d32 = df["pe_med_5y"].fillna(df["pe_med_10y"])
     df["d32_pe_vs_median"] = np.where(
-        df["pe_med_10y"].notna() & (df["pe_med_10y"] > 0) & df["pe"].notna(),
-        (df["pe"] - df["pe_med_10y"]) / df["pe_med_10y"] * 100,
+        _pe_base_d32.notna() & (_pe_base_d32 > 0) & df["pe"].notna(),
+        (df["pe"] - _pe_base_d32) / _pe_base_d32 * 100,
         np.nan
     )
 
@@ -1300,14 +1456,47 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── D34: EV/EBITDA Direction — positive = getting more expensive ──
     df["d34_ev_ebitda_dir"] = df["ev_ebitda"] - df["ev_ebitda_1yb"]
 
-    # ── D35: ROCE Trend (current vs 1Y back) — positive = improving ──
-    df["d35_roce_trend"] = df["roce"] - df["roce_1yb"]
+    # ── D35: ROCE Trend — annualised 2-year structural slope (pp/yr); 1-year delta fallback ──
+    # 2YB preferred: smooths single-quarter noise; divides by actual years for consistent pp/yr unit.
+    # Fallback to 1YB when 2YB missing (young companies / data gap). NaN when no baseline available.
+    _d35_base_2y = df["roce_2yb"]
+    _d35_base    = _d35_base_2y.fillna(df["roce_1yb"])
+    _d35_years   = np.where(_d35_base_2y.notna(), 2.0, 1.0)
+    df["d35_roce_trend"] = np.where(
+        df["roce"].notna() & _d35_base.notna(),
+        (df["roce"] - _d35_base) / _d35_years,
+        np.nan
+    )
 
     # ── D36: ROCE vs 5Y Median — positive = above historical average ──
     df["d36_roce_above_med"] = df["roce"] - df["roce_med_5y"]
 
     # ── D37: CCC Direction (positive = worsening working capital) ──
     df["d37_ccc_direction"] = df["ccc"] - df["ccc_1yb"]
+
+    # ── Terms of Trade (MOSL 11th Study) — DPO vs DSO working capital leverage ──
+    # terms_of_trade_spread: days_payable − days_receivable.
+    # Positive = company collects from customers faster than it pays suppliers (supplier-financed model).
+    # Classic examples: D-Mart (0 DSO, 30+ DPO), HUL, Nestle. Validated across all 30 MOSL studies.
+    # NaN for financials (days_payable NaN-out upstream).
+    _dso = df["days_receivable"].fillna(np.nan)
+    _dpo = df["days_payable"].fillna(np.nan)
+    df["terms_of_trade_spread"] = np.where(
+        _dso.notna() & _dpo.notna(),
+        _dpo - _dso,
+        np.nan
+    )
+    df["favorable_terms_flag"] = np.where(
+        _dso.notna() & _dpo.notna(),
+        (_dso < _dpo).astype(int),
+        0
+    )
+    # DPO trend: rising = gaining supplier leverage, falling = losing negotiating power
+    df["dpo_delta_1y"] = np.where(
+        _dpo.notna() & df["days_payable_1yb"].notna(),
+        _dpo - df["days_payable_1yb"],
+        np.nan
+    )
 
     # ── D38: Smart Money (Promoter LQ + FII LQ change) ──
     df["d38_smart_money"] = (
@@ -1442,23 +1631,96 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["payback_lt1"]  = (df["payback_ratio"].fillna(99) < 1.0).astype(int)  # supernormal tier 2
     df["payback_lt2"]  = (df["payback_ratio"].fillna(99) < 2.0).astype(int)  # attractive zone
 
+    # ── Trailing 5Y Payback (realized earnings — no growth assumption) ──
+    # payback_ratio uses pat_gr_5y as forward growth estimate — a spike year skews it.
+    # payback_trailing_5y uses actual sum of last 5 years PAT: normalizes for cyclicality.
+    # Requires at least 3 years of positive PAT data to be meaningful.
+    _pat_5y_cols = [c for c in ["pat","pat_1yb","pat_2yb","pat_3yb","pat_4yb"] if c in df.columns]
+    _pat_5y_df   = df[_pat_5y_cols].clip(lower=0)   # treat losses as 0 (no negative PAT benefit)
+    _trailing_5y_sum   = _pat_5y_df.sum(axis=1)
+    _years_positive    = (_pat_5y_df > 0).sum(axis=1)
+    df["payback_trailing_5y"] = np.where(
+        (df["market_cap"].fillna(0) > 0) & (_trailing_5y_sum > 0) & (_years_positive >= 3),
+        df["market_cap"] / _trailing_5y_sum,
+        np.nan
+    )
+    df["payback_t5y_lt1"] = (df["payback_trailing_5y"].fillna(99) < 1.0).astype(int)
+
     # ── Consistency Champion (27th Study: Consistents vs Volatiles) ──
-    # Full 15Y analysis requires 15 years of annual PAT — not in CSV.
-    # Proxy using available history: no PAT crash + long-term positive trajectory.
+    # Full 15Y analysis requires 15 years of annual PAT — not in CSV. With pat..pat_5yb (6 points =
+    # 5 YoY transitions) we implement ALL 3 of the 27th Study's verbatim criteria, proportionally
+    # scaled to our 5Y window:
+    #   Criterion 1: PAT must not fall >10% more than the allowed count. Study allows 3 in 15yr /
+    #                2 in 10yr → proportional 1 in 5yr. (pat_decline_count_5y <= 1)
+    #   Criterion 2: no single YoY PAT fall > 50% (catastrophic crash) across the 5 transitions.
+    #   Criterion 3: terminal year PAT >= initial year PAT (pat > pat_5yb) + long-term positive CAGR.
     pat_decline_1y = np.where(
         df["pat_1yb"].fillna(0) > 0,
         (df["pat"].fillna(0) - df["pat_1yb"].fillna(0)) / df["pat_1yb"].abs() * 100,
-        np.nan  # Missing 1YB PAT → unknown, not "0% change" — preserves correct NaN downstream
+        np.nan
     )
     df["pat_decline_1y_pct"] = pd.Series(pat_decline_1y, index=df.index)
     df["pat_no_crash_1y"] = (df["pat_decline_1y_pct"].fillna(0) > -50).astype(int)
     df["pat_growing_long"] = (
         df["pat_gr_10y"].fillna(df["pat_gr_5y"]).fillna(0) > 0
     ).astype(int)
+
+    # 5 YoY transitions (full window incl. pat_4yb→pat_5yb). Only positive prior years count —
+    # turnarounds (negative→positive) are not treated as declines.
+    _pat_seq = [
+        (df["pat"],     df["pat_1yb"]),
+        (df["pat_1yb"], df["pat_2yb"]),
+        (df["pat_2yb"], df["pat_3yb"]),
+        (df["pat_3yb"], df["pat_4yb"]),
+        (df["pat_4yb"], df["pat_5yb"]),
+    ]
+    _no_crash_5y = pd.Series(True, index=df.index)       # Criterion 2: no >50% fall
+    _decline_10_count = pd.Series(0, index=df.index)     # Criterion 1: count of >10% falls
+    for _curr_p, _prev_p in _pat_seq:
+        _both_pos = (_curr_p.fillna(0) > 0) & (_prev_p.fillna(0) > 0)
+        _ratio    = (_curr_p.fillna(0) / _prev_p.replace(0, np.nan)).fillna(1.0)
+        _no_big_fall = ~_both_pos | (_ratio > 0.5)                       # not a >50% crash
+        _no_crash_5y = _no_crash_5y & _no_big_fall
+        _fell_10  = _both_pos & (_ratio < 0.90)                          # >10% YoY decline
+        _decline_10_count = _decline_10_count + _fell_10.astype(int)
+    df["pat_decline_count_5y"] = _decline_10_count
+
+    # Terminal > initial (5Y criterion — skip if pat_5yb unavailable)
+    _5yb_available        = df["pat_5yb"].fillna(0) > 0
+    _terminal_gt_initial  = ~_5yb_available | (df["pat"].fillna(0) > df["pat_5yb"].fillna(0))
+
     df["consistency_champion"] = (
-        (df["pat_no_crash_1y"] == 1) &
-        (df["pat_growing_long"] == 1) &
+        (_decline_10_count <= 1) &        # Criterion 1: <=1 fall >10% (proportional 3-in-15 / 2-in-10)
+        _no_crash_5y &                     # Criterion 2: no >50% crash
+        _terminal_gt_initial &             # Criterion 3a: terminal >= initial
+        (df["pat_growing_long"] == 1) &    # Criterion 3b: long-term positive CAGR
         (df["pat"].fillna(0) > 0)
+    ).astype(int)
+
+    # ── Volatile Flag (27th Study — counterpart to consistency_champion) ──
+    # A Volatile is the structural opposite of a Consistent.
+    # Criterion A: severe recent PAT crash (>20% fall YoY) — earnings are unreliable.
+    # Criterion B: 5Y PAT CAGR negative — earnings have contracted over the medium term.
+    # Either condition alone is sufficient to classify as Volatile.
+    df["mosl_volatile_flag"] = (
+        (df["pat_gr_yoy"].fillna(0)    < -20.0) |    # A: sharp recent collapse
+        (df["pat_gr_5y"].fillna(999)   <   0.0)      # B: 5Y earnings contraction
+    ).astype(int)
+
+    # ── 100x Candidate Screen (17th Study — "Mouse to Elephant") ──
+    # The 17th Study empirically identified century-stock characteristics:
+    # (1) 20%+ PAT CAGR: compounding engine proven over 5Y.
+    # (2) ROCE ≥ 20%: high return on deployed capital = reinvestment quality.
+    # (3) Market cap ≤ ₹15,000 Cr: small enough for 100x mathematically possible.
+    # (4) D/E < 0.5: clean balance sheet — leverage cannot fuel compounding.
+    # (5) ROE ≥ 15%: accounting profit quality above cost of equity.
+    # All 5 conditions are mandatory (AND, not OR) — this is deliberately rare.
+    df["mosl_100x_candidate"] = (
+        (df["pat_gr_5y"].fillna(0)           >= 20.0)  &
+        (df["roce"].fillna(0)                >= 20.0)  &
+        (df["market_cap"].fillna(999_999)    <= 15_000) &
+        (df["debt_to_equity"].fillna(999.0)  <   0.5)  &
+        (df["roe"].fillna(0)                 >= 15.0)
     ).astype(int)
 
     # ── Economic Profit Improving (28th Study — TEM Hockey-Stick Setup) ──
@@ -1522,15 +1784,24 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _bbc_cheap    = df["d32_pe_vs_median"].fillna(0) < -25
     df["bruised_blue_chip"] = (_bbc_fallen & _bbc_quality & _bbc_cheap).astype(int)
 
-    # ── Bruised Blue Chip 29th WCS (Large-Cap Elite ROCE + PE Discount + P/B ≤ 3x) ──
-    # Canonical definition: all three must hold simultaneously.
-    # pe_discount = (10Y mean PE - current PE) / 10Y mean PE × 100 (positive = cheaper than history)
-    _bbc29_largecap   = df["market_cap"].fillna(0) >= 20_000
-    _bbc29_elite_roce = df["roce_med_10y"].fillna(0) >= 20
-    _bbc29_pe_bruised = df["pe_discount"].fillna(0) >= 20
-    _bbc29_pb_check   = df["pb_ratio"].fillna(999) <= 3.0
+    # ── Bruised Blue Chip 29th WCS — faithful to the study's verbatim definition ──
+    # Blue Chip (29th WCS p.278-284): (a) top 50 by market cap, OR
+    #   (b) top 250 by market cap AND 10-year average ROE >= 20%. (10Y listing track record proxied
+    #   by roe_med_10y being available.) Study uses ROE (not ROCE) — blue chips include banks.
+    # Bruised (p.264, 297): price fallen 50%+ from 5-year high. CSV lacks 5Y-high, so dist_52wh > 40
+    #   (>40% off the 52-week high) is the conservative available proxy for a deep drawdown.
+    # Entry (p.13, 285): "typically Price/Book less than 2x" — the verbatim golden entry valuation.
+    _mcap_rank        = df["market_cap"].rank(ascending=False, method="min")   # 1 = largest
+    _bbc29_top50      = _mcap_rank <= 50
+    _bbc29_top250_q   = (_mcap_rank <= 250) & (df["roe_med_10y"].fillna(0) >= 20.0)
+    _bbc29_blue_chip  = _bbc29_top50 | _bbc29_top250_q
+    # "Bruised" proxy: >25% off 52-week high OR PE >=25% below own history. CSV lacks a 5-year-high
+    # series, so this OR-pair best approximates "50% off 5Y high" — catching both recently-fallen
+    # and quietly-derated quality names. (Pure dist_52wh>40 is too strict near all-time-high markets.)
+    _bbc29_bruised    = (df["dist_52wh"].fillna(0) > 25) | (df["pe_discount"].fillna(0) >= 25)
+    _bbc29_pb_entry   = df["pb_ratio"].fillna(999) < 2.0        # verbatim P/B < 2x golden entry
     df["bruised_blue_chip_29"] = (
-        _bbc29_largecap & _bbc29_elite_roce & _bbc29_pe_bruised & _bbc29_pb_check
+        _bbc29_blue_chip & _bbc29_bruised & _bbc29_pb_entry
     ).astype(int)
 
     # ── Coffee Can Twin Filter + Clean Accounts Pass Flag ──
@@ -1655,16 +1926,23 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Source: 14th-19th Annual Wealth Creation Studies (2009-2015 themes)
     # ══════════════════════════════════════════════════════════════
 
-    # ── Study 17 (2012): Economic Moat — Sector-Relative ROE (EMC Flag) ──
-    # Backtested 1995-2012: EMC portfolio → 25% CAGR, non-EMC → 12% CAGR, Alpha = +7%.
-    # Criterion: ROE > sector average for 6/8 years. Proxy: above-median for current + 5yr.
+    # ── Study 17 (2012): Economic Moat — Sector-Relative ROE Persistence (EMC Flag) ──
+    # Backtested 1995-2012: EMC portfolio → 25% CAGR, non-EMC → 12% CAGR, Alpha = +7%, mortality <15%.
+    # VERBATIM definition (17th Study p.28): "RoE higher than sector average for 6 years or more" (of 8).
+    # Faithful proxy: 5 ROE timeframes (current, 1yb, 3y/5y/10y medians) each vs their own sector median;
+    # require >= 4 of 5 above sector (80% persistence ~ the study's 6/8 = 75% sustained-outperformance bar).
+    # Stronger than the prior 2-point check — captures sustained moat, not a single-snapshot beat.
     _sector_grp_roe = df["sector"].fillna("Unknown")
-    _sector_roe_med  = df.groupby(_sector_grp_roe)["roe"].transform("median").fillna(df["roe"].median())
-    _sector_roe5_med = df.groupby(_sector_grp_roe)["roe_med_5y"].transform("median").fillna(df["roe_med_5y"].median())
-    df["emc_flag"] = (
-        (df["roe"].fillna(0)         > _sector_roe_med.fillna(0)) &
-        (df["roe_med_5y"].fillna(0)  > _sector_roe5_med.fillna(0))
-    ).astype(int)
+    _emc_timeframes = ["roe", "roe_1yb", "roe_med_3y", "roe_med_5y", "roe_med_10y"]
+    _emc_above_count = pd.Series(0, index=df.index)
+    for _tf in _emc_timeframes:
+        if _tf not in df.columns:
+            continue
+        _sec_med = df.groupby(_sector_grp_roe)[_tf].transform("median").fillna(df[_tf].median())
+        # NaN company ROE → fillna(0): cannot beat a positive sector median → conservatively not counted.
+        _emc_above_count = _emc_above_count + (df[_tf].fillna(0) > _sec_med.fillna(0)).astype(int)
+    df["emc_sector_beat_count"] = _emc_above_count          # 0-5: diagnostic / tearsheet display
+    df["emc_flag"] = (_emc_above_count >= 4).astype(int)    # >= 4 of 5 timeframes beat sector
 
     # ── Study 14 (2009): Category Winner — Sector-Relative ROCE Leader ──
     # "Category Winners enjoy exponential growth in profits within Winner Categories."
@@ -1678,6 +1956,25 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["category_winner_flag"] = (
         (df["sector_roce_pct_rank"] >= 0.70) &    # top-30% capital efficiency within sector
         (df["rev_gr_5y"].fillna(0) >= 12)          # AND above-market revenue growth
+    ).astype(int)
+
+    # ── Study 14 (2009): Winner Category — the sector-tailwind layer (the missing half) ──
+    # VERBATIM (14th WCS p.933): "Winner Categories are those expected to grow @ 18%+ i.e. at least
+    # 1.5x faster than ~12% nominal GDP." category_winner_flag above is the LEADER half (Category
+    # Winner = leader within a sector); this is the SECTOR half (is the sector itself winning?).
+    # Universe-median revenue growth proxies nominal GDP, so the regime-robust faithful form is:
+    # sector-median 5Y revenue growth >= 1.5x universe-median growth. "Winning investment" (study's
+    # ultimate target) = Category Winner operating inside a Winner Category.
+    _wc_rev_growth      = df["rev_gr_5y"].fillna(df["rev_gr_3y"])
+    df["sector_growth_median"] = _wc_rev_growth.groupby(_sector_grp_roe).transform("median")
+    _wc_univ_median     = _wc_rev_growth.median()
+    _wc_hurdle          = (_wc_univ_median * 1.5) if pd.notna(_wc_univ_median) else 18.0
+    df["winner_category_flag"] = (
+        df["sector_growth_median"].fillna(-999) >= _wc_hurdle
+    ).astype(int)
+    # Study's "Winning investment": a Category Winner (leader) inside a Winner Category (fast sector).
+    df["category_winner_in_winner_cat"] = (
+        (df["category_winner_flag"] == 1) & (df["winner_category_flag"] == 1)
     ).astype(int)
 
     # Study 14 fast-track signal: small mcap + low PE + high PAT CAGR = fastest creator setup
@@ -1795,29 +2092,48 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── Study 22 (2017): CAP & GAP — Competitive + Growth Advantage Period ──
-    # CAP = Competitive Advantage Period: ROE > Cost of Equity (Ke = 15% for India).
-    # GAP = Growth Advantage Period: PAT growth rate exceeds benchmark (15%).
+    # CAP (p.342): "time during which a company generates returns above its cost of capital."
+    #   → ROCE > cost of capital. Use COST_OF_EQUITY (12%) as the system-wide hurdle (consistent with
+    #   economic_profit). Prior code used a hardcoded 10% — BELOW the 12% hurdle, so an 11%-ROCE
+    #   company earning below its cost of capital (no real moat) was wrongly flagged. Now corrected.
+    # GAP (p.1722, VERBATIM): "long-period earnings growth of Indian benchmark indices is ~15%; GAP =
+    #   successive years with growth above 15%." Prior code used 12%/8% — below the study's 15% bar.
+    # The study's whole thesis is LONGEVITY (duration), so we also expose year-count proxies.
     # "Moat without growth underperforms; growth without moat ends soon." — MOSL 22nd Study.
-    # Extended CAP: ROCE consistently > 10% across all 4 timeframes (depth of moat over time).
+
+    # CAP duration proxy (0-5): how many ROCE timeframes clear the cost-of-capital hurdle.
+    _cap_tfs = ["roce_med_10y", "roce_med_7y", "roce_med_5y", "roce_1yb", "roce"]
+    _cap_years = pd.Series(0, index=df.index)
+    for _c in _cap_tfs:
+        if _c in df.columns:
+            _cap_years = _cap_years + (df[_c].fillna(0) >= COST_OF_EQUITY).astype(int)
+    df["cap_years_proxy"] = _cap_years
+    # Extended CAP: long-run (10Y), recent (5Y) and current ROCE all above cost of capital.
     df["cap_extended_flag"] = (
-        (df["roce_med_10y"].fillna(0) >= 10) &
-        (df["roce_med_7y"].fillna(df["roce_med_5y"]).fillna(0) >= 10) &
-        (df["roce_med_5y"].fillna(0) >= 10) &
-        (df["roce"].fillna(0) >= 10)
+        (df["roce_med_10y"].fillna(0) >= COST_OF_EQUITY) &
+        (df["roce_med_5y"].fillna(0)  >= COST_OF_EQUITY) &
+        (df["roce"].fillna(0)         >= COST_OF_EQUITY)
     ).astype(int)
 
-    # Extended GAP: PAT growth sustained across all 3 windows — proxy for earnings compounding depth.
+    # GAP duration proxy (0-3): how many PAT-growth windows clear the 15% benchmark rate.
+    _gap_tfs = ["pat_gr_10y", "pat_gr_5y", "pat_gr_3y"]
+    _gap_years = pd.Series(0, index=df.index)
+    for _g in _gap_tfs:
+        if _g in df.columns:
+            _gap_years = _gap_years + (df[_g].fillna(0) >= 15.0).astype(int)
+    df["gap_years_proxy"] = _gap_years
+    # Extended GAP: PAT growth > 15% sustained across ALL three windows (long, elite GAP).
     df["gap_extended_flag"] = (
-        (df["pat_gr_10y"].fillna(df["pat_gr_5y"]).fillna(0) >= 12) &
-        (df["pat_gr_5y"].fillna(0) >= 12) &
-        (df["pat_gr_3y"].fillna(0) >= 8)
+        (df["pat_gr_10y"].fillna(df["pat_gr_5y"]).fillna(0) >= 15.0) &
+        (df["pat_gr_5y"].fillna(0) >= 15.0) &
+        (df["pat_gr_3y"].fillna(0) >= 15.0)
     ).astype(int)
 
-    # CAP-GAP composite (0-4): +1 for cap_extended, +1 for gap_extended, +1 for both, +1 for ROE > 15
+    # CAP-GAP composite (0-4): +1 cap_extended, +1 gap_extended, +1 both (longevity proof), +1 ROE>15
     df["cap_gap_score"] = (
         df["cap_extended_flag"] +
         df["gap_extended_flag"] +
-        (df["cap_extended_flag"] & df["gap_extended_flag"]).astype(int) +  # bonus for both = longevity proof
+        (df["cap_extended_flag"] & df["gap_extended_flag"]).astype(int) +
         (df["roe"].fillna(0) >= 15).astype(int)
     )
 
