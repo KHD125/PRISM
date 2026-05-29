@@ -521,7 +521,25 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["rf_receivables_bloat"] = 0
 
-    # 25. PSU Value-Destruction Loop (Epoch 3)
+    # 25. Working Capital Double Squeeze (DSO rising AND DPO falling simultaneously)
+    # Schilit "Financial Shenanigans" Ch.3 + MOSL 11th Study Terms of Trade.
+    # DSO rising = collecting from customers slower (receivables quality deteriorating).
+    # DPO falling = paying suppliers faster = losing negotiating leverage.
+    # Both together = double working capital squeeze — an early-warning forensic signal
+    # that typically precedes cash flow stress. Neither alone is definitive; both together is.
+    if "days_payable" in df.columns and "days_payable_1yb" in df.columns and \
+       "days_receivable" in df.columns and "days_receivable_1yb" in df.columns:
+        _dso_rising   = (df["days_receivable"]  - df["days_receivable_1yb"]).fillna(0) > 10
+        _dpo_falling  = (df["days_payable"]     - df["days_payable_1yb"]).fillna(0)    < -10
+        df["rf_wc_double_squeeze"] = np.where(
+            df["days_receivable"].notna() & df["days_payable"].notna(),
+            (_dso_rising & _dpo_falling).astype(int),
+            0
+        )
+    else:
+        df["rf_wc_double_squeeze"] = 0
+
+    # 26. PSU Value-Destruction Loop (Epoch 3)
     df["rf_psu_value_destruction"] = df.get("psu_value_destruction_flag", pd.Series(0, index=df.index)).fillna(0).astype(int)
 
     # 26. CFO/EBITDA Below Coffee Can Clean Accounts Floor
@@ -671,6 +689,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_capex_mirage":             "Rapid rev growth (>20%) but capex <0.5× dep — deferred-maintenance time bomb",
         "rf_tax_panic":                "Estimated effective tax rate <10% despite PAT>0 — Sharp Practices alert (WCS 24)",
         "rf_receivables_bloat":        "DSO expansion >20 days above sector median — sector-relative receivables manipulation",
+        "rf_wc_double_squeeze":        "DSO rising >10 days AND DPO falling >10 days simultaneously — double working capital squeeze",
         "rf_psu_value_destruction":    "PSU Value-Destruction Loop (low spread, high payout, CWIP delays)",
         "rf_lease_inflation":          "Ind AS 116 lease mirage — EBITDA inflated by RoU capitalisation (QSR/Retail/Aviation)",
         "rf_low_cfo_ebitda":           "CFO/EBITDA <90% — Coffee Can clean accounts failure (Mukherjea master signal)",
