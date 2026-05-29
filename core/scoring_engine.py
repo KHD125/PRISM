@@ -422,6 +422,25 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
             index=df.index
         )
 
+    # ── 9th WCS: Cyclical Peak Trap — dampen the deceptive low-P/E reward ──
+    # A commodity stock at cyclical peak shows a low P/E only because earnings are temporarily inflated.
+    # pe_discount/payback above rewarded that "cheapness"; here we claw back 30% of the valuation score
+    # so peak-cycle commodities don't rank as bargains. Dampen (×0.70), not destroy — it's a timing
+    # signal, not a quality verdict. Fires only on the surgical triple-AND from data_engine.
+    if "cyclical_peak_trap" in df.columns:
+        _cyc_mask = df["cyclical_peak_trap"].fillna(0) == 1
+        score = pd.Series(
+            np.where(_cyc_mask, score * 0.70, score),
+            index=df.index
+        )
+
+    # ── P/E Below Sustainable ROE — Soft Valuation Boost (1st–30th WCS, most consistent rule) ──
+    # "Inherent margin of safety exists in buying at P/E substantially lower than sustainable ROE."
+    # Confirmed in all 30 Annual Wealth Creation Studies — the most repeated single valuation rule.
+    # +3 pts soft boost: meaningful signal but not dominant; _safe_clip enforces 100 ceiling.
+    if "pe_below_roe" in df.columns:
+        score = score + df["pe_below_roe"].fillna(0) * 3.0
+
     return _safe_clip(score)
 
 
@@ -516,6 +535,72 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
             index=df.index
         )
 
+    # ── 27th Study: Consistents Bonus / Volatiles Penalty ──
+    # "Consistency is the source of outperformance; Volatility is the source of underperformance."
+    # Bonus  +5 pts: consistency_champion == 1 (5Y crash-free, terminal > initial, CAGR > 0).
+    # Penalty -10 pts: mosl_volatile_flag == 1 (severe recent crash OR 5Y contraction).
+    # Both vectorized; _safe_clip at function end enforces [0, 100] ceiling.
+    if "consistency_champion" in df.columns:
+        df["quality_score"] = pd.Series(
+            np.where(
+                df["consistency_champion"].fillna(0) == 1,
+                df["quality_score"] + 5.0,
+                df["quality_score"]
+            ),
+            index=df.index
+        )
+    if "mosl_volatile_flag" in df.columns:
+        df["quality_score"] = pd.Series(
+            np.where(
+                df["mosl_volatile_flag"].fillna(0) == 1,
+                (df["quality_score"] - 10.0).clip(lower=0),
+                df["quality_score"]
+            ),
+            index=df.index
+        )
+
+    # ── 23rd Study: Growth-Value Trap Penalty (Exhibit 8/9) ──
+    # High growth + ROE < Cost of Equity = ACTIVE value destruction (negative firm value).
+    # The high growth inflates growth_score; this -8 penalty offsets that deceptive lift so a
+    # value-destroyer growing at 30% does not outrank a true compounder. Floor-clamped at 0.
+    if "growth_value_trap" in df.columns:
+        df["quality_score"] = pd.Series(
+            np.where(
+                df["growth_value_trap"].fillna(0) == 1,
+                (df["quality_score"] - 8.0).clip(lower=0),
+                df["quality_score"]
+            ),
+            index=df.index
+        )
+
+    # ── 28th Study: EP Power Curve Top-Quintile Bonus (Exhibit 10) ──
+    # Companies in EP Quintile 1/2 (top-40% by absolute economic profit) delivered 24%/21% CAGR
+    # vs 4-8% for Q4/Q5 — averaged across six overlapping 10-year periods. +3 modest reinforcement
+    # (kept small to avoid over-rewarding size, since absolute EP correlates with market cap).
+    if "ep_top_quintile_flag" in df.columns:
+        df["quality_score"] = pd.Series(
+            np.where(
+                df["ep_top_quintile_flag"].fillna(0) == 1,
+                df["quality_score"] + 3.0,
+                df["quality_score"]
+            ),
+            index=df.index
+        )
+
+    # ── 14th Study: Winning Investment Bonus (Category Winner in a Winner Category) ──
+    # The study's ultimate target = a sector LEADER operating inside a fast-growing (>1.5x GDP) sector.
+    # A leader in a stagnant sector is less attractive than a leader riding a structural tailwind;
+    # +3 rewards the combined signal (additive to category leadership, not double-counting).
+    if "category_winner_in_winner_cat" in df.columns:
+        df["quality_score"] = pd.Series(
+            np.where(
+                df["category_winner_in_winner_cat"].fillna(0) == 1,
+                df["quality_score"] + 3.0,
+                df["quality_score"]
+            ),
+            index=df.index
+        )
+
     # ── BAID SELL TRIGGERS (alert flags for existing holdings) ──
     df["sell_alert_thesis_broken"] = (
         df.get("roce_trajectory", pd.Series(0, index=df.index)) < -3
@@ -562,7 +647,7 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     #      eps_gr_yoy < eps_gr_3y - 7: earnings growing 7+ ppts below 3Y CAGR (wider band for
     #      operating leverage noise). OR condition: either revenue or earnings must decelerate.
     #      Gap fillna(0): NaN gap (missing data) → 0 → 0 < -5 = False (won't fire on missing data).
-    #   3. d35_roce_trend < 0: ROCE declining vs 1Y ago — no margin expansion to rescue decel.
+    #   3. d35_roce_trend < 0: ROCE structural slope negative (2Y annualised) — moat not recovering.
     #      fillna(0): NaN → 0 → 0 < 0 = False (conservative: missing trend = neutral).
     #
     # False positive guard: a stock at PE 55× with ROCE expanding does NOT trigger (condition 3
@@ -1131,7 +1216,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     _cc_roce_10y  = df.get("roce_med_10y", _cc_nan)
     _cc_roce_5y   = df.get("roce_med_5y",  _cc_nan)
     _cc_roe_10y   = df.get("roe_med_10y",  _cc_nan).fillna(df.get("roe_med_5y", _cc_nan))
-    _cc_roe_rec   = df.get("roe_med_5y",   _cc_nan).fillna(df.get("roe",        _cc_nan))
+    _cc_roe_rec   = df.get("roe_med_3y",   _cc_nan).fillna(df.get("roe_med_5y", _cc_nan)).fillna(df.get("roe", _cc_nan))
     _cc_cap_eff_nonfin = (
         (_cc_roce_10y.fillna(0) >= 15) &  # ROCE 10Y ≥ 15%: decade-long un-leveraged efficiency
         (_cc_roce_5y.fillna(0)  >= 15)    # ROCE 5Y  ≥ 15%: recent consistency — no collapse
@@ -1530,7 +1615,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     roce_10y_ub = df.get("roce_med_10y",       _ub_nan)
     roce_5y_ub  = df.get("roce_med_5y",        _ub_nan)
     roe_10y_ub  = df.get("roe_med_10y",        _ub_nan).fillna(df.get("roe_med_5y", _ub_nan))
-    roe_5y_ub   = df.get("roe_med_5y",         _ub_nan).fillna(df.get("roe",        _ub_nan))
+    roe_5y_ub   = df.get("roe_med_3y",         _ub_nan).fillna(df.get("roe_med_5y", _ub_nan)).fillna(df.get("roe", _ub_nan))
     ub_cap_eff_nonfin = (
         (roce_10y_ub.fillna(0) >= 15) &  # ROCE 10Y ≥ 15%: decade-long capital efficiency proven
         (roce_5y_ub.fillna(0)  >= 15)    # ROCE 5Y  ≥ 15%: moat still intact in recent window
@@ -1694,7 +1779,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     roce_5y_dw   = df.get("roce_med_5y",     _dw_nan)
     cfo_pat_dw   = df.get("cfo_to_pat",      _dw_nan)   # PERCENTAGE: 80.0 = 80%
     fcf_yield_dw = df.get("fcf_yield",       _dw_nan)   # PERCENTAGE: 5.0 = 5%
-    roce_dir_dw  = df.get("d35_roce_trend",  _dw_nan)   # positive = ROCE improving vs 1Y ago
+    roce_dir_dw  = df.get("d35_roce_trend",  _dw_nan)   # positive = ROCE structural slope rising (2Y annualised)
     de_dw        = df.get("debt_to_equity",  _dw_nan)
     is_fin_dw    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
 
@@ -2169,6 +2254,12 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # Score >= 4/5: highest-probability 100x candidate profile.
     fw_sqglp = df.get("century_stock_flag", pd.Series(0, index=df.index)).fillna(0) == 1
 
+    # ── Framework 35: fw_mosl_100x — 100x Candidate (MOSL 17th Study, 2012 theme) ──
+    # "Mouse to Elephant": all 5 mandatory conditions from the 17th Study must hold.
+    # (1) PAT CAGR 5Y ≥ 20%  (2) ROCE ≥ 20%  (3) Market Cap ≤ ₹15,000 Cr
+    # (4) D/E < 0.5  (5) ROE ≥ 15% — clean, unlevered compounding engine at early stage.
+    fw_mosl_100x = df.get("mosl_100x_candidate", pd.Series(0, index=df.index)).fillna(0) == 1
+
     # ── Framework 28: fw_cap_gap — CAP + GAP Longevity Compounder (MOSL 22nd Study, 2017 theme) ──
     # Competitive Advantage Period (CAP) + Growth Advantage Period (GAP) both extended.
     # Proves DURATION of competitive advantage — not just current level.
@@ -2350,8 +2441,14 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     )
 
     # Layer 2: CAP trap — structural 3-year slope replaces volatile 1-year delta (v1.0 noise bug)
+    # Fallback chain: roce_med_3y (3Y median, smooth) → roce_2yb (point 2Y ago) → roce (slope=0)
+    # roce_med_3y is preferred but not yet in CSV export; roce_2yb activates the signal immediately.
     _roce_v      = df.get("roce",        pd.Series(np.nan, index=df.index)).fillna(0.0)
-    _roce_med3y  = df.get("roce_med_3y", pd.Series(np.nan, index=df.index)).fillna(_roce_v)
+    _roce_med3y  = (
+        df.get("roce_med_3y", pd.Series(np.nan, index=df.index))
+        .fillna(df.get("roce_2yb", pd.Series(np.nan, index=df.index)))
+        .fillna(_roce_v)
+    )
     _roce_slope_3y = (_roce_v - _roce_med3y) / 2.0
     df["mauboussin_cap_trap"] = (
         (df["mauboussin_implied_cap"] > 15.0) & (_roce_slope_3y < -1.0)
@@ -2407,7 +2504,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_fisher_scalability,    "Fisher Scalability|",          "") +
         np.where(fw_schilit,               "Financial Shenanigans|",       "") +
         np.where(fw_marks_cycle,           "Marks Cycle Shield|",           "") +
-        np.where(fw_mauboussin,            "Expectations Matrix|",           "")
+        np.where(fw_mauboussin,            "Expectations Matrix|",          "") +
+        np.where(fw_mosl_100x,             "100x Candidate|",               "")
     )
     df["frameworks_passed"] = (
         pd.Series(fw_str, index=df.index)
@@ -2557,11 +2655,18 @@ def run_full_scoring(
     # ── Layer 2: Quality Score ──
     df = compute_quality_score(df)
 
-    # ── Epoch 3: Great/Good/Gruesome Taxonomy (vectorized, zero apply) ──
+    # ── Epoch 3: Great/Good/Gruesome Taxonomy (13th WCS, vectorized, zero apply) ──
+    # Study (13th WCS p.935): GREAT = "Very high AND RISING RoE"; GRUESOME = "Low / falling RoE".
+    # The "rising / still-high-now" dimension matters: a company with a stellar 10Y median but whose
+    # CURRENT return has collapsed has an ERODING moat — the study would NOT call it Great. So GREAT
+    # adds a current-ROCE floor (>=15%, still genuinely high today) on top of the 10Y-median + asset-
+    # light tests. Without it, a name like Crompton (10Y med 21% but current ROCE -1.2%) wrongly got
+    # tagged GREAT and handed a +10% boost. Demoting such eroded moats to GOOD is faithful to the study.
     df["corporate_class"] = np.select(
         [
             (df["roce_med_10y"].fillna(0) >= 20.0) &
-            (df["fcf_to_ocf_velocity"].fillna(0) >= 0.60),
+            (df["fcf_to_ocf_velocity"].fillna(0) >= 0.60) &
+            (df["roce"].fillna(0) >= 15.0),                    # 13th WCS: still high NOW (not eroding)
             (df["roce_med_10y"].fillna(0) >= 12.0) &
             (df["fcf_to_ocf_velocity"].fillna(0) < 0.60),
             (df["roce_med_10y"].fillna(0) < 12.0),
