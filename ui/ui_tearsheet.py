@@ -733,6 +733,10 @@ def render_guru_frameworks(stock: pd.Series):
         "EP Hockey Stick":         (COLORS["green"],  "🚀", "Q2/Q3 ascending EP Power Curve — 28th WCS"),
         "Bruised Blue Chip 29":    (COLORS["blue"],   "💙", "Elite ROCE + large-cap at P/B ≤2× — 29th WCS"),
         "Multi-Trillion Cap":      (COLORS["purple"], "🌐", "Sunrise sector at compounding velocity — 30th WCS"),
+        "100x Candidate":          (COLORS["gold"],   "🚀", "17th WCS Mouse-to-Elephant: PAT CAGR ≥20% + ROCE ≥20% + mcap ≤₹15k Cr + D/E <0.5 + ROE ≥15%"),
+        "Expectations Matrix":     (COLORS["purple"], "🔮", "Mauboussin PIE: implied CAP realistic + treadmill safe + operating leverage intact"),
+        "Financial Shenanigans":   (COLORS["red"],    "🕵️", "Schilit clean bill — passes accounting-manipulation forensic perimeter"),
+        "Marks Cycle Shield":      (COLORS["cyan"],   "🛡️", "Howard Marks: not at cyclical-peak margins; mean-reversion risk low"),
     }
 
     if not fw_list:
@@ -1518,6 +1522,40 @@ def render_raw_signals(stock: pd.Series):
         _cell("QGLP Pass",     "Yes ✅" if g("qglp_pass") == 1 else "No","") +
         _cell("Composite Scr", g("composite_score"),     "{:.0f}/100") +
         _cell("Conviction Tier",g("conviction_tier"),    "Tier {:.0f}")
+    )
+
+    # MOSL Wealth Creation signals (9 Annual Wealth Creation Studies extracted into the engine)
+    _yn = lambda k: "Yes ✅" if g(k) == 1 else "No"
+    _section("🏛️ MOSL Wealth Creation Signals", COLORS["gold"],
+        # 13th — Great/Good/Gruesome taxonomy
+        _cell("Corporate Class", stock.get("corporate_class","") or "N/A", "") +
+        # 17th — Economic Moat persistence (sector-relative ROE across 5 timeframes)
+        _cell("EMC Sector-Beat",  g("emc_sector_beat_count"), "{:.0f}/5") +
+        _cell("EMC Flag",         _yn("emc_flag"), "") +
+        # 22nd — CAP & GAP longevity (duration above cost of capital / 15% growth)
+        _cell("CAP Years",        g("cap_years_proxy"), "{:.0f}/5") +
+        _cell("GAP Years",        g("gap_years_proxy"), "{:.0f}/3") +
+        _cell("CAP-GAP Score",    g("cap_gap_score"),   "{:.0f}/4") +
+        # 27th — Consistents vs Volatiles
+        _cell("Consistency Champ", _yn("consistency_champion"), "") +
+        _cell("PAT Falls >10%",   g("pat_decline_count_5y"), "{:.0f}/5") +
+        _cell("Volatile Flag",    _yn("mosl_volatile_flag"), "") +
+        # 28th — EP Power Curve quintile (1=highest EP)
+        _cell("EP Quintile",      stock.get("ep_quintile","") or "N/A", "") +
+        _cell("EP Top Q1/Q2",     _yn("ep_top_quintile_flag"), "") +
+        # 14th — Winner Category (sector tailwind) × Category Winner (leader)
+        _cell("Winner Category",  _yn("winner_category_flag"), "") +
+        _cell("Winning Invest.",  _yn("category_winner_in_winner_cat"), "") +
+        # 17th — 100x candidate (Mouse-to-Elephant)
+        _cell("100x Candidate",   _yn("mosl_100x_candidate"), "") +
+        # 29th — Bruised Blue Chip (P/B < 2x quality fallen)
+        _cell("Bruised Blue Chip", _yn("bruised_blue_chip_29"), "") +
+        # 23rd — Growth-Value trap (growth + ROE < cost of equity)
+        _cell("Growth-Value Trap", _yn("growth_value_trap"), "") +
+        # 9th — Cyclical peak trap (commodity at peak-cycle deceptive low P/E)
+        _cell("Cyclical Peak Trap", _yn("cyclical_peak_trap"), "") +
+        # 26th — Atoms vs Bits business design
+        _cell("Atoms/Bits",       stock.get("atoms_to_bits_label","") or "N/A", "")
     )
 
     # Dorsey Wide Moat pillar cells
