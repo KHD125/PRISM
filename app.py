@@ -1248,11 +1248,18 @@ with tabs[4]:
         for k, v in MOMENTUM_WEIGHTS.items():
             st.markdown(f"- {k.replace('_',' ').title()}: **{v*100:.0f}%**")
 
-    # ── MARKS CYCLE TEMPERATURE GAUGE ──
+    # ── MARKS CYCLE TEMPERATURE GAUGE (standalone qualitative macro lens) ──
+    # Deliberately display-only: a subjective human cycle read must NOT re-rank the deterministic,
+    # vectorized quant scores. Macro adaptation is already handled objectively by detect_market_regime.
     st.markdown("---")
     st.markdown(f"<div class='sec-head'>🌡️ Marks Cycle Temperature Gauge</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='sec-cap'>Howard Marks' 5-Dimension Market Cycle Assessment. "
-                f"Score each dimension 1 (cold/fear) to 5 (hot/greed). Total 5-25.</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='sec-cap'>Howard Marks' 5-dimension cycle read — score each 1 (cold/fear) "
+        f"to 5 (hot/greed). A <strong>qualitative lens for your own conviction &amp; position "
+        f"sizing</strong>; it deliberately does <strong>not</strong> alter the quant rankings, "
+        f"which adapt objectively via the auto-detected market regime.</div>",
+        unsafe_allow_html=True,
+    )
 
     tc1, tc2 = st.columns(2)
     with tc1:
@@ -1276,13 +1283,46 @@ with tabs[4]:
     else:
         posture = MARKS_CYCLE["posture_defensive"]
 
-    posture_color = "#3fb950" if "Aggressive" in posture["label"] else "#d29922" if "Neutral" in posture["label"] else "#f85149"
+    posture_color = ("#3fb950" if "Aggressive" in posture["label"]
+                     else "#d29922" if "Neutral" in posture["label"] else "#f85149")
+    # Marker position on the 5-25 scale → 0-100% (clamped so it can never overflow the bar)
+    _marker_pct = max(0.0, min(100.0, (cycle_total - 5) / 20.0 * 100.0))
+
     st.markdown(f"""
-    <div style="background:{COLORS['bg_secondary']}; border:2px solid {posture_color};
-                border-radius:12px; padding:20px; margin:10px 0; text-align:center;">
-        <div style="font-size:2.5rem; font-weight:900; color:{posture_color};">{cycle_total}/25</div>
-        <div style="font-size:1.3rem; font-weight:700; color:{posture_color}; margin-top:4px;">{posture["label"]}</div>
-        <div style="font-size:0.85rem; color:{COLORS['text_muted']}; margin-top:8px;">{posture["action"]}</div>
+    <div style="background:{COLORS['bg_secondary']};border:2px solid {posture_color};
+                border-radius:14px;padding:18px 22px;margin:12px 0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;
+                  flex-wrap:wrap;margin-bottom:16px;">
+        <div>
+          <div style="font-size:0.6rem;color:{COLORS['text_muted']};text-transform:uppercase;
+                      letter-spacing:1.4px;font-weight:700;">Cycle Temperature</div>
+          <div style="font-size:2.4rem;font-weight:900;color:{posture_color};line-height:1.05;">
+            {cycle_total}<span style="font-size:1.1rem;color:{COLORS['text_muted']};
+            font-weight:600;">/25</span></div>
+        </div>
+        <div style="text-align:right;flex:1;min-width:190px;">
+          <div style="font-size:1.15rem;font-weight:800;color:{posture_color};">{posture['label']}</div>
+          <div style="font-size:0.78rem;color:{COLORS['text_secondary']};margin-top:3px;">
+            {posture['action']}</div>
+        </div>
+      </div>
+      <div style="position:relative;height:12px;border-radius:6px;
+                  background:linear-gradient(90deg,#3fb950 0%,#3fb950 25%,#e3b341 25%,
+                  #e3b341 65%,#f85149 65%,#f85149 100%);">
+        <div style="position:absolute;top:-6px;left:{_marker_pct:.1f}%;transform:translateX(-50%);
+                    width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;
+                    border-top:10px solid {COLORS['text_primary']};"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;
+                  font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">
+        <span style="color:#3fb950;">🟢 Aggressive · Deploy</span>
+        <span style="color:#d29922;">🟡 Neutral · Hold</span>
+        <span style="color:#f85149;">🔴 Defensive · Protect</span>
+      </div>
+    </div>
+    <div style="font-size:0.66rem;color:{COLORS['text_muted']};margin:-2px 0 6px 2px;">
+      🧠 A <strong>thinking tool</strong> — it shapes how aggressively <em>you</em> deploy capital.
+      The engine's stock rankings stay 100% objective and untouched by these sliders.
     </div>
     """, unsafe_allow_html=True)
 
