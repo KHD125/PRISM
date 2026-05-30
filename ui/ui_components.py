@@ -26,9 +26,19 @@ def inject_css():
     }}
 
     /* ── Responsive Layout ── */
+    /* padding-top must clear Streamlit's fixed ~3.75rem header bar, otherwise the first
+       content row (the Mandate selector buttons) is hidden underneath it. */
     section[data-testid="stMain"] > div.block-container {{
         max-width: 100%; overflow-x: hidden; box-sizing: border-box;
-        padding-top: 1rem;
+        padding-top: 3.5rem;
+    }}
+    /* Blend Streamlit's header bar into the dark theme (keeps the toolbar usable, no white bar) */
+    [data-testid="stHeader"] {{
+        background: transparent;
+    }}
+    /* Tighten the default top-of-app gap so the extra header clearance doesn't feel empty */
+    section[data-testid="stMain"] > div.block-container > div:first-child {{
+        padding-top: 0;
     }}
 
     /* ── Hero Banner ── */
