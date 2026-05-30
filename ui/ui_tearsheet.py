@@ -2420,3 +2420,112 @@ def render_mauboussin_radar(stock: pd.Series):
         f"</div>",
         unsafe_allow_html=True,
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# MOSL WEALTH CREATION MATRIX — single-card summary of the 30-study signals
+# ═══════════════════════════════════════════════════════════════
+
+def render_mosl_wealth_matrix(stock: pd.Series):
+    """
+    Renders the MOSL Wealth Creation Matrix — a compact, space-optimised card summarising
+    the highest-conviction valuation signals from the 30 Annual Wealth Creation Studies.
+    PURE DISPLAY — reads pre-materialized columns only; zero math, zero sorting, zero apply().
+    Mounted beneath the Mauboussin radar. Defensive: all values via _g()/_esc(), float-guarded.
+    Shows: 5-Yr Payback · P/E-vs-RoE margin of safety · Absolute Economic Profit · Atoms/Bits design.
+    """
+    def _num(key, default=0.0):
+        """Float-safe numeric extraction — guards None / NaN / inf into a clean float."""
+        v = stock.get(key, default)
+        try:
+            f = float(v)
+            if f != f or f in (float("inf"), float("-inf")):   # NaN or inf
+                return default
+            return f
+        except (TypeError, ValueError):
+            return default
+
+    # ── Pull pre-computed metrics defensively ───────────────────────────────
+    payback   = _num("payback_trailing_5y", default=float("nan"))
+    payback_g = _num("payback_ratio", default=float("nan"))       # growth-adjusted fallback
+    pay_show  = payback if payback == payback else payback_g       # prefer trailing; else growth
+    pe_to_roe = _num("pe_to_roe_ratio", default=float("nan"))     # PE / sustainable ROE; <1 = MoS
+    pe_below  = int(_num("pe_below_roe", 0))
+    ep_abs    = _num("economic_profit", default=float("nan"))     # ₹ Cr/yr (Net Worth × (RoE−CoE))
+    ep_pos    = int(_num("economic_profit_positive", 0))
+    atb       = str(_g(stock, "atoms_to_bits_label", "Hybrid") or "Hybrid")
+
+    _GOLD, _GREEN, _RED, _BLUE, _MUTE = (
+        COLORS["gold"], COLORS["green"], COLORS["red"], COLORS["blue"], COLORS["text_muted"]
+    )
+
+    # ── Tile 1: 5-Year Payback ──────────────────────────────────────────────
+    if pay_show == pay_show and pay_show > 0:
+        pay_clr   = _GREEN if pay_show < 1.0 else (_GOLD if pay_show < 2.0 else _MUTE)
+        pay_val   = f"{pay_show:.2f}x"
+        pay_badge = "5-YR PAYBACK CLEAR" if pay_show < 1.0 else (
+            "Attractive (<2x)" if pay_show < 2.0 else "Full valuation")
+    else:
+        pay_clr, pay_val, pay_badge = _MUTE, "—", "No earnings basis"
+
+    # ── Tile 2: P/E vs Sustainable RoE (Motilal's original margin of safety) ─
+    if pe_to_roe == pe_to_roe and pe_to_roe > 0:
+        roe_disc  = (1.0 - pe_to_roe) * 100.0   # positive = PE below ROE = margin of safety
+        mos_clr   = _GREEN if pe_below == 1 else _RED
+        mos_val   = f"{roe_disc:+.0f}%"
+        mos_badge = "P/E BELOW SUSTAINABLE RoE" if pe_below == 1 else "Premium to RoE"
+    else:
+        mos_clr, mos_val, mos_badge = _MUTE, "—", "RoE basis unavailable"
+
+    # ── Tile 3: Absolute Economic Profit (28th WCS, exact book-value math) ───
+    if ep_abs == ep_abs:
+        ep_clr   = _GREEN if ep_pos == 1 else _RED
+        ep_val   = f"₹{ep_abs:,.0f} Cr"
+        ep_badge = "VALUE CREATOR (RoE > CoE)" if ep_pos == 1 else "Value Destroyer (RoE < CoE)"
+    else:
+        ep_clr, ep_val, ep_badge = _MUTE, "—", "Net worth unavailable"
+
+    # ── Tile 4: Business Design (26th WCS Atoms→Bits) ───────────────────────
+    _atb_map = {
+        "Bits":   (_BLUE,  "💡", "Asset-light · network-effect scale"),
+        "Atoms":  (_GOLD,  "🏭", "Capital-intensive · linear scale"),
+        "Hybrid": (_MUTE,  "⚙️", "Mixed physical + digital model"),
+    }
+    atb_clr, atb_icon, atb_desc = _atb_map.get(atb, (_MUTE, "⚙️", "Mixed model"))
+
+    # ── Header ──────────────────────────────────────────────────────────────
+    st.markdown(
+        "<div class='sec-head'>🏛️ MOSL Wealth Creation Matrix — 30-Study Signal Summary</div>",
+        unsafe_allow_html=True,
+    )
+
+    def _tile(color, value, label, sub):
+        return (
+            f"<div style='flex:1;flex-shrink:0;min-width:150px;white-space:nowrap;"
+            f"background:{color}12;border:1px solid {color}40;border-radius:10px;padding:12px 14px;'>"
+            f"<div style='font-size:0.6rem;font-weight:700;color:{_MUTE};text-transform:uppercase;"
+            f"letter-spacing:0.6px;white-space:nowrap;'>{_esc(label)}</div>"
+            f"<div style='font-size:1.35rem;font-weight:900;color:{color};line-height:1.2;"
+            f"margin-top:3px;white-space:nowrap;'>{_esc(value)}</div>"
+            f"<div style='font-size:0.62rem;color:{color};margin-top:2px;white-space:nowrap;'>"
+            f"{_esc(sub)}</div>"
+            f"</div>"
+        )
+
+    tiles = (
+        _tile(pay_clr, pay_val, "⏳ 5-Yr Payback", pay_badge) +
+        _tile(mos_clr, mos_val, "📉 P/E vs RoE", mos_badge) +
+        _tile(ep_clr, ep_val, "📊 Economic Profit / yr", ep_badge) +
+        _tile(atb_clr, f"{atb_icon} {atb}", "🌐 Business Design", atb_desc)
+    )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;'>{tiles}</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<div style='font-size:0.6rem;color:{_MUTE};margin-bottom:14px;'>"
+        f"Payback = MktCap ÷ trailing-5Y PAT · P/E-vs-RoE = Motilal 1st-Study margin of safety · "
+        f"Economic Profit = Net Worth × (RoE − {12.0:.0f}% cost of equity), exact book value</div>",
+        unsafe_allow_html=True,
+    )
