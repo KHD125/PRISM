@@ -706,7 +706,7 @@ def render_guru_frameworks(stock: pd.Series):
         "Magic Formula":           (COLORS["gold"],   "🧮", "High ROCE + High Earnings Yield — Joel Greenblatt"),
         "SMILE":                   (COLORS["green"],  "😊", "Small cap + Moat + Institutional + Longevity + Earnings"),
         "CAN SLIM":                (COLORS["blue"],   "📊", "O'Neil: EPS + Revenue + Institutional + Near High"),
-        "Bruised Blue Chip":       (COLORS["blue"],   "💙", "Fallen large-cap quality — original BBC"),
+        "Fallen Quality":          (COLORS["cyan"],   "🩹", "All-cap fallen quality: ROCE≥15% + PAT CAGR≥10%, >40% off 52WH, cheap vs own 10Y PE"),
         "EP Improver":             (COLORS["green"],  "📈", "Economic Profit expanding — moving up Power Curve"),
         "Peaceful Investing":      (COLORS["gold"],   "🕊️", "Vijay Malik: NFAT + self-funded growth + clean accounts"),
         "Unusual Billionaires":    (COLORS["purple"], "💰", "Saurabh Mukherjea: promoter-run compounders"),
