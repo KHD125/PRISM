@@ -304,7 +304,7 @@ with st.sidebar:
 
     # The All-Time Best Filter: Moat-Growth Matrix
     moat_options = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
-    sel_moat = st.multiselect("Moat", moat_options, default=["⭐ Wealth Creator"], key="sb_moat")
+    sel_moat = st.multiselect("Moat", moat_options, default=[], key="sb_moat")
     
     # Institutional Sweep Vector
     st.markdown("---")
