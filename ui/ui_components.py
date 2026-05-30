@@ -488,6 +488,18 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     if row.get("bruised_blue_chip_29", 0) == 1:
         pills += '<span class="pill pill-blue">💙 Bruised Blue Chip</span>'
 
+    # 5. 100x Candidate (17th WCS Mouse-to-Elephant) — rare, high-conviction alpha tag
+    if row.get("mosl_100x_candidate", 0) == 1:
+        pills += '<span class="pill pill-gold">🚀 100x Candidate</span>'
+
+    # 6. Atoms→Bits business design (26th WCS) — surface asset-light "Bits" vs capital-heavy "Atoms"
+    _atb = str(row.get("atoms_to_bits_label", "") or "")
+    if _atb == "Bits":
+        pills += '<span class="pill pill-blue">💡 Bits</span>'
+    elif _atb == "Atoms":
+        pills += ('<span class="pill" style="border-color:rgba(228,179,65,0.3);'
+                  'color:#e3b341;background:rgba(228,179,65,0.06);">🏭 Atoms</span>')
+
     # ── Verdict strip: gate + forensic + moat quadrant in one scannable line ──
     _gate_ok = row.get("gate_pass", 0) == 1
     _failed_esc = _html.escape(str(row.get("failed_gates", "") or ""))
