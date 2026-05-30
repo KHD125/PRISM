@@ -27,6 +27,7 @@ try:
         render_malik_radar,
         render_lynch_radar,
         render_mauboussin_radar,
+        render_mosl_wealth_matrix,
     )
 except ImportError as e:
     import traceback
@@ -55,6 +56,7 @@ except ImportError as e:
     render_malik_radar       = _stub
     render_lynch_radar       = _stub
     render_mauboussin_radar  = _stub
+    render_mosl_wealth_matrix = _stub
 
 from .ui_components import (
     inject_css,
@@ -91,6 +93,7 @@ __all__ = [
     "render_malik_radar",
     "render_lynch_radar",
     "render_mauboussin_radar",
+    "render_mosl_wealth_matrix",
     "inject_css",
     "render_hero_banner",
     "render_metric_strip",
