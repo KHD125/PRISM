@@ -57,40 +57,11 @@ _SECTOR_DSO_THRESHOLDS: dict = {
 }
 _DEFAULT_DSO_THRESHOLD: int = 75   # fallback for all sectors not in the map above
 
-# ── Per-Sector Depreciation Rate Estimates ─────────────────────────────────────────────────
-# CONSUMER: Schilit Checker 1 Signal 6 only (compute_schilit_forensic_score → _dep_rate_manip).
-#   Signal 6: FA grew >5% YoY but dep_rate (D&A/FA from data_engine) fell >20% → life extension fingerprint.
-#   These rates are NOT used by rf_capex_mirage (Flag 22) as of 2026-05-31 refactor — that flag
-#   now consumes dep_rate_1yb (exact accounting column) directly from data_engine.py.
-#
-# Sources: Indian Companies Act Schedule II useful lives + industry standards.
-# Sectors absent from this map fall back to _DEFAULT_DEP_RATE (10%).
-#
-#   IT Software/Hardware : 0.30  — compute servers, network gear: 3-year useful life standard
-#   Pharmaceuticals      : 0.18  — lab equipment, specialized plant: 5-6yr Indian tax life
-#   Telecom              : 0.18  — network equipment, towers: 5-6yr depreciation life
-#   Railways             : 0.06  — track, rolling stock: ~15-17yr Schedule II life
-#   Shipping             : 0.10  — vessel hull: 10yr standard (same as default)
-#   Realty / REITs       : 0.025 — commercial property: 40yr useful life (Schedule II Class 1)
-#   InvITs               : 0.025 — infrastructure assets: 40yr+, slow capital turnover
-#   Power / Infra        : 0.04–0.05 — plant, transmission: 20-25yr Schedule II life
-#   Default              : 0.10  — manufacturing, auto, FMCG, steel, etc.
-_SECTOR_DEP_RATES: dict = {
-    "IT - Software":                           0.30,
-    "IT - Hardware":                           0.30,
-    "Infrastructure Developers & Operators":   0.04,
-    "Power Generation & Distribution":         0.05,
-    "Power Infrastructure":                    0.04,
-    "Infrastructure Investment Trusts":        0.025,
-    "Real Estate Investment Trusts":           0.025,
-    "Realty":                                  0.04,
-    "Telecom-Service":                         0.18,
-    "Telecom Equipment & Infra Services":      0.18,
-    "Shipping":                                0.10,
-    "Railways":                                0.06,
-    "Pharmaceuticals":                         0.18,
-}
-_DEFAULT_DEP_RATE: float = 0.10   # fallback for all sectors not in the map above
+# NOTE: A static per-sector depreciation-rate dict (_SECTOR_DEP_RATES) was removed on
+# 2026-05-31. Both consumers now read per-company AUDITED rates instead of sector guesses:
+#   • rf_capex_mirage (Flag 22)        → dep_rate_1yb column (data_engine accounting identity)
+#   • Schilit Signal 6 (_dep_rate_manip) → dep_rate / dep_rate_1yb columns (life-extension check)
+# Audited statement rates strictly dominate Schedule-II useful-life sector averages.
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -447,8 +418,8 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     #   depr_exact_cm = (dep_rate_1yb / 100) × fixed_assets_1yb
     #     dep_rate_1yb  : D&A as % of fixed assets, 1 year back, from data_engine.py
     #                     Computed via exact accounting identity: (EBITDA_1yb − EBIT_1yb) / FA_1yb × 100
-    #                     This replaces the prior _SECTOR_DEP_RATES macro lookup which used static
-    #                     schedule-II useful-life rates — less precise than reported D&A figures.
+    #                     This replaced the now-removed static per-sector dep-rate macro lookup
+    #                     (Schedule-II useful-life rates) — less precise than reported D&A figures.
     #   Numerator   : actual net new capital deployed (clipped to 0 when FA flat or declining)
     #   Denominator : exact annual depreciation charge on the prior-year asset base
     #   Ratio < 0.5 : less than half of depreciated assets are being replaced
