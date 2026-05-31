@@ -299,10 +299,35 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown(f"<div class='sec-head'>🎯 Filters</div>", unsafe_allow_html=True)
-    sectors = ["All"] + sorted(df["sector"].dropna().unique().tolist())
-    sel_sector = st.selectbox("Sector", sectors, key="sb_sector")
-    sel_tier = st.multiselect("Conviction Tier", [1,2,3,4,5], default=[1,2,3], key="sb_tier")
-    sel_mcap = st.multiselect("Market Category", ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], default=["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], key="sb_mcap")
+
+    # ── Cascading location filters: Market Category → Sector → Industry ──────
+    # Each level narrows the OPTIONS of the level below it (and the final dataframe).
+    # Defensive: when a higher-level change invalidates a lower selection, reset that
+    # selection to "All" BEFORE its widget renders — this prevents Streamlit's
+    # "st.session_state value is not in options" crash on cascading selectboxes.
+    _ALL_MCAPS = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
+    sel_mcap = st.multiselect("Market Category", _ALL_MCAPS, default=_ALL_MCAPS, key="sb_mcap")
+
+    # Cascade base — df narrowed by the market-cap selection (drives the option lists below).
+    _casc_df = df[df["market_category"].isin(sel_mcap)] if sel_mcap else df
+
+    # Sector — only sectors that exist within the chosen market categories.
+    _sector_opts = ["All"] + sorted(_casc_df["sector"].dropna().unique().tolist())
+    if st.session_state.get("sb_sector", "All") not in _sector_opts:
+        st.session_state["sb_sector"] = "All"
+    sel_sector = st.selectbox("Sector", _sector_opts, key="sb_sector")
+
+    # Industry — only industries within the chosen market categories AND sector.
+    _ind_base = _casc_df[_casc_df["sector"] == sel_sector] if sel_sector != "All" else _casc_df
+    _industry_opts = ["All"] + sorted(_ind_base["industry"].dropna().unique().tolist())
+    if st.session_state.get("sb_industry", "All") not in _industry_opts:
+        st.session_state["sb_industry"] = "All"
+    sel_industry = st.selectbox(
+        "Industry", _industry_opts, key="sb_industry",
+        help="Granular industry within the selected sector (353 total). Narrows with Sector above.",
+    )
+
+    sel_tier = st.multiselect("Conviction Tier", [1, 2, 3, 4, 5], default=[1, 2, 3], key="sb_tier")
 
     # Framework Filter — shows stocks passing ANY of the selected frameworks.
     # Labels extracted live from frameworks_passed column; empty selection = no filter (show all).
@@ -336,12 +361,15 @@ with st.sidebar:
 
 # Apply filters
 filt = df.copy()
-if sel_sector != "All":
-    filt = filt[filt["sector"] == sel_sector]
-if sel_tier:
-    filt = filt[filt["conviction_tier"].isin(sel_tier)]
+# Cascading location filters — Market Category → Sector → Industry (each narrows the next).
 if sel_mcap:
     filt = filt[filt["market_category"].isin(sel_mcap)]
+if sel_sector != "All":
+    filt = filt[filt["sector"] == sel_sector]
+if sel_industry != "All":
+    filt = filt[filt["industry"] == sel_industry]
+if sel_tier:
+    filt = filt[filt["conviction_tier"].isin(sel_tier)]
 if sel_fw and "frameworks_passed" in filt.columns:
     import re as _re
     _fw_mask = pd.Series(False, index=filt.index)
