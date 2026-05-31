@@ -446,11 +446,15 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     if row.get("cat_deleveraging", 0) == 1:
         pills += '<span class="pill pill-gold">🔥 Deleveraging Cycle</span>'
         
-    # Frameworks
+    # Frameworks — generic gray pills for every passed framework.
+    # EXCEPT those that have a dedicated colour pill below (avoids duplicate display).
+    _DEDICATED_FW = {"100x Candidate", "Bruised Blue Chip 29"}
     fw_str = row.get("frameworks_passed", "None")
     if fw_str != "None":
         for fw in fw_str.split(", "):
-            pills += f'<span class="pill" style="border-color:rgba(255,255,255,0.4); color:#eee; background:rgba(255,255,255,0.05);">🏛️ {fw}</span>'
+            if fw.strip() in _DEDICATED_FW:
+                continue
+            pills += f'<span class="pill" style="border-color:rgba(255,255,255,0.4); color:#eee; background:rgba(255,255,255,0.05);">🏛️ {_html.escape(fw)}</span>'
             
     # Legacy specific tags
     if row.get("tsunami_signal", 0) == 1:
