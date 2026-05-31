@@ -57,8 +57,21 @@ def get_clean_data(data_source, _file_signature: str, sheet_id, _uploaded_dict=N
     elapsed = time.time() - t0
     return df, elapsed
 
-def get_scored_data(clean_df, analysis_mode, scoring_profile):
-    """Tier-2+3: Instant scoring. NOT cached — runs in <0.5s on dropdowns change."""
+def get_scored_data(clean_df: pd.DataFrame, analysis_mode: str, scoring_profile: str) -> pd.DataFrame:
+    """Tier-2+3: Instant scoring + forensic pass. NOT cached — runs in <0.5s on dropdown change.
+
+    Sequencing contract (single-source-of-truth):
+      1. run_full_scoring   : Hard gates → Quality → Momentum → Governance → Composite → Tsunami.
+                              Contains ZERO internal forensic computation.
+      2. run_forensic_analysis: Piotroski F-Score → Red Flags (27 checks) → Schilit 4-checkers →
+                              Cashflow Triangle → Cascading Forensic Multiplier (re-assigns conviction tier).
+
+    This ordering is deliberate: forensic columns (forensic_score, forensic_label, red_flag_count,
+    piotroski_fscore, schilit_forensic_score) are written exactly once by run_forensic_analysis.
+    Any scoring engine framework check that reads forensic columns (e.g. flag_sqglp_engine reads
+    forensic_label) receives the column from this second pass — the composite_score boosts are
+    non-destructive additive operations, so no re-scoring is required after forensic injection.
+    """
     df = run_full_scoring(clean_df, analysis_mode, scoring_profile)
     df = run_forensic_analysis(df)
     return df
@@ -84,7 +97,11 @@ with st.sidebar:
             st.rerun()
 
     if st.button("🔄 Clear Cache & Reload", use_container_width=True):
+        # Full refresh: clear the Tier-1 data cache AND the Tier-2 scored-df session cache,
+        # so a re-score runs from scratch (picks up engine code changes, not stale labels).
         st.cache_data.clear()
+        st.session_state.pop("_scored_df", None)
+        st.session_state.pop("_score_key", None)
         st.rerun()
 
     sheet_id = None
@@ -289,18 +306,21 @@ with st.sidebar:
 
     # Framework Filter — shows stocks passing ANY of the selected frameworks.
     # Labels extracted live from frameworks_passed column; empty selection = no filter (show all).
+    # Splitter uses ", " (with space) to match the exact separator written by scoring_engine.py
+    # (fw_str builder joins with "| " then str.replace("|", ", ")) — prevents leading-space tokens.
     if "frameworks_passed" in df.columns:
         _all_fw = sorted(set(
             fw.strip()
             for cell in df["frameworks_passed"].dropna()
             if cell != "None"
-            for fw in cell.split(",")
+            for fw in cell.split(", ")
             if fw.strip()
         ))
     else:
         _all_fw = []
     sel_fw = st.multiselect("Framework", _all_fw, default=[], key="sb_fw",
                              help="Show stocks passing ANY selected framework. Empty = all stocks.")
+
 
     # The All-Time Best Filter: Moat-Growth Matrix
     moat_options = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
@@ -323,10 +343,15 @@ if sel_tier:
 if sel_mcap:
     filt = filt[filt["market_category"].isin(sel_mcap)]
 if sel_fw and "frameworks_passed" in filt.columns:
+    import re as _re
     _fw_mask = pd.Series(False, index=filt.index)
     for _fw in sel_fw:
-        _fw_mask = _fw_mask | filt["frameworks_passed"].str.contains(_fw, regex=False, na=False)
+        # Anchored exact-token regex: matches token only as a complete ", "-delimited element.
+        # Prevents "Bruised Blue Chip" from substring-matching "Bruised Blue Chip 29".
+        _pat = r"(?:^|, )" + _re.escape(_fw) + r"(?:,|$)"
+        _fw_mask = _fw_mask | filt["frameworks_passed"].str.contains(_pat, regex=True, na=False)
     filt = filt[_fw_mask]
+
 if sel_moat:
     filt = filt[filt["moat_growth_quad"].isin(sel_moat)]
 if smart_sweep:
