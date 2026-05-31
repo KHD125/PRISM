@@ -2475,7 +2475,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_smile,                  "SMILE|",                      "") +
         np.where(fw_lynch,                  "Lynch Dream|",                "") +
         np.where(fw_can_slim,               "CAN SLIM|",                   "") +
-        np.where(fw_bruised_bb,             "Bruised Blue Chip|",          "") +
+        np.where(fw_bruised_bb,             "Fallen Quality|",             "") +
         np.where(fw_ep_improver,            "EP Improver|",                "") +
         np.where(fw_malik_peaceful,         "Peaceful Investing|",         "") +
         np.where(fw_unusual_billionaires,   "Unusual Billionaires|",       "") +
@@ -2623,13 +2623,13 @@ def run_full_scoring(
       4. Composite blend using Analysis Mode + regime-adjusted momentum boost
     """
     df = df.copy()
-    # Ensure forensic data is present for framework checks (fw_diamond, fw_dhandho need forensic_score).
-    # Guard: skip if run_forensic_analysis already ran (avoids double computation on every scoring run).
-    if "forensic_score" not in df.columns:
-        from core.forensic_engine import compute_piotroski_fscore, compute_red_flags, compute_schilit_forensic_score
-        df = compute_piotroski_fscore(df)
-        df = compute_red_flags(df)
-        df = compute_schilit_forensic_score(df)  # Schilit 4-checker overlay
+    # Architecture: forensic columns (forensic_score, forensic_label, piotroski_fscore, red_flag_count,
+    # schilit_forensic_score) are computed exclusively by run_forensic_analysis(), which is called
+    # AFTER run_full_scoring() in app.get_scored_data(). Framework checks inside this function
+    # (flag_sqglp_engine reads forensic_label; compute_cascading_forensic_filter reads red_flag_count)
+    # operate on the output of the single authoritative forensic pass — no pre-computation shim needed.
+    # DO NOT re-add an early forensic call here; it would cause silent double-computation and
+    # force all framework flag columns to be overwritten by the second forensic pass.
 
     mode = ANALYSIS_MODES.get(analysis_mode, ANALYSIS_MODES["Hybrid"])
 
