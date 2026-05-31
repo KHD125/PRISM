@@ -6,6 +6,7 @@ All functions are PURE DISPLAY — zero sorting, grouping, or math.
 Pre-calculated vectors arrive from data_engine + scoring_engine + forensic_engine.
 """
 
+import re
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
@@ -29,6 +30,24 @@ def _g(stock: pd.Series, key: str, default=0):
     """Null-safe Series lookup. Returns default if key is missing or NaN."""
     v = stock.get(key, default)
     return default if (v is None or (isinstance(v, float) and np.isnan(v))) else v
+
+
+def _parse_frameworks(fw_str, exclude: set = None) -> list:
+    """Split the `frameworks_passed` string into clean, whole-token framework names.
+
+    Contract: the engine joins framework names with the exact separator ", ". Splitting on
+    a strict ", "-with-flexible-whitespace boundary (re.split r'\\s*,\\s*') yields complete
+    tokens only — never partial substrings. This guarantees that a compound name such as
+    "Bruised Blue Chip 29" is treated as ONE atomic token and can never cross-contaminate a
+    shorter standalone variant ("Bruised Blue Chip") in any downstream membership test or
+    dropdown option. Empty fragments and the sentinel "None" are dropped; `exclude` removes
+    dedicated-pill names that are rendered separately (exact whole-token match only).
+    """
+    if not fw_str or str(fw_str).strip() in ("", "None"):
+        return []
+    exclude = exclude or set()
+    tokens = re.split(r"\s*,\s*", str(fw_str).strip())
+    return [t for t in (tok.strip() for tok in tokens) if t and t != "None" and t not in exclude]
 
 
 # ─── Forensic flag badge registry (mirrors flag_descriptions in forensic_engine) ──
@@ -235,25 +254,40 @@ def render_ep_power_curve_module(stock: pd.Series):
     </div>
     """, unsafe_allow_html=True)
 
-    # ── EP Metrics Strip ─────────────────────────────────────────────────
+    # ── EP Metrics Strip — packed HTML flex (no st.columns/st.metric padding) ──
     vel_sign = "+" if ep_vel >= 0 else ""
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(
-        "Economic Profit",
-        f"₹{ep_val:,.0f} Cr",
-        "EP Positive ✅" if ep_positive else "EP Negative ❌",
+    ep_clr  = COLORS["green"] if ep_positive else COLORS["red"]
+    vel_clr = COLORS["green"] if ep_vel > 0 else COLORS["red"]
+
+    def _ep_metric(label: str, value: str, sub: str, val_clr: str, sub_clr: str) -> str:
+        return (
+            f'<div style="flex:1;min-width:120px;background:{COLORS["bg_secondary"]};'
+            f'border:1px solid {COLORS["border"]};border-radius:10px;padding:10px 14px;">'
+            f'<div style="font-size:0.56rem;font-weight:700;color:{COLORS["text_muted"]};'
+            f'text-transform:uppercase;letter-spacing:0.7px;">{_esc(label)}</div>'
+            f'<div style="font-size:1.3rem;font-weight:900;color:{val_clr};'
+            f'line-height:1.15;margin-top:3px;white-space:nowrap;">{_esc(value)}</div>'
+            f'<div style="font-size:0.62rem;font-weight:600;color:{sub_clr};'
+            f'margin-top:2px;white-space:nowrap;">{_esc(sub)}</div>'
+            f'</div>'
+        )
+
+    ep_strip = (
+        _ep_metric("Economic Profit", f"₹{ep_val:,.0f} Cr",
+                   "EP Positive ✅" if ep_positive else "EP Negative ❌",
+                   ep_clr, ep_clr) +
+        _ep_metric("EP Velocity (YoY)", f"{vel_sign}₹{ep_vel:,.0f} Cr",
+                   "Ascending ↑" if ep_vel > 0 else "Descending ↓",
+                   vel_clr, vel_clr) +
+        _ep_metric("Quintile Position", f"Q{ep_q_int}" if ep_q_int else "N/A",
+                   q_label, q_color, q_color) +
+        _ep_metric("EP Trajectory", ep_curve, "28th WCS curve position",
+                   COLORS["blue"], COLORS["text_muted"])
     )
-    c2.metric(
-        "EP Velocity (YoY)",
-        f"{vel_sign}₹{ep_vel:,.0f} Cr",
-        "Ascending ↑" if ep_vel > 0 else "Descending ↓",
+    st.markdown(
+        f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{ep_strip}</div>',
+        unsafe_allow_html=True,
     )
-    c3.metric(
-        "Quintile Position",
-        f"Q{ep_q_int}" if ep_q_int else "N/A",
-        q_label,
-    )
-    c4.metric("EP Trajectory", _esc(ep_curve))
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -695,8 +729,7 @@ def render_guru_frameworks(stock: pd.Series):
     Displays which institutional Guru frameworks the stock passes.
     Reads pre-computed framework flags from scoring_engine — no re-computation.
     """
-    fw_str = stock.get("frameworks_passed", "None") or "None"
-    fw_list = [f.strip() for f in fw_str.split(",") if f.strip() and f.strip() != "None"]
+    fw_list = _parse_frameworks(stock.get("frameworks_passed", "None"))
 
     _FW_META = {
         # Names must match exactly what scoring_engine writes into frameworks_passed column
@@ -1129,18 +1162,19 @@ def render_financial_insights(stock: pd.Series):
                f"FII {fii:.1f}%  ·  DII {dii:.1f}%",
                f"Smart Money: {smart}")
 
-    # ── Render in 2-column layout ──
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(_card("Business Quality", "🏭", bq, COLORS["purple"]),
-                    unsafe_allow_html=True)
-        st.markdown(_card("Valuation", "💰", vl, COLORS["gold"]),
-                    unsafe_allow_html=True)
-    with col2:
-        st.markdown(_card("Cash & Debt Quality", "💵", cd, COLORS["green"]),
-                    unsafe_allow_html=True)
-        st.markdown(_card("Ownership Alignment", "👥", ow, COLORS["blue"]),
-                    unsafe_allow_html=True)
+    # ── Render in a packed responsive 2-col CSS grid (no st.columns gutter padding) ──
+    # auto-fit minmax collapses to 1 column on narrow viewports, 2 on wide — zero wasted space.
+    grid_cards = (
+        _card("Business Quality",    "🏭", bq, COLORS["purple"]) +
+        _card("Cash & Debt Quality", "💵", cd, COLORS["green"])  +
+        _card("Valuation",           "💰", vl, COLORS["gold"])   +
+        _card("Ownership Alignment", "👥", ow, COLORS["blue"])
+    )
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));'
+        f'gap:10px;align-items:start;">{grid_cards}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1195,10 +1229,10 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     if int(_g(stock, "mosl_100x_candidate", 0)) == 1:
         pill_items.append(("🚀 100x Candidate", COLORS["gold"]))
 
+    # Dedicated colour pills above already render these two — exclude them as whole tokens
+    # so "Bruised Blue Chip 29" can never bleed into a generic "Bruised Blue Chip" pill.
     _DEDICATED_FW = {"100x Candidate", "Bruised Blue Chip 29"}
-    fw_str  = stock.get("frameworks_passed", "None") or "None"
-    fw_list = [f.strip() for f in fw_str.split(",")
-               if f.strip() and f.strip() != "None" and f.strip() not in _DEDICATED_FW]
+    fw_list = _parse_frameworks(stock.get("frameworks_passed", "None"), exclude=_DEDICATED_FW)
     for fw in fw_list[:8]:  # cap pills at 8 frameworks to avoid overflow
         pill_items.append((f"🏛️ {_esc(fw)}", COLORS["text_secondary"]))
 
@@ -1674,7 +1708,7 @@ def render_canslim_radar(stock: pd.Series):
                 border-radius:12px;padding:14px 18px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+          <div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">
             O'Neil Momentum Compliance Profile
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
@@ -1710,7 +1744,7 @@ def render_canslim_radar(stock: pd.Series):
             f"<div style='background:{clr}{bg_opacity};border:1px solid {clr}40;"
             f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
             f"<div style='font-size:1.6rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
-            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
             f"white-space:nowrap;'>{_esc(title)}</div>"
             f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>{desc}</div>"
             f"<div style='font-size:1.0rem;margin-top:4px;'>{ico}</div>"
@@ -1828,7 +1862,7 @@ def render_schilit_shield(stock: pd.Series):
             f"<div style='background:{bg};border:1px solid {bdr};border-radius:8px;"
             f"padding:10px;flex:1;min-width:220px;'>"
             f"<div style='display:flex;align-items:center;justify-content:space-between;'>"
-            f"<span style='font-size:0.78rem;font-weight:800;color:#f0f6fc;'>"
+            f"<span style='font-size:0.78rem;font-weight:800;color:#e6edf3;'>"
             f"{_esc(title)}</span>"
             f"<span style='font-size:0.68rem;font-weight:700;color:{clr};"
             f"background:{clr}15;padding:2px 8px;border-radius:12px;'>{ico}</span>"
@@ -1887,7 +1921,7 @@ def render_dorsey_radar(stock: pd.Series):
                 border-radius:12px;padding:14px 18px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+          <div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">
             Pat Dorsey Economic Moat Compliance Profile
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
@@ -1917,7 +1951,7 @@ def render_dorsey_radar(stock: pd.Series):
             f"<div style='background:{clr}{bg_opacity};border:1px solid {clr}40;"
             f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
             f"<div style='font-size:1.6rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
-            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
             f"white-space:nowrap;'>{_esc(title)}</div>"
             f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
             f"{_esc(baseline)}</div>"
@@ -1973,7 +2007,7 @@ def render_outsider_radar(stock: pd.Series):
                 border-radius:12px;padding:14px 18px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+          <div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">
             Thorndike Capital Allocation Compliance Profile
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
@@ -2002,7 +2036,7 @@ def render_outsider_radar(stock: pd.Series):
             f"<div style='background:{clr}{bg_opacity};border:1px solid {clr}40;"
             f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
             f"<div style='font-size:1.6rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
-            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
             f"white-space:nowrap;'>{_esc(title)}</div>"
             f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
             f"{_esc(baseline)}</div>"
@@ -2060,7 +2094,7 @@ def render_marks_radar(stock: pd.Series):
                 border-radius:12px;padding:14px 18px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+          <div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">
             Howard Marks Cycle Defence Compliance Profile
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
@@ -2089,7 +2123,7 @@ def render_marks_radar(stock: pd.Series):
             f"<div style='background:{clr}{bg_opacity};border:1px solid {clr}40;"
             f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
             f"<div style='font-size:1.6rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
-            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
             f"white-space:nowrap;'>{_esc(title)}</div>"
             f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
             f"{_esc(baseline)}</div>"
@@ -2154,7 +2188,7 @@ def render_malik_radar(stock: pd.Series):
                 border-radius:12px;padding:14px 18px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+          <div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">
             Vijay Malik Financial Quality Compliance Profile
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
@@ -2184,7 +2218,7 @@ def render_malik_radar(stock: pd.Series):
             f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
             f"<div style='font-size:1.6rem;font-weight:900;color:{clr_mk};line-height:1.1;'>"
             f"{_esc(letter)}</div>"
-            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
             f"white-space:nowrap;'>{_esc(title)}</div>"
             f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
             f"{_esc(baseline)}</div>"
@@ -2245,7 +2279,7 @@ def render_lynch_radar(stock: pd.Series):
                 border-radius:12px;padding:14px 18px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+          <div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">
             Peter Lynch Fast Grower Tenbagger Discovery Profile
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
@@ -2275,7 +2309,7 @@ def render_lynch_radar(stock: pd.Series):
             f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
             f"<div style='font-size:1.6rem;font-weight:900;color:{clr_ly};line-height:1.1;'>"
             f"{_esc(letter)}</div>"
-            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
             f"white-space:nowrap;'>{_esc(title)}</div>"
             f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
             f"{_esc(baseline)}</div>"
@@ -2337,7 +2371,7 @@ def render_mauboussin_radar(stock: pd.Series):
                 border-radius:12px;padding:14px 18px;margin-bottom:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-size:0.95rem;font-weight:800;color:#f0f6fc;">
+          <div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">
             Mauboussin Price-Implied Expectations (PIE) Audit
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
@@ -2371,7 +2405,7 @@ def render_mauboussin_radar(stock: pd.Series):
             f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
             f"<div style='font-size:1.6rem;font-weight:900;color:{clr_mb};line-height:1.1;'>"
             f"{_esc(letter)}</div>"
-            f"<div style='font-size:0.68rem;font-weight:700;color:#f0f6fc;margin-top:4px;"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
             f"white-space:nowrap;'>{_esc(title)}</div>"
             f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
             f"{_esc(baseline)}</div>"
@@ -2384,45 +2418,51 @@ def render_mauboussin_radar(stock: pd.Series):
         unsafe_allow_html=True,
     )
 
-    # ── Layer 3: Interactive Reverse DCF Expected Value Calculator ───────────
+    # ── Layer 3: Static Reverse-DCF Expected Value Matrix (stateless display) ──
+    # Bloomberg-cockpit contract: this module is a 100% stateless display engine — it must
+    # NOT host interactive widgets (no st.number_input/st.columns) that would mutate global
+    # session / stock-selection state. The probabilistic Reverse-DCF is therefore rendered as
+    # a fixed three-scenario band (Conservative → Base → Bull). Each scenario applies Mauboussin's
+    # Expected Value identity   EV = P(Upside)·Upside% − P(Downside)·Downside%   to a pre-set,
+    # clearly-labelled probability/payoff assumption, so the asymmetry read is fully deterministic.
     st.markdown(
         f"<div style='font-size:0.7rem;font-weight:800;color:{_MAUB_COLOR};"
-        f"text-transform:uppercase;letter-spacing:1px;margin:10px 0 8px 0;'>"
-        f"🧮 Reverse DCF — Expected Value Calculator</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div style='font-size:0.65rem;color:#8b949e;margin-bottom:8px;'>"
-        "Mauboussin Expected Value = P(Upside) × Upside% + P(Downside) × Downside%"
-        "</div>",
+        f"text-transform:uppercase;letter-spacing:1px;margin:10px 0 4px 0;'>"
+        f"🧮 Reverse DCF — Expected Value Matrix</div>"
+        f"<div style='font-size:0.62rem;color:{COLORS['text_muted']};margin-bottom:8px;'>"
+        f"Expected Value = P(Upside) × Upside% − P(Downside) × Downside% "
+        f"· three fixed reference scenarios (stateless)</div>",
         unsafe_allow_html=True,
     )
 
-    _c1, _c2, _c3, _c4 = st.columns(4)
-    with _c1:
-        p_up  = st.number_input("P(Upside) %",   min_value=0.0, max_value=100.0,
-                                value=60.0, step=5.0, key="maub_p_up")
-    with _c2:
-        up_pct = st.number_input("Upside %",      min_value=0.0, max_value=500.0,
-                                 value=40.0, step=5.0, key="maub_up_pct")
-    with _c3:
-        p_dn  = st.number_input("P(Downside) %", min_value=0.0, max_value=100.0,
-                                value=40.0, step=5.0, key="maub_p_dn")
-    with _c4:
-        dn_pct = st.number_input("Downside %",    min_value=0.0, max_value=100.0,
-                                 value=20.0, step=5.0, key="maub_dn_pct")
-
-    ev = (p_up / 100.0 * up_pct) - (p_dn / 100.0 * dn_pct)
-    ev_color = _MAUB_COLOR if ev > 0 else "#e74c3c"
-    ev_label = "POSITIVE EV — Asymmetric Opportunity" if ev > 0 else "NEGATIVE EV — Unfavorable Odds"
+    # (label, P(Upside)%, Upside%, P(Downside)%, Downside%) — fixed reference assumptions.
+    _ev_scenarios = [
+        ("Conservative", 40.0, 25.0, 60.0, 20.0),
+        ("Base Case",    55.0, 40.0, 45.0, 20.0),
+        ("Bull Case",    70.0, 60.0, 30.0, 18.0),
+    ]
+    _ev_tiles = ""
+    for _sc_name, p_up, up_pct, p_dn, dn_pct in _ev_scenarios:
+        ev = (p_up / 100.0 * up_pct) - (p_dn / 100.0 * dn_pct)
+        ev_color = _MAUB_COLOR if ev > 0 else "#e74c3c"
+        ev_verdict = "Asymmetric Opportunity" if ev > 0 else "Unfavorable Odds"
+        _ev_tiles += (
+            f"<div style='flex:1;min-width:150px;background:{COLORS['bg_secondary']};"
+            f"border:1px solid {ev_color}55;border-top:3px solid {ev_color};"
+            f"border-radius:10px;padding:11px 14px;'>"
+            f"<div style='font-size:0.58rem;font-weight:700;color:{COLORS['text_muted']};"
+            f"text-transform:uppercase;letter-spacing:0.7px;'>{_esc(_sc_name)}</div>"
+            f"<div style='font-size:1.5rem;font-weight:900;color:{ev_color};"
+            f"line-height:1.1;margin-top:3px;'>{ev:+.1f}%</div>"
+            f"<div style='font-size:0.58rem;color:{ev_color};font-weight:600;'>"
+            f"Expected Value · {ev_verdict}</div>"
+            f"<div style='font-size:0.56rem;color:{COLORS['text_muted']};margin-top:4px;'>"
+            f"P↑ {p_up:.0f}% × +{up_pct:.0f}% &nbsp;·&nbsp; P↓ {p_dn:.0f}% × −{dn_pct:.0f}%</div>"
+            f"</div>"
+        )
 
     st.markdown(
-        f"<div style='background:#0d1117;border:1px solid {ev_color}40;"
-        f"border-radius:8px;padding:10px 14px;margin-top:8px;'>"
-        f"<span style='font-size:0.7rem;color:#8b949e;'>Expected Value: </span>"
-        f"<strong style='font-size:1.1rem;color:{ev_color};'>{ev:+.1f}%</strong>"
-        f"<span style='font-size:0.65rem;color:{ev_color};margin-left:8px;'>{_esc(ev_label)}</span>"
-        f"</div>",
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;'>{_ev_tiles}</div>",
         unsafe_allow_html=True,
     )
 
