@@ -1227,26 +1227,77 @@ with tabs[3]:
 # TAB 5: CONFIGURATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tabs[4]:
-    st.markdown(f"<div class='sec-head'>⚙️ System Configuration</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='sec-cap'>Current scoring weights and gate thresholds. Modify config.py to adjust.</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sec-head'>⚙️ System Configuration — The Engine Rulebook</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='sec-cap'>Read-only view of the live, deterministic scoring weights and hard "
+        f"gates every stock is measured against. To change them, edit <code>config.py</code> — the "
+        f"single source of truth.</div>",
+        unsafe_allow_html=True,
+    )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Composite Blend Weights**")
-        for k, v in COMPOSITE_WEIGHTS.items():
-            st.markdown(f"- {k.title()}: **{v*100:.0f}%**")
-        st.markdown("**Quality Sub-Weights (6 Layers)**")
-        for k, v in QUALITY_WEIGHTS.items():
-            src = {"moat": "SQGLP", "growth": "SQGLP", "cash": "Coffee Can",
-                   "margin": "Fisher", "balance_sheet": "Baid", "valuation": "Marks+Baid"}
-            st.markdown(f"- {k.replace('_',' ').title()} ({src.get(k,'')}): **{v*100:.0f}%**")
-    with c2:
-        st.markdown("**Hard Gates (10 Criteria)**")
-        for name, cfg in HARD_GATES.items():
-            st.markdown(f"- {cfg['description']}")
-        st.markdown("**Momentum Sub-Weights (CAN-SLIM)**")
-        for k, v in MOMENTUM_WEIGHTS.items():
-            st.markdown(f"- {k.replace('_',' ').title()}: **{v*100:.0f}%**")
+    # ── Presentation helpers (pure display — no data mutation) ──────────────
+    def _cfg_wbar(label: str, frac: float, color: str, note: str = "") -> str:
+        """A labelled horizontal weight bar, clamped to [0,100]%."""
+        w = max(0.0, min(100.0, float(frac) * 100.0))
+        _note = (f'<span style="color:{COLORS["text_muted"]};font-weight:400;"> · {note}</span>'
+                 if note else "")
+        return (
+            f'<div style="margin-bottom:9px;">'
+            f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;margin-bottom:3px;">'
+            f'<span style="color:{COLORS["text_secondary"]};font-weight:600;">{label}{_note}</span>'
+            f'<span style="color:{color};font-weight:800;">{frac*100:.0f}%</span></div>'
+            f'<div style="background:{COLORS["bg_tertiary"]};border-radius:4px;height:6px;overflow:hidden;">'
+            f'<div style="width:{w:.0f}%;height:6px;border-radius:4px;background:{color};"></div></div>'
+            f'</div>'
+        )
+
+    def _cfg_card(title: str, icon: str, body_html: str, accent: str) -> str:
+        return (
+            f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
+            f'border-left:3px solid {accent};border-radius:10px;padding:14px 16px;margin-bottom:12px;">'
+            f'<div style="font-size:0.66rem;font-weight:800;color:{accent};text-transform:uppercase;'
+            f'letter-spacing:1.2px;margin-bottom:10px;">{icon} &nbsp;{title}</div>{body_html}</div>'
+        )
+
+    _q_src = {"moat": "SQGLP", "growth": "SQGLP", "cash": "Coffee Can",
+              "margin": "Fisher", "balance_sheet": "Baid", "valuation": "Marks+Baid"}
+    _q_clr = {"moat": COLORS["purple"], "growth": COLORS["green"], "cash": COLORS["blue"],
+              "margin": COLORS["orange"], "balance_sheet": COLORS["gold"], "valuation": COLORS["cyan"]}
+
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        _qbody = "".join(
+            _cfg_wbar(k.replace("_", " ").title(), v, _q_clr.get(k, COLORS["blue"]), _q_src.get(k, ""))
+            for k, v in QUALITY_WEIGHTS.items()
+        )
+        st.markdown(_cfg_card("Quality Sub-Weights · 6 Layers", "🏭", _qbody, COLORS["purple"]),
+                    unsafe_allow_html=True)
+    with cc2:
+        _mbody = "".join(
+            _cfg_wbar(k.replace("_", " ").title(), v, COLORS["orange"])
+            for k, v in MOMENTUM_WEIGHTS.items()
+        )
+        _mbody += (
+            f'<div style="border-top:1px solid {COLORS["border"]};margin-top:8px;padding-top:10px;">'
+            + _cfg_wbar("Governance Blend (composite)", COMPOSITE_WEIGHTS["governance"], COLORS["gold"])
+            + '</div>'
+        )
+        st.markdown(_cfg_card("Momentum Sub-Weights · CAN-SLIM", "⚡", _mbody, COLORS["orange"]),
+                    unsafe_allow_html=True)
+
+    # Hard gates — clean grid of pass-criteria chips
+    _gate_cells = "".join(
+        f'<div style="flex:1;min-width:210px;background:{COLORS["bg_tertiary"]};'
+        f'border:1px solid {COLORS["border"]};border-radius:8px;padding:9px 12px;">'
+        f'<span style="color:{COLORS["green"]};font-size:0.82rem;font-weight:800;">✓</span> '
+        f'<span style="color:{COLORS["text_secondary"]};font-size:0.71rem;">{cfg["description"]}</span></div>'
+        for _name, cfg in HARD_GATES.items()
+    )
+    st.markdown(
+        _cfg_card(f"Hard Gates · {len(HARD_GATES)} Criteria — Every Stock Must Pass ALL", "🚨",
+                  f'<div style="display:flex;gap:6px;flex-wrap:wrap;">{_gate_cells}</div>', COLORS["red"]),
+        unsafe_allow_html=True,
+    )
 
     # ── MARKS CYCLE TEMPERATURE GAUGE (standalone qualitative macro lens) ──
     # Deliberately display-only: a subjective human cycle read must NOT re-rank the deterministic,
@@ -1326,20 +1377,51 @@ with tabs[4]:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── BAID SELL TRIGGERS INFO ──
+    # ── SYSTEM RISK MONITORS (Baid Sell Triggers + Mean Reversion) ──────────
     st.markdown("---")
-    st.markdown(f"<div class='sec-head'>🚨 Baid Sell Trigger Rules</div>", unsafe_allow_html=True)
-    sell_alert_count = int(df.get("sell_alert_any", pd.Series(0)).sum())
-    st.info(f"**{sell_alert_count}** stocks currently have active sell alerts.")
-    for trigger_name, trigger_cfg in BAID_SELL_TRIGGERS.items():
-        st.markdown(f"- **{trigger_name.replace('_', ' ').title()}:** {trigger_cfg['description']}")
+    st.markdown(f"<div class='sec-head'>🛡️ System Risk Monitors</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='sec-cap'>Live, universe-wide risk counts computed by the engine this run.</div>",
+        unsafe_allow_html=True,
+    )
+    _sell_cnt = int(df.get("sell_alert_any", pd.Series(0, dtype=int)).fillna(0).sum())
+    _mr_cnt   = int(df.get("mean_reversion_risk", pd.Series(0, dtype=int)).fillna(0).sum())
 
-    # ── MEAN REVERSION INFO ──
-    st.markdown("---")
-    st.markdown(f"<div class='sec-head'>📉 Mean Reversion Risk (Marks)</div>", unsafe_allow_html=True)
-    mr_count = int(df.get("mean_reversion_risk", pd.Series(0)).sum())
-    st.info(f"**{mr_count}** stocks flagged with cyclical peak margins (OPM or NPM > {MEAN_REVERSION['opm_spike_threshold']}× their 5Y median).")
-    st.markdown(f"Quality score penalty: **{(1-MEAN_REVERSION['penalty_factor'])*100:.0f}%** reduction for flagged stocks.")
+    rm1, rm2 = st.columns(2)
+    with rm1:
+        _baid_clr  = COLORS["red"] if _sell_cnt else COLORS["green"]
+        _baid_body = (
+            f'<div style="font-size:1.7rem;font-weight:900;color:{_baid_clr};line-height:1;">'
+            f'{_sell_cnt}<span style="font-size:0.7rem;color:{COLORS["text_muted"]};font-weight:600;">'
+            f'&nbsp;stocks flagged</span></div>'
+            f'<div style="margin-top:8px;">'
+            + "".join(
+                f'<div style="font-size:0.7rem;color:{COLORS["text_secondary"]};padding:3px 0;'
+                f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+                f'<strong style="color:{COLORS["text_primary"]};">{n.replace("_"," ").title()}</strong> — '
+                f'{c["description"]}</div>'
+                for n, c in BAID_SELL_TRIGGERS.items()
+            )
+            + '</div>'
+        )
+        st.markdown(_cfg_card("Baid Sell Triggers", "📉", _baid_body, COLORS["red"]),
+                    unsafe_allow_html=True)
+    with rm2:
+        _mr_clr  = COLORS["gold"] if _mr_cnt else COLORS["green"]
+        _mr_body = (
+            f'<div style="font-size:1.7rem;font-weight:900;color:{_mr_clr};line-height:1;">'
+            f'{_mr_cnt}<span style="font-size:0.7rem;color:{COLORS["text_muted"]};font-weight:600;">'
+            f'&nbsp;at cyclical peak</span></div>'
+            f'<div style="font-size:0.72rem;color:{COLORS["text_secondary"]};margin-top:8px;">'
+            f'OPM or NPM &gt; {MEAN_REVERSION["opm_spike_threshold"]}× their 5Y median — current '
+            f'margins are likely unsustainable (Marks: extremes revert).</div>'
+            f'<div style="font-size:0.72rem;color:{COLORS["text_muted"]};margin-top:8px;'
+            f'border-top:1px solid {COLORS["border"]};padding-top:8px;">Quality-score penalty applied: '
+            f'<strong style="color:{COLORS["gold"]};">−{(1-MEAN_REVERSION["penalty_factor"])*100:.0f}%</strong> '
+            f'for each flagged stock.</div>'
+        )
+        st.markdown(_cfg_card("Mean Reversion Risk (Marks)", "🌡️", _mr_body, COLORS["gold"]),
+                    unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown(f"""
