@@ -57,9 +57,12 @@ _SECTOR_DSO_THRESHOLDS: dict = {
 }
 _DEFAULT_DSO_THRESHOLD: int = 75   # fallback for all sectors not in the map above
 
-# ── Per-Sector Depreciation Rate Estimates (BUG #8 Fix) ────────────────────────────────
-# Replaces the flat 0.10 multiplier in rf_capex_mirage with sector-accurate asset life rates.
-# Used as denominator to estimate annual depreciation of existing asset base.
+# ── Per-Sector Depreciation Rate Estimates ─────────────────────────────────────────────────
+# CONSUMER: Schilit Checker 1 Signal 6 only (compute_schilit_forensic_score → _dep_rate_manip).
+#   Signal 6: FA grew >5% YoY but dep_rate (D&A/FA from data_engine) fell >20% → life extension fingerprint.
+#   These rates are NOT used by rf_capex_mirage (Flag 22) as of 2026-05-31 refactor — that flag
+#   now consumes dep_rate_1yb (exact accounting column) directly from data_engine.py.
+#
 # Sources: Indian Companies Act Schedule II useful lives + industry standards.
 # Sectors absent from this map fall back to _DEFAULT_DEP_RATE (10%).
 #
@@ -440,10 +443,15 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # ratio < 0.5 is NOT investing enough to sustain that growth. This reveals a deferred-maintenance
     # time bomb: the asset base is silently aging while revenues appear to scale.
     #
-    # Formula: capex_net_ratio = max(0, FA - FA_1YB) / (FA_1YB × 0.10)
-    # - Numerator: actual net new capital deployed (0 if FA flat or declining)
-    # - Denominator: estimated annual depreciation of existing asset base
-    # - Ratio < 0.5 means less than half of depreciated assets are being replaced
+    # Formula (refactored 2026-05-31): capex_net_ratio = max(0, FA − FA_1YB) / depr_exact_cm
+    #   depr_exact_cm = (dep_rate_1yb / 100) × fixed_assets_1yb
+    #     dep_rate_1yb  : D&A as % of fixed assets, 1 year back, from data_engine.py
+    #                     Computed via exact accounting identity: (EBITDA_1yb − EBIT_1yb) / FA_1yb × 100
+    #                     This replaces the prior _SECTOR_DEP_RATES macro lookup which used static
+    #                     schedule-II useful-life rates — less precise than reported D&A figures.
+    #   Numerator   : actual net new capital deployed (clipped to 0 when FA flat or declining)
+    #   Denominator : exact annual depreciation charge on the prior-year asset base
+    #   Ratio < 0.5 : less than half of depreciated assets are being replaced
     #
     # EXCLUSION: IT/Software, Pharma, Healthcare, and Financial companies are asset-light —
     # high revenue with low capex is their COMPETITIVE ADVANTAGE, not a red flag.
@@ -452,30 +460,27 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     _is_fin_cm = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
     _is_capital_intensive = ~_is_svc_cm & ~_is_fin_cm
 
-    # Sector-aware dep rate (BUG #8 Fix): replaces the flat 0.10 multiplier.
-    # Uses _SECTOR_DEP_RATES module-level dict — maps each sector to its Schedule II
-    # asset useful life rate. Sectors absent from the dict fall back to 0.10 (default).
-    # Examples:
-    #   IT-Software  (dep=0.30): depr_est = FA × 0.30 → harder to trigger (asset-light
-    #     sector is already excluded by _is_capital_intensive; included for arithmetic
-    #     completeness, never reaches rf_capex_mirage assignment)
-    #   Power Infra  (dep=0.04): depr_est = FA × 0.04 → smaller denominator → capex ratio
-    #     more accurate for long-life infrastructure assets
-    #   Telecom      (dep=0.18): depr_est = FA × 0.18 → correctly flags under-investment
-    #     in short-life network equipment
-    _dep_mult_cm   = df.get("sector", pd.Series("Unknown", index=df.index)).fillna("Unknown").map(_SECTOR_DEP_RATES).fillna(_DEFAULT_DEP_RATE)
-    _depr_est_cm   = df["fixed_assets_1yb"].fillna(0) * _dep_mult_cm
-    _capex_net_cm  = (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)).clip(lower=0)
+    # Exact depreciation denominator: sourced from dep_rate_1yb (data_engine accounting identity).
+    # dep_rate_1yb is in percentage units (e.g. 10.0 = 10%). Convert to decimal then × FA_1yb.
+    # NaN guard: dep_rate_1yb is NaN for asset-light stocks (FA=0) — safe_denom protects division.
+    _dep_rate_1yb_col  = df.get("dep_rate_1yb", pd.Series(np.nan, index=df.index))
+    _depr_exact_cm     = (_dep_rate_1yb_col.fillna(0) / 100.0) * df["fixed_assets_1yb"].fillna(0)
+    _capex_net_cm      = (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)).clip(lower=0)
+
+    # Zero-denominator protection: np.where(denom > 0.0, num / denom, np.nan)
+    # NaN result → flag assignment condition is False → rf_capex_mirage stays 0 (safe default).
     _capex_ratio_cm = np.where(
-        _depr_est_cm > 0,
-        _capex_net_cm / _depr_est_cm,
-        1.0  # safe default: unknown depreciation base → neutral (1.0 = replacing all)
+        _depr_exact_cm > 0.0,
+        _capex_net_cm / _depr_exact_cm,
+        np.nan  # unknown depreciation base → do not flag
     )
     df["rf_capex_mirage"] = np.where(
-        _is_capital_intensive & df["rev_gr_yoy"].notna() & (_depr_est_cm > 0),
+        _is_capital_intensive
+        & df["rev_gr_yoy"].notna()
+        & (_depr_exact_cm > 0.0),
         (
-            (df["rev_gr_yoy"] > 20) &
-            (_capex_ratio_cm < 0.5)
+            (df["rev_gr_yoy"] > 20)
+            & (pd.Series(_capex_ratio_cm, index=df.index).fillna(1.0) < 0.5)
         ).astype(int),
         0
     )
