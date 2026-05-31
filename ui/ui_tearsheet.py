@@ -1189,13 +1189,18 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         pill_items.append(("🌊 Tsunami", COLORS["purple"]))
     if int(_g(stock, "net_debt_negative", 0)) == 1:
         pill_items.append(("💰 Net Cash", COLORS["green"]))
+    # Dedicated colour pills for these two — the generic loop below skips them (no duplicate display).
     if int(_g(stock, "bruised_blue_chip_29", 0)) == 1:
         pill_items.append(("💙 Bruised Blue Chip", COLORS["blue"]))
+    if int(_g(stock, "mosl_100x_candidate", 0)) == 1:
+        pill_items.append(("🚀 100x Candidate", COLORS["gold"]))
 
+    _DEDICATED_FW = {"100x Candidate", "Bruised Blue Chip 29"}
     fw_str  = stock.get("frameworks_passed", "None") or "None"
-    fw_list = [f.strip() for f in fw_str.split(",") if f.strip() and f.strip() != "None"]
+    fw_list = [f.strip() for f in fw_str.split(",")
+               if f.strip() and f.strip() != "None" and f.strip() not in _DEDICATED_FW]
     for fw in fw_list[:8]:  # cap pills at 8 frameworks to avoid overflow
-        pill_items.append((f"🏛️ {fw}", COLORS["text_secondary"]))
+        pill_items.append((f"🏛️ {_esc(fw)}", COLORS["text_secondary"]))
 
     pills_html = "".join(
         f'<span style="display:inline-block;padding:3px 10px;border-radius:20px;'
