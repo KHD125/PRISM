@@ -731,45 +731,54 @@ def render_guru_frameworks(stock: pd.Series):
     """
     fw_list = _parse_frameworks(stock.get("frameworks_passed", "None"))
 
+    # ── 37-FRAMEWORK EMOJI MATRIX — absolute zero-duplicate uniqueness contract ──────
+    # Every emoji below is unique across all 37 frameworks (visual-sanitization mandate).
+    # Names must match exactly what scoring_engine writes into frameworks_passed column.
+    # NOTE: "Fisher Scalability" was moved 📡 → 📶 because CAN SLIM now owns 📡 (radar);
+    #        📶 (ascending signal bars) cleanly reads as operating-leverage scaling.
     _FW_META = {
-        # Names must match exactly what scoring_engine writes into frameworks_passed column
-        "Coffee Can":              (COLORS["gold"],   "☕", "ROCE ≥15% for 10Y + Rev CAGR ≥10% — Mukherjea"),
-        "QGLP":                    (COLORS["purple"], "🏆", "Quality + Growth + Longevity + Price — Raamdeo"),
-        "Lynch Dream":             (COLORS["green"],  "📈", "PEG ≤1.0 + Rev outpacing costs — Peter Lynch"),
-        "Magic Formula":           (COLORS["gold"],   "🧮", "High ROCE + High Earnings Yield — Joel Greenblatt"),
-        "SMILE":                   (COLORS["green"],  "😊", "Small cap + Moat + Institutional + Longevity + Earnings"),
-        "CAN SLIM":                (COLORS["blue"],   "📊", "O'Neil: EPS + Revenue + Institutional + Near High"),
+        # ── 🏛️ Motilal Oswal Wealth Creation Frameworks ──
+        "QGLP":                    (COLORS["purple"], "🥇", "Quality + Growth + Longevity + Price — Raamdeo"),
+        "MOSL Wealth Creator":     (COLORS["gold"],   "🌟", "Raamdeo's Wealth Creator criteria from annual WCS"),
+        "SQGLP Century Stock":     (COLORS["gold"],   "👑", "MOSL 19th: ≥4 of 5 SQGLP pillars (Size·Quality·Growth·Longevity·Price)"),
+        "100x Candidate":          (COLORS["gold"],   "🐘", "17th WCS Mouse-to-Elephant: PAT CAGR ≥20% + ROCE ≥20% + mcap ≤₹15k Cr + D/E <0.5 + ROE ≥15%"),
         "Fallen Quality":          (COLORS["cyan"],   "🩹", "All-cap fallen quality: ROCE≥15% + PAT CAGR≥10%, >40% off 52WH, cheap vs own 10Y PE"),
-        "EP Improver":             (COLORS["green"],  "📈", "Economic Profit expanding — moving up Power Curve"),
+        "CAP-GAP Compounder":      (COLORS["green"],  "📐", "Capital efficiency gap: ROCE expanding vs sector peers"),
+        "Economic Moat":           (COLORS["purple"], "🏰", "Morningstar wide-moat: ROCE > WACC sustained 10Y+"),
+        "Blue Chip Quality":       (COLORS["blue"],   "💙", "MOSL 16th: 10Y ROE ≥15% + dividend payout ≥20% + PAT no-crash consistency + ≥5M shares"),
+        "Consistent in Volatile":  (COLORS["orange"], "🌪️", "27th WCS: consistent compounder in volatile sector — 19% CAGR"),
+        "EP Hockey Stick":         (COLORS["green"],  "🏒", "28th WCS: Economic Profit positive AND rising YoY — ascending the Power Curve"),
+        "Bruised Blue Chip 29":    (COLORS["blue"],   "🏛️", "Elite ROCE + large-cap at P/B ≤2× — 29th WCS"),
+        "Multi-Trillion Cap":      (COLORS["purple"], "🌐", "Sunrise sector at compounding velocity — 30th WCS"),
+        # ── 📚 Fundamental & Cash Quality Moats ──
+        "Coffee Can":              (COLORS["gold"],   "☕", "ROCE ≥15% for 10Y + Rev CAGR ≥10% — Mukherjea"),
+        "Diamond":                 (COLORS["cyan"],   "💎", "Deep value: Earnings Yield ≥ G-Sec + clean accounts"),
         "Peaceful Investing":      (COLORS["gold"],   "🕊️", "Vijay Malik: NFAT + self-funded growth + clean accounts"),
         "Unusual Billionaires":    (COLORS["purple"], "💰", "Saurabh Mukherjea: promoter-run compounders"),
-        "Fisher Quality":          (COLORS["green"],  "🎣", "Phil Fisher 15-point scuttlebutt quality check"),
-        "Fisher Scalability":      (COLORS["purple"], "📡", "Fisher operating leverage inflection — Rev runway + OpLev + Pricing + Anti-dilution"),
-        "100-Bagger":              (COLORS["gold"],   "💯", "Mayer: owner-operator + small + high ROCE + low payout"),
-        "Diamond":                 (COLORS["cyan"],   "💎", "Deep value: Earnings Yield ≥ G-Sec + clean accounts"),
-        "Wide Moat":               (COLORS["purple"], "🏰", "Pat Dorsey: structural moat with ROCE expanding"),
-        "Outsider CEO":            (COLORS["orange"], "🎯", "Thorndike: buybacks + decentralised capital allocation"),
+        "Long Game Quality":       (COLORS["purple"], "⏳", "10Y consistent PAT CAGR ≥ 15% + low volatility"),
+        "Baid Compounder":         (COLORS["green"],  "📚", "Gautam Baid: 7Y ROCE ≥ 15% + 10Y Rev CAGR ≥ 12% + no-stumble consistency"),
+        "Basant 30% Club":         (COLORS["gold"],   "🏅", "Basant Maheshwari: PAT CAGR ≥ 30% for 5Y + promoter"),
         "Quality Compounder":      (COLORS["green"],  "⭐", "ROCE ≥ 20% + PAT CAGR ≥ 15% for 10Y — proven compounder"),
+        # ── ⚡ Technical Momentum & Growth Sieves ──
+        "CAN SLIM":                (COLORS["blue"],   "📡", "O'Neil: EPS + Revenue + Institutional + Near High"),
+        "SEPA Momentum":           (COLORS["blue"],   "⚡", "Mark Minervini: Stage 2 + RS + Earnings acceleration"),
+        "Quality Momentum":        (COLORS["green"],  "🚀", "High quality fundamentals + price momentum confluence"),
+        "Lynch Dream":             (COLORS["green"],  "👓", "PEG ≤1.0 + Rev outpacing costs — Peter Lynch"),
+        "EP Improver":             (COLORS["green"],  "📈", "Economic Profit expanding — moving up Power Curve"),
+        "SMILE":                   (COLORS["green"],  "😊", "Small cap + Moat + Institutional + Longevity + Earnings"),
+        # ── 🛡️ Valuation, Capital Allocation & System Defense Shields ──
+        "Magic Formula":           (COLORS["gold"],   "🧮", "High ROCE + High Earnings Yield — Joel Greenblatt"),
         "Dhandho Asymmetry":       (COLORS["gold"],   "🎲", "Pabrai: Heads I win, tails I don't lose much"),
         "Parikh Contrarian":       (COLORS["orange"], "🔄", "Rajeev Parikh: contrarian with forensic clean bill"),
-        "Baid Compounder":         (COLORS["green"],  "📚", "Gautam Baid: 7Y ROCE ≥ 15% + 10Y Rev CAGR ≥ 12% + no-stumble consistency"),
-        "Long Game Quality":       (COLORS["purple"], "⏳", "10Y consistent PAT CAGR ≥ 15% + low volatility"),
-        "SEPA Momentum":           (COLORS["blue"],   "⚡", "Mark Minervini: Stage 2 + RS + Earnings acceleration"),
-        "Basant 30% Club":         (COLORS["gold"],   "🏅", "Basant Maheshwari: PAT CAGR ≥ 30% for 5Y + promoter"),
-        "Quality Momentum":        (COLORS["green"],  "🚀", "High quality fundamentals + price momentum confluence"),
-        "MOSL Wealth Creator":     (COLORS["gold"],   "🌟", "Raamdeo's Wealth Creator criteria from annual WCS"),
-        "Economic Moat":           (COLORS["purple"], "🏰", "Morningstar wide-moat: ROCE > WACC sustained 10Y+"),
-        "Blue Chip Quality":       (COLORS["blue"],   "💎", "Large-cap ≥ ₹20,000 Cr + ROCE ≥ 15% + clean accounts"),
-        "SQGLP Century Stock":     (COLORS["gold"],   "💯", "Epoch 4 SQGLP: all 5 pillars + Mid/Small cap entry"),
-        "CAP-GAP Compounder":      (COLORS["green"],  "📐", "Capital efficiency gap: ROCE expanding vs sector peers"),
-        "Consistent in Volatile":  (COLORS["orange"], "🌊", "27th WCS: consistent compounder in volatile sector — 19% CAGR"),
-        "EP Hockey Stick":         (COLORS["green"],  "🚀", "Q2/Q3 ascending EP Power Curve — 28th WCS"),
-        "Bruised Blue Chip 29":    (COLORS["blue"],   "💙", "Elite ROCE + large-cap at P/B ≤2× — 29th WCS"),
-        "Multi-Trillion Cap":      (COLORS["purple"], "🌐", "Sunrise sector at compounding velocity — 30th WCS"),
-        "100x Candidate":          (COLORS["gold"],   "🚀", "17th WCS Mouse-to-Elephant: PAT CAGR ≥20% + ROCE ≥20% + mcap ≤₹15k Cr + D/E <0.5 + ROE ≥15%"),
+        "Wide Moat":               (COLORS["purple"], "🌊", "Pat Dorsey: structural moat with ROCE expanding"),
+        "Outsider CEO":            (COLORS["orange"], "🎯", "Thorndike: buybacks + decentralised capital allocation"),
         "Expectations Matrix":     (COLORS["purple"], "🔮", "Mauboussin PIE: implied CAP realistic + treadmill safe + operating leverage intact"),
         "Financial Shenanigans":   (COLORS["red"],    "🕵️", "Schilit clean bill — passes accounting-manipulation forensic perimeter"),
         "Marks Cycle Shield":      (COLORS["cyan"],   "🛡️", "Howard Marks: not at cyclical-peak margins; mean-reversion risk low"),
+        # ── 🎣 Fisher dual-engine + Mayer 100-Bagger (not in the 34-row matrix; kept unique) ──
+        "Fisher Quality":          (COLORS["green"],  "🎣", "Phil Fisher 15-point scuttlebutt quality check"),
+        "Fisher Scalability":      (COLORS["purple"], "📶", "Fisher operating leverage inflection — Rev runway + OpLev + Pricing + Anti-dilution"),
+        "100-Bagger":              (COLORS["gold"],   "💯", "Mayer: owner-operator + small + high ROCE + low payout"),
     }
 
     if not fw_list:
@@ -1225,9 +1234,9 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         pill_items.append(("💰 Net Cash", COLORS["green"]))
     # Dedicated colour pills for these two — the generic loop below skips them (no duplicate display).
     if int(_g(stock, "bruised_blue_chip_29", 0)) == 1:
-        pill_items.append(("💙 Bruised Blue Chip", COLORS["blue"]))
+        pill_items.append(("🏛️ Bruised Blue Chip", COLORS["blue"]))
     if int(_g(stock, "mosl_100x_candidate", 0)) == 1:
-        pill_items.append(("🚀 100x Candidate", COLORS["gold"]))
+        pill_items.append(("🐘 100x Candidate", COLORS["gold"]))
 
     # Dedicated colour pills above already render these two — exclude them as whole tokens
     # so "Bruised Blue Chip 29" can never bleed into a generic "Bruised Blue Chip" pill.
@@ -1661,6 +1670,19 @@ def render_raw_signals(stock: pd.Series):
         _cell("Market Regime",    stock.get("market_regime", "—") or "—", "")
     )
 
+    # SEPA Momentum pillars (Mark Minervini, Framework 21)
+    _section("⚡ SEPA Momentum Pillars", COLORS["blue"],
+        _cell("T — Trend Tmpl",   "✅" if g("sepa_trend_template") == 1 else "❌", "") +
+        _cell("A — ADX ≥20",      "✅" if g("sepa_adx_confirmed")  == 1 else "❌", "") +
+        _cell("L — Low Base",     "✅" if g("sepa_low_base")       == 1 else "❌", "") +
+        _cell("R — RS Aligned",   "✅" if g("sepa_rs_confirmed")   == 1 else "❌", "") +
+        _cell("E — Earnings",     "✅" if g("sepa_earnings_fuel")  == 1 else "❌", "") +
+        _cell("I — Institutional","✅" if g("sepa_institutional")  == 1 else "❌", "") +
+        _cell("V — VCP Bonus",    "⭐" if g("sepa_vcp_dryup")      == 1 else "⏳", "") +
+        _cell("SEPA Score",       g("sepa_score"), "{:.0f}/7") +
+        _cell("SEPA Pass",        "Yes ✅" if g("sepa_pass") == 1 else "No", "")
+    )
+
 
 # ═══════════════════════════════════════════════════════════════
 # CAN SLIM® TACTICAL MOMENTUM RADAR — O'Neil
@@ -1873,6 +1895,127 @@ def render_schilit_shield(stock: pd.Series):
 
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{cells_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# MARK MINERVINI SEPA MOMENTUM RADAR — 7-Pillar Technical-Momentum Audit
+# ═══════════════════════════════════════════════════════════════
+
+def render_sepa_radar(stock: pd.Series):
+    """
+    Renders Mark Minervini's SEPA Momentum 7-pillar technical-momentum audit card.
+    PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
+    Zero threshold re-computation; zero scoring logic; immune to parameter drift.
+    Source: docs/sepa_momentum_specs.json v1.0-sepa-momentum-codex.
+    Pillars (T/A/L/R/E/I hard gates + V score bonus):
+      T — Trend Template:  sepa_trend_template (5-pt Minervini Trend Template ≥ 4)
+      A — ADX Confirmed:   sepa_adx_confirmed (ADX 14W ≥ 20 trend strength)
+      L — Low Base:        sepa_low_base (≥ 30% above 52-week low — Criterion 6)
+      R — RS Aligned:      sepa_rs_confirmed (all 3 CRS timeframes positive — Criterion 8)
+      E — Earnings Fuel:   sepa_earnings_fuel (EPS ≥25% + Rev ≥20% + ROE ≥17%)
+      I — Institutional:   sepa_institutional (FII or DII stake increasing QoQ)
+      V — VCP Volume:      sepa_vcp_dryup (BONUS — 10D vol < 50D vol; never a hard gate)
+    """
+    st.markdown("<div class='sec-head'>⚡ Mark Minervini — SEPA Momentum Radar</div>",
+                unsafe_allow_html=True)
+
+    s_pass  = int(_g(stock, "sepa_pass",  0))
+    s_score = int(_g(stock, "sepa_score", 0))
+
+    # 6 hard-gate pillars (T/A/L/R/E/I) — green pass / red fail
+    hard_pillars = [
+        ("T", "Trend Template",
+         int(_g(stock, "sepa_trend_template", 0)) == 1,
+         "Stage 2 MA Stacking: 50D > 150D > 200D all rising (C1–C5)"),
+        ("A", "ADX Confirmed",
+         int(_g(stock, "sepa_adx_confirmed", 0)) == 1,
+         "Trend Strength Gate: ADX 14W ≥ 20 — confirmed directional trend"),
+        ("L", "Low Base",
+         int(_g(stock, "sepa_low_base", 0)) == 1,
+         "Breakout Foundation: Price ≥ 30% above 52-week low (C6)"),
+        ("R", "RS Aligned",
+         int(_g(stock, "sepa_rs_confirmed", 0)) == 1,
+         "Relative Strength: All 3 CRS timeframes beating Nifty 500 (C8)"),
+        ("E", "Earnings Fuel",
+         int(_g(stock, "sepa_earnings_fuel", 0)) == 1,
+         "Fundamental Acceleration: EPS ≥25% + Rev ≥20% + ROE ≥17%"),
+        ("I", "Institutional",
+         int(_g(stock, "sepa_institutional", 0)) == 1,
+         "Smart Money Entering: FII or DII quarterly stake increasing (REQ 7)"),
+    ]
+
+    _SEPA_BLUE = "#58a6ff"
+    hdr_color  = _SEPA_BLUE if s_pass else COLORS["text_muted"]
+    status_msg = "SEPA MOMENTUM CERTIFIED" if s_pass else "SEPA Criteria Not Met"
+
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0d1117 0%,#0a1422 100%);
+                border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
+                border-radius:12px;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">
+            Minervini SEPA Specific Entry Point Profile
+          </div>
+          <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Status: <strong style="color:{hdr_color};">{_esc(status_msg)}</strong>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
+            {s_score}
+            <span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 7</span>
+          </div>
+          <div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;
+                      letter-spacing:0.5px;margin-top:2px;">SEPA Pillars (6 gates + VCP bonus)</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _sp_grid = ""
+    for letter, title, passed, baseline in hard_pillars:
+        clr_sp = _SEPA_BLUE if passed else "#f85149"
+        bg_sp  = "18" if passed else "08"
+        ico_sp = "✅" if passed else "❌"
+        _sp_grid += (
+            f"<div style='background:{clr_sp}{bg_sp};border:1px solid {clr_sp}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:{clr_sp};line-height:1.1;'>"
+            f"{_esc(letter)}</div>"
+            f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
+            f"white-space:nowrap;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
+            f"{_esc(baseline)}</div>"
+            f"<div style='font-size:1.0rem;margin-top:4px;'>{ico_sp}</div>"
+            f"</div>"
+        )
+
+    # Pillar V — VCP Volume (SCORE BONUS): never shown as a red fail.
+    # Active (1) → green ⭐ Setup Active. Not yet (0) → amber ⏳ Forming watch signal.
+    _vcp_on  = int(_g(stock, "sepa_vcp_dryup", 0)) == 1
+    clr_v    = "#3fb950" if _vcp_on else "#e3b341"   # green active / amber forming (NOT red)
+    bg_v     = "18" if _vcp_on else "12"
+    ico_v    = "⭐" if _vcp_on else "⏳"
+    sub_v    = ("Setup Active: 10D avg volume < 50D avg — supply exhaustion in base"
+                if _vcp_on else
+                "Forming — add to watchlist (VCP not yet contracting; bonus, not required)")
+    _sp_grid += (
+        f"<div style='background:{clr_v}{bg_v};border:1px dashed {clr_v}55;"
+        f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
+        f"<div style='font-size:1.6rem;font-weight:900;color:{clr_v};line-height:1.1;'>V</div>"
+        f"<div style='font-size:0.68rem;font-weight:700;color:#e6edf3;margin-top:4px;"
+        f"white-space:nowrap;'>VCP Volume</div>"
+        f"<div style='font-size:0.58rem;color:#8b949e;margin-top:2px;line-height:1.2;'>"
+        f"{_esc(sub_v)}</div>"
+        f"<div style='font-size:1.0rem;margin-top:4px;'>{ico_v}</div>"
+        f"</div>"
+    )
+
+    st.markdown(
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{_sp_grid}</div>",
         unsafe_allow_html=True,
     )
 
