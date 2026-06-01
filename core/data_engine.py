@@ -242,23 +242,28 @@ TECHNICAL_COLS = {
     "CRS Vs Nifty 500 50D": "crs_50d",
     "CRS Vs Nifty 500 52W": "crs_52w",
     "CRS Vs Nifty 500 26W": "crs_26w",
-    # TREND GATES
-    "ADX 14W": "adx_14w",
-    "SMA 200D": "sma_200d",
+    # TREND GATES — MA stacking + trend strength
+    "ADX 14W":   "adx_14w",
+    "SMA 200D":  "sma_200d",   # Criterion 1: price > 200D MA (long-term trend gate)
+    "SMA 50D":   "sma_50d",    # Criterion 5: 50D > 150D + 200D (right stacking)
+    "SMA 30W":   "sma_30w",    # Criterion 2+3: price > 150D MA; 150D > 200D (30W × 5 = 150 trading days)
     # MOMENTUM CONFIRMATION
     "RSI 14D": "rsi_14d",
     "Returns Vs Nifty 500 3M": "ret_vs_n500_3m",
     "Returns Vs Nifty 500 6M": "ret_vs_n500_6m",
     "Returns Vs Industry 1Y": "ret_vs_industry_1y",
     # BREAKOUT PROXIMITY
-    "52WH Distance": "dist_52wh",
-    "52WH Distance Days": "dist_52wh_days",
-    "13WH Distance": "dist_13wh",
-    "Breakout Window": "breakout_window",
-    # VOLUME — institutional entry detector + liquidity gate
-    "Volume": "volume",
-    "Volume SMA 5D":  "vol_sma_5d",   # VCP dryup check: 5D avg < 20D avg = volume contracting in base
-    "Volume SMA 20D": "vol_sma_20d",
+    "52WH Distance":     "dist_52wh",
+    "52WL Distance":     "dist_52wl",   # Criterion 6: price ≥ 30% above 52-week low
+    "52WH Distance Days":"dist_52wh_days",
+    "13WH Distance":     "dist_13wh",
+    "Breakout Window":   "breakout_window",
+    # VOLUME — institutional entry detector + liquidity gate + Minervini breakout confirmation
+    "Volume":            "volume",
+    "Volume SMA 5D":     "vol_sma_5d",    # VCP dryup check (legacy): 5D < 20D = contracting in base
+    "Volume SMA 10D":    "vol_sma_10d",   # VCP dryup (Minervini exact): avg 10D < avg 50D
+    "Volume SMA 20D":    "vol_sma_20d",   # vol_ratio denominator + liquidity gate
+    "Volume SMA 50D":    "vol_sma_50d",   # Minervini breakout confirmation: volume ≥ 40% above 50D avg
     # TREND CONFIRMATION
     "Last Goldencrossover 50D 200D": "golden_cross_days",
     "All Time High Distance": "dist_ath",
@@ -826,6 +831,22 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["vol_sma_20d"].notna() & (df["vol_sma_20d"] > 0),
         df["volume"] / df["vol_sma_20d"],
         np.nan
+    )
+    # Minervini breakout confirmation: volume vs the 50-day baseline (book uses 50D, not 20D).
+    # A pivot breakout requires volume ≥ ~1.4× the 50D average. Distinct from vol_ratio (20D).
+    df["vol_ratio_50d"] = np.where(
+        df.get("vol_sma_50d", pd.Series(0, index=df.index)).fillna(0) > 0,
+        df["volume"].fillna(0) / df.get("vol_sma_50d", pd.Series(0, index=df.index)).fillna(0),
+        np.nan
+    )
+    # VCP volume dryup (SEPA Codex Ch.5 Chartink): 10D avg volume < 50D avg = supply exhaustion
+    # in the base. Distinct from can_slim_vcp (5D < 20D). Missing vol data → 0 (no dryup).
+    _v10d_vcp = df.get("vol_sma_10d", pd.Series(np.nan, index=df.index))
+    _v50d_vcp = df.get("vol_sma_50d", pd.Series(np.nan, index=df.index))
+    df["vcp_volume_dryup"] = np.where(
+        _v10d_vcp.notna() & _v50d_vcp.notna() & (_v50d_vcp > 0),
+        (_v10d_vcp < _v50d_vcp).astype(int),
+        0
     )
     df["daily_value"] = df["volume"] * df["close_price"]  # in raw ₹
     df["daily_value_cr"] = df["daily_value"] / 1e7  # in ₹ Crores
@@ -1523,12 +1544,25 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(float) * 2
     df["d44_smart_money_comp"] = df["d38_smart_money"] + df["d39_inst_tide"] + insider_bought
 
-    # ── D45: Trend Structure Score (0–3) ──
-    # +1 if Price > SMA 200D, +1 if Price > VSTOP, +1 if ADX > 20
+    # ── D45: Trend Structure Score (0–5) — Minervini Trend Template ──
+    # Implements 5 of Minervini's 8 Trend Template criteria (Trade Like a Stock Market Wizard Ch.2)
+    # computable from a point-in-time CSV. ADX moved OUT to sepa_adx_confirmed (Framework 21).
+    #   +1 C1: close_price > sma_200d        (above 200D MA — long-term trend)
+    #   +1 C2: close_price > sma_30w         (above 150D MA; 30 weeks × 5 = 150 trading days)
+    #   +1 C3: sma_30w > sma_200d            (150D > 200D — right stacking)
+    #   +1 C5: sma_50d > sma_30w AND sma_200d (50D fully stacked above both)
+    #   +1 VSTOP: vstop_green                (volatility-adjusted trend quality)
+    # C4 (200D rising 22 days) and C7/C8 are checked elsewhere (52WH dist / crs_aligned).
+    # NaN on sma_50d/sma_30w → fillna(0) → that component scores 0 (conservative).
+    _sma_50d_d45 = df.get("sma_50d", pd.Series(np.nan, index=df.index))
+    _sma_30w_d45 = df.get("sma_30w", pd.Series(np.nan, index=df.index))
     df["d45_trend_structure"] = (
         df["above_sma200"].fillna(0) +
-        df["vstop_green"].fillna(0) +
-        (df["adx_14w"].fillna(0) > 20).astype(int)
+        (df["close_price"] > _sma_30w_d45.fillna(0)).astype(int) +
+        (_sma_30w_d45.fillna(0) > df["sma_200d"].fillna(0)).astype(int) +
+        ((_sma_50d_d45.fillna(0) > _sma_30w_d45.fillna(0)) &
+         (_sma_50d_d45.fillna(0) > df["sma_200d"].fillna(0))).astype(int) +
+        df["vstop_green"].fillna(0)
     )
 
     # ── D47: RS Composite — IBD-weighted (40% recent / 30% mid / 30% long) ──
