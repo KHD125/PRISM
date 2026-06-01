@@ -2100,44 +2100,69 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (mcap_lg.fillna(0)        >= 500)                # Screen: ₹500 Cr proven business scale
     )
 
-    # 21. SEPA Momentum (Mark Minervini — SEPA Trading Codex)
-    #    Specific Entry Point Analysis: the ONLY pure technical-momentum framework in the system.
-    #    All 20 prior frameworks are static quality gates (ROCE, CFO/PAT, D/E, etc.).
-    #    SEPA adds DYNAMIC momentum gates — the stock must be winning RIGHT NOW, not just quality.
-    #    Three signals unique across all 20 prior frameworks:
-    #    1. d45_trend_structure >= 2: SMA alignment proxy (above_sma200 + VSTOP + ADX ≥ 2/3)
-    #       No other framework tests MA structure. This is the "right stacking" filter.
-    #    2. crs_aligned == 1: all THREE relative strength timeframes positive (50D, 26W, 52W)
-    #       CAN SLIM uses crs_50d > 0 only (one timeframe). SEPA's RS≥70 requires sustained
-    #       multi-timeframe outperformance — stocks coasting on prior RS get filtered out.
-    #    3. roe >= 17: Minervini's specific ROE threshold (Coffee Can uses ≥15%; 17% is unique)
-    #    Key differentiation from CAN SLIM (Framework 6):
-    #    - CAN SLIM: quarterly PAT growth + 5Y EPS CAGR + within 15% of 52WH + vol≥1.5 + crs_50d
-    #    - SEPA: annual EPS/rev YoY + ROE≥17 + SMA alignment + all-3-timeframe CRS + within 25% 52WH
-    #    A stock with crs_50d>0 but crs_26w<0 passes CAN SLIM L, FAILS SEPA.
-    #    A stock in Stage 3 (MAs flattening, crs_aligned=0) passes quality frameworks, FAILS SEPA.
-    #    Sources: Chapter 2 (Trend Template, 8 criteria), Chapter 4 (7 fundamental requirements),
-    #             Chapter 11 (India SEPA scanner, ₹500 Cr filter, RS ≥ 70).
-    _sp_nan       = pd.Series(np.nan, index=df.index)
-    trend_str_sp  = df.get("d45_trend_structure",  pd.Series(0, index=df.index)).fillna(0)
-    dist_wh_sp    = df.get("dist_52wh",            pd.Series(999.0, index=df.index)).fillna(999)
-    crs_ali_sp    = df.get("crs_aligned",          pd.Series(0, index=df.index)).fillna(0)
-    eps_yoy_sp    = df.get("eps_gr_yoy",           _sp_nan)   # REQ 1: EPS ≥ 25% YoY acceleration
-    rev_yoy_sp    = df.get("rev_gr_yoy",           _sp_nan)   # REQ 2: Revenue ≥ 20% YoY
-    roe_sp        = df.get("roe",                  _sp_nan)   # REQ 4: ROE > 17% (UNIQUE threshold)
-    fii_sp        = df.get("change_fii_lq",        pd.Series(0.0, index=df.index)).fillna(0)
-    dii_sp        = df.get("change_dii_lq",        pd.Series(0.0, index=df.index)).fillna(0)
-    mcap_sp       = df.get("market_cap",           _sp_nan)
-    fw_sepa = (
-        (trend_str_sp           >= 2) &              # Trend Template proxy: SMA alignment ≥ 2/3 criteria
-        (dist_wh_sp             <= 25) &             # Within 25% of 52WH — Stage 2 uptrend near highs
-        (crs_ali_sp             == 1) &              # UNIQUE: RS confirmed across all 3 timeframes (50D+26W+52W)
-        (eps_yoy_sp.fillna(0)   >= 25) &             # REQ 1: EPS growth ≥ 25% YoY — acceleration threshold
-        (rev_yoy_sp.fillna(0)   >= 20) &             # REQ 2: Revenue ≥ 20% YoY — sales growth gate
-        (roe_sp.fillna(0)       >= 17) &             # REQ 4: UNIQUE — ROE ≥ 17% (Minervini's explicit level)
-        ((fii_sp > 0) | (dii_sp > 0)) &             # REQ 7: Institutional sponsorship growing (FII or DII)
-        (mcap_sp.fillna(0)      >= 500)              # India screen: ₹500 Cr minimum (Minervini's explicit filter)
+    # ── Framework 21: fw_sepa — SEPA Momentum (Mark Minervini) ─────────────────
+    # Specific Entry Point Analysis: the ONLY pure technical-momentum framework.
+    # Decoupled into 7 observable pillars matching the system's standard pattern.
+    # Source: Trade Like a Stock Market Wizard Ch.2 (Trend Template), Ch.4 (Fundamentals),
+    #         Ch.5 (VCP). SEPA Trading Codex (India Edition).
+    # Spec: docs/sepa_momentum_specs.json
+    #
+    # sepa_pass  = 6 hard-gate pillars AND mcap >= 500 (stock qualifies for SEPA analysis)
+    # sepa_score = 7 pillars (sepa_vcp_dryup is score bonus — NOT hard gate, same as can_slim_vcp)
+    # A stock with sepa_score=7 has both the quality AND the active VCP setup firing.
+    # A stock with sepa_score=6 qualifies but the VCP isn't formed yet — add to watchlist.
+    _sp_nan = pd.Series(np.nan, index=df.index)
+
+    # Pillar T — Trend Template (Criteria 1+2+3+5 + VSTOP, 5-point score ≥ 4)
+    _trend_sp = df.get("d45_trend_structure", pd.Series(0, index=df.index)).fillna(0)
+    df["sepa_trend_template"]  = (_trend_sp >= 4).astype(int)
+
+    # Pillar A — ADX Confirmed (trend strength gate; removed from d45, explicit here)
+    _adx_sp = df.get("adx_14w", pd.Series(0, index=df.index)).fillna(0)
+    df["sepa_adx_confirmed"]   = (_adx_sp >= 20).astype(int)
+
+    # Pillar L — Low Base: Criterion 6 — price ≥ 30% above 52-week low
+    _52wl_sp = df.get("dist_52wl", pd.Series(0, index=df.index)).fillna(0)
+    df["sepa_low_base"]        = (_52wl_sp >= 30).astype(int)
+
+    # Pillar R — RS Aligned: Criterion 8 — all 3 CRS timeframes positive (50D + 26W + 52W)
+    df["sepa_rs_confirmed"]    = df.get("crs_aligned", pd.Series(0, index=df.index)).fillna(0).astype(int)
+
+    # Pillar E — Earnings Fuel: REQ 1 (EPS ≥25%) + REQ 2 (Rev ≥20%) + REQ 4 (ROE ≥17%)
+    _eps_sp = df.get("eps_gr_yoy", _sp_nan).fillna(0)
+    _rev_sp = df.get("rev_gr_yoy", _sp_nan).fillna(0)
+    _roe_sp = df.get("roe",        _sp_nan).fillna(0)
+    df["sepa_earnings_fuel"]   = ((_eps_sp >= 25) & (_rev_sp >= 20) & (_roe_sp >= 17)).astype(int)
+
+    # Pillar I — Institutional Sponsorship: REQ 7 — FII or DII stake increasing QoQ
+    _fii_sp = df.get("change_fii_lq", pd.Series(0, index=df.index)).fillna(0)
+    _dii_sp = df.get("change_dii_lq", pd.Series(0, index=df.index)).fillna(0)
+    df["sepa_institutional"]   = ((_fii_sp > 0) | (_dii_sp > 0)).astype(int)
+
+    # Pillar V — VCP Volume Dryup (SCORE BONUS ONLY — not in hard gate, same as can_slim_vcp)
+    # Source: SEPA Codex Ch.5: "Average volume 10 days < Average volume 50 days"
+    # Score 7 = quality + active VCP setup. Score 6 = quality, watchlist for next VCP.
+    df["sepa_vcp_dryup"]       = df.get("vcp_volume_dryup", pd.Series(0, index=df.index)).fillna(0).astype(int)
+
+    # Score: 7 pillars including VCP bonus
+    df["sepa_score"] = (
+        df["sepa_trend_template"] + df["sepa_adx_confirmed"] + df["sepa_low_base"] +
+        df["sepa_rs_confirmed"]   + df["sepa_earnings_fuel"] + df["sepa_institutional"] +
+        df["sepa_vcp_dryup"]
     )
+
+    # Pass: 6 hard gates (VCP is bonus only) + India market cap floor
+    _mcap_sp = df.get("market_cap", _sp_nan).fillna(0)
+    fw_sepa = (
+        (df["sepa_trend_template"] == 1) &
+        (df["sepa_adx_confirmed"]  == 1) &
+        (df["sepa_low_base"]       == 1) &
+        (df["sepa_rs_confirmed"]   == 1) &
+        (df["sepa_earnings_fuel"]  == 1) &
+        (df["sepa_institutional"]  == 1) &
+        (_mcap_sp >= 500)
+    )
+    df["sepa_pass"] = fw_sepa.astype(int)
 
     # ── Framework 22: fw_basant — Basant 30% Club (Basant Maheshwari, "The Thoughtful Investor") ──
     # Maheshwari's "30% Club" thesis: companies sustaining 30% EPS CAGR re-rate massively as
