@@ -489,12 +489,14 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
         pills += f'<span class="pill pill-red">{bz_label}</span>'
 
     # 4. Bruised Blue Chip (WCS 29): use the engine-computed flag (P/B ≤2.0 + sector tailwind)
+    #    Emoji 🏛️ matches the _FW_META "Bruised Blue Chip 29" entry (zero-duplicate matrix).
     if row.get("bruised_blue_chip_29", 0) == 1:
-        pills += '<span class="pill pill-blue">💙 Bruised Blue Chip</span>'
+        pills += '<span class="pill pill-blue">🏛️ Bruised Blue Chip</span>'
 
     # 5. 100x Candidate (17th WCS Mouse-to-Elephant) — rare, high-conviction alpha tag
+    #    Emoji 🐘 (literal "Mouse-to-Elephant") matches the _FW_META "100x Candidate" entry.
     if row.get("mosl_100x_candidate", 0) == 1:
-        pills += '<span class="pill pill-gold">🚀 100x Candidate</span>'
+        pills += '<span class="pill pill-gold">🐘 100x Candidate</span>'
 
     # 6. Atoms→Bits business design (26th WCS) — surface asset-light "Bits" vs capital-heavy "Atoms"
     _atb = str(row.get("atoms_to_bits_label", "") or "")
