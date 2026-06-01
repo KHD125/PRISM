@@ -20,6 +20,7 @@ try:
         render_sell_alerts_panel,
         render_raw_signals,
         render_canslim_radar,
+        render_sepa_radar,
         render_schilit_shield,
         render_dorsey_radar,
         render_outsider_radar,
@@ -49,6 +50,7 @@ except ImportError as e:
     render_sell_alerts_panel = _stub
     render_raw_signals = _stub
     render_canslim_radar = _stub
+    render_sepa_radar = _stub
     render_schilit_shield = _stub
     render_dorsey_radar = _stub
     render_outsider_radar = _stub
@@ -86,6 +88,7 @@ __all__ = [
     "render_sell_alerts_panel",
     "render_raw_signals",
     "render_canslim_radar",
+    "render_sepa_radar",
     "render_schilit_shield",
     "render_dorsey_radar",
     "render_outsider_radar",
