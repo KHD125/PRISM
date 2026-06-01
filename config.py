@@ -803,8 +803,14 @@ CONSISTENT_SECTORS = frozenset([
 # ═══════════════════════════════════════════════════════════════
 # Fixed denominator for forensic_score: (max_flags - red_flag_count) / max_flags × 100.
 # Must be updated manually when a new rf_ flag is added to forensic_engine.py.
-# Current flags: 26 active (rf_low_cfo_ebitda added — Coffee Can master clean accounts signal).
-FORENSIC_MAX_FLAGS = 26
+# Current flags: 27 active rf_ columns (audited 2026-06-01 via regex scan of forensic_engine.py).
+# rf_capex_mirage, rf_ccc_worsening, rf_cwip_bloat, rf_debt_ebitda_high, rf_dilution,
+# rf_expense_rising, rf_fcf_to_cfo_low, rf_high_accruals, rf_high_cash_debt, rf_high_receivables,
+# rf_inventory_bloat, rf_itr_declining, rf_lease_inflation, rf_low_cfo_ebitda, rf_low_cfo_pat,
+# rf_low_fcf_ebitda, rf_margin_squeeze, rf_negative_fcf, rf_nfat_very_low, rf_opm_volatile,
+# rf_pledge_elevated, rf_psu_value_destruction, rf_receivables_bloat, rf_rising_debt,
+# rf_ssgr_deficit, rf_tax_panic, rf_wc_double_squeeze.
+FORENSIC_MAX_FLAGS = 27
 FORENSIC = {
     "cfo_pat_alert":              70.0,   # below this = Level 1 red flag (percentage, e.g. 73.04 = 73%)
     # Coffee Can Clean Accounts master signal (Mukherjea Ch.3): CFO/EBITDA must be > 0.9 (ratio)
