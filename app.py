@@ -27,7 +27,7 @@ from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_mo
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
                 render_financial_insights, render_stock_hero, render_score_strip,
                 render_sell_alerts_panel, render_raw_signals,
-                render_canslim_radar, render_schilit_shield, render_dorsey_radar,
+                render_canslim_radar, render_sepa_radar, render_schilit_shield, render_dorsey_radar,
                 render_outsider_radar, render_marks_radar, render_malik_radar,
                 render_lynch_radar, render_mauboussin_radar, render_mosl_wealth_matrix,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
@@ -1010,6 +1010,9 @@ with tabs[2]:
 
             st.markdown("<br>", unsafe_allow_html=True)
             render_canslim_radar(stock)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            render_sepa_radar(stock)
 
             st.markdown("<br>", unsafe_allow_html=True)
             render_dorsey_radar(stock)
