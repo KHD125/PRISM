@@ -300,57 +300,120 @@ with st.sidebar:
 
     st.markdown(f"<div class='sec-head'>🎯 Filters</div>", unsafe_allow_html=True)
 
-    # ── Cascading location filters: Market Category → Sector → Industry ──────
-    # Each level narrows the OPTIONS of the level below it (and the final dataframe).
-    # Defensive: when a higher-level change invalidates a lower selection, reset that
-    # selection to "All" BEFORE its widget renders — this prevents Streamlit's
-    # "st.session_state value is not in options" crash on cascading selectboxes.
+    # ── SMART INTERCONNECTED FILTER CASCADE ──────────────────────────────────
+    # Every option-based filter narrows the OPTIONS of every filter BELOW it. A single
+    # progressively-narrowed frame (_cf) drives all option lists AND the final filtered
+    # dataframe — so what a dropdown shows is exactly what survives the filter (zero
+    # drift between options and results).
+    # Defensive: stored multiselect selections are pruned to the current valid options
+    # before each widget renders, preventing Streamlit's "value not in options" crash.
+    def _ms_cascade(label, options, key, default, help=None):
+        """Cascade-safe multiselect. Fully manages session_state (no `default=` arg, which
+        avoids Streamlit's default-plus-session-state warning) and prunes any stale stored
+        selection down to the current options each run. Empty selection = no filter."""
+        if key not in st.session_state:
+            st.session_state[key] = [v for v in default if v in options]
+        else:
+            st.session_state[key] = [v for v in st.session_state[key] if v in options]
+        return st.multiselect(label, options, key=key, help=help)
+
+    def _ordered_present(frame, col, order):
+        """Labels present in frame[col], in canonical `order`; unknown labels appended last."""
+        if col not in frame.columns:
+            return []
+        present = set(frame[col].dropna().astype(str).unique())
+        opts = [v for v in order if v in present]
+        opts += [v for v in sorted(present) if v not in opts]
+        return opts
+
+    _cf = df   # progressively-narrowed cascade frame — drives every option list below
+
+    # 1. Market Category — cascade root (only categories present in the data)
     _ALL_MCAPS = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
-    sel_mcap = st.multiselect("Market Category", _ALL_MCAPS, default=_ALL_MCAPS, key="sb_mcap")
+    _mcap_opts = _ordered_present(_cf, "market_category", _ALL_MCAPS)
+    sel_mcap = _ms_cascade("Market Category", _mcap_opts, "sb_mcap", default=_mcap_opts)
+    if sel_mcap:
+        _cf = _cf[_cf["market_category"].isin(sel_mcap)]
 
-    # Cascade base — df narrowed by the market-cap selection (drives the option lists below).
-    _casc_df = df[df["market_category"].isin(sel_mcap)] if sel_mcap else df
-
-    # Sector — only sectors that exist within the chosen market categories.
-    _sector_opts = ["All"] + sorted(_casc_df["sector"].dropna().unique().tolist())
+    # 2. Sector — only sectors within the chosen market categories
+    _sector_opts = ["All"] + sorted(_cf["sector"].dropna().unique().tolist())
     if st.session_state.get("sb_sector", "All") not in _sector_opts:
         st.session_state["sb_sector"] = "All"
     sel_sector = st.selectbox("Sector", _sector_opts, key="sb_sector")
+    if sel_sector != "All":
+        _cf = _cf[_cf["sector"] == sel_sector]
 
-    # Industry — only industries within the chosen market categories AND sector.
-    _ind_base = _casc_df[_casc_df["sector"] == sel_sector] if sel_sector != "All" else _casc_df
-    _industry_opts = ["All"] + sorted(_ind_base["industry"].dropna().unique().tolist())
+    # 3. Industry — only industries within the chosen categories AND sector
+    _industry_opts = ["All"] + sorted(_cf["industry"].dropna().unique().tolist())
     if st.session_state.get("sb_industry", "All") not in _industry_opts:
         st.session_state["sb_industry"] = "All"
     sel_industry = st.selectbox(
         "Industry", _industry_opts, key="sb_industry",
-        help="Granular industry within the selected sector (353 total). Narrows with Sector above.",
+        help="Granular industry within the selected sector. Narrows with Sector above.",
     )
+    if sel_industry != "All":
+        _cf = _cf[_cf["industry"] == sel_industry]
 
-    sel_tier = st.multiselect("Conviction Tier", [1, 2, 3, 4, 5], default=[1, 2, 3], key="sb_tier")
+    # 4. Conviction Tier — only tiers present in the remaining stocks
+    _tier_opts = sorted(int(t) for t in _cf["conviction_tier"].dropna().unique())
+    sel_tier = _ms_cascade("Conviction Tier", _tier_opts, "sb_tier",
+                           default=[t for t in (1, 2, 3) if t in _tier_opts])
+    if sel_tier:
+        _cf = _cf[_cf["conviction_tier"].isin(sel_tier)]
 
-    # Framework Filter — shows stocks passing ANY of the selected frameworks.
-    # Labels extracted live from frameworks_passed column; empty selection = no filter (show all).
-    # Splitter uses ", " (with space) to match the exact separator written by scoring_engine.py
-    # (fw_str builder joins with "| " then str.replace("|", ", ")) — prevents leading-space tokens.
-    if "frameworks_passed" in df.columns:
+    # 5. Framework — only frameworks the remaining stocks actually pass.
+    #    Splitter uses ", " (the exact separator written by the scoring_engine fw_str builder).
+    if "frameworks_passed" in _cf.columns:
         _all_fw = sorted(set(
             fw.strip()
-            for cell in df["frameworks_passed"].dropna()
+            for cell in _cf["frameworks_passed"].dropna()
             if cell != "None"
             for fw in cell.split(", ")
             if fw.strip()
         ))
     else:
         _all_fw = []
-    sel_fw = st.multiselect("Framework", _all_fw, default=[], key="sb_fw",
-                             help="Show stocks passing ANY selected framework. Empty = all stocks.")
+    sel_fw = _ms_cascade("Framework", _all_fw, "sb_fw", default=[],
+                         help="Show stocks passing ANY selected framework. Empty = all stocks.")
+    if sel_fw and "frameworks_passed" in _cf.columns:
+        import re as _re
+        _fw_mask = pd.Series(False, index=_cf.index)
+        for _fw in sel_fw:
+            # Anchored exact-token regex: matches token only as a complete ", "-delimited element.
+            # Prevents "Bruised Blue Chip" from substring-matching "Bruised Blue Chip 29".
+            _pat = r"(?:^|, )" + _re.escape(_fw) + r"(?:,|$)"
+            _fw_mask = _fw_mask | _cf["frameworks_passed"].str.contains(_pat, regex=True, na=False)
+        _cf = _cf[_fw_mask]
 
+    # 6. Moat-Growth quadrant — only quadrants present in the remaining stocks
+    _MOAT_ORDER = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
+    _moat_opts = _ordered_present(_cf, "moat_growth_quad", _MOAT_ORDER)
+    sel_moat = _ms_cascade("Moat", _moat_opts, "sb_moat", default=[])
+    if sel_moat:
+        _cf = _cf[_cf["moat_growth_quad"].isin(sel_moat)]
 
-    # The All-Time Best Filter: Moat-Growth Matrix
-    moat_options = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
-    sel_moat = st.multiselect("Moat", moat_options, default=[], key="sb_moat")
-    
+    # 7. PEG Zone — valuation tier (options present in remaining stocks, canonical order)
+    _PEG_ZONE_ORDER = [
+        "💎 Deep Value", "🟢 Fair PEG", "🟡 Stretched",
+        "🟠 Expensive", "🔴 Overpriced", "🔴 Declining",
+    ]
+    _peg_opts = _ordered_present(_cf, "peg_zone", _PEG_ZONE_ORDER)
+    sel_peg_zone = _ms_cascade("PEG Zone", _peg_opts, "sb_peg_zone", default=[],
+                               help="Valuation tier from the PEG ratio. Empty = all stocks.")
+    if sel_peg_zone and "peg_zone" in _cf.columns:
+        _cf = _cf[_cf["peg_zone"].isin(sel_peg_zone)]
+
+    # 8. Buy Zone — entry timing vs Volatility Stop (options present in remaining stocks)
+    _BUY_ZONE_ORDER = [
+        "🟢 Perfect Entry (Low Risk)", "🟡 Standard Zone",
+        "🔴 Extended (Wait for Pullback)", "⚪ Uncharted",
+    ]
+    _buy_opts = _ordered_present(_cf, "buy_zone_label", _BUY_ZONE_ORDER)
+    sel_buy_zone = _ms_cascade("Buy Zone", _buy_opts, "sb_buy_zone", default=[],
+                               help="Entry timing vs the Volatility Stop. Empty = all stocks.")
+    if sel_buy_zone and "buy_zone_label" in _cf.columns:
+        _cf = _cf[_cf["buy_zone_label"].isin(sel_buy_zone)]
+
     # Institutional Sweep Vector
     st.markdown("---")
     st.markdown("<div style='font-size:0.8rem; font-weight:700; color:#8b5cf6; margin-bottom:5px;'>🌊 ALPHA VECTORS</div>", unsafe_allow_html=True)
@@ -359,29 +422,11 @@ with st.sidebar:
     gate_only = st.checkbox("Gate-passed only", value=True, key="sb_gate")
     min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
 
-# Apply filters
-filt = df.copy()
-# Cascading location filters — Market Category → Sector → Industry (each narrows the next).
-if sel_mcap:
-    filt = filt[filt["market_category"].isin(sel_mcap)]
-if sel_sector != "All":
-    filt = filt[filt["sector"] == sel_sector]
-if sel_industry != "All":
-    filt = filt[filt["industry"] == sel_industry]
-if sel_tier:
-    filt = filt[filt["conviction_tier"].isin(sel_tier)]
-if sel_fw and "frameworks_passed" in filt.columns:
-    import re as _re
-    _fw_mask = pd.Series(False, index=filt.index)
-    for _fw in sel_fw:
-        # Anchored exact-token regex: matches token only as a complete ", "-delimited element.
-        # Prevents "Bruised Blue Chip" from substring-matching "Bruised Blue Chip 29".
-        _pat = r"(?:^|, )" + _re.escape(_fw) + r"(?:,|$)"
-        _fw_mask = _fw_mask | filt["frameworks_passed"].str.contains(_pat, regex=True, na=False)
-    filt = filt[_fw_mask]
-
-if sel_moat:
-    filt = filt[filt["moat_growth_quad"].isin(sel_moat)]
+# Apply filters — the cascade frame (_cf) already encodes every option-based filter
+# (Market Category → Sector → Industry → Tier → Framework → Moat → PEG Zone → Buy Zone),
+# so the dropdown options and the result set are guaranteed identical. Only the bottom
+# Alpha-Vector toggles remain to apply.
+filt = _cf.copy()
 if smart_sweep:
     # Requires simultaneous FII + DII buying AND a Tsunami signal
     filt = filt[(filt["inst_convergence"] == 1) & (filt["tsunami_signal"] == 1)]
