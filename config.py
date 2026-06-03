@@ -53,7 +53,7 @@ CSV_FILES = {
 # Google Sheets Configuration
 DEFAULT_SHEET_ID = None  # Must be set before using data_source="sheet"; "" causes cryptic errors deep in data_engine
 DEFAULT_GIDS = {
-    "ratio": "1823439984",
+    "ratio": "854180998",
     "income": "1179123585",
     "balance": "492995744",
     "cashflow": "458676223",
