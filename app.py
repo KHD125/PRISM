@@ -15,6 +15,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import time
+import re
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -361,29 +362,110 @@ with st.sidebar:
     if sel_tier:
         _cf = _cf[_cf["conviction_tier"].isin(sel_tier)]
 
-    # 5. Framework — only frameworks the remaining stocks actually pass.
-    #    Splitter uses ", " (the exact separator written by the scoring_engine fw_str builder).
-    if "frameworks_passed" in _cf.columns:
-        _all_fw = sorted(set(
+    # ── 3-TIER FRAMEWORK FILTER ENGINE ───────────────────────────────────────
+    # Set Algebra: (Universe − Excluded) ∩ (Included ∪ ∅) ∩ (∀ Combined)
+    # Evaluation order: Exclude first → Include second → Combination last.
+    # Each panel's options cascade from the panel above — zero impossible combos.
+    #
+    # Panel 1 — Exclude (NOT): remove stocks passing ANY selected framework
+    # Panel 2 — Include (OR) : show stocks passing ANY selected framework (current behavior)
+    # Panel 3 — Combination (AND): keep only stocks passing ALL selected simultaneously
+
+    def _extract_frameworks(frame):
+        """Extract sorted unique framework names from the cascade frame.
+        Splitter uses ', ' — the exact separator written by scoring_engine fw_str builder."""
+        if "frameworks_passed" not in frame.columns:
+            return []
+        return sorted(set(
             fw.strip()
-            for cell in _cf["frameworks_passed"].dropna()
+            for cell in frame["frameworks_passed"].dropna()
             if cell != "None"
             for fw in cell.split(", ")
             if fw.strip()
         ))
-    else:
-        _all_fw = []
-    sel_fw = _ms_cascade("Framework", _all_fw, "sb_fw", default=[],
-                         help="Show stocks passing ANY selected framework. Empty = all stocks.")
-    if sel_fw and "frameworks_passed" in _cf.columns:
-        import re as _re
-        _fw_mask = pd.Series(False, index=_cf.index)
-        for _fw in sel_fw:
-            # Anchored exact-token regex: matches token only as a complete ", "-delimited element.
-            # Prevents "Bruised Blue Chip" from substring-matching "Bruised Blue Chip 29".
-            _pat = r"(?:^|, )" + _re.escape(_fw) + r"(?:,|$)"
-            _fw_mask = _fw_mask | _cf["frameworks_passed"].str.contains(_pat, regex=True, na=False)
-        _cf = _cf[_fw_mask]
+
+    def _fw_match_mask(frame, fw_list, logic="or"):
+        """Build a boolean mask for stocks matching framework list.
+        logic='or'  → stock passes ANY of the selected frameworks
+        logic='and' → stock passes ALL of the selected frameworks simultaneously
+        Regex is boundary-safe: prevents 'Bruised Blue Chip' from substring-matching
+        'Bruised Blue Chip 29' via anchored exact-token pattern."""
+        if not fw_list or "frameworks_passed" not in frame.columns:
+            return pd.Series(True, index=frame.index)
+        if logic == "or":
+            mask = pd.Series(False, index=frame.index)
+            for fw in fw_list:
+                _pat = r"(?:^|, )" + re.escape(fw) + r"(?:,|$)"
+                mask = mask | frame["frameworks_passed"].str.contains(_pat, regex=True, na=False)
+            return mask
+        else:  # logic == "and"
+            mask = pd.Series(True, index=frame.index)
+            for fw in fw_list:
+                _pat = r"(?:^|, )" + re.escape(fw) + r"(?:,|$)"
+                mask = mask & frame["frameworks_passed"].str.contains(_pat, regex=True, na=False)
+            return mask
+
+    st.markdown(
+        f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["purple"]};'
+        f'text-transform:uppercase;letter-spacing:1.2px;margin:12px 0 6px 0;'
+        f'padding-bottom:4px;border-bottom:1px solid {COLORS["border"]};"'
+        f'>🧬 Framework Filter Engine</div>',
+        unsafe_allow_html=True,
+    )
+
+    # 5a. EXCLUDE Framework — NOT logic (applied first, narrows universe)
+    _all_fw_excl = _extract_frameworks(_cf)
+    sel_fw_exclude = _ms_cascade(
+        "🚫 Exclude Framework", _all_fw_excl, "sb_fw_exclude", default=[],
+        help="Remove stocks passing ANY of these frameworks. Applied first.",
+    )
+    if sel_fw_exclude:
+        _excl_mask = _fw_match_mask(_cf, sel_fw_exclude, logic="or")
+        _cf = _cf[~_excl_mask]
+    # Exclude badge
+    _n_excl_fw = len(sel_fw_exclude)
+    if _n_excl_fw > 0:
+        st.markdown(
+            f'<div style="font-size:0.6rem;color:{COLORS["red"]};padding:0 0 6px 2px;"'
+            f'>⛔ {_n_excl_fw} excluded · {len(_cf)} stocks remaining</div>',
+            unsafe_allow_html=True,
+        )
+
+    # 5b. INCLUDE Framework — OR logic (show stocks passing ANY selected)
+    _all_fw_incl = _extract_frameworks(_cf)
+    sel_fw_include = _ms_cascade(
+        "✅ Include Framework", _all_fw_incl, "sb_fw_include", default=[],
+        help="Show stocks passing ANY of these. Empty = all remaining stocks.",
+    )
+    if sel_fw_include:
+        _incl_mask = _fw_match_mask(_cf, sel_fw_include, logic="or")
+        _cf = _cf[_incl_mask]
+    # Include badge
+    _n_incl_fw = len(sel_fw_include)
+    if _n_incl_fw > 0:
+        st.markdown(
+            f'<div style="font-size:0.6rem;color:{COLORS["green"]};padding:0 0 6px 2px;"'
+            f'>✅ {_n_incl_fw} included (OR) · {len(_cf)} stocks remaining</div>',
+            unsafe_allow_html=True,
+        )
+
+    # 5c. COMBINATION Framework — AND logic (stock must pass ALL selected)
+    _all_fw_comb = _extract_frameworks(_cf)
+    sel_fw_combine = _ms_cascade(
+        "🔗 Combination Framework", _all_fw_comb, "sb_fw_combine", default=[],
+        help="Stock must pass ALL of these simultaneously. AND logic.",
+    )
+    if sel_fw_combine:
+        _comb_mask = _fw_match_mask(_cf, sel_fw_combine, logic="and")
+        _cf = _cf[_comb_mask]
+    # Combination badge
+    _n_comb_fw = len(sel_fw_combine)
+    if _n_comb_fw > 0:
+        st.markdown(
+            f'<div style="font-size:0.6rem;color:{COLORS["blue"]};padding:0 0 6px 2px;"'
+            f'>🔗 {_n_comb_fw} required (AND) · {len(_cf)} stocks remaining</div>',
+            unsafe_allow_html=True,
+        )
 
     # 6. Moat-Growth quadrant — only quadrants present in the remaining stocks
     _MOAT_ORDER = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
