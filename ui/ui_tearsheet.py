@@ -2611,6 +2611,90 @@ def render_mauboussin_radar(stock: pd.Series):
 
 
 # ═══════════════════════════════════════════════════════════════
+# LEVEL × TRAJECTORY × MISPRICING COCKPIT — Pass 3 integration
+# Reads exclusively from pre-materialized engine columns via _g().
+# Zero inline threshold re-computation; display-only, 100% stateless.
+# ═══════════════════════════════════════════════════════════════
+
+def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
+    """Render high-dimensional Level × Trajectory × Mispricing parameters and portfolio sizing."""
+    st.markdown("### 🔮 Value Creation & Expected Return Identity Cockpit")
+
+    # Extract pre-materialized metrics — zero inline arithmetic
+    exp_cagr = _g(stock, "expected_cagr_engine", 0.0)
+    moat_tau = _g(stock, "moat_tau", 0.0)
+    val_res  = _g(stock, "valuation_residual", 0.0)
+    sepa_scr = int(_g(stock, "sepa_score", 0))
+    sepa_pss = int(_g(stock, "sepa_pass", 0))
+
+    # Row 1 — Intrinsic Value Return Identity
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric(
+            label="👑 Expected CAGR Identity",
+            value=f"{exp_cagr:.2f}% / yr",
+            delta="Intrinsic Overperformance" if exp_cagr > 15.0 else "Sub-Hurdle Engine",
+        )
+    with c2:
+        st.metric(
+            label="⏳ Decade Moat Trajectory (Tau)",
+            value=f"{moat_tau:+.2f}",
+            delta="Expanding Advantage Moat" if moat_tau > 0.25 else "Decaying Operational Moat",
+        )
+    with c3:
+        st.metric(
+            label="📊 OLS Valuation Residual",
+            value=f"{val_res:+.4f}",
+            delta="Market Underpriced (Alpha)" if val_res < 0 else "Premium Structural Pricing",
+        )
+
+    st.markdown("---")
+    st.markdown("### ⚡ Mark Minervini SEPA® Risk & Allocation Matrix")
+
+    if sepa_pss == 1:
+        st.success(f"🚀 SEPA MOMENTUM BREAKOUT COMPLIANT — INDIVIDUAL PROFILE SCORE: {sepa_scr}/7")
+    else:
+        st.info(f"⏳ Watchlist Setup Mode — Individual Profile Score: {sepa_scr}/7 (Hard Gates Pending)")
+
+    weight_pct = _g(stock, "optimal_portfolio_weight_pct", 0.0)
+    allocation = _g(stock, "rupee_capital_allocation", 0.0)
+    stop_loss  = _g(stock, "vstop_value", 0.0)
+
+    # Row 2 — Fractional Kelly Capital Allocation Matrix
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("🎯 Recommended Capital Weight", f"{weight_pct:.2f}%",
+                  delta="Quarter-Kelly Risk Managed")
+    with col2:
+        st.metric("💰 Capital Deployment (10L Base)", f"₹ {allocation:,.2f}")
+    with col3:
+        st.metric("🚨 Hard Volatility Stop-Loss Level", f"₹ {stop_loss:,.2f}",
+                  delta="-7-8% Active Perimeter Shield")
+
+    st.markdown("---")
+
+    # Secondary Structural Decomposition — all reads via .get() with safe defaults
+    vcv  = float(stock.get("value_creation_velocity", 0.0) or 0.0)
+    egap = float(stock.get("expectations_gap", 0.0) or 0.0)
+    st.write(f"**Value Creation Velocity (Reinvestment Rate × Capital Spread):** {vcv:+.2f}%")
+    st.write(f"**Market-Implied Expectations Gap (g_implied − g★):** {egap:+.2f}%")
+
+    # VCP volume check — reads pre-materialized binary flag
+    if int(_g(stock, "sepa_vcp_dryup", 0)) == 1:
+        st.markdown(
+            "🔥 **⭐ Volatility Contraction Pattern Firing:** "
+            "10D Average Volume < 50D Average Volume. "
+            "Supply exhaustion verified inside consolidation base."
+        )
+    else:
+        st.markdown(
+            "⏳ **Consolidation Base Active:** "
+            "Volume accumulation phase tracking historical norms. "
+            "Watch for pocket pivot breakout volumes."
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
 # MOSL WEALTH CREATION MATRIX — single-card summary of the 30-study signals
 # ═══════════════════════════════════════════════════════════════
 
