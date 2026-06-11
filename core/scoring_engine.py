@@ -696,6 +696,25 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
         (df["sell_alert_sequential_decline"]  == 1)
     ).astype(int)
 
+    # ══════════════════════════════════════════════════════════════
+    # MOD 3: Cobb-Douglas Geometric Quality Overlay
+    # Geometric blending (weighted log-sum) ensures a single pillar near zero collapses
+    # the combined rating — additive blending masks single-pillar failures.
+    # All three pillars operate in [0, 100] space; fillna(50) = neutral midpoint for missing.
+    # Clip floor at 5 prevents log(0) blowup. Companion column quality_score_geometric —
+    # the legacy quality_score is preserved intact so no existing tests or composite weights break.
+    # ══════════════════════════════════════════════════════════════
+    _p1 = df["malik_score"].fillna(50).clip(5, 100).values / 100.0
+    _p2 = df["ibas_moat_score"].fillna(50).clip(5, 100).values / 100.0
+    _p3 = df["vqs_score"].fillna(50).clip(5, 100).values / 100.0
+    df["quality_score_geometric"] = (
+        100.0 * np.exp(
+            (0.40 * np.log(_p1)) +
+            (0.40 * np.log(_p2)) +
+            (0.20 * np.log(_p3))
+        )
+    ).round(2)
+
     df["quality_score"] = _safe_clip(df["quality_score"])
     mean_rev_count = int(df["mean_reversion_risk"].sum())
     sell_alerts = int(df["sell_alert_any"].sum())
@@ -947,6 +966,44 @@ def compute_composite_score(
     """
     df = df.copy()
 
+    # ══════════════════════════════════════════════════════════════
+    # MOD 1: Cross-Sectional OLS Valuation Residual
+    # Regress ln(P/B) against fundamentals (ROE, Rev growth, ROCE, ln(MCap)) to isolate
+    # the component of P/B NOT explained by fundamentals — the signed pricing error.
+    # Negative residual = cheapness given fundamentals (underpriced); positive = premium.
+    # Uses np.linalg.lstsq — pure NumPy, no row iteration. Computed once on the full
+    # cross-section before blending so every composite score can reflect this signal.
+    # ══════════════════════════════════════════════════════════════
+    _n_stocks = len(df)
+    if _n_stocks > 10:
+        _target_y = np.log(
+            df["pb_ratio"].fillna(df["pb_ratio"].replace(0, np.nan).median()).clip(lower=0.01)
+        ).values
+        _A_matrix = np.column_stack([
+            df["roe"].fillna(df["roe"].median()).values,
+            df["rev_gr_5y"].fillna(df["rev_gr_5y"].median()).values,
+            df["roce_med_5y"].fillna(df["roce_med_5y"].median()).values,
+            np.log(df["market_cap"].fillna(df["market_cap"].median()).clip(lower=1.0)).values,
+            np.ones(_n_stocks)
+        ])
+        _beta_coeffs, _, _, _ = np.linalg.lstsq(_A_matrix, _target_y, rcond=None)
+        df["valuation_residual"] = _target_y - (_A_matrix @ _beta_coeffs)
+    else:
+        df["valuation_residual"] = 0.0
+
+    # MOD 2: Outlier Normalization Plane
+    # Convert fat-tailed raw residual + expectations_gap to bounded [0,100] cross-sectional
+    # percentile coordinates — insulates downstream scoring from division blowups.
+    # expectations_gap comes from data_engine Pass 1; use .get() so tests with synthetic
+    # frames (no data_engine columns) don't KeyError — missing → uniform NaN rank.
+    df["valuation_residual_rank"] = df["valuation_residual"].rank(pct=True) * 100.0
+    _eg = df.get("expectations_gap", pd.Series(np.nan, index=df.index))
+    _eg_med = _eg.median()
+    df["expectations_gap_rank"] = (
+        _eg.fillna(_eg_med if pd.notna(_eg_med) else 0.0)
+        .rank(pct=True) * 100.0
+    )
+
     # Governance weight is fixed regardless of analysis mode — set via COMPOSITE_WEIGHTS["governance"] (currently 15%)
     gov_w = COMPOSITE_WEIGHTS.get("governance", 0.15)
     # Normalize fundamental + momentum to fill remaining 90%
@@ -1034,6 +1091,56 @@ def compute_composite_score(
     )
     df["tier_emoji"] = df["conviction_tier"].map(
         {t["tier"]: t["emoji"] for t in CONVICTION_TIERS}
+    )
+
+    # ══════════════════════════════════════════════════════════════
+    # MOD 5: Expected Returns & Vectorized Kelly-Minervini Sizing
+    # All data_engine-computed columns accessed via .get() so tests with synthetic frames
+    # that lack those columns don't KeyError — missing inputs propagate NaN (semantic truth).
+    # ══════════════════════════════════════════════════════════════
+    _pe_m5       = df.get("pe",               pd.Series(np.nan, index=df.index))
+    _fair_pe_m5  = df.get("fair_pe_qglp",     pd.Series(np.nan, index=df.index))
+    _g_star_m5   = df.get("g_star",           pd.Series(np.nan, index=df.index))
+    _fcfy_m5     = df.get("fcf_yield",        pd.Series(np.nan, index=df.index))
+    _capex_c_m5  = df.get("capex_consistency",pd.Series(np.nan, index=df.index))
+    _traj_m5     = df.get("trajectory_score", pd.Series(np.nan, index=df.index))
+    _close_m5    = df.get("close_price",      pd.Series(np.nan, index=df.index))
+    _vstop_m5    = df.get("vstop_value",      pd.Series(np.nan, index=df.index))
+
+    _re_rating_drift = (
+        np.log(
+            _fair_pe_m5.fillna(_pe_m5).clip(lower=1)
+            / _pe_m5.clip(lower=1)
+        ) / 5.0
+    )
+    _variance_drag = _capex_c_m5.fillna(0) / 2.0
+    df["expected_cagr_engine"] = (
+        _g_star_m5.fillna(0)
+        + _fcfy_m5.fillna(0)
+        + (_re_rating_drift * 100.0)
+        - _variance_drag
+    )
+
+    _total_equity_rupees = 1_000_000.0
+    _traj_norm = (_traj_m5.fillna(0) + 1.0) / 2.0
+    df["win_rate_proxy"] = (0.35 + (_traj_norm * 0.30)).clip(0.35, 0.65)
+    df["payoff_ratio_proxy"] = np.where(
+        df["valuation_residual"] < 0,
+        (_fair_pe_m5.fillna(1.0) / _pe_m5.clip(lower=1.0)).clip(1.0, 4.0),
+        1.5
+    )
+    _raw_kelly = df["win_rate_proxy"] - ((1.0 - df["win_rate_proxy"]) / df["payoff_ratio_proxy"])
+    _kelly_f_weight = (_raw_kelly * 0.25).clip(lower=0.0)
+
+    _per_share_rupee_risk = (_close_m5 - _vstop_m5).clip(lower=1.0)
+    _max_allowed_shares = (_total_equity_rupees * 0.01) / _per_share_rupee_risk
+    _minervini_max_weight_pct = (_max_allowed_shares * _close_m5) / _total_equity_rupees * 100.0
+
+    df["optimal_portfolio_weight_pct"] = np.minimum(
+        _kelly_f_weight * 100.0, _minervini_max_weight_pct
+    ).clip(upper=20.0)
+    df["rupee_capital_allocation"] = (
+        _total_equity_rupees * (df["optimal_portfolio_weight_pct"] / 100.0)
     )
 
     print(f"\n🏆 Composite Score: mean={df['composite_score'].mean():.1f}, "
