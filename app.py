@@ -31,6 +31,7 @@ from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_mo
                 render_canslim_radar, render_sepa_radar, render_schilit_shield, render_dorsey_radar,
                 render_outsider_radar, render_marks_radar, render_malik_radar,
                 render_lynch_radar, render_mauboussin_radar, render_mosl_wealth_matrix,
+                render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points)
@@ -1167,6 +1168,8 @@ with tabs[2]:
             render_moat_growth_matrix(filt, highlight_stock=selected)
             st.markdown("<br>", unsafe_allow_html=True)
             render_ep_power_curve_module(stock)
+            st.markdown("<br>", unsafe_allow_html=True)
+            render_valuation_inversion_and_sizing_cockpit(stock)
             render_bruised_blue_chip_badge(stock)
             render_multitrillioncap_card(stock)
 
