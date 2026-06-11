@@ -276,6 +276,43 @@ def _safe_numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors='coerce')
 
 
+def _kendall_tau_cols(df: pd.DataFrame, cols: list) -> pd.Series:
+    """Trajectory consistency via pairwise-sign Kendall's tau across an ordered (oldest→newest)
+    ladder of level columns. Loops over COLUMN pairs only (O(k²), k≈6) — every operation inside
+    is a full-vector op across all 2,108 rows, so the row axis is never iterated (vectorization
+    mandate honoured). Returns tau in [-1, +1]: +1 = monotonic improvement over time, -1 =
+    monotonic decline, 0 = no net trend. NaN-conservative: a row needs MORE than half its pairs
+    comparable, else NaN (semantic truth — never fabricate a trend from sparse history)."""
+    series = [_safe_numeric(df.get(c, pd.Series(np.nan, index=df.index))) for c in cols]
+    n = len(series)
+    total_pairs = n * (n - 1) // 2
+    if total_pairs == 0:
+        return pd.Series(np.nan, index=df.index)
+    net = pd.Series(0.0, index=df.index)    # concordant − discordant (signed)
+    valid = pd.Series(0, index=df.index)    # count of comparable (both-present) pairs
+    for i in range(n):
+        for j in range(i + 1, n):
+            both = series[i].notna() & series[j].notna()
+            diff = series[j] - series[i]    # newer − older: positive sign = improving
+            net = net + np.where(both, np.sign(diff), 0.0)
+            valid = valid + both.astype(int)
+    min_pairs = total_pairs // 2 + 1
+    tau = np.where(valid >= min_pairs, net / np.where(valid > 0, valid, np.nan), np.nan)
+    return pd.Series(tau, index=df.index)
+
+
+def _implied_growth_from_pb(pb, roe, cost_of_equity: float):
+    """Back out the perpetual growth rate the market is pricing in by inverting the residual-income
+    / Gordon P/B identity:  P/B = (ROE − g) / (CoE − g)  ⇒  g = (CoE·P/B − ROE) / (P/B − 1).
+    Only defined for P/B > 1 (a premium to book); returns NaN at or below book (the identity is
+    degenerate there). All rates are PERCENT (ROE, CoE) so g is returned in PERCENT. Defensive
+    denominator guard per system mandate — never divide an un-guarded (P/B − 1)."""
+    pb = _safe_numeric(pb)
+    roe = _safe_numeric(roe)
+    denom = pb - 1.0
+    return np.where(denom > 0.0, (cost_of_equity * pb - roe) / denom, np.nan)
+
+
 def extract_spreadsheet_id(url_or_id: str) -> str:
     """Extracts the Google Sheets ID from a full URL."""
     import re
@@ -703,9 +740,37 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         # Record which rows were imputed BEFORE filling — used below to suppress
         # fcf_to_cfo_pct for these stocks (imputed FCF = OCF gives a misleading 100%).
         df["fcf_imputed_flag"] = df["free_cash_flow"].isna().astype(int)
+
+        # ── CapEx reconstruction (preferred over raw OCF fallback) ──
+        # Direct CapEx is absent from the CSV, so estimate it from the balance-sheet identity:
+        #   CapEx ≈ Δ Gross Block + Δ CWIP + Depreciation
+        # (net additions to fixed assets and work-in-progress, grossed back up by the year's
+        # depreciation charge). fcf_reconstructed = OCF − CapEx_est is a far better proxy than
+        # treating all OCF as free (the old behaviour), because it actually subtracts investment.
+        # NaN propagates (semantic truth): if ANY component is missing, capex_est is NaN and the
+        # row falls through to the conservative OCF fallback below.
+        _fa = _safe_numeric(df.get("fixed_assets", pd.Series(np.nan, index=df.index)))
+        _fa_1yb = _safe_numeric(df.get("fixed_assets_1yb", pd.Series(np.nan, index=df.index)))
+        _cwip = _safe_numeric(df.get("cwip", pd.Series(np.nan, index=df.index)))
+        _cwip_1yb = _safe_numeric(df.get("cwip_1yb", pd.Series(np.nan, index=df.index)))
+        _dep = _safe_numeric(df.get("depreciation", pd.Series(np.nan, index=df.index)))
+        df["capex_est"] = (_fa - _fa_1yb) + (_cwip - _cwip_1yb) + _dep
+        df["fcf_reconstructed"] = df["operating_cash_flow"] - df["capex_est"]
+
+        # fcf_reconstructed_flag: 1 where a null FCF was filled by the CapEx reconstruction
+        # (capex_est present). Pure-OCF fallback rows stay 0. Diagnostic only — does NOT alter
+        # fcf_imputed_flag, so the downstream fcf_to_cfo_pct suppression remains conservative.
+        _orig_null = df["fcf_imputed_flag"] == 1
+        _recon_ok = _orig_null & df["fcf_reconstructed"].notna()
+        df["fcf_reconstructed_flag"] = _recon_ok.astype(int)
+
+        # Fill priority: reconstructed FCF first, then raw OCF where reconstruction unavailable.
+        df["free_cash_flow"] = df["free_cash_flow"].fillna(df["fcf_reconstructed"])
         df["free_cash_flow"] = df["free_cash_flow"].fillna(df["operating_cash_flow"])
         if fcf_null_count > 0:
-            print(f"  ℹ️  FCF imputed from OCF for {fcf_null_count} stocks with null FCF")
+            _recon_n = int(df["fcf_reconstructed_flag"].sum())
+            print(f"  ℹ️  FCF imputed for {fcf_null_count} null stocks "
+                  f"({_recon_n} via CapEx reconstruction, {fcf_null_count - _recon_n} via OCF fallback)")
 
     df["fcf_yield"] = np.where(
         df["market_cap"].notna() & (df["market_cap"] > 0),
@@ -1898,6 +1963,32 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
 
+    # ── Sloan Receivables Accrual Divergence (earnings-quality trajectory) ──
+    # Richard Sloan's accrual anomaly: when receivables compound FASTER than revenue, reported
+    # sales are increasingly un-collected paper (channel stuffing / aggressive recognition) and
+    # forward returns mean-revert down. Reconstruct the receivables balance from its days metric:
+    #   Receivables ≈ DaysReceivable × Revenue / 365   (Crores)
+    # then compare its 3Y total growth against revenue's 3Y total growth. Positive delta = accruals
+    # outrunning real sales (a red trajectory). Defensive denominators + NaN propagation throughout.
+    _dr = _safe_numeric(df.get("days_receivable", pd.Series(np.nan, index=df.index)))
+    _dr_3yb = _safe_numeric(df.get("days_receivable_3yb", pd.Series(np.nan, index=df.index)))
+    _rev = _safe_numeric(df.get("revenue", pd.Series(np.nan, index=df.index)))
+    _rev_3yb = _safe_numeric(df.get("revenue_3yb", pd.Series(np.nan, index=df.index)))
+    df["receivables_est"] = _dr * _rev / 365.0
+    df["receivables_est_3yb"] = _dr_3yb * _rev_3yb / 365.0
+    _recv_growth_3y = np.where(
+        df["receivables_est_3yb"] > 0.0,
+        (df["receivables_est"] - df["receivables_est_3yb"]) / df["receivables_est_3yb"] * 100.0,
+        np.nan
+    )
+    _rev_growth_3y = np.where(
+        _rev_3yb > 0.0,
+        (_rev - _rev_3yb) / _rev_3yb * 100.0,
+        np.nan
+    )
+    # Both legs computed on the same total-% basis so the subtraction is apples-to-apples.
+    df["accrual_growth_delta"] = _recv_growth_3y - _rev_growth_3y
+
     # ── Cumulative FCF/CFO — Diamonds Lens 3 proxy (self-sufficiency test) ──
     # Book: 10Y cumulative FCF / 10Y cumulative CFO >= 25% (Mukherjea Ch.5).
     # CSV lacks 10Y cumulative series. Proxy: fcf_to_cfo_pct (point-in-time FCF/CFO %).
@@ -2294,6 +2385,58 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (df["value_creation_ratio"] <  1.0) &
         (df["value_creation_ratio"] >  0.0)   # exclude zero (no data / negative PAT)
     ).astype(int)
+
+    # ══════════════════════════════════════════════════════════════
+    #  LEVEL × TRAJECTORY PLANE — lift threshold checklists into a 2-axis (where it IS now,
+    #  which WAY it is moving) data plane. Pure cross-sectional + time-series array ops.
+    #  NOTE: value_creation_ratio / capital_misallocation_risk above are deliberately RETAINED
+    #  (scoring_engine applies a live misallocation penalty off them) — this block only ADDS.
+    # ══════════════════════════════════════════════════════════════
+
+    # Value-creation velocity: retention-weighted excess return = RR × (ROCE − CoE). RR is a
+    # decimal [0,1]; ROCE and COST_OF_EQUITY are PERCENT, so velocity is in percentage-points of
+    # economic value minted per year. Negative = compounding capital below its hurdle rate.
+    df["value_creation_velocity"] = (
+        df["reinvestment_rate"].fillna(0.0) * (df["roce"] - COST_OF_EQUITY)
+    )
+
+    # Expectations gap (Mauboussin): growth the market PRICES IN minus growth the business can
+    # SUSTAIN.  g_implied inverts the P/B–Gordon identity; g_star is the lower of the two organic
+    # ceilings (ROE×RR self-funded growth, and SSGR). Positive gap = priced for more than it can
+    # deliver (expectations risk); negative = pessimism / margin of safety. All PERCENT.
+    df["g_implied"] = _implied_growth_from_pb(df["pb_ratio"], df["roe"], COST_OF_EQUITY)
+    df["g_star"] = np.minimum(
+        df["roe"].fillna(0.0) * df["reinvestment_rate"].fillna(0.0),   # ROE × RR
+        df["ssgr"]                                                     # self-sustainable growth
+    )
+    df["expectations_gap"] = df["g_implied"] - df["g_star"]
+
+    # Trajectory taus — pairwise-sign Kendall's tau over each metric's oldest→newest level ladder.
+    # +1 = monotonic improvement, -1 = monotonic decay. Promoter levels are reconstructed from the
+    # current holding minus its trailing deltas (temp cols, dropped after the tau is read).
+    df["roce_tau"] = _kendall_tau_cols(
+        df, ["roce_med_10y", "roce_med_7y", "roce_med_5y", "roce_med_3y", "roce_1yb", "roce"])
+    df["moat_tau"] = _kendall_tau_cols(
+        df, ["opm_med_5y", "opm_1yb", "opm", "opm_latest_q"])
+    df["revenue_tau"] = _kendall_tau_cols(
+        df, ["revenue_5yb", "revenue_4yb", "revenue_3yb", "revenue_2yb", "revenue_1yb", "revenue"])
+    df["pat_tau"] = _kendall_tau_cols(
+        df, ["pat_5yb", "pat_4yb", "pat_3yb", "pat_2yb", "pat_1yb", "pat"])
+
+    _promo_now = _safe_numeric(df.get("promoter_holdings", pd.Series(np.nan, index=df.index)))
+    df["_promo_lvl_3y"] = _promo_now - _safe_numeric(df.get("change_promoter_3y", pd.Series(np.nan, index=df.index)))
+    df["_promo_lvl_2y"] = _promo_now - _safe_numeric(df.get("change_promoter_2y", pd.Series(np.nan, index=df.index)))
+    df["_promo_lvl_1y"] = _promo_now - _safe_numeric(df.get("change_promoter_1y", pd.Series(np.nan, index=df.index)))
+    df["_promo_lvl_now"] = _promo_now
+    df["promoter_tau"] = _kendall_tau_cols(
+        df, ["_promo_lvl_3y", "_promo_lvl_2y", "_promo_lvl_1y", "_promo_lvl_now"])
+    df.drop(columns=["_promo_lvl_3y", "_promo_lvl_2y", "_promo_lvl_1y", "_promo_lvl_now"], inplace=True)
+
+    # Composite trajectory = mean of the 4 fundamental taus (governance/promoter kept separate as a
+    # standalone signal). pandas .mean(axis=1) skips NaN, so a stock missing one ladder still scores.
+    df["trajectory_score"] = pd.concat(
+        [df["roce_tau"], df["moat_tau"], df["revenue_tau"], df["pat_tau"]], axis=1
+    ).mean(axis=1)
 
     # ── Anti-Pattern A: Dilution Vampire (Capital Deficiency Trap) ──
     # Fast revenue growth (≥30%) funded by chronic equity dilution rather than internal capital.
