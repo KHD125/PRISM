@@ -2262,8 +2262,13 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #         explicitly requires positive earnings; loss-makers don't qualify).
     #    de_slope_3y fillna(1): NaN = no trend data/Ind AS restatement → 1 > 0 → excluded
     #         (cannot verify falling D/E = won't award the Parikh badge — conservative).
-    #    NOT implementable: P/B < 3 (no price-to-book column in CSV), P/E × P/B < 22.5 (same),
-    #    intrinsic value discount 20% (requires DCF/EPV/Graham Number with BVPS not in CSV),
+    #    NOT implemented — P/B < 3 and P/E × P/B < 22.5: COMPUTABLE (derived pb_ratio exists,
+    #    98.6% coverage) but deliberately omitted — those are Intelligent Investor Ch.14/15
+    #    criteria (verified against the 3rd ed. 2026-06-13: defensive PE≤15/PB≤1.5/PE×PB≤22.5,
+    #    enterprising CR≥1.5); grafting them onto Parikh's screen would break Parikh book
+    #    fidelity, and a standalone fw_graham is banned (substrate ruling, Security Analysis
+    #    audit). Parikh's Stage 1 numbers descend from Graham's ENTERPRISING criteria, loosened.
+    #    NOT implementable: intrinsic value discount 20% (requires DCF/EPV modeling — not automatable),
     #    analyst coverage < 3 (external data not in CSV), sector out-of-favour (qualitative),
     #    Mr. Market Temperature Score (macro data: SIP flows, demat accounts, IPO volumes)
     _pk_nan      = pd.Series(np.nan, index=df.index)
