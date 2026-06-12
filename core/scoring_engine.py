@@ -1893,7 +1893,13 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (npm_fi.fillna(0) >= npm_1yb_fi.fillna(0)) &  # P6:  Margins not declining vs prior year
         (cfo_pat_fi.fillna(0) >= 70)          &   # P10: Accounting controls — CFO/PAT ≥ 70%
         (dilut_fi == 0)                       &   # P13: Zero equity dilution
-        (oplev_fi == 1)                           # P4:  Operating leverage — profit growing faster than sales
+        (oplev_fi == 1)                           # P6 proxy: Operating leverage — profit growing
+                                                  #   faster than sales = the "margin improvement
+                                                  #   drive" (book P6: "What is the company doing to
+                                                  #   maintain or improve profit margins?").
+                                                  #   NOT P4 — book P4 is the sales ORGANIZATION
+                                                  #   (qualitative, no CSV proxy). Mislabel fixed
+                                                  #   2026-06-12 against the converted book text.
     )
 
     # 12. 100-Bagger Hunter (Christopher Mayer — Hybrid Spec) — Early-stage Indian compounder
