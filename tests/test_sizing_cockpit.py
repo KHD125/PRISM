@@ -113,6 +113,47 @@ def test_loss_maker_expected_cagr_not_nan():
     assert abs(e.iloc[0] - 14.0) < 1e-9
 
 
+def test_expected_excess_return_identity():
+    """Mauboussin Ch.13: EV = P(up) x Upside% - P(down) x Downside%, per stock.
+    Healthy frame: fair_pe 35 / pe 25 -> upside 40%; stop 450 on close 500 -> downside 10%;
+    trajectory 0.5 -> win rate 0.35 + (0.75 * 0.30) = 0.575.
+    EV = 0.575*40 - 0.425*10 = 18.75."""
+    out = compute_composite_score(_frame())
+    assert abs(out["mauboussin_ev_upside_pct"].iloc[0] - 40.0) < 1e-9
+    assert abs(out["mauboussin_ev_downside_pct"].iloc[0] - 10.0) < 1e-9
+    assert abs(out["expected_excess_return"].iloc[0] - 18.75) < 1e-9
+
+
+def test_expected_excess_return_loss_maker_no_upside_estimate():
+    """No PE -> no re-rating upside estimate -> upside 0, EV = -(1-p) x downside (<= 0)."""
+    out = compute_composite_score(_frame(pe=np.nan, fair_pe_qglp=np.nan))
+    assert (out["mauboussin_ev_upside_pct"] == 0.0).all()
+    assert (out["expected_excess_return"] <= 0.0).all()
+    assert not out["expected_excess_return"].isna().any()
+
+
+def test_expected_excess_return_downside_bounds():
+    """Downside leg clipped to [5, 50]; broken trend / missing stop -> neutral 20%."""
+    # Very tight stop (1% below): floor at 5%
+    tight = compute_composite_score(_frame(vstop_value=495.0))
+    assert (tight["mauboussin_ev_downside_pct"] == 5.0).all()
+    # Stop far below (80% below): cap at 50%
+    wide = compute_composite_score(_frame(vstop_value=100.0))
+    assert (wide["mauboussin_ev_downside_pct"] == 50.0).all()
+    # Broken trend (price below stop): neutral 20%
+    broken = compute_composite_score(_frame(close_price=400.0, vstop_value=450.0))
+    assert (broken["mauboussin_ev_downside_pct"] == 20.0).all()
+    # Missing stop: neutral 20%
+    nostop = compute_composite_score(_frame(vstop_value=np.nan))
+    assert (nostop["mauboussin_ev_downside_pct"] == 20.0).all()
+
+
+def test_expected_excess_return_never_nan():
+    out = compute_composite_score(_frame(pe=np.nan, fair_pe_qglp=np.nan, vstop_value=np.nan,
+                                         trajectory_score=np.nan))
+    assert not out["expected_excess_return"].isna().any()
+
+
 def test_loss_maker_weight_not_nan():
     """PE NaN + negative valuation residual: the payoff ratio must fall back to the
     neutral 1.5, never NaN — otherwise Kelly and the final weight go NaN.

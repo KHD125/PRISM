@@ -2574,49 +2574,51 @@ def render_mauboussin_radar(stock: pd.Series):
         unsafe_allow_html=True,
     )
 
-    # ── Layer 3: Static Reverse-DCF Expected Value Matrix (stateless display) ──
-    # Bloomberg-cockpit contract: this module is a 100% stateless display engine — it must
-    # NOT host interactive widgets (no st.number_input/st.columns) that would mutate global
-    # session / stock-selection state. The probabilistic Reverse-DCF is therefore rendered as
-    # a fixed three-scenario band (Conservative → Base → Bull). Each scenario applies Mauboussin's
-    # Expected Value identity   EV = P(Upside)·Upside% − P(Downside)·Downside%   to a pre-set,
-    # clearly-labelled probability/payoff assumption, so the asymmetry read is fully deterministic.
+    # ── Layer 3: Per-Stock Payoff Framework (Mauboussin Ch.13, stateless display) ──
+    # Replaced the old STATIC 3-scenario matrix (identical hardcoded numbers for every
+    # stock — decoration, not analysis). All values below are pre-materialized per stock
+    # by the engine (MOD 5): P(up) = trajectory-calibrated win_rate_proxy; Upside% =
+    # re-rating gap to quality-justified fair PE; Downside% = distance to the volatility
+    # stop. Zero math in the UI beyond the book's sizing verdict zoning.
+    p_up   = float(_g(stock, "win_rate_proxy", 0.5)) * 100.0
+    up_pct = float(_g(stock, "mauboussin_ev_upside_pct", 0.0))
+    dn_pct = float(_g(stock, "mauboussin_ev_downside_pct", 20.0))
+    ev     = float(_g(stock, "expected_excess_return", 0.0))
+    # Verdict + sizing pre-materialized by the engine (Ch.13 table) — pure display here
+    ev_verdict = str(_g(stock, "mauboussin_ev_verdict", "Insufficient Edge · No position"))
+    ev_color   = "#e74c3c" if "Insufficient" in ev_verdict else _MAUB_COLOR
+
     st.markdown(
         f"<div style='font-size:0.7rem;font-weight:800;color:{_MAUB_COLOR};"
         f"text-transform:uppercase;letter-spacing:1px;margin:10px 0 4px 0;'>"
-        f"🧮 Reverse DCF — Expected Value Matrix</div>"
+        f"🧮 Payoff Framework — Per-Stock Expected Excess Return</div>"
         f"<div style='font-size:0.62rem;color:{COLORS['text_muted']};margin-bottom:8px;'>"
-        f"Expected Value = P(Upside) × Upside% − P(Downside) × Downside% "
-        f"· three fixed reference scenarios (stateless)</div>",
+        f"EV = P(Upside) × Upside% − P(Downside) × Downside% · book minimum: 5% edge "
+        f"· inputs computed per stock by the engine</div>",
         unsafe_allow_html=True,
     )
 
-    # (label, P(Upside)%, Upside%, P(Downside)%, Downside%) — fixed reference assumptions.
-    _ev_scenarios = [
-        ("Conservative", 40.0, 25.0, 60.0, 20.0),
-        ("Base Case",    55.0, 40.0, 45.0, 20.0),
-        ("Bull Case",    70.0, 60.0, 30.0, 18.0),
-    ]
-    _ev_tiles = ""
-    for _sc_name, p_up, up_pct, p_dn, dn_pct in _ev_scenarios:
-        ev = (p_up / 100.0 * up_pct) - (p_dn / 100.0 * dn_pct)
-        ev_color = _MAUB_COLOR if ev > 0 else "#e74c3c"
-        ev_verdict = "Asymmetric Opportunity" if ev > 0 else "Unfavorable Odds"
-        _ev_tiles += (
+    def _ev_tile(label: str, big: str, sub: str, clr: str) -> str:
+        return (
             f"<div style='flex:1;min-width:150px;background:{COLORS['bg_secondary']};"
-            f"border:1px solid {ev_color}55;border-top:3px solid {ev_color};"
+            f"border:1px solid {clr}55;border-top:3px solid {clr};"
             f"border-radius:10px;padding:11px 14px;'>"
             f"<div style='font-size:0.58rem;font-weight:700;color:{COLORS['text_muted']};"
-            f"text-transform:uppercase;letter-spacing:0.7px;'>{_esc(_sc_name)}</div>"
-            f"<div style='font-size:1.5rem;font-weight:900;color:{ev_color};"
-            f"line-height:1.1;margin-top:3px;'>{ev:+.1f}%</div>"
-            f"<div style='font-size:0.58rem;color:{ev_color};font-weight:600;'>"
-            f"Expected Value · {ev_verdict}</div>"
-            f"<div style='font-size:0.56rem;color:{COLORS['text_muted']};margin-top:4px;'>"
-            f"P↑ {p_up:.0f}% × +{up_pct:.0f}% &nbsp;·&nbsp; P↓ {p_dn:.0f}% × −{dn_pct:.0f}%</div>"
+            f"text-transform:uppercase;letter-spacing:0.7px;'>{label}</div>"
+            f"<div style='font-size:1.5rem;font-weight:900;color:{clr};"
+            f"line-height:1.1;margin-top:3px;'>{big}</div>"
+            f"<div style='font-size:0.58rem;color:{clr};font-weight:600;'>{sub}</div>"
             f"</div>"
         )
 
+    _ev_tiles = (
+        _ev_tile("Upside Leg", f"+{up_pct:.1f}%",
+                 f"P↑ {p_up:.0f}% · re-rating to fair P/E", _MAUB_COLOR) +
+        _ev_tile("Downside Leg", f"−{dn_pct:.1f}%",
+                 f"P↓ {100 - p_up:.0f}% · distance to volatility stop", "#e74c3c") +
+        _ev_tile("Expected Excess Return", f"{ev:+.1f}%",
+                 _esc(ev_verdict), ev_color)
+    )
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;'>{_ev_tiles}</div>",
         unsafe_allow_html=True,

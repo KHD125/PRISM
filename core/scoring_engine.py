@@ -1205,6 +1205,45 @@ def compute_composite_score(
         _total_equity_rupees * (df["optimal_portfolio_weight_pct"] / 100.0)
     )
 
+    # ── Mauboussin Ch.13 Payoff Framework: per-stock Expected Excess Return ──
+    # EV = P(upside) × Upside% − P(downside) × Downside%   (book's exact identity)
+    #   P(upside)  = win_rate_proxy (trajectory-tau calibrated, 0.35–0.65)
+    #   Upside%    = re-rating gap to quality-justified fair PE (fair_pe_qglp / pe − 1),
+    #                clipped [0%, 100%]; no PE (loss-maker) → no re-rating estimate → 0
+    #   Downside%  = distance to the volatility stop (the defined-risk exit), clipped
+    #                [5%, 50%]; stop missing or already breached → neutral 20% assumption
+    # Book threshold: EV < 5% = insufficient compensation → no position (UI renders verdict).
+    _ev_up_m5 = (
+        ((_fair_pe_m5 / _pe_m5.clip(lower=1.0)) - 1.0).clip(0.0, 1.0) * 100.0
+    ).fillna(0.0)
+    _ev_dn_raw = pd.Series(
+        np.where(
+            _close_m5.fillna(0) > 0,
+            (_close_m5 - _vstop_m5) / _close_m5 * 100.0,
+            np.nan
+        ),
+        index=df.index
+    ).clip(5.0, 50.0)
+    _ev_dn_m5 = _ev_dn_raw.where(
+        _vstop_m5.notna() & _close_m5.notna() & (_close_m5 > _vstop_m5),
+        20.0
+    )
+    df["mauboussin_ev_upside_pct"]   = _ev_up_m5
+    df["mauboussin_ev_downside_pct"] = _ev_dn_m5
+    df["expected_excess_return"] = (
+        df["win_rate_proxy"] * _ev_up_m5 - (1.0 - df["win_rate_proxy"]) * _ev_dn_m5
+    )
+    # Book's Ch.13 sizing table, materialized here so the UI stays pure display:
+    # >15% high (8-12%) · 10-15% mod-high (5-8%) · 5-10% moderate (3-5%) · <5% none
+    _eer = df["expected_excess_return"]
+    df["mauboussin_ev_verdict"] = np.select(
+        [_eer >= 15.0, _eer >= 10.0, _eer >= 5.0],
+        ["High Conviction · 8–12% position",
+         "Moderate-High · 5–8% position",
+         "Moderate · 3–5% position"],
+        default="Insufficient Edge · No position (< 5% min)"
+    )
+
     print(f"\n🏆 Composite Score: mean={df['composite_score'].mean():.1f}, "
           f"median={df['composite_score'].median():.1f}")
     print("\nConviction Tier Distribution:")
