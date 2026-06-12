@@ -448,6 +448,75 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     """Compute all 36+ derived signals. Pure vectorized Pandas."""
     print("\n🧮 Computing derived signals...")
 
+    # ═══════════════════════════════════════════════════════════════
+    # SCHEMA NORMALIZATION — permanent KeyError shield
+    # When any Google Sheets tab fails to load, ALL its columns are absent.
+    # We materialize every expected non-ratio column as float64 NaN so that
+    # every downstream np.where / .fillna() guard works without crashing.
+    # Over-inclusive by design: if a column is already in df (from the ratio
+    # sheet), the guard is a no-op. New columns just get added to the list.
+    # ═══════════════════════════════════════════════════════════════
+    _EXPECTED_COLS = [
+        # ── Income Statement ──
+        "pat", "pat_1yb", "pat_2yb", "pat_3yb", "pat_4yb", "pat_5yb",
+        "revenue", "revenue_1yb", "revenue_2yb", "revenue_3yb", "revenue_4yb", "revenue_5yb",
+        "ebitda", "ebit", "pbt",
+        "expenses", "expenses_1yb",
+        "depreciation", "depreciation_1yb",
+        "eps", "eps_1yb",
+        "equity_shares", "equity_shares_1yb",
+        # ── Balance Sheet ──
+        "fixed_assets", "fixed_assets_1yb", "fixed_assets_2yb", "fixed_assets_3yb",
+        "total_assets", "total_assets_1yb",
+        "net_worth", "net_worth_1yb",
+        "reserves", "reserves_1yb",
+        "cwip", "cwip_1yb",
+        "cash_equivalents", "cash_equivalents_1yb",
+        "debt", "debt_1yb", "debt_2yb", "debt_3yb",
+        "days_receivable", "days_receivable_1yb", "days_receivable_2yb", "days_receivable_3yb",
+        "days_payable", "days_payable_1yb",
+        "inventory_days", "inventory_days_1yb",
+        "inventory_turnover", "inventory_turnover_1yb",
+        # ── Cashflow ──
+        "free_cash_flow", "fcf_1yb",
+        "operating_cash_flow", "ocf_1yb",
+        "investing_cash_flow", "financing_cash_flow",
+        "net_cash_flow", "ncf_1yb",
+        # ── Technicals ──
+        "close_price",
+        "sma_200d", "sma_50d",
+        "vol_sma_5d", "vol_sma_10d", "vol_sma_20d", "vol_sma_50d",
+        "volume",
+        "vstop_value", "last_vstop_change",
+        "crs_50d", "crs_26w", "crs_52w",
+        "ret_vs_n500_3m", "ret_vs_n500_6m", "ret_vs_n500_1y",
+        "ret_vs_industry_1y", "ret_vs_industry_3m",
+        "adx_14w", "rsi_14d",
+        "dist_52wh", "dist_52wl", "dist_13wh", "dist_ath",
+        "dist_52wh_days", "golden_cross_days", "breakout_window",
+        "vcp_volume_dryup", "d45_trend_structure", "d47_rs_composite",
+        "pe_med_10y", "pe_med_5y", "industry_pe",
+        "opm_latest_q", "npm_latest_q", "gpm_latest_q",
+        "q_pat_yoy", "q_rev_yoy", "q_eps_yoy",
+        "q_pat_lq", "q_rev_lq", "q_pat_2q", "q_rev_2q",
+        # ── Shareholdings ──
+        "promoter_holdings", "promoter_holdings_1qb",
+        "fii_holdings", "dii_holdings",
+        "change_fii_lq", "change_fii_1y",
+        "change_dii_lq",
+        "change_promoter_lq", "change_promoter_1y", "change_promoter_2y", "change_promoter_3y",
+        "pledged_percentage", "pledged_1yb",
+        "insider_trading", "pledge_falling_1y",
+    ]
+    _missing_cols = [c for c in _EXPECTED_COLS if c not in df.columns]
+    if _missing_cols:
+        _guard_frame = pd.DataFrame(
+            np.nan, index=df.index, columns=_missing_cols, dtype="float64"
+        )
+        df = pd.concat([df, _guard_frame], axis=1)
+        print(f"  ⚠️  Schema guard: materialized {len(_missing_cols)} absent columns as NaN "
+              f"({', '.join(_missing_cols[:5])}{'...' if len(_missing_cols) > 5 else ''})")
+
     # ── EPS fallback: fill NaN eps_gr_yoy from raw eps/eps_1yb before winsorization ──
     # 34 stocks where Screener couldn't compute eps_gr_yoy (turnarounds, loss→profit transitions).
     # Compute from raw values first so these stocks go through winsorization with real values.
