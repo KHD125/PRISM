@@ -2827,8 +2827,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _psu_low_velocity = (df["reinvestment_rate"].fillna(1) < 0.40) | (df["fcf_to_ocf_velocity"].fillna(0) < 0.40)
     _psu_cwip_delays = (df["cwip"].fillna(0) > 0) & (df["cwip_1yb"].fillna(0) > 0) & (df["cwip_conversion"].fillna(0) <= 0)
 
+    # Value-destruction LOOP = core condition + at least one reinforcing leg.
+    # Recalibrated 2026-06-12: the old 4-way AND was DEAD CODE — its legs barely
+    # intersect on live data (PSU+low_spread=6, PSU+low_velocity=5, PSU+cwip_delays=4
+    # stocks → all four simultaneously = 0 of 2107). Core = returns below cost of
+    # equity (the definition of value destruction); reinforcement = the destruction
+    # mechanism (cash not reinvested productively OR capex stuck in CWIP limbo).
     df["psu_value_destruction_flag"] = (
-        _is_psu_proxy & _psu_low_spread & _psu_low_velocity & _psu_cwip_delays
+        _is_psu_proxy & _psu_low_spread & (_psu_low_velocity | _psu_cwip_delays)
     ).astype(int)
 
     # ── Epoch 3 Structural Filter Pass (Capital Return Floor + Solvency) ──

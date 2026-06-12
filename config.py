@@ -840,10 +840,16 @@ CONSISTENT_SECTORS = frozenset([
 FORENSIC_MAX_FLAGS = 27
 FORENSIC = {
     "cfo_pat_alert":              70.0,   # below this = Level 1 red flag (percentage, e.g. 73.04 = 73%)
-    # Coffee Can Clean Accounts master signal (Mukherjea Ch.3): CFO/EBITDA must be > 0.9 (ratio)
-    # = 90.0 when cfo_to_ebitda is stored as percentage. "Below 0.9 for even a single year demands
-    # investigation; below 0.8 is a disqualifying signal — something is seriously wrong."
-    "cfo_ebitda_clean_threshold": 90.0,  # percentage threshold; rf_low_cfo_ebitda fires below this
+    # FORENSIC CFO/EBITDA floor — recalibrated 90 → 50 (2026-06-12 Schilit audit).
+    # CFO is AFTER tax + interest + working capital; EBITDA is BEFORE all three, so
+    # ~75% is mathematical PAR for a clean 25%-tax company (live universe median: 68.8%).
+    # The old 90% line was Mukherjea's Coffee Can ELITE-QUALITY gate (it stays in
+    # fw_coffee_can, untouched) — as a RED FLAG it fired for 54% of the universe,
+    # counting ordinary tax mathematics toward red_flag_count and the cascading
+    # multiplier. Schilit's actual cash detections are CFFO vs Net Income
+    # (rf_low_cfo_pat < 70%) and FCF/EBITDA < 0.3 (rf_low_fcf_ebitda) — both exact.
+    # 50% = conversion clearly below what taxes alone explain → genuine anomaly only.
+    "cfo_ebitda_clean_threshold": 50.0,  # percentage threshold; rf_low_cfo_ebitda fires below this
     "receivable_rise_days":  15,    # DSO rising more than this = flag
     "inventory_vs_revenue":  True,  # inv growth > rev growth = flag
     "capex_depr_ratio_max":  3.0,   # capex/depr > 3 without rev jump

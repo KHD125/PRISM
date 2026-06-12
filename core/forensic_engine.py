@@ -518,15 +518,16 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # 26. PSU Value-Destruction Loop (Epoch 3)
     df["rf_psu_value_destruction"] = df.get("psu_value_destruction_flag", pd.Series(0, index=df.index)).fillna(0).astype(int)
 
-    # 27. CFO/EBITDA Below Coffee Can Clean Accounts Floor
-    # Saurabh Mukherjea "Coffee Can Investing" Ch.3: "CFO/EBITDA must be above 0.9
-    # for every one of the last 10 years." Below 0.9 (= 90%) for any year demands
-    # investigation; below 0.8 is a disqualifying signal — cash is not backing profits.
-    # Distinct from rf_low_cfo_pat (which checks OCF vs PAT, not vs EBITDA):
-    #   CFO/PAT ≥ 70% checks that profit converts to cash.
-    #   CFO/EBITDA ≥ 90% checks that EBITDA itself is not artificially inflated
-    #   via receivables stuffing, aggressive revenue recognition, or RPT revenue.
-    # cfo_to_ebitda stored as percentage in CSV (e.g. 92.4 = 92.4%). Threshold = 90.0.
+    # 27. CFO/EBITDA Forensic Floor (recalibrated 90 → 50, 2026-06-12 Schilit audit)
+    # Detects EBITDA artificially inflated via receivables stuffing, aggressive revenue
+    # recognition, or RPT revenue — cash conversion far below what tax math explains.
+    # WHY 50 and not Mukherjea's 90: CFO is AFTER tax+interest+ΔWC, EBITDA is BEFORE
+    # all three → ~75% is PAR for a clean 25%-tax company (universe median 68.8%).
+    # The 90% line is Coffee Can's ELITE-QUALITY gate (still enforced in fw_coffee_can);
+    # as a red flag it fired for 54% of the universe, polluting red_flag_count and the
+    # cascading multiplier. Schilit's own cash detections are CFFO vs Net Income
+    # (rf_low_cfo_pat) and FCF/EBITDA < 0.3 (rf_low_fcf_ebitda) — both implemented.
+    # cfo_to_ebitda stored as percentage in CSV (e.g. 92.4 = 92.4%). Threshold = 50.0.
     df["rf_low_cfo_ebitda"] = np.where(
         df.get("cfo_to_ebitda", pd.Series(np.nan, index=df.index)).notna(),
         (df.get("cfo_to_ebitda", pd.Series(100.0, index=df.index)) < FORENSIC["cfo_ebitda_clean_threshold"]).astype(int),
@@ -668,7 +669,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_wc_double_squeeze":        "DSO rising >10 days AND DPO falling >10 days simultaneously — double working capital squeeze",
         "rf_psu_value_destruction":    "PSU Value-Destruction Loop (low spread, high payout, CWIP delays)",
         "rf_lease_inflation":          "Ind AS 116 lease mirage — EBITDA inflated by RoU capitalisation (QSR/Retail/Aviation)",
-        "rf_low_cfo_ebitda":           "CFO/EBITDA <90% — Coffee Can clean accounts failure (Mukherjea master signal)",
+        "rf_low_cfo_ebitda":           "CFO/EBITDA <50% — cash conversion far below tax-math par; EBITDA likely inflated",
     }
 
 
