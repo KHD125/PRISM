@@ -509,7 +509,7 @@ with st.sidebar:
     # 8. Buy Zone — entry timing vs Volatility Stop (options present in remaining stocks)
     _BUY_ZONE_ORDER = [
         "🟢 Perfect Entry (Low Risk)", "🟡 Standard Zone",
-        "🔴 Extended (Wait for Pullback)", "⚪ Uncharted",
+        "🔴 Extended (Wait for Pullback)", "🔻 Below Stop (Trend Broken)", "⚪ Uncharted",
     ]
     _buy_opts = _ordered_present(_cf, "buy_zone_label", _BUY_ZONE_ORDER)
     sel_buy_zone = _ms_cascade("Buy Zone", _buy_opts, "sb_buy_zone", default=[],

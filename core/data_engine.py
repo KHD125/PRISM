@@ -1228,13 +1228,20 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         ((_close_t - _vstop_t) / _vstop_t) * 100,
         np.nan
     )
+    # Below-stop branch FIRST (Marks audit fix 2026-06-12): dist_to_vstop is NEGATIVE
+    # when price trades below the stop, and the old `<= 5` branch labeled those broken
+    # trends "Perfect Entry (Low Risk)" — the most dangerous technical state wearing the
+    # safest label (883 stocks). It also polluted the Marks Shield Price-vs-Value pillar,
+    # which awards its check on this exact label. Marks: risk is highest when it feels lowest.
     df["buy_zone_label"] = np.select(
         [
-            df["dist_to_vstop"] <= 5,   # Within 5% of stop loss (Asymmetric Risk/Reward)
+            df["dist_to_vstop"] < 0,    # Price BELOW the stop — trend broken, not an entry
+            df["dist_to_vstop"] <= 5,   # Within 5% above stop (Asymmetric Risk/Reward)
             df["dist_to_vstop"] <= 12,  # Normal volatility buffer
             df["dist_to_vstop"] > 25    # Extended far beyond 50DMA/VSTOP
         ],
         [
+            "🔻 Below Stop (Trend Broken)",
             "🟢 Perfect Entry (Low Risk)",
             "🟡 Standard Zone",
             "🔴 Extended (Wait for Pullback)"

@@ -98,3 +98,42 @@ def test_tsunami_still_requires_all_technicals():
     frame["vstop_green"] = 0
     out = detect_catalysts_and_tsunami(frame)
     assert (out["tsunami_signal"] == 0).all()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FIX 3 — buy_zone_label: below-stop stocks must never be "Perfect Entry"
+# (Marks audit 2026-06-12: dist_to_vstop goes NEGATIVE below the stop, and the
+# old `dist <= 5` branch labeled broken trends "🟢 Perfect Entry (Low Risk)" —
+# the most dangerous technical state wearing the safest label. This also
+# polluted the Marks Cycle Shield's Price-vs-Value pillar, which reads the label.)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_below_stop_is_not_perfect_entry():
+    """Price 20% BELOW the volatility stop = trend broken, maximum technical risk."""
+    out = compute_derived_signals(_frame(close_price=80.0, vstop_value=100.0))
+    assert (out["buy_zone_label"] == "🔻 Below Stop (Trend Broken)").all(), (
+        f"Got: {out['buy_zone_label'].iloc[0]} — a stock below its stop must never "
+        "be labeled Perfect Entry"
+    )
+
+
+def test_just_above_stop_is_perfect_entry():
+    """Price 3% above the stop = the genuine asymmetric risk/reward zone."""
+    out = compute_derived_signals(_frame(close_price=103.0, vstop_value=100.0))
+    assert (out["buy_zone_label"] == "🟢 Perfect Entry (Low Risk)").all()
+
+
+def test_extended_far_above_stop():
+    out = compute_derived_signals(_frame(close_price=130.0, vstop_value=100.0))
+    assert (out["buy_zone_label"] == "🔴 Extended (Wait for Pullback)").all()
+
+
+def test_marks_price_value_pillar_rejects_below_stop():
+    """The Marks Shield P pillar reads the label — broken trends must fail it."""
+    from scoring_engine import compute_qglp_score
+    df = compute_derived_signals(_frame(close_price=80.0, vstop_value=100.0))
+    out = compute_qglp_score(df)
+    assert (out["marks_price_value"] == 0).all(), (
+        "Marks 'price below value' pillar must not award its check to a stock "
+        "trading below its volatility stop"
+    )
