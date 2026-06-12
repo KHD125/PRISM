@@ -1,0 +1,217 @@
+{
+  "_meta": {
+    "title": "The Unusual Billionaires — Quantitative Specification Ledger",
+    "author": "Saurabh Mukherjea (Ambit Capital, 2016)",
+    "extracted_from": "docs/unusual_billionaires_master_compiled.txt",
+    "extraction_date": "2026-05-23",
+    "pdf_pages": 421,
+    "purpose": "Authoritative source of truth for all quantitative thresholds in the Greatness Formula. Used to verify correctness of fw_unusual_billionaires in core/scoring_engine.py and IBAS moat engine in core/data_engine.py."
+  },
+
+  "greatness_formula": {
+    "_chapter": "Chapter 1 — Quantifying Greatness",
+    "_pages": "10–25, Appendix 2 (pp. 339–340)",
+    "_source_quote": "revenue growth of 10 per cent and ROCE of 15 per cent every year for the past ten years",
+
+    "non_financial_companies": {
+      "revenue_growth_hurdle_pct": 10.0,
+      "revenue_frequency": "EVERY consecutive year for 10 years",
+      "roce_hurdle_pct": 15.0,
+      "roce_frequency": "EVERY consecutive year for 10 years",
+      "market_cap_min_crore": 100,
+      "debt_to_equity_max": 1.0,
+      "promoter_pledge_max_pct": 10.0,
+      "_note_roce_derivation": "ROCE = EBIT / Capital Employed. CE = Fixed Assets + Working Capital. Cost of capital for India is ~15% (8% risk-free + 6.5-7% equity risk premium). Companies must exceed their own cost of capital to be great.",
+      "_source_page": "17-21"
+    },
+
+    "financial_companies_bfsi": {
+      "roe_hurdle_pct": 15.0,
+      "roe_frequency": "EVERY consecutive year for 10 years",
+      "loan_book_growth_hurdle_pct": 15.0,
+      "loan_book_growth_frequency": "EVERY consecutive year for 10 years",
+      "_note": "BFSI companies use ROE and loan growth instead of ROCE and revenue (banks have no traditional ROCE). The proxy in code uses revenue CAGR since loan book data is not in CSV — this is the best available approximation.",
+      "_source_page": "20-21",
+      "_source_quote": "ROE of 15 per cent and loan book growth of 15 per cent every year for financial services companies"
+    },
+
+    "cost_of_capital_derivation": {
+      "risk_free_rate_pct": 8.0,
+      "equity_risk_premium_pct": 6.5,
+      "india_cost_of_capital_pct": 15.0,
+      "_note": "8% = 10-year GOI bond yield (early 2016). ERP = 4% US long-term ERP + 2.5% India rating premium (S&P BBB-). Sum = ~15%. Validated by Sensex 20/30-year CAGR of ~15%.",
+      "_source_page": "18-19"
+    }
+  },
+
+  "implementation_mapping": {
+    "_file": "core/scoring_engine.py",
+    "_function": "compute_qglp_score → fw_unusual_billionaires block",
+
+    "roce_10y": {
+      "book_requirement": "ROCE ≥ 15% every year for 10 years",
+      "code_proxy": "roce_med_10y >= 15",
+      "proxy_justification": "10Y ROCE median covers the full decade window. Two overlapping windows (10Y + 5Y both clearing) is harder to fake than a single average.",
+      "status": "IMPLEMENTED"
+    },
+    "roce_5y": {
+      "book_requirement": "ROCE ≥ 15% still intact (moat must be current)",
+      "code_proxy": "roce_med_5y >= 15",
+      "proxy_justification": "5Y ROCE median confirms moat has not eroded in the recent window.",
+      "status": "IMPLEMENTED"
+    },
+    "revenue_growth_non_fin": {
+      "book_requirement": "Revenue growth ≥ 10% every year for 10 consecutive years",
+      "code_proxy": "rev_gr_10y >= 10.0 AND rev_gr_y2..y5 each >= 10%",
+      "proxy_justification": "10Y CAGR covers the full period. Individual year checks (y2–y5) enforce per-year consistency for the 4 observable annual windows. Years 6-10 covered only by CAGR due to data limitation.",
+      "status": "IMPLEMENTED"
+    },
+    "revenue_growth_financial": {
+      "book_requirement": "Loan book growth ≥ 15% every year for 10 consecutive years",
+      "code_proxy": "rev_10y_ub >= 15 when is_financial=True (ub_growth_hurdle)",
+      "proxy_justification": "Loan book data not available in CSV. Revenue CAGR used as best available proxy. The 15% hurdle matches the book's loan growth threshold.",
+      "status": "IMPLEMENTED — proxy, not exact"
+    },
+    "roe_financial": {
+      "book_requirement": "ROE ≥ 15% every year for 10 years (financials)",
+      "code_proxy": "roce_med_10y >= 15 (financials: ROCE proxy for ROE)",
+      "proxy_justification": "For financial companies, ROE and ROCE computed from CSV data are often similar. Dedicated ROE 10Y median column would be more accurate but is not available.",
+      "status": "IMPLEMENTED — approximate"
+    },
+    "year_by_year_revenue": {
+      "book_requirement": "Revenue ≥ 10% per year individually (not just as CAGR average)",
+      "code_proxy": "_cc_each_year: rev_gr_y2 >= 10 AND rev_gr_y3 >= 10 AND rev_gr_y4 >= 10 AND rev_gr_y5 >= 10",
+      "code_file": "scoring_engine.py:1161-1162",
+      "status": "IMPLEMENTED — years 2-5 only (years 6-10 via CAGR)"
+    },
+    "sector_growth_hurdle": {
+      "book_requirement": "Non-fin: 10% revenue; Fin: 15% loan growth",
+      "code_proxy": "ub_growth_hurdle = np.where(is_financial, 15.0, 10.0)",
+      "code_file": "scoring_engine.py:1320",
+      "status": "IMPLEMENTED"
+    },
+    "opm_stability": {
+      "book_requirement": "Margin stability through cycles (qualitative check)",
+      "code_proxy": "opm_stable == 1",
+      "proxy_justification": "opm_stable is a pre-computed flag (1 if OPM standard deviation < threshold across years). Best available proxy for margin resilience.",
+      "status": "IMPLEMENTED — qualitative proxy"
+    },
+    "debt_discipline": {
+      "book_requirement": "D/E < 1.0 (from Codex chapter on capital discipline)",
+      "code_proxy": "is_financial OR debt_to_equity < 1.0",
+      "status": "IMPLEMENTED"
+    },
+    "governance_pledge": {
+      "book_requirement": "Owner-operator alignment; no excessive pledge",
+      "code_proxy": "pledged_percentage < 10%",
+      "status": "IMPLEMENTED"
+    }
+  },
+
+  "ibas_moat_framework": {
+    "_appendix": "Appendix 1 — John Kay's IBAS Framework",
+    "_pages": "325–337",
+    "_critical_finding": "IBAS framework is ENTIRELY QUALITATIVE in the book. There are NO quantitative thresholds specified for any of the four moat types. The proxies below are engineering implementations derived from financial theory.",
+
+    "brands_and_reputation": {
+      "book_definition": "Reputation allows firms to charge premium prices for quality customers cannot verify before purchase. Built over years; costly to replicate.",
+      "book_indicators": ["Brand recognition surveys", "Length of warranties", "Years in market", "Marketing spend as % of revenue", "Price premium vs peers"],
+      "code_proxy": "ibas_reputation_score = opm_stable*50 + (d11_npm_above_5y_med > 0)*50",
+      "proxy_rationale": "Stable OPM = ability to maintain pricing power (brand moat). NPM above own 5Y median = premium sustained over time. Both together = 100.",
+      "code_file": "data_engine.py:1176-1178",
+      "score_range": "0-100",
+      "status": "IMPLEMENTED"
+    },
+
+    "architecture": {
+      "book_definition": "Network of formal and informal contracts with employees, suppliers, customers. Allows firms with ordinary people to produce extraordinary results.",
+      "book_indicators": ["Cross-department cooperation", "Staff attrition rate", "Consistent messaging across organization", "Ongoing product/process innovation"],
+      "book_example": "GCMMF (Amul), Maruti Suzuki supply chain — 270 suppliers integrated into JIT delivery",
+      "code_proxy": "ibas_architecture_score = (ccc < 0) * 100",
+      "proxy_rationale": "Negative Cash Conversion Cycle = company collects from customers before paying suppliers (HUL, Asian Paints, Nestle pattern). This is the financial signature of dominant supply chain bargaining power — Kay's 'relational contract' moat in quantifiable form.",
+      "code_file": "data_engine.py:1183",
+      "score_range": "0 or 100",
+      "status": "IMPLEMENTED"
+    },
+
+    "innovation": {
+      "book_definition": "Source of competitive advantage but most tenuous — expensive, uncertain, hard to manage. Powerful when twinned with reputation and architecture.",
+      "book_caveat": "Innovation is rarely a sustainable standalone moat; it must be protected by brand and architecture.",
+      "code_proxy": "ibas_innovation_score = (nfat > 4.0)*50 + ssgr_self_funded*50",
+      "proxy_rationale": "NFAT > 4 = asset-light model generating 4× revenue per unit of fixed assets (capital efficiency = innovation in process). SSGR self-funded = growth funded from internal cash without dilution (innovation that creates value rather than destroys it).",
+      "code_file": "data_engine.py:1186-1188",
+      "score_range": "0-100",
+      "status": "IMPLEMENTED"
+    },
+
+    "strategic_assets": {
+      "book_definition": "Intellectual property (patents), licences, natural resource access, political contacts, sunk-cost first-mover advantages, natural monopolies.",
+      "book_examples": ["Coke formula (IP)", "Telecom spectrum licences", "Tata Steel coal/iron ore mines", "IRB highway (sunk-cost moat)"],
+      "code_proxy": "ibas_strategic_assets_score = (d19_cwip_conversion > 0) * 100",
+      "proxy_rationale": "d19 = change in net fixed assets. Positive d19 means the company is actively converting CWIP to productive capacity — capital is flowing into real strategic infrastructure, not sitting idle. Best available proxy for asset-base moat without balance sheet line-by-line data.",
+      "code_file": "data_engine.py:1192",
+      "score_range": "0 or 100",
+      "status": "IMPLEMENTED — proxy, not exact"
+    },
+
+    "composite_ibas_score": {
+      "formula": "(reputation + architecture + innovation + strategic_assets) / 4.0",
+      "scale": "0-100 (equal-weight average across four moat types)",
+      "interpretation": {
+        "75-100": "Deep multi-moat franchise (3+ pillars active)",
+        "50-74": "Moderate moat (2 pillars active)",
+        "25-49": "Single-moat company (1 pillar active)",
+        "0-24": "Commodity business with no identifiable moat"
+      },
+      "code_file": "data_engine.py:1194-1199",
+      "status": "IMPLEMENTED"
+    }
+  },
+
+  "chapter_10_checklist": {
+    "_chapter": "Chapter 10 — A Checklist for Long-term Investors",
+    "_pages": "296–322",
+    "_finding": "Chapter 10 is ENTIRELY QUALITATIVE. Three categories: (1) Industry Attractiveness, (2) Management Quality, (3) Competitive Advantages. No new quantitative thresholds beyond the 15% ROCE cost of capital reference.",
+    "quantitative_anchors": {
+      "industry_roce_benchmark": 15.0,
+      "_note": "Industry average ROCE vs 15% cost of capital is the only quantitative check. Sectors with average ROCE > 15% viewed positively."
+    }
+  },
+
+  "confirmed_correct_in_production": [
+    "fw_unusual_billionaires sector-routed growth hurdle (non-fin: 10%, fin: 15%)",
+    "_cc_each_year individual year check (rev_gr_y2..y5 >= 10%)",
+    "IBAS moat engine (4-factor model in data_engine.py)",
+    "_sector_pct_rank infinity guard (infinity replaced before groupby)",
+    "Financial ROE threshold in fw_coffee_can (>= 15, not 12)",
+    "Revenue 2-5 Years Back added to COLUMN_MAP",
+    "EPOCH35_UNUSUAL_BILLIONAIRES config dict added",
+    "year-by-year rev_gr_y2..y5 computation loop in data_engine.py"
+  ],
+
+  "gaps_and_limitations": [
+    {
+      "gap": "Loan book growth not available in CSV — revenue used as proxy for financial companies",
+      "severity": "LOW",
+      "impact": "Financial companies evaluated on revenue CAGR, not loan book CAGR. Will under-flag banks with stable revenues but declining loan books."
+    },
+    {
+      "gap": "Individual year ROCE check not implemented (only 10Y and 5Y medians)",
+      "severity": "LOW",
+      "impact": "A company with volatile ROCE (15%, 5%, 25%, 15%...) could pass the median check but fail the strict per-year requirement. No ROCE-by-year data in CSV.",
+      "mitigation": "Two overlapping ROCE median windows (10Y + 5Y) provide redundant coverage."
+    },
+    {
+      "gap": "Years 6-10 individual revenue consistency not checkable",
+      "severity": "LOW",
+      "impact": "CSV provides Revenue 2-5 Years Back. Years 6-10 verified only by 10Y CAGR average.",
+      "mitigation": "_cc_each_year covers years 2-5 individually; CAGR covers the remaining window."
+    },
+    {
+      "gap": "IBAS moat proxies are approximations, not direct measurements",
+      "severity": "DESIGN",
+      "impact": "A company with strong architecture but positive CCC (e.g., engineering firm with long payment cycles) would score 0 on architecture despite having genuine Kay moat.",
+      "mitigation": "Documented in code comments. IBAS is intended as a ranking signal, not a binary gate."
+    }
+  ]
+}

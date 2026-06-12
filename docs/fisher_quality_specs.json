@@ -1,0 +1,141 @@
+{
+  "_meta": {
+    "title": "Philip Fisher Scalability Codex — Technical Specification Ledger",
+    "author": "Philip A. Fisher (Common Stocks and Uncommon Profits)",
+    "source_file_primary": "Common_Stocks_and_Uncommon_Profits_and_Other_Writings_-_Philip_Arthur_Fisher.pdf",
+    "source_file_india_adaptation": "The-Fisher-Method-on-Dalal-Street.md",
+    "extraction_date": "2026-05-25",
+    "purpose": "Authoritative source of truth for all vectorized operating leverage metrics, pricing power acceleration thresholds, and capital dilution guards inside Project Beast.",
+    "version": "1.1-post-pdf-audit",
+    "threshold_provenance_note": "CRITICAL: Fisher's original book (PDF, 353 pages) contains ZERO numerical thresholds. All percentage values in this spec are India-adapted engineering proxies derived from the companion handbook and system engineering judgment — NOT Fisher's own formulas. Fisher uses qualitative language: 'worthwhile profit margin', 'largely cancels shareholder benefit', 'truly outstanding'. No future developer should claim 'Fisher says X%' for any threshold in this file.",
+    "pdf_audit_date": "2026-05-25",
+    "pdf_audit_verdict": "All 4 Fisher Scalability gates confirmed faithful to Fisher's directional intent. No hidden quantitative parameters exist in the original text. Framework is correctly implemented.",
+    "framework_variable": "fw_fisher_scalability",
+    "pass_column": "fisher_pass",
+    "score_column": "fisher_score",
+    "frameworks_passed_label": "Fisher Scalability",
+    "unit_notes": {
+      "rev_gr_3y": "PERCENTAGE — 12.0 = 12% CAGR",
+      "rev_gr_yoy": "PERCENTAGE — 10.0 = 10% YoY",
+      "d05_rev_minus_exp_gr": "PERCENTAGE DELTA — 2.0 = revenue growing 2pp faster than expenses",
+      "opm_acceleration": "MARGIN POINTS — 0.0 threshold = OPM not declining vs prior year",
+      "npm_acceleration": "MARGIN POINTS — 0.0 threshold = NPM not declining vs prior year",
+      "dilution_pct": "PERCENTAGE — 1.0 = 1% annual share count growth ceiling"
+    }
+  },
+
+  "fisher_core_parameters": {
+    "revenue_runway_scalability": {
+      "min_revenue_growth_3years_pct": 12.0,
+      "min_revenue_growth_yoy_pct": 10.0,
+      "code_variable_references": ["rev_gr_3y", "rev_gr_yoy"],
+      "sub_gate_variable": "_fs_rev_runway",
+      "_note": "Points 1 & 2: Verifies a continuous multi-year demand runway for the company's product line. 3Y CAGR ensures sustained trajectory; YoY gate confirms no recent deceleration."
+    },
+    "operating_leverage_inflection": {
+      "min_rev_minus_exp_growth_delta": 2.0,
+      "code_variable_reference": "d05_rev_minus_exp_gr",
+      "sub_gate_variable": "_fs_op_lev",
+      "_note": "Points 5 & 6: Requires revenue expansion to scale faster than internal operational expense growth. d05_rev_minus_exp_gr = rev_gr_yoy - d04_expense_gr_yoy. Threshold 2pp ensures signal is not measurement noise."
+    },
+    "pricing_power_moat": {
+      "require_positive_margin_acceleration": true,
+      "logic": "OR (either OPM or NPM must be non-declining)",
+      "code_variable_references": ["opm_acceleration", "npm_acceleration"],
+      "sub_gate_variable": "_fs_pricing",
+      "_note": "Point 4: OR logic used because manufacturing/asset-heavy businesses compress OPM via depreciation while NPM stays flat; OR prevents false rejects. Threshold >= 0 = margins at minimum flat vs prior year (not declining)."
+    },
+    "capital_dilution_shield": {
+      "max_annual_equity_dilution_pct": 1.0,
+      "code_variable_reference": "dilution_pct",
+      "fillna_strategy": "fillna(999) — missing share count data treated as worst case (excluded)",
+      "sub_gate_variable": "_fs_anti_dilut",
+      "_note": "Point 13: Clamps down on share printing, restricting capital access exclusively to self-funding enterprises. fillna(999) is conservative — cannot verify zero dilution if data is missing."
+    }
+  },
+
+  "implementation_mapping": {
+    "_file": "core/scoring_engine.py",
+    "_framework_variable": "fw_fisher_scalability",
+    "_pass_column": "fisher_pass",
+    "_score_column": "fisher_score",
+    "_score_range": "0-4 (one point per sub-gate: rev_runway + op_lev + pricing + anti_dilut)",
+    "_frameworks_passed_label": "Fisher Scalability",
+    "_framework_number_in_code": 33,
+    "_insertion_point": "After fw_multitrillioncap (Framework 32), before fw_schilit"
+  },
+
+  "scoring_matrix": {
+    "description": "fisher_score is 0-4 (sum of 4 boolean sub-gates). fisher_pass = 1 only when all 4 pass (AND logic). The score enables partial-pass ranking: a company with 3/4 gates is closer than one with 1/4.",
+    "gate_weights": {
+      "revenue_runway": 1,
+      "operating_leverage": 1,
+      "pricing_power": 1,
+      "anti_dilution": 1
+    }
+  },
+
+  "distinction_from_fw_fisher_quality": {
+    "fw_fisher_quality": {
+      "criteria_count": 7,
+      "key_filters": ["forensic_score >= 90", "rev_gr_5y >= 15%", "npm >= 10%", "cfo_to_pat >= 70%", "dilution_flag == 0", "operating_leverage == 1"],
+      "focus": "Existing Fisher Quality proxy — forensic integrity + margin quality + zero dilution",
+      "label": "Fisher Quality"
+    },
+    "fw_fisher_scalability": {
+      "criteria_count": 4,
+      "key_filters": ["rev_gr_3y >= 12% AND rev_gr_yoy >= 10%", "d05_rev_minus_exp_gr >= 2%", "opm_accel >= 0 OR npm_accel >= 0", "dilution_pct <= 1%"],
+      "focus": "Operating leverage inflection + scalability runway + capital discipline — the 4 most predictive quantifiable Fisher criteria",
+      "label": "Fisher Scalability"
+    }
+  },
+
+  "vectorization_matrix": {
+    "description": "All 4 gates are pure vectorized Pandas/NumPy boolean masks. Zero loops, zero apply(), zero iterrows(). NaN strategy is conservative: missing data defaults to gate failure (dilution fillna(999)) or neutral-pass (revenue/oplev fillna(0) which may pass or fail depending on threshold).",
+    "nan_handling": {
+      "rev_gr_3y": "fillna(0) — missing 3Y revenue data → 0 < 12 → gate fails (conservative)",
+      "rev_gr_yoy": "fillna(0) — missing YoY data → 0 < 10 → gate fails",
+      "d05_rev_minus_exp_gr": "fillna(0) — missing delta → 0 < 2 → gate fails",
+      "opm_acceleration": "fillna(0) — missing OPM accel → 0 >= 0 → OR gate passes (neutral; npm guards this)",
+      "npm_acceleration": "fillna(0) — missing NPM accel → 0 >= 0 → OR gate passes (neutral; opm guards this)",
+      "dilution_pct": "fillna(999) — CONSERVATIVE: missing share data → 999 > 1 → gate fails (cannot confirm no dilution)"
+    }
+  },
+
+  "output_columns": {
+    "fisher_pass": {
+      "dtype": "int (0 or 1)",
+      "source_variable": "fw_fisher_scalability",
+      "description": "Binary pass flag for Fisher Scalability (Framework 33). 1 = all 4 scalability gates cleared. 0 = one or more gates failed.",
+      "filters_to": "Stocks currently in an operating leverage inflection window"
+    },
+    "fisher_score": {
+      "dtype": "int (0-4)",
+      "description": "Count of Fisher Scalability sub-gates passed. Enables partial-pass ranking. Score 4 = all gates clear (identical to fisher_pass=1). Score 3 = one gate blocking.",
+      "use_case": "Sort by fisher_score descending to rank near-miss scalability candidates"
+    },
+    "fisher_quality_pass": {
+      "dtype": "int (0 or 1)",
+      "source_variable": "fw_fisher (Framework 11)",
+      "description": "Binary pass flag for Fisher Quality (Framework 11). 1 = all 7 quality gates cleared (forensic integrity + margins + cash quality + zero dilution). Mirrors the pattern of ub_pass, baid_pass, diamonds_pass for cross-strategy filtering without string parsing.",
+      "filters_to": "Stocks that are structurally elite Fisher-quality businesses"
+    },
+    "fisher_lifecycle_quadrant": {
+      "dtype": "string",
+      "valid_values": ["⚪ Laggard", "⚡ Catalyst Play", "🐢 Steady Compounder", "👑 Apex Winner"],
+      "default_value": "⚪ Laggard",
+      "implementation": "np.select — fully vectorized, zero loops",
+      "quadrant_logic": {
+        "⚪ Laggard":          "fisher_quality_pass=0 AND fisher_pass=0 — fails both quality and scalability",
+        "⚡ Catalyst Play":    "fisher_quality_pass=0 AND fisher_pass=1 — inflection firing but structural quality absent; trading candidate only",
+        "🐢 Steady Compounder":"fisher_quality_pass=1 AND fisher_pass=0 — elite quality proven, no current inflection; steady-state long hold",
+        "👑 Apex Winner":      "fisher_quality_pass=1 AND fisher_pass=1 — elite quality business AT its operating leverage peak; prime entry signal"
+      },
+      "strategic_notes": {
+        "Apex Winner frequency": "Rarest quadrant — requires simultaneous structural quality AND timing inflection; typically <5% of universe",
+        "Steady Compounder frequency": "Most common passing quadrant — quality businesses not currently at inflection",
+        "Catalyst Play risk": "Structurally weak but inflecting — high-alpha trade candidate, not a compounder; position sizing discipline required"
+      }
+    }
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "_meta": {
+    "title": "Pat Dorsey Wide Moat Framework — Technical Specification Ledger",
+    "author": "Pat Dorsey (Morningstar)",
+    "source_file_primary":   "Other Resources/The_Five_Rules_for_Successful_Stock_Invest_-_Pat_Dorsey.pdf",
+    "source_file_codex":     "Other Resources/The-Moat-Investors-Codex-Pat-Dorsey.md",
+    "extraction_date": "2026-05-25",
+    "version": "1.0",
+    "purpose": "Authoritative source of truth for all vectorized moat-quality metrics, FCF valuation floor, and capital-structure guards inside Project Beast (Framework 14: fw_dorsey).",
+    "threshold_provenance_note": "CRITICAL: Dorsey's Five Rules PDF (382 pages, fully audited 2026-05-25) uses DIRECTIONAL language — it has ZERO explicit hard numeric moat thresholds. Specific quantitative references: p.108 ROE > 10% nonfinancial minimum, ROE > 20% = 'really on to something'; p.113 ROIC preferred over ROE/ROA but no threshold; p.193 ROE >= 10% nonfinancial hurdle, >= 12% for financial firms; p.194 FCF/Sales >= 5% as 'rough benchmark' (NOTE: this is FCF/REVENUE, not FCF yield). The Codex India adaptation translates these into ROIC/ROCE thresholds: 'ROIC above 20% sustained = confirmed moat' (Codex Ch.7). All specific thresholds in this spec (20%, 5%, 80%, 1.0) originate from the Codex adaptation, backed by PDF directional evidence. No future developer should claim 'Dorsey says X%' without this footnote.",
+    "framework_variable": "fw_dorsey",
+    "pass_column": "dorsey_pass",
+    "score_column": "dorsey_score",
+    "frameworks_passed_label": "Wide Moat",
+    "framework_number_in_code": 14,
+    "implementation_file": "core/scoring_engine.py",
+    "comment_anchor": "# 14. Dorsey Wide Moat (Pat Dorsey",
+    "unit_notes": {
+      "roce_med_10y":  "PERCENTAGE — 20.0 = 20% 10-year median ROCE",
+      "roce_med_5y":   "PERCENTAGE — 20.0 = 20% 5-year median ROCE",
+      "d35_roce_trend": "SIGNED FLOAT — positive = ROCE improving vs 1Y ago, negative = declining",
+      "fcf_yield":     "PERCENTAGE — 5.0 = 5% FCF / Market Cap",
+      "cfo_to_pat":    "PERCENTAGE — 80.0 = 80% CFO / PAT conversion rate",
+      "debt_to_equity": "RATIO — 1.0 = D/E equals 1"
+    }
+  },
+
+  "pillar_m_moat_return_level": {
+    "_pillar": "M — Moat Return Level",
+    "_chapter_reference": "PDF p.108: ROE > 20% = 'really on to something'; p.193: ROE >= 10% minimum hurdle for nonfinancials. Codex Ch.7: 'ROIC above 15% sustained = likely moated. ROIC above 20% sustained = confirmed moat.' The PDF does not state this in ROIC terms — it uses ROE. The Codex correctly translates to ROCE (more capital-structure-neutral than ROE).",
+    "_display_label": "Wide Moat Return Hurdle: 10Y & 5Y ROCE ≥ 20%",
+    "_column_materialized": "dorsey_moat_level",
+    "roce_10y_floor": {
+      "metric": "roce_med_10y",
+      "threshold": 20.0,
+      "operator": ">=",
+      "unit": "PERCENTAGE",
+      "type": "CANONICAL_PROXY",
+      "fillna_strategy": "fillna(0) — missing 10Y ROCE data → 0 < 20 → gate fails (conservative)",
+      "rationale": "10-year median ROCE >= 20% is Dorsey's explicit 'confirmed wide moat' threshold. The 10Y window must span at least two full Indian business cycles — a business maintaining 20%+ ROCE across cycles has a structural cost or pricing advantage that competition has not eroded. Using median rather than mean reduces distortion from one-off exceptional years.",
+      "code_variable": "roce_10y_dw.fillna(0) >= 20.0",
+      "code_location": "scoring_engine.py — dorsey_moat_level"
+    },
+    "roce_5y_floor": {
+      "metric": "roce_med_5y",
+      "threshold": 20.0,
+      "operator": ">=",
+      "unit": "PERCENTAGE",
+      "type": "CANONICAL_PROXY",
+      "fillna_strategy": "fillna(0) — missing 5Y ROCE data → 0 < 20 → gate fails (conservative)",
+      "rationale": "AND gate with 10Y: prevents a company with strong historical ROCE but recent structural decline (10Y median inflated by older years) from passing. Both windows at 20%+ = moat quality has not eroded in the recent 5-year window.",
+      "code_variable": "roce_5y_dw.fillna(0) >= 20.0",
+      "code_location": "scoring_engine.py — dorsey_moat_level"
+    },
+    "combined_logic": "AND — both 10Y and 5Y ROCE must clear 20% to confirm a wide moat (not a cyclical peak)"
+  },
+
+  "pillar_d_moat_direction": {
+    "_pillar": "D — Moat Trajectory",
+    "_chapter_reference": "Codex Ch.7: 'ROIC rising over 5 years = widening moat. ROIC declining toward WACC = narrowing moat.' PDF Ch.7 (Management) discusses moat erosion qualitatively — direction concept is Codex-originated. The 1-year ROCE trend (d35_roce_trend) is a leading signal implementation of this principle.",
+    "_display_label": "Advantage Direction: Stable or Widening Trajectory",
+    "_column_materialized": "dorsey_moat_direction",
+    "roce_trend_gate": {
+      "metric": "d35_roce_trend",
+      "threshold": 0.0,
+      "operator": ">=",
+      "unit": "SIGNED_FLOAT",
+      "type": "CANONICAL_PROXY",
+      "fillna_strategy": "fillna(-1) — missing trend data fails conservatively (direction unconfirmed = narrowing assumed)",
+      "rationale": "d35_roce_trend = roce_current - roce_1yb. Positive or zero = ROCE not declining = moat direction is stable or widening. Negative = ROCE is eroding = moat narrowing signal. Dorsey's Rule 5 sell trigger: 'moat direction deteriorating over 3+ years'. This gate checks 1-year direction as a leading signal.",
+      "code_variable": "roce_dir_dw.fillna(-1) >= 0",
+      "code_location": "scoring_engine.py — dorsey_moat_direction"
+    }
+  },
+
+  "pillar_v_fcf_valuation": {
+    "_pillar": "V — FCF Valuation Yield",
+    "_chapter_reference": "PDF p.43, p.110, p.181, p.194: FCF/SALES >= 5% = 'cash machine' / 'doing solid job' / 'rough benchmark' (this is a PROFITABILITY metric). Codex Ch.9: 'FCF Yield [FCF/Market Cap] above 5% = attractive for Wide Moat. Above 3% = fair. Below 2% = expensive.' IMPORTANT DISTINCTION: PDF uses FCF/Revenue (profitability). Our gate uses FCF/Market Cap (valuation). Both are Dorsey-consistent for different purposes. This pillar is the VALUATION gate, not a profitability gate.",
+    "_display_label": "Margin of Safety Floor: Free Cash Flow Yield ≥ 5%",
+    "_column_materialized": "dorsey_fcf_valuation",
+    "fcf_yield_floor": {
+      "metric": "fcf_yield",
+      "threshold": 5.0,
+      "operator": ">=",
+      "unit": "PERCENTAGE",
+      "type": "CANONICAL_LIMIT",
+      "fillna_strategy": "fillna(0) — negative or missing FCF → 0 < 5 → gate fails (no cash generation = no valuation margin of safety)",
+      "rationale": "FCF yield is Dorsey's primary valuation gate for confirmed wide moat stocks. 5% threshold represents 'attractive' entry — the business is generating real free cash at a rate that provides sufficient margin of safety. Absent in all other frameworks in this system (Diamond and Quality Compounder use FCF/CFO quality ratio; this is an absolute FCF/market-cap yield gate).",
+      "code_variable": "fcf_yield_dw.fillna(0) >= 5.0",
+      "code_location": "scoring_engine.py — dorsey_fcf_valuation",
+      "known_limitation": "FCF yield is sensitive to capex cycles. A moated business in high-capex expansion may temporarily dip below 5% while the moat remains intact. This gate flags valuation timing, not moat quality itself."
+    }
+  },
+
+  "pillar_q_cash_quality": {
+    "_pillar": "Q — Cash Realization Quality",
+    "_chapter_reference": "Codex Ch.8: 'CFO/PAT above 0.8 = genuine earnings. Below 0.7 = investigate.' PDF Ch.8 (Aggressive Accounting) discusses cash flow quality extensively but gives these specific thresholds in Codex form. Threshold 80.0 in our CSV = 80% = 0.80 ratio (CSV stores as percentage, e.g. 85.4 not 0.854).",
+    "_display_label": "Earnings Conversion Base: CFO/PAT Conversion ≥ 80%",
+    "_column_materialized": "dorsey_cash_quality",
+    "cfo_pat_floor": {
+      "metric": "cfo_to_pat",
+      "threshold": 80.0,
+      "operator": ">=",
+      "unit": "PERCENTAGE",
+      "type": "CANONICAL_LIMIT",
+      "fillna_strategy": "fillna(0) — missing CFO/PAT data → 0 < 80 → gate fails (cannot confirm cash backing)",
+      "rationale": "80% matches Dorsey's explicit 'above 0.8 = genuine' threshold. This is stricter than Malik's 70% floor and equal to the Diamonds threshold. cfo_to_pat is stored as PERCENTAGE in the CSV (73.04 = 73%). A moated business generating above-average ROIC must be backed by real operating cash — not accounting accruals.",
+      "code_variable": "cfo_pat_dw.fillna(0) >= 80.0",
+      "code_location": "scoring_engine.py — dorsey_cash_quality",
+      "unit_warning": "CRITICAL: cfo_to_pat in CSV is PERCENTAGE (e.g. 80.4, not 0.804). Threshold must be 80.0 not 0.8."
+    }
+  },
+
+  "pillar_c_capital_structure": {
+    "_pillar": "C — Capital Structure Cushion",
+    "_chapter_reference": "PDF p.115: 'financial leverage ratio of 2.1 is fairly conservative; ratios of 4-5+ are really risky.' p.175: AMD D/E of 0.7 = 'isn't terribly' leveraged. PDF p.193: 'debt-to-equity ratio over 1.0 — ask yourself' (caution flag). Codex Ch.8: 'D/E below 0.5 for most industries. Below 1.0 for capital-intensive. Zero = gold standard.' Banks/financials: PDF Ch.17 (Banks) notes equity-to-assets of 8-9% is normal — high structural leverage is the banking business model, hence is_financial exemption.",
+    "_display_label": "Leverage Cushion Guard: D/E < 1.0 / Financial Sector Exempt",
+    "_column_materialized": "dorsey_cap_structure",
+    "de_ceiling": {
+      "metric": "debt_to_equity",
+      "threshold": 1.0,
+      "operator": "<",
+      "unit": "RATIO",
+      "financial_sector_exempted": true,
+      "type": "CANONICAL_LIMIT",
+      "fillna_strategy": "fillna(999) — missing D/E data → 999 >= 1.0 → gate fails (cannot confirm leverage discipline)",
+      "rationale": "Dorsey explicitly allows D/E up to 1.0 for 'capital-intensive' moat businesses (asset-heavy infrastructure, utilities, telecom) — unlike Diamond's stricter 0.5 gate. A capital-intensive moat business (e.g., UltraTech at D/E 0.6) passes here but would fail Diamond. Financial sector exempted structurally (banks and NBFCs use leverage as their operating model).",
+      "code_variable": "is_fin_dw | (de_dw.fillna(999) < 1.0)",
+      "code_location": "scoring_engine.py — dorsey_cap_structure"
+    }
+  },
+
+  "pass_flag_logic": {
+    "_column": "dorsey_pass",
+    "_dtype": "int (0 or 1)",
+    "_logic": "AND of all 5 materialized pillar flags — dorsey_moat_level & dorsey_moat_direction & dorsey_fcf_valuation & dorsey_cash_quality & dorsey_cap_structure",
+    "_description": "1 = confirmed Wide Moat business at an attractive FCF-yield entry point with non-eroding advantage direction and clean earnings. 0 = one or more gates failed.",
+    "_code_variable": "fw_dorsey",
+    "_framework_label": "Wide Moat"
+  },
+
+  "score_column_logic": {
+    "_column": "dorsey_score",
+    "_dtype": "int (0-5)",
+    "_description": "Count of Dorsey pillar flags passed. Enables partial-pass ranking: a 4/5 stock is close to the Wide Moat threshold. Score 5 = all gates clear (identical to dorsey_pass=1). Score 3 = two gates blocking.",
+    "_use_case": "Sort by dorsey_score descending to rank near-miss Wide Moat candidates"
+  },
+
+  "scoring_matrix": {
+    "description": "dorsey_score is 0-5 (one point per pillar). dorsey_pass = 1 only when all 5 pass (AND logic).",
+    "gate_weights": {
+      "moat_return_level":  1,
+      "moat_direction":     1,
+      "fcf_valuation":      1,
+      "cash_quality":       1,
+      "capital_structure":  1
+    }
+  },
+
+  "vectorization_matrix": {
+    "description": "All 5 gates are pure vectorized Pandas/NumPy boolean masks. Zero loops, zero apply(), zero iterrows(). NaN strategy is conservative: missing data defaults to gate failure for all numeric gates. Financial sector exemption uses boolean OR with is_financial column.",
+    "nan_handling": {
+      "roce_med_10y":   "fillna(0) — missing 10Y ROCE → 0 < 20 → gate fails",
+      "roce_med_5y":    "fillna(0) — missing 5Y ROCE → 0 < 20 → gate fails",
+      "d35_roce_trend": "fillna(-1) — missing trend → -1 < 0 → gate fails (direction unconfirmed)",
+      "fcf_yield":      "fillna(0) — negative/missing FCF yield → 0 < 5 → gate fails",
+      "cfo_to_pat":     "fillna(0) — missing CFO/PAT → 0 < 80 → gate fails",
+      "debt_to_equity": "fillna(999) — missing D/E → 999 >= 1.0 → gate fails (cannot confirm no debt)"
+    }
+  },
+
+  "not_implementable": [
+    {
+      "gate": "Moat source classification (Intangible Assets / Switching Costs / Network Effects / Cost Advantages)",
+      "reason": "Qualitative classification — requires competitive analysis, sector knowledge, and customer behaviour data not in the StockScan CSV. The 5-pillar quantitative screen detects the FINANCIAL SIGNATURE of a moat (sustained high ROIC) but cannot classify which of the four sources created it."
+    },
+    {
+      "gate": "Margin of Safety vs. intrinsic value (DCF-based)",
+      "reason": "Requires multi-stage DCF model with explicit revenue/margin/capex forecasts. FCF yield gate (Pillar V >= 5%) is used as a simplified margin-of-safety proxy for Wide Moat stocks."
+    },
+    {
+      "gate": "CASA ratio, GNPA, NIM for banking moat analysis",
+      "reason": "Banking-specific metrics not in StockScan CSV. is_financial flag exempts the D/E gate for financials as a partial accommodation."
+    },
+    {
+      "gate": "Revenue growth >= 10% as standalone hard gate",
+      "reason": "Included in original fw_dorsey as an engineering addition ('moat enables durable revenue compounding'). Removed from the 5-pillar materialization design because Dorsey's primary moat test is ROIC-based — a moated business experiencing a revenue deceleration cycle is still moated. Revenue growth is a consequence, not a definition, of the moat."
+    }
+  ],
+
+  "distinction_from_other_frameworks": {
+    "vs_diamond": {
+      "ROCE_threshold": "Dorsey: 20% (Wide Moat bar). Diamond: 15% (10-year moat bar).",
+      "DE_threshold": "Dorsey: <1.0 (allows capital-intensive moats). Diamond: <0.5 (strictest).",
+      "FCF_gate": "Dorsey: FCF yield >= 5% (absolute valuation gate). Diamond: FCF/CFO >= 25% (quality ratio gate).",
+      "moat_direction": "Dorsey: d35_roce_trend >= 0 (direction gate absent in Diamond)."
+    },
+    "vs_coffee_can": {
+      "ROCE_metric": "Dorsey: ROCE median. Coffee Can: ROCE year-by-year consistency (10Y). Dorsey is more lenient on short dips.",
+      "CFO_gate": "Dorsey: CFO/PAT >= 80%. Coffee Can: CFO/EBITDA >= 90% (different denominator)."
+    },
+    "vs_quality_compounder": {
+      "FCF_threshold": "Quality Compounder: FCF yield >= 2% (fair value for quality). Dorsey: >= 5% (wide moat at attractive price). Asian Paints at 2.5% FCF yield PASSES Quality Compounder, FAILS Dorsey — the distinction is intentional."
+    }
+  }
+}

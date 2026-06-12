@@ -1,0 +1,268 @@
+{
+  "_meta": {
+    "title": "William Thorndike Outsiders Capital Codex — Specification Ledger",
+    "author": "William N. Thorndike, Jr. (The Outsiders)",
+    "source_file_primary":    "Other Resources/The_Outsiders_-_William_N_Thorndike_Jr.pdf",
+    "source_file_companion":  "Other Resources/The-Outsiders-on-Dalal-Street.md",
+    "extraction_date": "2026-05-25",
+    "version": "1.0-outsider-capital-codex",
+    "purpose": "Authoritative source of truth for all vectorized capital allocation metrics, share buyback discipline, and strict cash generation shields inside Project Beast (Framework 15: fw_outsider).",
+    "provenance_note": "Every threshold in this specification functions as a verified engineering proxy adapted for Indian listed equities (Dalal Street) to isolate management teams that maximize per-share value creation over full business cycles. All calculations run as loop-free, vectorized array masks with conservative NaN handling (missing data → gate fails).",
+    "framework_variable": "fw_outsider",
+    "pass_column": "outsider_pass",
+    "score_column": "outsider_score",
+    "frameworks_passed_label": "Outsider CEO",
+    "framework_number_in_code": 15,
+    "implementation_file": "core/scoring_engine.py",
+    "comment_anchor": "# 15. Outsiders on Dalal Street",
+    "unit_notes": {
+      "dilution_flag":  "INTEGER FLAG — 0=Clean (zero net dilution or active buybacks), 1=ESOP-level, 2=Meaningful, 3=Predatory",
+      "de_slope_3y":    "SIGNED FLOAT — negative = D/E declining over 3Y, positive = rising, 0 = flat",
+      "cfo_to_pat":     "PERCENTAGE — 85.0 = 85% CFO/PAT cash conversion rate (NOT 0.85)",
+      "roce_med_10y":   "PERCENTAGE — 15.0 = 15% ten-year median ROCE"
+    }
+  },
+
+  "pillar_s_share_retirement": {
+    "_pillar": "S — Share Retirement Discipline",
+    "_book_reference": "Chapter 1 (Singleton/Teledyne): repurchased 90% of outstanding shares at low multiples. Chapter 2 (Malone/TCI): buybacks as primary capital tool. Chapter 8 (Framework Summary): per-share FCF CAGR is the only scorecard that matters.",
+    "_display_label": "Anti-Dilution Shield: Share Count Stable or Active Repurchases",
+    "_column_materialized": "outsider_share_retirement",
+    "share_retirement_gate": {
+      "metric": "dilution_flag",
+      "threshold": 0,
+      "operator": "==",
+      "unit": "INTEGER_FLAG",
+      "type": "CANONICAL_PROXY",
+      "fillna_strategy": "fillna(1) — missing dilution data → 1 (diluted) → gate fails (cannot confirm share discipline)",
+      "rationale": "dilution_flag==0 = zero net dilution or active share retirement. Thorndike's core finding: the best CEOs viewed equity as precious currency — they never printed shares for marginal projects and aggressively repurchased when prices fell below intrinsic value. Henry Singleton repurchased 90% of Teledyne at 8x earnings; Dick Smith reduced Capital Cities' share count by 23% — both transformed per-share value independently of business growth.",
+      "code_variable": "df.get('dilution_flag', pd.Series(1, index=df.index)).fillna(1) == 0",
+      "code_location": "scoring_engine.py — outsider_share_retirement"
+    }
+  },
+
+  "pillar_d_debt_discipline": {
+    "_pillar": "D — Debt & Balance Sheet Discipline",
+    "_book_reference": "Chapter 3 (Washington Post/Graham): used modest leverage intelligently. Chapter 4 (Ralston Purina/Stiritz): systematic debt paydown from cash generation. Chapter 8: the best allocators actively managed balance sheet across cycles.",
+    "_display_label": "Deleveraging Trend: 3Y Debt-to-Equity Slope Declining or Stable",
+    "_column_materialized": "outsider_debt_discipline",
+    "debt_discipline_gate": {
+      "metric": "de_slope_3y",
+      "threshold": 0.0,
+      "operator": "<=",
+      "unit": "SIGNED_FLOAT",
+      "type": "CANONICAL_PROXY",
+      "fillna_strategy": "fillna(999) — missing slope data → 999 > 0 → gate fails (trend unconfirmed = discipline unverifiable)",
+      "rationale": "de_slope_3y = 3-year linear regression slope of D/E. Zero or negative = debt discipline confirmed — company is either maintaining flat leverage or actively deleveraging from cash generation. Positive slope = debt accumulation → management prioritising growth over balance sheet quality. This is the ONLY framework across all 15 that rewards the deleveraging trajectory as a positive signal (others use static D/E levels).",
+      "code_variable": "df.get('de_slope_3y', pd.Series(999, index=df.index)).fillna(999) <= 0.0",
+      "code_location": "scoring_engine.py — outsider_debt_discipline"
+    }
+  },
+
+  "pillar_c_cash_generation": {
+    "_pillar": "C — Strictest Cash Flow Realization Floor",
+    "_book_reference": "Chapter 1 (Singleton): 'focused obsessively on cash flow per share, not EPS'. Chapter 8 (Framework Summary): all 8 Outsider CEOs managed for cash, never reported earnings. Chapter 5 (Buffett/BRK): 'owner earnings are the only real measure'.",
+    "_display_label": "Realization Floor: CFO/PAT Conversion ≥ 85% (Strictest Platform Threshold)",
+    "_column_materialized": "outsider_cash_generation",
+    "cash_generation_gate": {
+      "metric": "cfo_to_pat",
+      "threshold": 85.0,
+      "operator": ">=",
+      "unit": "PERCENTAGE",
+      "type": "CANONICAL_LIMIT",
+      "fillna_strategy": "fillna(0) — missing CFO/PAT data → 0 < 85 → gate fails (cannot confirm cash backing of earnings)",
+      "rationale": "85.0% is the HIGHEST cash conversion threshold across all 15 frameworks in this system: Diamond=75%, Dorsey=80%, Coffee Can=90% on EBITDA (different denominator), Outsiders=85% on PAT. A true Outsider CEO running a cash-generative machine converts 85%+ of reported profits into real operating cash. Below 85% means non-cash accounting entries are inflating PAT — the CEO is managing earnings, not cash.",
+      "code_variable": "df.get('cfo_to_pat', pd.Series(0, index=df.index)).fillna(0) >= 85.0",
+      "code_location": "scoring_engine.py — outsider_cash_generation",
+      "unit_warning": "CRITICAL: cfo_to_pat in CSV is PERCENTAGE (e.g. 85.4 not 0.854). Threshold must be 85.0 not 0.85."
+    }
+  },
+
+  "pillar_r_capital_returns": {
+    "_pillar": "R — Full-Cycle Capital Returns Hurdle",
+    "_book_reference": "Chapter 1 (Singleton/Teledyne): ROIC averaged 40%+ over 28 years. Chapter 3 (Washington Post): ROIC consistently above cost of capital. Chapter 8 (Hurdle Rates): 'all featured CEOs required investments to clear a demanding hurdle rate'.",
+    "_display_label": "Full-Cycle Returns: 10-Year ROCE Median ≥ 15%",
+    "_column_materialized": "outsider_capital_returns",
+    "capital_returns_gate": {
+      "metric": "roce_med_10y",
+      "threshold": 15.0,
+      "operator": ">=",
+      "unit": "PERCENTAGE",
+      "type": "CANONICAL_PROXY",
+      "fillna_strategy": "fillna(0) — missing 10Y ROCE data → 0 < 15 → gate fails (cannot verify full-cycle track record)",
+      "rationale": "The 10-year ROCE median threshold of 15% verifies management's HISTORICAL capital deployment efficiency across a full macro cycle — not a single great year. Indian average WACC ≈ 12-13% (10yr g-sec 7% + equity risk premium 5-6%). ROCE ≥ 15% = minimum 200-300bp spread above cost of capital sustained over 10 years. This is the full-cycle hurdle: a genuinely capital-efficient allocator must have earned above their cost of capital across two recessions and two expansions.",
+      "code_variable": "df.get('roce_med_10y', pd.Series(0, index=df.index)).fillna(0) >= 15.0",
+      "code_location": "scoring_engine.py — outsider_capital_returns"
+    }
+  },
+
+  "pass_flag_logic": {
+    "_column": "outsider_pass",
+    "_dtype": "int (0 or 1)",
+    "_logic": "AND of all 4 materialized pillar flags — outsider_share_retirement & outsider_debt_discipline & outsider_cash_generation & outsider_capital_returns",
+    "_description": "1 = confirmed Outsider CEO capital allocator: zero dilution, deleveraging trend, 85%+ cash conversion, 15%+ 10Y ROCE. 0 = one or more gates failed.",
+    "_code_variable": "fw_outsider",
+    "_framework_label": "Outsider CEO"
+  },
+
+  "score_column_logic": {
+    "_column": "outsider_score",
+    "_dtype": "int (0-4)",
+    "_description": "Sum of all 4 pillar flags. Score=4 = identical to outsider_pass=1. Score=3 = one gate blocking. Enables near-miss ranking of capital allocation quality.",
+    "_use_case": "Sort by outsider_score descending to rank companies approaching the Outsider CEO standard"
+  },
+
+  "scoring_matrix": {
+    "gate_weights": {
+      "share_retirement": 1,
+      "debt_discipline":  1,
+      "cash_generation":  1,
+      "capital_returns":  1
+    },
+    "all_gates_equal_weight": true,
+    "score_range": "0-4"
+  },
+
+  "vectorization_matrix": {
+    "description": "All 4 gates are pure vectorized Pandas/NumPy boolean masks. Zero loops, zero apply(), zero iterrows(). NaN strategy is conservative: missing data defaults to gate failure for all numeric gates.",
+    "nan_handling": {
+      "dilution_flag": "fillna(1) — missing flag → 1 (diluted assumed) → gate fails",
+      "de_slope_3y":   "fillna(999) — missing slope → 999 > 0 → gate fails (trend unverifiable)",
+      "cfo_to_pat":    "fillna(0) — missing CFO/PAT → 0 < 85 → gate fails",
+      "roce_med_10y":  "fillna(0) — missing 10Y ROCE → 0 < 15 → gate fails"
+    }
+  },
+
+  "not_implementable": [
+    {
+      "gate": "HQ cost < 0.5% of FCF",
+      "reason": "Corporate overhead cost breakdown not available in StockScan CSV. Thorndike found that all 8 Outsider CEOs ran lean corporate offices — but this data is not disclosed in standard Screener.in financial exports."
+    },
+    {
+      "gate": "CEO communication quality score",
+      "reason": "Qualitative assessment requiring analysis of annual report letters, earnings call transcripts, and shareholder letters. Not computable from numeric CSV data."
+    },
+    {
+      "gate": "Decentralisation structure score",
+      "reason": "Requires organizational structure data — number of business units, inter-unit charging, management autonomy. Not in financial CSV."
+    },
+    {
+      "gate": "Acquisition ROIC vs hurdle rate",
+      "reason": "No M&A history data in CSV. Thorndike's key finding: Outsider CEOs only acquired at below-intrinsic-value prices and measured post-acquisition ROIC vs their hurdle rate. Unmeasurable without deal-level data."
+    },
+    {
+      "gate": "Per-share FCF CAGR over 20+ years",
+      "reason": "StockScan has max 10-year history. Thorndike's thesis requires 15-28 year evaluation windows. Partially proxied by 10Y ROCE median (Pillar R)."
+    },
+    {
+      "gate": "FCF CAGR > EPS CAGR (multi-year earnings quality signal)",
+      "reason": "Companion handbook (Chapter 13 Stage 1) identifies FCF growing faster than earnings as a secondary quality screen. Not implementable as a hard gate: StockScan CSV provides only 1-year YoY FCF growth (fcf_growth column) — not a multi-year CAGR. 1-year FCF YoY is too volatile for a capital allocation gate due to capex timing effects. Pillar C (cfo_to_pat >= 85%) already captures the cash-backing-of-earnings requirement more rigorously using the current-year CFO/PAT ratio.",
+      "companion_chapter_reference": "Chapter 13 — Finding the Next Indian Outsider, Stage 1 Quantitative Screen"
+    }
+  ],
+
+  "companion_screener_exclusions": {
+    "_purpose": "The companion handbook Chapter 7 defines a broader 'quantitative first filter' for Screener.in that includes five conditions. Three of these were deliberately excluded from fw_outsider because they are SCREENER convenience metrics — not Thorndike's capital allocation philosophy. This section documents those exclusions to prevent future re-introduction.",
+    "_companion_reference": "Chapter 7 — The India Outsider CEO Scorecard, Quantitative First Filter",
+    "excluded_revenue_growth_gate": {
+      "companion_condition": "Revenue Growth 10Y > 8%",
+      "exclusion_reason": "Revenue growth is NOT Thorndike's thesis. His most famous case — Henry Singleton/Teledyne — had near-zero revenue growth. Singleton repurchased 90% of shares instead. Adding a revenue growth gate would exclude the very CEO the framework is named after. Revenue growth already appears in Coffee Can (rev_gr_10y >= 10%) and Baid frameworks — adding it here would contaminate fw_outsider with another framework's thesis.",
+      "framework_where_this_belongs": "fw_coffee_can (rev_gr_10y >= 10%), fw_baid (rev_gr_10y >= 8%)"
+    },
+    "excluded_market_cap_gate": {
+      "companion_condition": "Market Cap > 1000 Cr",
+      "exclusion_reason": "A size filter is not a capital allocation signal. Thorndike's book has no market cap requirement — capital allocation quality is size-agnostic. Henry Singleton ran Teledyne as a mid-cap for most of his tenure. Sunder Genomal built Page Industries from a small base. The market cap filter was a screener convenience to reduce candidates for manual qualitative review (companion Chapter 7 explicitly frames it as such), not a philosophical gate.",
+      "framework_where_this_belongs": "fw_diamond (mcap_cr >= 5000 Cr large-cap focus)"
+    },
+    "excluded_static_de_gate": {
+      "companion_condition": "D/E < 0.75 (static snapshot)",
+      "replacement_in_fw_outsider": "de_slope_3y <= 0.0 (3-year D/E trajectory)",
+      "upgrade_reason": "The companion's static D/E < 0.75 asks 'is debt low TODAY?' Thorndike's actual principle asks 'is management ACTIVELY disciplining the balance sheet?' A company with D/E = 1.5 but de_slope_3y = -0.4 (actively deleveraging from cash generation) IS an Outsider CEO. A company with D/E = 0.3 but de_slope_3y = +0.5 (expanding debt for empire-building) is NOT. The trajectory is the behavioral signal Thorndike studied — not the level. de_slope_3y <= 0.0 is the ONLY gate across all 15 frameworks that rewards the deleveraging trajectory as a positive signal."
+    }
+  },
+
+  "related_data_engine_signals": {
+    "_purpose": "These columns are pre-computed in core/data_engine.py and are Thorndike-relevant, but are NOT used as fw_outsider hard gates. They provide supplementary capital allocation context and are used in other parts of the scoring system. Documented here to prevent duplicate gate introduction and to explain their relationship to the Outsider framework.",
+    "value_creation_ratio": {
+      "data_engine_column": "value_creation_ratio",
+      "definition": "Buffett VCR proxy = (market_cap * 0.5) / (pat * reinvestment_rate * 5). Benchmarks: VCR >= 2.0 = elite, >= 1.0 = passing, < 1.0 = concern.",
+      "thorndike_relevance": "Directly maps to Thorndike's per-share value creation thesis — the best CEOs convert retained earnings into proportional market value growth. A VCR > 1.0 confirms retained capital is being compounded above par.",
+      "why_not_a_hard_gate": "The proxy uses market_cap * 0.5 as a center-of-distribution approximation (MCap 5Y back not available in CSV). This introduces market timing sensitivity — a depressed stock during a bear market would show VCR < 1.0 even for excellent allocators. Too unreliable for a binary pass/fail gate.",
+      "used_in_scoring_engine": true,
+      "usage": "Scoring engine applies a 10% quality penalty to capital_misallocation_risk stocks (VCR < 1.0 with high retention)"
+    },
+    "capital_misallocation_risk": {
+      "data_engine_column": "capital_misallocation_risk",
+      "definition": "Binary flag = 1 if reinvestment_rate > 0.5 AND value_creation_ratio < 1.0 AND value_creation_ratio > 0.0. Retaining >50% of earnings but generating <1 rupee of market value per rupee retained.",
+      "thorndike_relevance": "The anti-Outsider behavior described in Chapter 9 (Capital Allocation Hall of Shame) — Empire Builders who retain earnings but destroy per-share value.",
+      "why_not_a_hard_gate": "Inherits the market_cap timing sensitivity of value_creation_ratio. Also: capital_misallocation_risk == 0 does NOT confirm good allocation — it only rules out active destruction. Absence of vice is not presence of virtue.",
+      "used_in_scoring_engine": true,
+      "usage": "10% quality composite penalty via _cmal flag in compute_qglp_score"
+    },
+    "capital_return_spread": {
+      "data_engine_column": "capital_return_spread",
+      "definition": "ROCE (current year) minus COST_OF_EQUITY constant. Positive = earning above cost of equity.",
+      "thorndike_relevance": "Thorndike's hurdle rate concept: all 8 Outsider CEOs required capital investments to clear a demanding hurdle rate. Positive spread = management is creating economic value.",
+      "why_not_a_hard_gate": "Already fully captured by Pillar R (roce_med_10y >= 15%). The 15% threshold was specifically calibrated as WACC + 200-300bp above India's cost of capital (~12-13%). Adding capital_return_spread as a 5th gate would create redundancy. Pillar R's 10-year median is also more rigorous than the current-year spread.",
+      "used_in_scoring_engine": true,
+      "usage": "PSU value destruction flag, epoch3 structural classification, moat_endurance_factor denominator"
+    },
+    "self_funding": {
+      "data_engine_column": "self_funding",
+      "definition": "Binary = 1 if operating_cash_flow > 0 AND financing_cash_flow < 0. Company funds operations internally and is returning/paying-down capital.",
+      "thorndike_relevance": "Maps to Thorndike's Tool 3-4 active deployment (buybacks or debt reduction funded from OCF, not new financing).",
+      "why_not_a_hard_gate": "financing_cash_flow < 0 includes dividend payments (Tool 5 — Thorndike's last resort) making it an imperfect Outsider signal. A high-dividend company scores self_funding=1 even if it is NOT doing buybacks or deleveraging. The signal is too broad.",
+      "used_in_scoring_engine": false
+    }
+  },
+
+  "distinction_from_other_frameworks": {
+    "vs_dorsey_moat": {
+      "focus": "Dorsey measures WHAT the business does (moat durability). Thorndike measures WHAT MANAGEMENT DOES WITH THE CASH the moat generates (capital allocation).",
+      "ROCE_threshold": "Thorndike: 15% 10Y median (hurdle rate floor). Dorsey: 20% 10Y median (confirmed wide moat). A Thorndike-passing company may not have a confirmed Dorsey moat.",
+      "unique_gate": "Thorndike: dilution_flag==0 + de_slope_3y<=0 (behavioral). Dorsey: fcf_yield + moat_direction (structural)."
+    },
+    "vs_diamond": {
+      "ROCE": "Diamond: 15% 10Y ROCE (same floor). Thorndike additionally requires D/E trend declining.",
+      "dilution": "Diamond: no dilution gate directly. Thorndike: dilution_flag==0 is the PRIMARY hard gate.",
+      "cash_quality": "Diamond: CFO/PAT >= 75%. Thorndike: >= 85% (strictest in system)."
+    },
+    "vs_coffee_can": {
+      "cash_quality": "Coffee Can: CFO/EBITDA >= 90% (EBITDA denominator). Thorndike: CFO/PAT >= 85% (PAT denominator). Different denominators; both check cash backing of profits.",
+      "dilution": "Coffee Can: no dilution gate. Thorndike: dilution_flag==0 is mandatory."
+    }
+  },
+
+  "output_columns_registry": {
+    "outsider_share_retirement": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = company protects shareholders from share count printing; zero net dilution or active buybacks confirmed."
+    },
+    "outsider_debt_discipline": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = trailing 3-year D/E slope is flat or declining; balance sheet discipline confirmed."
+    },
+    "outsider_cash_generation": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = CFO/PAT >= 85%; earnings are backed by real deployable cash (strictest platform threshold)."
+    },
+    "outsider_capital_returns": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = 10Y ROCE median >= 15%; management has demonstrated full-cycle capital efficiency above hurdle rate."
+    },
+    "outsider_pass": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = all 4 pillar gates cleared; confirmed Outsider CEO capital allocation fingerprint."
+    },
+    "outsider_score": {
+      "dtype": "int",
+      "valid_values": [0, 1, 2, 3, 4],
+      "interpretation": "0-4 count of pillar gates cleared. 4 = identical to outsider_pass=1."
+    }
+  }
+}

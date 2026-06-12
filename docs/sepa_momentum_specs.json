@@ -1,0 +1,90 @@
+{
+  "_meta": {
+    "title": "Mark Minervini SEPA Momentum Framework — Specification Ledger",
+    "author": "Mark Minervini (Trade Like a Stock Market Wizard)",
+    "source_primary": "Other Resources/Trade_Like_a_Stock_Market_Wizard__Mark_Minervini.md",
+    "source_companion": "Other Resources/The-SEPA-Trading-Codex-Mark-Minervini.md",
+    "version": "1.0-sepa-momentum-codex",
+    "framework_variable": "fw_sepa",
+    "pass_column": "sepa_pass",
+    "score_column": "sepa_score",
+    "score_range": "0-7",
+    "score_max_pass": 6,
+    "score_bonus_pillar": "sepa_vcp_dryup",
+    "frameworks_passed_label": "SEPA Momentum",
+    "framework_number": 21,
+    "implementation_file": "core/scoring_engine.py"
+  },
+  "trend_template_rebuild": {
+    "column": "d45_trend_structure",
+    "new_range": "0-5",
+    "components": {
+      "C1": {"signal": "above_sma200", "condition": "close_price > sma_200d"},
+      "C2": {"signal": "price_above_150d", "condition": "close_price > sma_30w"},
+      "C3": {"signal": "right_stacking", "condition": "sma_30w > sma_200d"},
+      "C5": {"signal": "full_alignment", "condition": "sma_50d > sma_30w AND sma_50d > sma_200d"},
+      "VSTOP": {"signal": "vstop_green", "condition": "close_price > vstop_value"}
+    },
+    "pass_threshold": 4,
+    "note": "C4 (200D rising 22 days) not implementable from point-in-time CSV. C3+C5 together provide equivalent protection."
+  },
+  "pillars": {
+    "sepa_trend_template": {
+      "letter": "T", "book_ref": "Ch.2 Criteria 1-5",
+      "condition": "d45_trend_structure >= 4",
+      "gate_type": "HARD_GATE",
+      "fillna": "0"
+    },
+    "sepa_adx_confirmed": {
+      "letter": "A", "book_ref": "SEPA Codex: Trend Gate",
+      "condition": "adx_14w >= 20",
+      "gate_type": "HARD_GATE",
+      "fillna": "0"
+    },
+    "sepa_low_base": {
+      "letter": "L", "book_ref": "Ch.2 Criterion 6",
+      "condition": "dist_52wl >= 30",
+      "unit": "percentage above 52-week low",
+      "gate_type": "HARD_GATE",
+      "fillna": "0"
+    },
+    "sepa_rs_confirmed": {
+      "letter": "R", "book_ref": "Ch.2 Criterion 8",
+      "condition": "crs_aligned == 1",
+      "note": "Stricter than book RS >= 70: requires all 3 timeframes positive",
+      "gate_type": "HARD_GATE",
+      "fillna": "0"
+    },
+    "sepa_earnings_fuel": {
+      "letter": "E", "book_ref": "Ch.4 REQ 1, 2, 4",
+      "condition": "eps_gr_yoy >= 25 AND rev_gr_yoy >= 20 AND roe >= 17",
+      "gate_type": "HARD_GATE",
+      "fillna": "0"
+    },
+    "sepa_institutional": {
+      "letter": "I", "book_ref": "Ch.4 REQ 7",
+      "condition": "(change_fii_lq > 0) OR (change_dii_lq > 0)",
+      "gate_type": "HARD_GATE",
+      "fillna": "0"
+    },
+    "sepa_vcp_dryup": {
+      "letter": "V", "book_ref": "Ch.5 VCP + SEPA Codex Chartink formula",
+      "condition": "vol_sma_10d < vol_sma_50d",
+      "gate_type": "SCORE_BONUS",
+      "note": "Score bonus only — NOT in sepa_pass hard gate. Score=7 means active setup. Score=6 means watchlist.",
+      "fillna": "0"
+    }
+  },
+  "derived_signals": {
+    "vol_ratio_50d": {
+      "formula": "volume / vol_sma_50d",
+      "purpose": "Minervini breakout confirmation: volume >= 1.4x 50D average",
+      "denominator_guard": "np.where(vol_sma_50d > 0, ..., np.nan)"
+    },
+    "vcp_volume_dryup": {
+      "formula": "(vol_sma_10d < vol_sma_50d).astype(int)",
+      "purpose": "VCP base detection: recent volume contracting vs 50D baseline",
+      "guard": "both series notna() AND vol_sma_50d > 0; else 0"
+    }
+  }
+}

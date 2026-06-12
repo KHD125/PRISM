@@ -1,0 +1,189 @@
+{
+  "_meta": {
+    "title": "Coffee Can Investing — Quantitative Specification Ledger",
+    "author": "Saurabh Mukherjea, Rakshit Ranjan, Pranab Uniyal (Penguin, 2018)",
+    "extracted_from": "docs/complete_book_parsed.txt",
+    "extraction_date": "2026-05-23",
+    "purpose": "Authoritative source of truth for all quantitative thresholds in the Coffee Can Twin Filters and Clean Accounts engine. Pairs symmetrically with ub_financial_specs.json to prevent structural code drift.",
+    "audit_note": "All source_quote entries are verbatim from the book. Gemini-generated spec in bugs.txt contained a fabricated quote for the CFO/EBITDA threshold ('Below 80 per cent is an immediate red flag') that does NOT appear in the book. No explicit percentage threshold is given in the book for CFO/Cumulative EBITDA — the 90% gate is our engineering proxy, documented below."
+  },
+
+  "twin_filters_core": {
+    "_chapter": "Chapter 2 — Coffee Can Investing",
+    "_pages": "47–50, Appendix 1 (pp. 221–255)",
+    "_source_quote_primary": "grown sales each year by at least 10 per cent alongside generating Return on Capital Employed (pre-tax) of at least 15 per cent",
+    "_source_quote_appendix": "Revenue growth of 10 per cent and ROCE of 15 per cent every year for non-financial services companies",
+
+    "non_financial_companies": {
+      "capital_efficiency_metric": "ROCE",
+      "roce_definition": "EBIT / (Debt + Equity) — pre-tax, NOT post-tax",
+      "roce_median_10y_floor_pct": 15.0,
+      "roce_median_5y_floor_pct": 15.0,
+      "revenue_growth_10y_cagr_floor_pct": 10.0,
+      "revenue_growth_5y_cagr_floor_pct": 8.0,
+      "revenue_growth_yoy_floor_pct": 0.0,
+      "individual_year_floor_pct": 5.0,
+      "individual_year_observable_window": "years 2-5 (revenue_2yb through revenue_5yb from COLUMN_MAP)",
+      "market_cap_min_crore": 100,
+      "_note_5y_buffer": "5Y CAGR floor of 8% (not 10%) absorbs macro cycle anomalies (COVID-19). Engineering judgment, not book-stated.",
+      "_note_individual_years": "Book requires 10% every single year. Floor relaxed from 10% → 5% to absorb the COVID-19 pandemic anomaly year (FY21 revenue contraction was universal and not a signal of structural failure). CSV provides Revenue 2-5 Years Back individually; years 6-10 covered by 10Y CAGR."
+    },
+
+    "financial_companies_bfsi": {
+      "capital_efficiency_metric": "ROE",
+      "_source_quote": "ROE of 15 per cent: We prefer Return on Equity over Return on Assets because this is a fairer measure of banks' (and other lenders') ability to generate higher income efficiently on a given equity capital base over time",
+      "roe_median_10y_floor_pct": 15.0,
+      "roe_median_5y_floor_pct": 15.0,
+      "loan_growth_book_requirement_pct": 15.0,
+      "revenue_growth_proxy_hurdle_pct": 10.0,
+      "_source_quote_loan": "Loan growth of 15 per cent: Given that nominal GDP growth in India has averaged 13.8 per cent over the past ten years, loan growth of at least 15 per cent is an indication of a bank's ability to lend over business cycles",
+      "_note_proxy": "Loan book data not in StockScan CSV. Revenue CAGR used as proxy for credit expansion. ROE routing is exact per book; loan growth proxy is a known limitation documented in implementation_mapping."
+    },
+
+    "cost_of_capital_derivation": {
+      "risk_free_rate_pct": 8.0,
+      "equity_risk_premium_pct": 6.5,
+      "india_cost_of_capital_pct": 15.0,
+      "_source_quote": "Adding the risk-free rate (8 per cent in India) to the equity risk premium of 6.5 to 7 per cent gives a cost of capital broadly in that range"
+    }
+  },
+
+  "clean_accounts_firewall": {
+    "_chapter": "Chapter 3 — Expenses Matter + Exhibit 72 (p. 194)",
+    "_critical_finding": "The book lists CFO/EBITDA as ONE of 11 ratios in a decile-based RELATIVE ranking system. NO explicit percentage threshold (e.g. 90%, 80%) is stated in the book for this ratio. The 90% gate in fw_coffee_can is our engineering proxy — a hard binary threshold derived from industry practice, not a direct book citation.",
+    "_gemini_fabricated_quote_warning": "Gemini's bugs.txt claimed the book states 'Below 80 per cent is an immediate red flag.' This quote does NOT appear anywhere in complete_book_parsed.txt. It is fabricated.",
+
+    "ambit_clean_accounts_11_ratios": [
+      "Cumulative CFO / Cumulative EBITDA",
+      "Volatility in depreciation rate",
+      "Volatility in non-operating income (% of net revenues)",
+      "Provisioning for doubtful debts as proportion of debtors > 6 months",
+      "Cash yield",
+      "Change in reserves (excl. share premium) to net income excl. dividends",
+      "Contingent liability as proportion of net worth",
+      "Miscellaneous expenses as proportion of total revenue",
+      "CWIP to Gross block",
+      "Cumulative CFO plus CFI to median revenues",
+      "CAGR in auditors remuneration to CAGR in consolidated revenues"
+    ],
+
+    "engineering_proxy_used_in_code": {
+      "metric": "cfo_to_ebitda",
+      "scale_unit": "PERCENTAGE",
+      "clean_threshold": 90.0,
+      "code_location": "scoring_engine.py — fw_coffee_can: cfo_ebitda_cc >= 90",
+      "rationale": "CFO/EBITDA ≥ 90% is the most direct observable proxy for the first of Ambit's 11 ratios (Cumulative CFO / Cumulative EBITDA). The 90% floor ensures that operating cash flow is not being eroded by P&L manipulation. This is a point-in-time approximation of the book's cumulative multi-year ratio.",
+      "book_basis": "Proxy derivation, not a verbatim book threshold. No explicit percentage is given in the book."
+    }
+  },
+
+  "leverage_governance_gates": {
+    "_source": "Chapter 2 + Appendix 1 (operational filters for portfolio construction)",
+
+    "debt_ceiling_non_financial": {
+      "metric": "debt_to_equity",
+      "operator": "<",
+      "threshold": 1.0,
+      "_note": "D/E < 1.0 prevents leverage-inflated ROE from masquerading as genuine capital efficiency. Book identifies high D/E as a disqualifier for ROCE-based companies.",
+      "code_location": "scoring_engine.py — fw_coffee_can: is_fin_cc | (de_cc < 1.0)"
+    },
+    "promoter_pledge_ceiling": {
+      "metric": "pledged_percentage",
+      "operator": "<",
+      "threshold": 10.0,
+      "_note": "Pledge below 10% as governance pre-filter. Book emphasizes promoter skin-in-game. Pledge > 10% requires investigation; > 20% is a disqualifier.",
+      "code_location": "scoring_engine.py — fw_coffee_can: pledge_cc < 10"
+    }
+  },
+
+  "implementation_mapping": {
+    "_file": "core/scoring_engine.py",
+    "_function": "compute_qglp_score → fw_coffee_can block",
+
+    "capital_efficiency_routing": {
+      "book_requirement": "ROCE for non-financials; ROE for BFSI companies",
+      "code_proxy": "np.where(is_fin_cc, _cc_cap_eff_fin, _cc_cap_eff_nonfin)",
+      "code_location": "scoring_engine.py:1143-1146",
+      "status": "VERIFIED CORRECT"
+    },
+    "roce_non_fin": {
+      "book_threshold_pct": 15.0,
+      "code_proxy": "(_cc_roce_10y >= 15) & (_cc_roce_5y >= 15)",
+      "status": "VERIFIED CORRECT"
+    },
+    "roe_financial_10y": {
+      "book_threshold_pct": 15.0,
+      "code_proxy": "_cc_roe_10y.fillna(roe_med_5y) >= 15",
+      "status": "VERIFIED CORRECT"
+    },
+    "roe_financial_recent": {
+      "book_threshold_pct": 15.0,
+      "code_proxy": "_cc_roe_rec.fillna(roe) >= 15",
+      "note": "Corrected from 12% to 15% — book is explicit: 'ROE of 15 per cent'",
+      "status": "VERIFIED CORRECT (fixed in CA-1)"
+    },
+    "revenue_10y_cagr": {
+      "book_threshold_pct": 10.0,
+      "code_proxy": "rev_10y_cc >= 10",
+      "status": "VERIFIED CORRECT"
+    },
+    "revenue_5y_cagr": {
+      "engineering_threshold_pct": 8.0,
+      "book_threshold_pct": 10.0,
+      "note": "5Y floor uses 8% (not 10%) to absorb COVID-19 disruption. Engineering judgment.",
+      "status": "VERIFIED CORRECT"
+    },
+    "revenue_yoy": {
+      "book_requirement": "Not currently contracting",
+      "code_proxy": "rev_yoy_cc >= 0",
+      "status": "VERIFIED CORRECT"
+    },
+    "discrete_annual_velocity": {
+      "book_requirement": "Revenue growth of 10% every single year for 10 consecutive years",
+      "code_proxy": "_cc_each_year: (rev_gr_y2 >= 5) & (rev_gr_y3 >= 5) & (rev_gr_y4 >= 5) & (rev_gr_y5 >= 5)",
+      "code_location": "scoring_engine.py — _cc_each_year block",
+      "data_source": "data_engine.py COLUMN_MAP: Revenue 2-5 Years Back → revenue_2yb..revenue_5yb",
+      "fillna_strategy": "fillna(5) — missing year treated as meeting threshold (conservative: don't penalize short history)",
+      "coverage": "Years 2-5 individually; years 6-10 via 10Y CAGR",
+      "threshold_relaxation_note": "Floor relaxed from book's 10% to 5% (pandemic adjustment). COVID-19 FY21 caused universal revenue disruption — penalizing structurally sound businesses for a macro event contradicts the book's intent.",
+      "status": "UPDATED — pandemic-adjusted floor"
+    },
+    "clean_accounts_proxy": {
+      "book_requirement": "Decile-based ranking on 11 accounting ratios",
+      "code_proxy": "cfo_to_ebitda >= 90 (PERCENTAGE scale)",
+      "scale_note": "cfo_to_ebitda stored as percentage (e.g. 92.4 = 92.4%). Threshold 90.0, NOT 0.9",
+      "status": "VERIFIED CORRECT"
+    },
+    "sector_pct_rank_infinity_guard": {
+      "bug_fixed": "np.inf values from near-zero denominators ranked as universe maximum without guard",
+      "fix": "df[col].replace([np.inf, -np.inf], np.nan) executes BEFORE .groupby() in _sector_pct_rank",
+      "code_location": "scoring_engine.py:76",
+      "status": "VERIFIED CORRECT"
+    },
+    "vectorization": {
+      "requirement": "Zero iterrows(), zero apply() in hot paths",
+      "status": "VERIFIED CORRECT — enforced by test_agent11_no_apply_in_scoring_engine"
+    }
+  },
+
+  "known_gaps_and_mitigations": [
+    {
+      "gap": "Loan book growth not available in StockScan CSV — revenue CAGR used as proxy for financials",
+      "severity": "LOW",
+      "impact": "Banks with stable revenues but declining loan books could pass the financial sector gate",
+      "mitigation": "ROE routing (book's other financial criterion) still provides the primary quality gate"
+    },
+    {
+      "gap": "Individual year revenue checks only cover years 2-5 (CSV provides Revenue 2-5YB)",
+      "severity": "LOW",
+      "impact": "Years 6-10 verified only by 10Y CAGR average — a company with one bad year in years 7-9 could pass",
+      "mitigation": "10Y CAGR ≥ 10% + 5Y CAGR ≥ 8% + YoY ≥ 0% together create overlapping coverage"
+    },
+    {
+      "gap": "CFO/EBITDA is a point-in-time ratio; book uses cumulative multi-year ratio",
+      "severity": "LOW",
+      "impact": "A single exceptional year can pass the 90% gate without sustained clean accounting",
+      "mitigation": "forensic_engine's 21 red flags provide complementary multi-year accounting quality coverage"
+    }
+  ]
+}

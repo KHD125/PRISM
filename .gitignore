@@ -1,0 +1,20 @@
+# ── Secrets — settings.local.json contains ANTHROPIC_API_KEY. NEVER commit. ──
+.claude/
+
+# ── Private/copyrighted material — repo is PUBLIC, keep these local only ──
+Other Resources/
+Stockscan-main (old version) (v1)/
+Stockscan-main(old version) (v2)/
+docs/complete_book_parsed.txt
+docs/schilit_full_text.txt
+docs/unusual_billionaires_master_compiled.txt
+
+# Personal working notes
+*.txt
+!requirements.txt
+
+# ── Python caches & virtual env ──
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

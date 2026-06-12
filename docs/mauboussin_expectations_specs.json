@@ -1,0 +1,191 @@
+{
+  "_meta": {
+    "title": "Expectations Investing Framework — Mauboussin & Rappaport",
+    "author": "Michael Mauboussin & Alfred Rappaport",
+    "framework_variable": "fw_mauboussin",
+    "pass_column": "mauboussin_pass",
+    "score_column": "mauboussin_score",
+    "score_range": "0-3",
+    "frameworks_passed_label": "Expectations Matrix",
+    "implementation_file": "core/scoring_engine.py",
+    "ui_render_function": "ui/ui_tearsheet.py::render_mauboussin_radar",
+    "version": "1.1-mauboussin-nopat-precision",
+    "comment_anchor": "# 34. Mauboussin Expectations Investing Framework",
+    "framework_number_in_code": 34,
+    "architecture": "3-layer-implied-cap-inversion",
+    "theme_color": "#8b5cf6",
+    "summary": "Reads what the current stock price implies about competitive advantage duration (CAP). Alpha = identifying where implied CAP is too optimistic relative to business fundamentals. Price-Implied Expectations (PIE) inversion — not traditional value scoring.",
+    "changelog_v1_1": "Fixed reinvestment_rate unit bug (was /100 twice — decimal already). Replaced npm with NOPAT margin (EBIT*(1-eff_tax)/Revenue) for capital-structure-neutral profitability. Replaced 1-year ROCE delta with structural 3-year slope to eliminate single-year noise."
+  },
+
+  "three_layer_design": {
+    "layer_1": {
+      "name": "Implied CAP Approximation",
+      "formula": "pe * (mauboussin_nopat_margin / 100) * reinvestment_rate",
+      "formula_v1_0_deprecated": "pe * (npm / 100) * (reinvestment_rate / 100)",
+      "output_column": "mauboussin_implied_cap",
+      "description": "Vectorized proxy for how many years of above-WACC ROIC the current price encodes. Higher value = more demanding forward expectations locked into price. Uses NOPAT margin (capital-structure-neutral) rather than net profit margin to remove leverage distortion.",
+      "threshold_for_trap": 15.0,
+      "threshold_rationale": "P/E 50x with 30% NOPAT margin and 100% reinvestment gives implied_cap = 15.0. Above this indicates 15+ year perfection expectations — consistent with Mauboussin base-rate evidence that fewer than 25% of companies sustain ROIC > WACC for 10+ years."
+    },
+    "layer_2": {
+      "name": "CAP Trap Binary Flag",
+      "output_column": "mauboussin_cap_trap",
+      "logic": "implied_cap > 15.0 AND (roce - roce_med_3y) / 2.0 < -1.0",
+      "logic_v1_0_deprecated": "implied_cap > 15.0 AND d35_roce_trend < 0",
+      "description": "1 = expectations trap: stock priced for 15+ year competitive advantage while economic engine (ROCE 3-year structural slope) is already cooling by more than 1pp/year. Uses structural slope rather than 1-year delta to filter out temporary ROCE dips from one-off items.",
+      "value_when_trap": 1,
+      "value_when_clear": 0
+    },
+    "layer_3": {
+      "name": "Interactive Reverse DCF Calculator",
+      "location": "ui/ui_tearsheet.py::render_mauboussin_radar (inline calculator section)",
+      "description": "On-demand expected value solver using Streamlit number_input widgets. Runs exclusively on the single stock in the user's focus view. Isolated to prevent batch-scan bottlenecks. Formula: EV = (p_upside * upside_pct) - (p_downside * downside_pct).",
+      "expected_value_formula": "EV = (p_upside / 100 * upside_pct) - (p_downside / 100 * downside_pct)"
+    }
+  },
+
+  "pillar_t_treadmill": {
+    "_column_materialized": "mauboussin_treadmill_breach",
+    "letter": "T",
+    "name": "Treadmill Safety",
+    "metric": "sell_alert_treadmill",
+    "operator": "==",
+    "pass_value": 0,
+    "logic": "sell_alert_treadmill == 0 → mauboussin_treadmill_breach = 1 (safe), else 0 (treadmill trap firing)",
+    "nan_handling": "fillna(0) — assume treadmill not firing if data missing (conservative pass)",
+    "baseline_text": "Expectations Treadmill Safe: stock not priced for indefinite perfection requiring continuous positive surprises"
+  },
+
+  "pillar_o_operating_leverage": {
+    "_column_materialized": "mauboussin_oplev_drift",
+    "letter": "O",
+    "name": "Operating Leverage Integrity",
+    "metric": "operating_leverage",
+    "operator": "==",
+    "pass_value": 1,
+    "logic": "operating_leverage == 1 → mauboussin_oplev_drift = 1 (efficient conversion), else 0 (drift detected)",
+    "nan_handling": "fillna(1) — assume functioning if unknown (conservative toward pass)",
+    "baseline_text": "Operating Leverage Intact: incremental revenue converting efficiently to profit — economic engine healthy"
+  },
+
+  "pillar_c_cap_trap": {
+    "_column_materialized": "mauboussin_cap_trap",
+    "letter": "C",
+    "name": "CAP Trap Clear",
+    "logic": "(mauboussin_implied_cap > 15.0) AND ((roce - roce_med_3y) / 2.0 < -1.0)",
+    "pass_when": "mauboussin_cap_trap == 0",
+    "nan_handling": "roce_med_3y NaN → fillna(roce) → slope = 0.0 (no decline assumed); pe/nopat_margin/reinvestment_rate fillna(0.0) → implied_cap collapses to 0 (no trap)",
+    "baseline_text": "Competitive Advantage Period Realistic: no high-CAP expectations paired with structural ROCE decay"
+  },
+
+  "output_registry": {
+    "mauboussin_nopat_margin": {
+      "type": "float",
+      "description": "EBIT × (1 − effective_tax_rate) / Revenue × 100. Capital-structure-neutral profitability — excludes interest expense. Effective tax rate = (PBT − PAT) / PBT, clipped [0, 0.50], fallback 25%.",
+      "unit": "percent",
+      "typical_range": "5.0 to 40.0"
+    },
+    "mauboussin_implied_cap": {
+      "type": "float",
+      "description": "Implied competitive advantage period proxy: P/E × (nopat_margin/100) × reinvestment_rate",
+      "unit": "dimensionless proxy years",
+      "typical_range": "0.0 to ~25.0"
+    },
+    "mauboussin_treadmill_breach": {
+      "type": "binary int (0/1)",
+      "description": "1 = safe from expectations treadmill; 0 = treadmill sell alert active",
+      "pillar": "T"
+    },
+    "mauboussin_oplev_drift": {
+      "type": "binary int (0/1)",
+      "description": "1 = operating leverage functioning (revenue → profit conversion efficient); 0 = drift",
+      "pillar": "O"
+    },
+    "mauboussin_cap_trap": {
+      "type": "binary int (0/1)",
+      "description": "1 = expectations trap detected (implied CAP > 15 and ROCE 3-year slope < -1.0 pp/yr); 0 = clear",
+      "pillar": "C"
+    },
+    "mauboussin_pass": {
+      "type": "binary int (0/1)",
+      "description": "1 = passes all 3 Mauboussin gates. Requires: treadmill_breach==1 AND oplev_drift==1 AND cap_trap==0"
+    },
+    "mauboussin_score": {
+      "type": "int 0-3",
+      "description": "treadmill_breach + oplev_drift + (cap_trap==0). Near-miss ranking. Score==3 implies pass==1 (bidirectional — no asymmetric disqualifier unlike Lynch)."
+    }
+  },
+
+  "nan_handling": {
+    "pe": "fillna(0.0) — implied_cap collapses to 0, no trap generated",
+    "mauboussin_nopat_margin": "fillna(0.0) before /100 — same collapse logic; NaN when revenue==0",
+    "reinvestment_rate": "fillna(0.0) — same collapse logic (decimal [0,1], no /100 applied)",
+    "sell_alert_treadmill": "fillna(0) — assume alert not firing, treadmill_breach defaults to 1 (pass)",
+    "operating_leverage": "fillna(1) — assume functioning, oplev_drift defaults to 1 (pass)",
+    "roce_med_3y": "fillna(roce) — no structural decline assumed if 3Y median missing; slope = 0.0"
+  },
+
+  "noise_exclusions": {
+    "rationale": "These columns were evaluated during the PIE Inversion Audit and excluded to prevent feature bloat and cross-framework contamination. They are either redundant with existing signals, not available in the CSV schema, or theoretically misaligned with the PIE framework.",
+    "excluded_columns": [
+      "roce",
+      "roce_med_5y",
+      "roce_med_7y",
+      "roce_med_10y",
+      "pat_gr_5y",
+      "pat_gr_10y",
+      "rev_gr_5y",
+      "rev_gr_10y",
+      "peg",
+      "earnings_yield",
+      "ev_ebitda",
+      "cfo_to_pat",
+      "debt_to_equity",
+      "ccc",
+      "asset_turnover",
+      "wacc",
+      "beta"
+    ],
+    "wacc_gap": "Beta (cost of equity via CAPM) not in any CSV sheet. capital_return_spread (roce - 12%) is the best available proxy. True WACC computation permanently deferred.",
+    "nwc_gap": "Net Working Capital change not directly available as a pre-computed column. Would require multi-year balance sheet reconstruction.",
+    "true_reinvestment_rate_gap": "Mauboussin's true RR = (Net Capex + ΔNWC) / NOPAT. Our proxy uses (1 - DPR/100) = earnings retention. Directionally correct but not identical."
+  },
+
+  "vectorization_matrix": {
+    "approach": "Pure Pandas vectorized operations — zero iterrows, zero apply",
+    "nopat_margin_computation": "np.where(revenue > 0, ebit * (1 - eff_tax) / revenue * 100, NaN) — broadcast-safe",
+    "implied_cap_computation": "Element-wise multiply of three extracted Series; broadcast-safe across full 2108-row DataFrame",
+    "pillar_materialization": "np.where conditions on pre-extracted Series with explicit fillna",
+    "cap_trap_flag": "Boolean AND of (implied_cap > 15.0) & (roce_slope_3y < -1.0), astype(int)",
+    "pass_flag": "Boolean AND of three binary column conditions, astype(int)",
+    "score_column": "Direct integer addition of three binary Series"
+  },
+
+  "score_column_logic": {
+    "mauboussin_score": "treadmill_breach + oplev_drift + (cap_trap == 0).astype(int)",
+    "range": "0-3",
+    "score_3_implies_pass_1": true,
+    "pass_1_implies_score_3": true,
+    "bidirectional": "Unlike Lynch v1.1 which has an asymmetric inventory surge disqualifier, Mauboussin has no asymmetric veto. Score==3 and pass==1 are perfectly bidirectional."
+  },
+
+  "codex_reference": {
+    "source": "Other Resources/The-Expectations-Investing-Codex.md",
+    "pie_framework": "Price-Implied Expectations — 6 value drivers: Sales Growth, OPM, Cash Tax Rate, WC Investment, Fixed Capital Investment, WACC",
+    "cap_base_rates": "10-year ROIC > WACC = 25-30% of companies; 20-year = 10-15%",
+    "treadmill_definition": "Stock priced for perfection must continuously exceed already-perfect expectations for price to rise. Single miss triggers severe re-rating.",
+    "expected_value_formula": "EV = P(upside) * Upside% - P(downside) * Downside%"
+  },
+
+  "implemented_in_v10": {
+    "implied_cap_layer": true,
+    "cap_trap_flag": true,
+    "treadmill_pillar": true,
+    "operating_leverage_pillar": true,
+    "interactive_dcf_calculator": true,
+    "fw_str_label": "Expectations Matrix",
+    "nopat_margin_precision": true,
+    "structural_roce_slope": true
+  }
+}

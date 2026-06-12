@@ -1,0 +1,209 @@
+{
+  "_meta": {
+    "title": "The Joys of Compounding — Quantitative Specification Ledger",
+    "author": "Gautam Baid (Harriman House, 2020)",
+    "source_file": "Other Resources/The_Joys_of_Compounding__The_Passionate_Pu_-_Gautam_Baid.pdf",
+    "extraction_date": "2026-05-23",
+    "total_pages": 586,
+    "purpose": "Authoritative source of truth for all quantitative thresholds in the fw_baid Compounder framework. Pairs with ub_financial_specs.json and coffee_can_financial_specs.json to prevent structural code drift.",
+    "critical_audit_note": "The Joys of Compounding is a philosophical and behavioral investing book. Unlike Saurabh Mukherjea's Coffee Can Investing, it does NOT state explicit quantitative screening thresholds (ROCE >= X%, Revenue CAGR >= Y%) as verbatim book content. All numerical thresholds in fw_baid are engineering proxies derived from the book's qualitative principles. Gemini's bugs.txt fabricated chapter titles and source quotes that do not appear in the PDF."
+  },
+
+  "gemini_fabrications": {
+    "_note": "Top-level key — verified by test_baid_contract.py::test_spec_fabrication_log_present",
+    "fabricated_chapter_4_title": "Gemini claimed Ch.4 = 'Identifying Quality Compounders'. Actual Ch.4 = 'Harnessing the Power of Passion and Focus through Deliberate Practice' (p.57).",
+    "fabricated_chapter_6_title": "Gemini claimed Ch.6 = 'Valuation and Margin of Safety'. Actual Ch.6 = 'Humility is the Gateway to Attaining Wisdom' (p.79).",
+    "fabricated_chapter_15_title": "Gemini claimed Ch.15 = 'The Sell Discipline'. Actual Ch.15 = 'Journaling is a Powerful Tool for Self-Reflection' (p.194).",
+    "fabricated_7y_roce_quote": "No verbatim quote stating 'ROCE >= 15% for 7 consecutive years' exists in the book. '7 consecutive' pattern: NOT FOUND in 586 pages.",
+    "fabricated_12pct_revenue_quote": "No verbatim threshold of 12% revenue CAGR for 10 years appears. Book discusses 12-15% earnings growth in market valuation context (p.286), not as a screening gate.",
+      "fabricated_5pct_annual_floor": "No 'each year >= 5%' or 'no-stumble annual velocity floor' appears verbatim. The book's p.129 'stumble' refers to Berkshire Hathaway's stock price in 1999 Barron's cover, not revenue floors.",
+    "fabricated_fcf_yield_by_size": "No 'FCF Yield >= 3% for Large Caps, >= 4% for Mid/Small' appears in the book. 'FCF yield' pattern: NOT FOUND in 586 pages.",
+    "fabricated_peg_15": "No 'PEG <= 1.5' threshold stated in the book. PEG mentioned on p.286 in market observation context, not as a screening gate."
+  },
+
+  "actual_chapter_titles": {
+    "_note": "Verified against PDF. Gemini's claimed chapter titles are fabricated.",
+    "chapter_1": "Introduction: The Best Investment You Can Make Is an Investment in Yourself",
+    "chapter_2": "Becoming a Learning Machine",
+    "chapter_4": "Harnessing the Power of Passion and Focus through Deliberate Practice",
+    "chapter_5": "The Importance of Choosing the Right Role Models, Teachers, and Associates in Life",
+    "chapter_6": "Humility Is the Gateway to Attaining Wisdom",
+    "chapter_8": "Simplicity Is the Ultimate Sophistication",
+    "chapter_9": "Achieving Financial Independence",
+    "chapter_10": "Living Life According to the Inner Scorecard",
+    "chapter_11": "The Key to Success in Life Is Delayed Gratification",
+    "chapter_12": "Building Earning Power through a Business Ownership Mind-Set",
+    "chapter_14": "The Significant Role of Checklists in Decision-Making",
+    "chapter_15": "Journaling Is a Powerful Tool for Self-Reflection",
+    "chapter_16": "Never Underestimate the Power of Incentives",
+    "chapter_17": "Always Think About the Math, but Avoid Physics Envy",
+    "chapter_19": "The Three Most Important Words in Investing",
+    "chapter_20": "Investing in Commodity and Cyclical Stocks Is All About the Cycle",
+    "chapter_21": "Within Special Situations, Carefully Study Spinoffs",
+    "chapter_23": "The Market Is Efficient Most, but Not All, of the Time",
+    "chapter_24": "The Dynamic Art of Portfolio Management and Individual Position Sizing",
+    "chapter_25": "To Finish First, You Must First Finish",
+    "chapter_27": "Updating Our Beliefs in Light of New Evidence",
+    "chapter_29": "Pattern Recognition",
+    "chapter_31": "The Education of a Value Investor"
+  },
+
+  "book_qualitative_principles": {
+    "_chapter_ref": "Chapter 14 — The Significant Role of Checklists in Decision-Making (pp. 180–193)",
+    "_investment_checklist_note": "The book's actual quantitative guidance is an investment checklist (pp. 180–193) that provides directional guidance ('higher is better', 'lower is better') WITHOUT specifying explicit threshold values.",
+    "return_on_capital_employed": {
+      "book_quote": "Return on capital employed. The higher this return is, the better. This is calculated as earnings before interest and taxes, divided by capital employed.",
+      "page": 185,
+      "threshold_stated_in_book": false,
+      "direction": "higher is better"
+    },
+    "free_cash_flow": {
+      "book_quote": "Free cash flow (FCF). This is the discretionary surplus that can be distributed to reward shareholders. The higher the proportion of FCF out of the CFO, the better.",
+      "page": 184,
+      "threshold_stated_in_book": false,
+      "direction": "higher FCF/CFO is better"
+    },
+    "debt": {
+      "book_quote": "Total debt. The lower the debt is, the better. High debt (for nonfinance businesses) signifies living beyond one's means. Avoid companies that heavily depend on the kindness of strangers.",
+      "page": 184,
+      "threshold_stated_in_book": false,
+      "direction": "lower is better"
+    },
+    "sales_growth": {
+      "book_quote": "Sales growth. The higher sales growth is, the better (provided it is profitable). Over the long term, stock returns are highly correlated to sales growth as margins revert to the mean.",
+      "page": 182,
+      "threshold_stated_in_book": false,
+      "direction": "higher is better"
+    },
+    "compounding_consistency": {
+      "book_quote": "An investor with 14 percent average annual return (20, 40, 20, -50, and 40 percent) over a five-year period underperforms someone with 9 percent average annual return if the latter is consistent every year.",
+      "page": 237,
+      "insight": "A single large negative year destroys CAGR disproportionately. This is the qualitative basis for penalizing any annual revenue shortfall.",
+      "threshold_stated_in_book": false
+    },
+    "nirvana_concept": {
+      "book_quote": "Combining the key insights from this chapter, we arrive at investing nirvana: long-term ownership of competitively advantaged businesses with significant reinvestment potential, managed by excellent capital allocators and shareholder-friendly management teams.",
+      "page": 298,
+      "threshold_stated_in_book": false,
+      "note": "Qualitative concept only. No numerical thresholds attached to 'nirvana'."
+    }
+  },
+
+  "engineering_proxies": {
+    "_critical_note": "All thresholds below are engineering proxies derived from qualitative book principles. None are verbatim book-stated thresholds. Gemini's bugs.txt claimed otherwise — that claim is fabricated.",
+
+    "capital_efficiency_gate": {
+      "metric": "roce_med_7y",
+      "threshold": 15.0,
+      "operator": ">=",
+      "rationale": "ROCE >= 15% is a standard Indian market quality threshold (also used in Coffee Can Investing and Unusual Billionaires). Book emphasizes sustained, long-duration returns. 7Y window is chosen over 5Y because it spans a full business cycle and reduces cyclical distortion — an engineering improvement over the prior 5Y gate.",
+      "book_basis": "Engineering proxy. Book says 'Return on capital employed. The higher, the better.' No specific percentage or year window stated.",
+      "code_location": "scoring_engine.py — fw_baid: roce_med_7y.fillna(0) >= 15"
+    },
+    "revenue_growth_10y": {
+      "metric": "rev_gr_10y",
+      "threshold": 12.0,
+      "operator": ">=",
+      "rationale": "12% 10Y revenue CAGR captures Baid's emphasis on long-horizon compounding (p.237: 'as of 2018, only 5% of listed Indian companies grew earnings >20% CAGR over 10 years'). 10Y window aligns with the book's long-holding-period philosophy. 12% is positioned between Coffee Can's 10% (minimum) and Basant's 15% (elite).",
+      "book_basis": "Engineering proxy. Book emphasizes long-duration compounding qualitatively. No '12% over 10Y' threshold stated.",
+      "code_location": "scoring_engine.py — fw_baid: rev_gr_10y.fillna(0) >= 12"
+    },
+    "annual_velocity_floor": {
+      "metric": "rev_gr_y2 through rev_gr_y5",
+      "threshold_each_year": 0.0,
+      "operator": ">=",
+      "rationale": "Anti-contraction standard: each visible back-year must show non-negative revenue growth (>= 0%). Relaxed from the prior 5% floor to accommodate the COVID-19 pandemic anomaly — FY21 caused universal revenue disruption that is not a structural business failure signal. The gate still eliminates companies with genuine multi-year revenue shrinkage, which is the core intent of Baid's compounding-consistency principle (p.237-238). The 10Y CAGR >= 12% gate provides the aggregate quality filter.",
+      "book_basis": "Engineering proxy based on the compounding-consistency narrative. No specific annual floor stated verbatim in the book.",
+      "code_variable": "_bd_each_year",
+      "code_location": "scoring_engine.py — fw_baid: _bd_each_year"
+    },
+    "fcf_yield_size_aware": {
+      "metric": "fcf_yield",
+      "threshold_large_cap": 3.0,
+      "threshold_mid_small": 4.0,
+      "operator": ">=",
+      "rationale": "FCF yield hurdle reflects size-dependent risk premiums. Large caps (Mega/Large) have lower cost of equity and more predictable cash flows — 3% FCF yield is sufficient for the risk. Mid/Small/Micro caps carry higher liquidity risk and business risk — 4% FCF yield provides extra margin of safety. Engineering judgment: not stated in book.",
+      "book_basis": "Engineering proxy. Book says 'The higher the proportion of FCF out of CFO, the better.' No size-specific percentage thresholds stated.",
+      "code_location": "scoring_engine.py — fw_baid: baid_fcf_yield_hurdle = np.where(is_large_bd, 3.0, 4.0)"
+    },
+    "cfo_to_pat_quality": {
+      "metric": "cfo_to_pat",
+      "threshold": 80.0,
+      "operator": ">=",
+      "scale_unit": "PERCENTAGE",
+      "rationale": "CFO/PAT >= 80% ensures reported profits are real cash. cfo_to_pat is stored as PERCENTAGE (80.0 = 80%, not 0.80). Consistent with Coffee Can and Epoch 4 SQGLP standards.",
+      "book_basis": "Engineering proxy. Book checks CFO vs net profit qualitatively (p.184). No 80% threshold stated.",
+      "code_location": "scoring_engine.py — fw_baid: cfo_pat_bd.fillna(0) >= 80"
+    },
+    "debt_to_equity_ceiling": {
+      "metric": "debt_to_equity",
+      "threshold": 0.5,
+      "operator": "<",
+      "rationale": "D/E < 0.5 is the 'fortress balance sheet' standard per Baid's emphasis on avoiding debt-dependent growth (p.184). Stricter than Coffee Can's 1.0 ceiling because Baid's Nirvana framework targets elite compounders, not just passing quality.",
+      "book_basis": "Engineering proxy. Book says 'Total debt. The lower, the better.' No 0.5 threshold stated.",
+      "code_location": "scoring_engine.py — fw_baid: is_fin_bd | (de_bd.fillna(999) < 0.5)"
+    },
+    "market_cap_floor": {
+      "metric": "market_cap",
+      "threshold_crore": 500,
+      "operator": ">=",
+      "rationale": "Filters out micro-cap noise. Baid's Nirvana businesses require proven institutional backing and track record.",
+      "book_basis": "Engineering proxy. No market cap threshold stated in book.",
+      "code_location": "scoring_engine.py — fw_baid: mcap_bd.fillna(0) >= 500"
+    },
+    "peg_entry_corridor": {
+      "metric": "peg",
+      "threshold_upper": 2.0,
+      "operator": "<=",
+      "threshold_lower_exclusive": 0.0,
+      "operator_lower": ">",
+      "rationale": "PEG 0-2.0 = expanded GARP (Growth at a Reasonable Price) valuation regime. Expanded from the prior 1.5 cap to align with the broader valuation environment where quality compounders sustainably trade at premium multiples. PEG <= 2.0 is now the system-wide upper bound (also used by the 100-Bagger framework). Positive earnings required (PEG > 0).",
+      "book_basis": "Engineering proxy. PEG mentioned on p.286 in market observation context, not as a screening gate.",
+      "code_location": "scoring_engine.py — fw_baid: (peg_bd > 0) & (peg_bd <= 2.0)"
+    }
+  },
+
+  "implementation_mapping": {
+    "_file": "core/scoring_engine.py",
+    "_framework": "fw_baid",
+    "_framework_label": "Baid Compounder",
+
+    "capital_efficiency": {
+      "changed_from": "roce_med_5y >= 15",
+      "changed_to": "roce_med_7y >= 15",
+      "reason": "7Y window spans a full business cycle; more robust than 5Y for detecting sustained compounders"
+    },
+    "revenue_growth": {
+      "changed_from": "rev_gr_5y >= 12",
+      "changed_to": "rev_gr_10y >= 12",
+      "reason": "10Y window aligns with long-horizon compounding philosophy; avoids cyclical distortion"
+    },
+    "annual_velocity": {
+      "added": "_bd_each_year: (rev_gr_y2 >= 0) & (rev_gr_y3 >= 0) & (rev_gr_y4 >= 0) & (rev_gr_y5 >= 0)",
+      "reason": "Anti-contraction standard: no negative-growth years allowed. Relaxed from >= 5% to >= 0% to absorb pandemic anomaly. Mirrors _cc_each_year pattern (which moved 10% → 5%)."
+    },
+    "fcf_yield": {
+      "changed_from": "fcf_yield >= 3 (flat)",
+      "changed_to": "fcf_yield >= np.where(is_large, 3.0, 4.0) (size-aware)",
+      "reason": "Size-dependent risk premium: smaller caps require higher FCF yield for margin of safety"
+    }
+  },
+
+  "known_gaps": [
+    {
+      "gap": "No loan-book growth data for financial sector — revenue CAGR used as proxy",
+      "severity": "LOW",
+      "mitigation": "Financial sector stocks exempted from D/E < 0.5 constraint; ROE already captured by broader quality scoring"
+    },
+    {
+      "gap": "rev_gr_y2..y5 individual year checks cover only years 2-5 (CSV limitation)",
+      "severity": "LOW",
+      "mitigation": "10Y CAGR >= 12% catches multi-year average; individual years 6-10 covered by CAGR"
+    },
+    {
+      "gap": "fcf_yield NaN for ~600+ stocks (missing FCF data in CSV)",
+      "severity": "MEDIUM",
+      "mitigation": "fillna(0) causes these stocks to fail the FCF yield gate conservatively"
+    }
+  ]
+}

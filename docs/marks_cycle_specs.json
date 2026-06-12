@@ -1,0 +1,223 @@
+{
+  "_meta": {
+    "title": "Howard Marks Market Cycle & Risk Defensive Codex — Specification Ledger",
+    "author": "Howard Marks (The Most Important Thing Illuminated)",
+    "source_file_primary":   "Other Resources/The_Most_Important_Thing_Illuminated_-_Howard_Marks.pdf",
+    "source_file_companion": "Other Resources/The-Dalal-Street-Thinker-Howard-Marks.md",
+    "extraction_date": "2026-05-25",
+    "version": "1.1-marks-cycle-codex-india-calibrated",
+    "purpose": "Authoritative source of truth for Howard Marks' Market Cycle and Risk Defensive framework inside Project Beast. 4-pillar vectorized cycle shield that gates on margin sustainability, price-vs-value discipline, leverage safety, and cash quality.",
+    "framework_variable": "fw_marks_cycle",
+    "pass_column": "marks_pass",
+    "score_column": "marks_score",
+    "frameworks_passed_label": "Marks Cycle Shield",
+    "framework_number_in_code": "marks",
+    "implementation_file": "core/scoring_engine.py",
+    "comment_anchor": "# Marks Market Cycle & Risk Defensive Shield",
+    "provenance_note": "Every threshold maps to a specific quantifiable principle from 'The Most Important Thing Illuminated'. Qualitative Marks principles (second-level thinking, psychological enemies, cycle temperature) are documented in not_implementable. All 4 gates are loop-free vectorized boolean masks with conservative NaN handling.",
+    "unit_notes": {
+      "mean_reversion_risk": "INTEGER FLAG — 0=No cyclical margin spike, 1=OPM or NPM >130% of 5Y median",
+      "buy_zone_label":      "CATEGORICAL STRING — '🟢 Perfect Entry (Low Risk)' when dist_to_vstop <= 5%",
+      "debt_to_equity":      "FLOAT RATIO — 0.5 = 50% D/E (NOT percentage)",
+      "cfo_to_pat":          "PERCENTAGE — 73.04 = 73% CFO/PAT cash conversion rate (NOT 0.73)"
+    }
+  },
+
+  "pillar_m_margin_protection": {
+    "_pillar": "M — Margin Spike Guard (Pendulum Spike Protection)",
+    "_book_reference": "Chapter 4 (MEAN_REVERSION config): OPM or NPM > 130% of 5Y median = cyclical peak risk. Chapter 11 (The Pendulum): 'Markets and margins spend almost no time at the rational midpoint — the pendulum swings between greed extreme and fear extreme.'",
+    "_display_label": "Pendulum Spike Guard: Margins Within Sustainable Historical Limits",
+    "_column_materialized": "marks_margin_spike",
+    "margin_protection_gate": {
+      "metric": "mean_reversion_risk",
+      "threshold": 0,
+      "operator": "==",
+      "unit": "INTEGER_FLAG",
+      "type": "BINARY_FLAG",
+      "fillna_strategy": "fillna(0) — missing risk data → 0 → no spike assumed → gate passes (conservative: absence of evidence is not evidence of spike)",
+      "rationale": "mean_reversion_risk == 0 confirms margins are NOT at cyclical peak extremes. The flag is 1 when OPM_LQ / OPM_Med_5Y > 1.3 OR NPM_LQ / NPM_Med_5Y > 1.3 (config MEAN_REVERSION thresholds). A company at margin peak is positioned at the pendulum's greed extreme — the very condition Marks warns against buying. A Cycle Shield company's margins must sit within sustainable historical limits.",
+      "code_variable": "df.get('mean_reversion_risk', pd.Series(0, index=df.index)).fillna(0) == 0"
+    }
+  },
+
+  "pillar_p_price_value": {
+    "_pillar": "P — Price vs Value Discipline (Asymmetry Margin)",
+    "_book_reference": "Chapter 3 (Price vs Value): 'The relationship between price and value determines ALL investment outcomes.' Chapter 6 (Patient Opportunism): 'The buy zone is where price is substantially below intrinsic value — within 5% of VSTOP = maximum asymmetric risk/reward.'",
+    "_display_label": "Asymmetry Margin: Asset Trades Within Disciplined Entry Buy Zone",
+    "_column_materialized": "marks_price_value",
+    "price_value_gate": {
+      "metric": "buy_zone_label",
+      "threshold": "🟢 Perfect Entry (Low Risk)",
+      "operator": "==",
+      "unit": "CATEGORICAL_LABEL",
+      "type": "CATEGORICAL_LABEL",
+      "fillna_strategy": "fillna('') — missing label → empty string ≠ '🟢 Perfect Entry (Low Risk)' → gate fails (cannot confirm in buy zone)",
+      "rationale": "buy_zone_label == '🟢 Perfect Entry (Low Risk)' means dist_to_vstop <= 5% (stock within 5% of its Volatility Stop — the maximum asymmetric risk/reward entry zone). Marks: 'The ONLY time to act decisively is when price is substantially below intrinsic value.' The 5% VSTOP proximity zone represents the fat pitch — minimum downside, maximum potential upside relative to the technical floor.",
+      "code_variable": "df.get('buy_zone_label', pd.Series('', index=df.index)).fillna('') == '🟢 Perfect Entry (Low Risk)'"
+    }
+  },
+
+  "pillar_l_leverage_discipline": {
+    "_pillar": "L — Leverage Cushion (Risk Avoidance Line)",
+    "_book_reference": "Chapter 2 (Risk Types): 'Type 4 — Leverage Risk: Borrowed money amplifies ALL other risks.' Companion Chapter 9 (Investing Defensively — Pillar 1 Quality Floor): 'D/E < 0.5' — India-specific Marks defensive threshold explicitly quantified in The Dalal Street Thinker handbook.",
+    "_display_label": "Risk Avoidance Line: Balance Sheet Debt Strictly Below 0.5× India Defensive Floor",
+    "_column_materialized": "marks_leverage_trap",
+    "leverage_discipline_gate": {
+      "metric": "debt_to_equity",
+      "threshold": 0.5,
+      "operator": "<",
+      "unit": "FLOAT_RATIO",
+      "type": "CONTINUOUS_RATIO",
+      "fillna_strategy": "fillna(999) — missing D/E → 999 ≥ 0.5 → gate fails (cannot confirm leverage safety)",
+      "audit_provenance": "Refined from v1.0 threshold of <= 1.0 to < 0.5 via textbook audit (2026-05-25). The companion explicitly states 'D/E < 0.5' in the India-adapted defensive investing chapter. The PDF (Ch.17) emphasizes leverage as the primary offensive risk amplifier. D/E < 0.5 (strictly) is the validated India-market defensive ceiling.",
+      "rationale": "Marks' defensive posture requires leverage to stay well within conservative limits. D/E < 0.5 is the India-adapted Cycle Shield ceiling per The Dalal Street Thinker companion (Ch. 9, Pillar 1 Quality Floor). Above 0.5×, leverage amplifies ALL other cycle risks multiplicatively. A company entering a bear market with D/E ≥ 0.5 faces materially elevated cash flow risk. Marks (PDF Ch. 17): 'Concentration and leverage are two examples of offense. Use enough of them and they can jeopardize your investment survival.'",
+      "code_variable": "df.get('debt_to_equity', pd.Series(999, index=df.index)).fillna(999) < 0.5"
+    }
+  },
+
+  "pillar_d_defensive_cash": {
+    "_pillar": "D — Defensive Cash Cushion (Margin for Error Base)",
+    "_book_reference": "Companion Chapter 9 (Investing Defensively — Pillar 1 Quality Floor): 'CFO/PAT > 0.8' = 80% in percentage-unit CSV data. Only companies generating real cash survive cycle downturns. PDF Chapter 17 (Investing Defensively): 'The critical element in defensive investing is what Buffett calls margin of safety — demanding real cash to back reported earnings.'",
+    "_display_label": "Margin for Error Base: CFO/PAT Cash Generation Clears 80% India Defensive Floor",
+    "_column_materialized": "marks_defensive_base",
+    "defensive_cash_gate": {
+      "metric": "cfo_to_pat",
+      "threshold": 80.0,
+      "operator": ">=",
+      "unit": "PERCENTAGE",
+      "type": "PERCENTAGE",
+      "fillna_strategy": "fillna(0) — missing CFO/PAT → 0 < 80 → gate fails (cannot confirm cash quality)",
+      "unit_warning": "CRITICAL: cfo_to_pat in CSV is PERCENTAGE (e.g. 73.04 = 73%). Threshold must be 80.0 not 0.80.",
+      "audit_provenance": "Refined from v1.0 threshold of >= 70.0 to >= 80.0 via textbook audit (2026-05-25). The companion explicitly states 'CFO/PAT > 0.8' (Chapter 9, Pillar 1 Quality Floor) as the India-adapted Marks defensive standard. The PDF emphasizes cash backing as the true margin-for-error base. 80% aligns with Dorsey's moat quality threshold and is now the validated Marks India defensive floor.",
+      "rationale": "80% cash conversion floor is the companion-validated Marks 'margin for error' defensive base — the minimum acceptable cash backing of reported earnings per The Dalal Street Thinker (Chapter 9 Pillar 1: 'CFO/PAT > 0.8'). Threshold hierarchy: Parag Parikh=75% < Marks=Dorsey=80% < Outsider CEO=85% (strictest). The 80% floor is the standard India defensive earnings quality gate for the Marks Cycle Shield.",
+      "code_variable": "df.get('cfo_to_pat', pd.Series(0, index=df.index)).fillna(0) >= 80.0"
+    }
+  },
+
+  "pass_flag_logic": {
+    "_column": "marks_pass",
+    "_dtype": "int (0 or 1)",
+    "_logic": "AND of all 4 materialized pillar flags: marks_margin_spike & marks_price_value & marks_leverage_trap & marks_defensive_base",
+    "_description": "1 = Marks Cycle Shield confirmed: margins not at peak extremes, stock in buy zone, leverage safe, cash quality adequate. 0 = one or more gates failed.",
+    "_code_variable": "fw_marks_cycle",
+    "_framework_label": "Marks Cycle Shield"
+  },
+
+  "score_column_logic": {
+    "_column": "marks_score",
+    "_dtype": "int (0-4)",
+    "_description": "Sum of all 4 pillar flags. Score=4 = identical to marks_pass=1. Score=3 = one gate blocking. Enables near-miss Marks cycle positioning.",
+    "_use_case": "Sort by marks_score descending to rank stocks approaching Marks Cycle Shield standard. Score 3/4 = one cycle condition unmet."
+  },
+
+  "scoring_matrix": {
+    "gate_weights": {
+      "margin_protection": 1,
+      "price_value":       1,
+      "leverage_discipline": 1,
+      "defensive_cash":    1
+    },
+    "all_gates_equal_weight": true,
+    "score_range": "0-4"
+  },
+
+  "vectorization_matrix": {
+    "description": "All 4 gates are pure vectorized Pandas/NumPy boolean masks. Zero loops, zero apply(), zero iterrows(). NaN strategy is conservative for most gates.",
+    "nan_handling": {
+      "mean_reversion_risk": "fillna(0) — missing risk data → 0 → no spike → gate passes (absence of evidence is not evidence of spike)",
+      "buy_zone_label":      "fillna('') — missing label → empty string → gate fails (cannot confirm in buy zone)",
+      "debt_to_equity":      "fillna(999) — missing D/E → 999 ≥ 0.5 → 999 < 0.5 is False → gate fails (leverage unconfirmed)",
+      "cfo_to_pat":          "fillna(0) — missing CFO/PAT → 0 < 80 → gate fails"
+    }
+  },
+
+  "not_implementable": [
+    {
+      "gate": "5-Dimension Market Temperature Score (composite 5–25)",
+      "reason": "Requires macro data: Nifty P/E, Market Cap/GDP ratio, SIP registration trends, IPO volume/oversubscription ratios, FII flow data. None of these are in the StockScan CSV. The MARKS_CYCLE config in config.py already provides the manual temperature framework. Temperature score requires manual quarterly input from the investor.",
+      "companion_reference": "Chapter 8 — Cycle Temperature Gauge for India; Chapter 17 — Decision Framework Q2"
+    },
+    {
+      "gate": "Second-Level Thinking Score",
+      "reason": "Qualitative assessment requiring contrarian insight documentation, consensus view identification, and differentiation evidence. Not computable from numeric CSV data. The five-level framework (Consensus/Differentiation/Probability/Pricing/Action) is a decision process, not a balance-sheet metric.",
+      "companion_reference": "Chapter 1 — Second-Level Thinking: The Only Sustainable Investment Edge"
+    },
+    {
+      "gate": "Psychological Enemy Detection (Greed/Fear/Envy/Ego/Crowd/Capitulation/Projection)",
+      "reason": "Requires investor behavior data — decision logs, holding period analysis, sell pattern monitoring. The seven psychological enemies are behavioral/emotional signals, not balance-sheet indicators. Not computable from CSV.",
+      "companion_reference": "Chapter 4 — The Seven Enemies Within"
+    },
+    {
+      "gate": "Portfolio Concentration Risk (single stock > 10%, sector > 25%)",
+      "reason": "Requires portfolio-level data: position weights, sector allocations across all holdings. A single-stock screener cannot assess portfolio concentration — this is an investor-level, not a stock-level, attribute.",
+      "companion_reference": "Chapter 2 — Risk Type 3 (Concentration Risk)"
+    },
+    {
+      "gate": "Liquidity Risk (average daily trading value < ₹1 Cr)",
+      "reason": "Average daily trading value not in StockScan CSV. Partially proxied by market cap tier (Nano/Micro Cap = higher liquidity risk) but not precisely measurable.",
+      "companion_reference": "Chapter 2 — Risk Type 5 (Liquidity Risk)"
+    },
+    {
+      "gate": "Contrarian Opportunity Score (crowd consensus distance)",
+      "reason": "Requires SIP inflow data by sector, F&O open interest, analyst consensus distribution, AMFI data. None available in StockScan CSV. The contrarian scoring (Steps 1-5 of Marks Contrarian Framework) is a macro-behavioral assessment.",
+      "companion_reference": "Chapter 5 — Contrarianism: When to Act Against the Crowd"
+    }
+  ],
+
+  "distinction_from_other_frameworks": {
+    "vs_hard_gate_cash_quality": {
+      "explanation": "HARD_GATES cash_quality in config.py uses cfo_to_pat >= 70%. The Marks Pillar D is now >= 80% (stricter than the hard gate). Stocks passing the hard gate (70-79% CFO/PAT) can still fail marks_defensive_base. This means marks_pass provides genuine additional filtering beyond the hard gate.",
+      "architectural_note": "Hard gate eliminates from the scan. marks_pass is a framework signal layered on top — it adds marks_margin_spike, marks_price_value, and the stricter 80% CFO/PAT standard which the hard gate does not check."
+    },
+    "vs_diamond_mukherjea": {
+      "explanation": "Diamond (Diamonds in the Dust / Mukherjea) has no CFO/PAT gate — it uses ROCE 15% + Zero forensic flags + Pledge < 10% as the quality pillars. Marks adds CFO/PAT >= 80% and mean_reversion_risk cycle guard. Different quality dimensions.",
+      "unique_marks_signal": "Marks adds mean_reversion_risk guard (cyclical peak pendulum protection) + buy_zone_label gate. Diamond has no margin spike or entry timing check."
+    },
+    "vs_parag_parikh": {
+      "cfo_pat": "Parag Parikh: CFO/PAT >= 75%. Marks: 80% (Marks is STRICTER on cash quality — India defensive posture requires higher cash backing). Parikh has D/E <= 0.5 (same as Marks' D/E < 0.5 threshold).",
+      "unique_marks_signal": "Marks adds mean_reversion_risk guard (cycle pendulum). Parikh adds PE < 20 and EPS 5Y CAGR > 8%. Different framework focus."
+    },
+    "vs_dorsey_moat": {
+      "cfo_pat": "Dorsey: CFO/PAT >= 80%. Marks: CFO/PAT >= 80%. Both at the same India defensive floor (companion-validated). Marks is calibrated to the same cash quality standard as the Dorsey moat screen.",
+      "unique_marks_signal": "Marks has buy_zone_label gate (entry timing/price asymmetry dimension) + mean_reversion_risk (cycle guard). Dorsey has fcf_yield >= 5% (valuation yield dimension) + wide moat structural checks. Different aspects of the same defensive philosophy."
+    },
+    "vs_outsider_ceo": {
+      "cfo_pat": "Outsider CEO: CFO/PAT >= 85% (strictest in system). Marks: 80% (5pp less strict — appropriate: Marks is broad cycle/risk defensive; Thorndike is capital allocation excellence).",
+      "de": "Outsider CEO: de_slope_3y <= 0.0 (deleveraging trajectory). Marks: D/E < 0.5 (absolute level). Different dimensions of leverage discipline.",
+      "unique_marks_signal": "Marks checks mean_reversion_risk (cycle guard) + buy_zone_label (entry timing). Outsider checks dilution_flag (share retirement) + de_slope_3y (deleveraging trajectory)."
+    }
+  },
+
+  "output_columns_registry": {
+    "marks_margin_spike": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = margins are NOT at cyclical peak extremes (mean_reversion_risk == 0); pendulum within sustainable range."
+    },
+    "marks_price_value": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = stock is in the buy zone (buy_zone_label == '🟢 Perfect Entry (Low Risk)', dist_to_vstop <= 5%)."
+    },
+    "marks_leverage_trap": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = D/E < 0.5; balance sheet leverage strictly below India defensive floor; leverage risk contained."
+    },
+    "marks_defensive_base": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = CFO/PAT >= 80%; earnings are backed by real cash — India defensive quality floor cleared."
+    },
+    "marks_pass": {
+      "dtype": "int",
+      "valid_values": [0, 1],
+      "interpretation": "1 = all 4 Marks Cycle Shield gates cleared; confirmed cycle-defensive entry opportunity."
+    },
+    "marks_score": {
+      "dtype": "int",
+      "valid_values": [0, 1, 2, 3, 4],
+      "interpretation": "0-4 count of pillar gates cleared. 4 = identical to marks_pass=1. 3 = one cycle condition unmet."
+    }
+  }
+}

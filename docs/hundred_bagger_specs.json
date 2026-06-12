@@ -1,0 +1,157 @@
+{
+  "_meta": {
+    "title": "The Indian 100-Bagger Hunter — Hybrid Quantitative Ledger",
+    "author": "Christopher Mayer (100 Baggers) — Hybrid adaptation for Dalal Street",
+    "source_files": [
+      "Other Resources/100_Baggers_-_Christopher_Meyers.pdf",
+      "Other Resources/The-Indian-100-Bagger-Playbook.md"
+    ],
+    "extraction_date": "2026-05-23",
+    "version": "2.0-hybrid",
+    "purpose": "Authoritative source of truth for fw_100_bagger in scoring_engine.py. Hybrid design: long-cycle quality (ROCE 7Y) + early-stage growth momentum (PAT 3Y) + defensive governance/forensic gates.",
+    "design_rationale": "Pure SQGLP translation fails in two ways: (1) 10Y rev_gr has severe data gaps for younger Indian companies, silently killing legitimate candidates. (2) retention_rate >= 80% is a weak proxy for reinvestment moat — a company that just stopped paying dividends passes; a quality compounder paying modest dividends fails. The hybrid restores the operational 'engine-fire' signals (PAT 3Y, D/E, promoter 50%, CFO>0) while keeping the one genuine improvement of the SQGLP epoch: the 7Y ROCE window.",
+    "critical_audit_note": "All thresholds are engineering proxies. Mayer's book does not state explicit screening thresholds verbatim. The no-stumble (_hb_each_year) consistency check is DELIBERATELY EXCLUDED: Mayer's 100-bagger case studies (Eicher Motors, Bajaj Finance) had messy early years. The stumble filter belongs to Baid Compounder, not this framework."
+  },
+
+  "hybrid_sieve": {
+    "size_corridor_floor": {
+      "metric": "market_cap",
+      "threshold_crore": 200.0,
+      "operator": ">=",
+      "type": "CANONICAL_LIMIT",
+      "rationale": "₹200 Cr floor eliminates pre-revenue micro-caps with unproven models and illiquid stocks. Mayer explicitly studies companies that already have a working business model and some institutional visibility. Below ₹200 Cr: data quality collapses and liquidity risk dominates.",
+      "code_variable": "mcap_hb.fillna(0) >= 200.0",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    },
+    "size_corridor_ceiling": {
+      "metric": "market_cap",
+      "threshold_crore": 3000.0,
+      "operator": "<=",
+      "type": "CANONICAL_LIMIT",
+      "rationale": "₹3,000 Cr ceiling makes 100× math achievable. ₹3k Cr × 100 = ₹3 Lakh Cr — historically achieved by Eicher Motors (~₹800 Cr → ₹1.1 Lakh Cr) and Bajaj Finance (~₹1,200 Cr → ₹4.7 Lakh Cr). The prior ₹5,000 Cr ceiling requires reaching ₹5 Lakh Cr — only 3–4 Indian companies have ever done this.",
+      "code_variable": "mcap_hb.fillna(9999) <= 3000.0",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    },
+    "capital_quality_7y": {
+      "metric": "roce_med_7y",
+      "threshold": 15.0,
+      "operator": ">=",
+      "type": "ENGINEERING_PROXY",
+      "rationale": "Q pillar. 7Y window spans a full Indian business cycle (vs 5Y which can be caught in a cyclical upswing). 15% ROCE floor is the standard Indian quality threshold (also Coffee Can, Unusual Billionaires, Baid). A company that sustains 15% ROCE across 7 years has proven its moat is structural, not cyclical.",
+      "code_variable": "roce_7y_hb.fillna(0) >= 15.0",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    },
+    "revenue_growth_5y": {
+      "metric": "rev_gr_5y",
+      "threshold": 15.0,
+      "operator": ">=",
+      "type": "ENGINEERING_PROXY",
+      "rationale": "G pillar — sustained top-line demand. 5Y chosen over 10Y for data availability: rev_gr_10y is missing for ~30% of the universe (younger companies, data gaps). 15% threshold is higher than Baid's 12% and Coffee Can's 10%, matching Mayer's emphasis on high-velocity organic growth. 5Y still filters out cyclical revenue spikes (which 3Y cannot).",
+      "code_variable": "rev_5y_hb.fillna(0) >= 15.0",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    },
+    "pat_growth_3y": {
+      "metric": "pat_gr_3y",
+      "threshold": 20.0,
+      "operator": ">=",
+      "type": "ENGINEERING_PROXY",
+      "rationale": "G pillar — earnings engine firing NOW. This is the 'early-stage momentum' signal that differentiates this framework from quality compounders. The 5Y revenue gate proves the model works long-term; the 3Y PAT gate proves the compounding is active in the current period. A company with 5Y revenue growth but decelerating PAT (margin compression, rising costs) is NOT a 100-bagger candidate. 20% threshold: Mayer's math requires earnings to compound rapidly to justify a P/E re-rating.",
+      "code_variable": "pat_3y_hb.fillna(0) >= 20.0",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    },
+    "balance_sheet_fortress": {
+      "metric": "debt_to_equity",
+      "threshold": 0.5,
+      "operator": "<",
+      "type": "ENGINEERING_PROXY",
+      "financial_sector_exempted": true,
+      "rationale": "B pillar — fortress balance sheet. A leveraged company cannot freely reinvest cash — it services debt first, limiting the reinvestment moat that drives compounding. D/E < 0.5 is the strictest quality threshold in this system (vs Coffee Can's 1.0). Financial sector exempted: banks use leverage structurally; their quality is already captured by ROCE/ROE gates.",
+      "code_variable": "is_fin_hb | (de_hb.fillna(999) < 0.5)",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    },
+    "owner_operator_gate": {
+      "metric": "promoter_holdings",
+      "threshold": 50.0,
+      "operator": ">=",
+      "unit": "PERCENTAGE",
+      "type": "CANONICAL_LIMIT",
+      "rationale": "O pillar — majority control. 50% is the majority voting threshold in India: the promoter cannot be outvoted, enabling long-duration capital allocation decisions without institutional shareholder pressure for dividends or share buybacks. The prior SQGLP spec used 45% — at 45% a promoter CAN be outvoted by coordinated institutional action. Mayer Chapter 7 explicitly emphasizes owner-operators who control their own destiny.",
+      "code_variable": "promo_hb.fillna(0) >= 50.0",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    },
+    "cash_quality_anti_fraud": {
+      "metric": "cfo_to_pat",
+      "threshold": 0.0,
+      "operator": ">",
+      "unit": "PERCENTAGE",
+      "type": "ENGINEERING_PROXY",
+      "rationale": "C pillar — real cash backs earnings. cfo_to_pat > 0 (PERCENTAGE: 73.0 = 73%) means CFO is positive, i.e., earnings are backed by real operating cash flows. This is an anti-fraud gate, NOT a strict quality gate. Small-caps in aggressive expansion phase can legitimately have CFO/PAT of 50–70% (working capital absorption by inventory build and debtor expansion for new geographies). What we reject is CFO/PAT <= 0: negative OCF on positive PAT signals earnings manipulation or structural cash burn.",
+      "code_variable": "cfo_pat_hb.fillna(-1) > 0.0",
+      "code_location": "scoring_engine.py — fw_100_bagger",
+      "unit_note": "cfo_to_pat is PERCENTAGE in CSV (73.04 = 73.04%). fillna(-1) → null CFO/PAT fails the gate conservatively."
+    },
+    "valuation_peg_lower": {
+      "metric": "peg",
+      "threshold": 0.0,
+      "operator": ">",
+      "type": "ENGINEERING_PROXY",
+      "rationale": "P pillar lower bound. PEG > 0 requires positive earnings: a company with negative EPS has undefined or negative PEG. Loss-making companies cannot be 100-bagger candidates under Mayer's framework — the compounding requires EARNINGS to compound, not revenue.",
+      "code_variable": "peg_hb.fillna(999) > 0.0",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    },
+    "valuation_peg_upper": {
+      "metric": "peg",
+      "threshold": 2.0,
+      "operator": "<=",
+      "type": "CANONICAL_LIMIT",
+      "rationale": "P pillar upper bound. PEG ≤ 2.0 enforces valuation discipline. Mayer Chapter 7 (Twin Engines): a premium P/E is justified when structural growth is explosive and the Competitive Advantage Period is long. 2.0 (vs Baid's 1.5) permits this premium while preventing unbounded valuation chasing. Stocks with PEG > 2.0 have their future growth already priced in — the 100× return math collapses.",
+      "code_variable": "peg_hb.fillna(999) <= 2.0",
+      "code_location": "scoring_engine.py — fw_100_bagger"
+    }
+  },
+
+  "rejected_gates": [
+    {
+      "gate": "_hb_each_year revenue consistency (rev_gr_y2..y5 >= 5%)",
+      "rejected_reason": "Philosophically contradicts Mayer's framework. Mayer's 100-bagger case studies (Eicher Motors, Bajaj Finance pre-2014) had messy, inconsistent early revenue years during their investment/expansion phases. The no-stumble filter belongs to Baid Compounder (which targets mature, consistent compounders). Applying it here would eliminate exactly the early-stage companies Mayer is hunting."
+    },
+    {
+      "gate": "cfo_to_pat >= 80% (strict cash quality gate)",
+      "rejected_reason": "Too strict for ₹200–₹3,000 Cr companies in aggressive expansion. A small-cap building a new distribution network or opening new geographies legitimately absorbs 30-50% of PAT into working capital, depressing CFO/PAT to 50-70%. The anti-fraud gate (CFO/PAT > 0) is the correct check; the strict 80% threshold eliminates genuine 100-bagger candidates."
+    },
+    {
+      "gate": "retention_rate >= 80% (SQGLP longevity proxy)",
+      "rejected_reason": "Weak proxy for reinvestment moat. A company that stopped paying dividends last year passes (DPR drops to 0, retention_rate = 100). A quality compounder paying a modest 15% dividend fails (retention_rate = 85% — passes) but one paying 25% fails (retention_rate = 75% — fails despite strong reinvestment). PAT growth 3Y >= 20% is a stronger, directly observable signal that reinvestment is generating returns."
+    },
+    {
+      "gate": "rev_gr_10y >= 15% (SQGLP 10Y window)",
+      "rejected_reason": "Severe data availability problem. rev_gr_10y is missing for ~30% of the Indian universe in the CSV — younger companies, recently listed entities, data gaps in screener exports. This silently kills legitimate 100-bagger candidates simply because their 10-year history isn't in the dataset. rev_gr_5y covers ~95% of the universe."
+    }
+  ],
+
+  "implementation_mapping": {
+    "_file": "core/scoring_engine.py",
+    "_framework_variable": "fw_100_bagger",
+    "_pass_column": "hundred_bagger_pass",
+    "_frameworks_passed_label": "100-Bagger",
+    "_comment_anchor": "# 12. 100-Bagger Hunter (Christopher Mayer — Hybrid Spec)"
+  },
+
+  "known_gaps": [
+    {
+      "gap": "pat_gr_3y missing for ~150 stocks (insufficient PAT history)",
+      "severity": "LOW",
+      "mitigation": "fillna(0) → these stocks fail the PAT gate conservatively. No proven 3Y earnings acceleration = cannot qualify as early-stage 100-bagger candidate."
+    },
+    {
+      "gap": "peg missing for ~400 stocks (negative PE or missing EPS)",
+      "severity": "LOW",
+      "mitigation": "fillna(999) → stocks with missing PEG fail the PEG <= 2.0 gate conservatively. Unknown valuation = cannot pass disciplined entry."
+    },
+    {
+      "gap": "promoter_holdings missing for some PSU/government entities",
+      "severity": "LOW",
+      "mitigation": "fillna(0) → PSUs with unknown promoter data fail the 50% gate. PSUs are structurally excluded from 100-bagger framework (government capital allocation differs from owner-operator model)."
+    }
+  ]
+}

@@ -14,22 +14,25 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _get_actual_path(base, folder_name, file_name):
     # Case-insensitive resolution for Linux (Streamlit Cloud).
-    # Pre-hashes a single os.listdir pass per directory instead of N linear scans.
+    # Supports multi-level folder_name (e.g. "Other Resources/CSV Data") — splits on
+    # forward slash and resolves each level independently so the same code works on
+    # both Windows (backslash native) and Linux (Streamlit Cloud).
     try:
-        folder_map = {
-            item.lower(): item
-            for item in os.listdir(base)
-            if os.path.isdir(os.path.join(base, item))
-        }
-        actual_folder = folder_map.get(folder_name.lower(), folder_name)
-        folder_path = os.path.join(base, actual_folder)
-        file_map = {item.lower(): item for item in os.listdir(folder_path)}
+        current = base
+        for part in folder_name.replace("\\", "/").split("/"):
+            dir_map = {
+                item.lower(): item
+                for item in os.listdir(current)
+                if os.path.isdir(os.path.join(current, item))
+            }
+            current = os.path.join(current, dir_map.get(part.lower(), part))
+        file_map = {item.lower(): item for item in os.listdir(current)}
         actual_file = file_map.get(file_name.lower(), file_name)
-        return os.path.join(folder_path, actual_file)
+        return os.path.join(current, actual_file)
     except Exception:
-        return os.path.join(base, folder_name, file_name)
+        return os.path.join(base, *folder_name.replace("\\", "/").split("/"), file_name)
 
-DATA_DIR_NAME = "CSV Data"
+DATA_DIR_NAME = "Other Resources/CSV Data"
 
 # ═══════════════════════════════════════════════════════════════
 # 2. MACRO ECONOMIC CONSTANTS
@@ -739,7 +742,7 @@ EPOCH3_TAXONOMY = {
 EPOCH4_SQGLP = {
     "min_cfo_to_pat_ratio": 80.0,       # Saurabh Mukherjea / 24th WCS Cash Quality Floor — PERCENTAGE (cfo_to_pat is stored as 73.04, not 0.73)
     "max_promoter_pledge": 10.0,        # Strict 10% maximum pledging boundary
-    "max_peg_ratio": 1.0,               # 23rd WCS near-infallible outperformance anchor
+    "max_peg_ratio": 1.5,               # 23rd WCS anchor — relaxed from 1.0: Indian quality mid-caps rarely trade at PEG < 1
 }
 
 
