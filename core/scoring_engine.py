@@ -29,6 +29,42 @@ from config import (
 
 
 # ═══════════════════════════════════════════════════════════════
+# SCORE CONFIDENCE: the continuous, NaN-propagating inputs behind
+# quality/momentum percentile ranking. A missing input becomes a
+# neutral 50 in ranking, so a data-starved stock compresses toward
+# "average" while really being "unknown" — data_coverage_pct makes
+# that visible. Binary flags are EXCLUDED: they fail closed (0)
+# when data is missing and never masquerade as evidence.
+# Display-only; must never feed scores or weights (re-weighting by
+# coverage is an unvalidated model — deliberately not done).
+# Guarded by tests/test_score_confidence.py: every name here must
+# be genuinely ranked in this module.
+# ═══════════════════════════════════════════════════════════════
+CORE_SCORING_INPUTS = [
+    # Moat (sector-relative ranks)
+    "roce_med_10y", "roe_med_10y", "roce_trajectory", "roe_trajectory",
+    "roce_current_vs_med",
+    # Growth (winsorized ranks)
+    "pat_gr_5y", "pat_gr_10y", "rev_gr_5y", "rev_gr_10y", "eps_gr_5y",
+    "ebitda_gr_5y", "pat_acceleration", "rev_acceleration",
+    "ebitda_acceleration", "q_pat_yoy", "q_rev_yoy",
+    # Cash quality
+    "cfo_to_pat", "cfo_to_ebitda", "fcf_yield", "capex_coverage",
+    "fcf_to_cfo_pct", "cash_change",
+    # Margins
+    "npm_med_5y", "opm_med_5y", "gpm_med_5y", "npm_acceleration",
+    "opm_acceleration",
+    # Balance sheet & efficiency
+    "debt_slope_3y", "reserves_growth", "cwip_conversion", "nfat", "roce",
+    # Valuation (QGLP price layer)
+    "pe_discount", "pe_discount_to_quality", "peg", "ev_compression",
+    # Momentum (continuous technicals)
+    "dist_52wh", "dist_13wh", "dist_ath", "golden_cross_days",
+    "dist_52wh_days", "rsi_14d", "adx_14w", "vol_ratio",
+]
+
+
+# ═══════════════════════════════════════════════════════════════
 # UTILITY: Percentile rank with NaN handling
 # ═══════════════════════════════════════════════════════════════
 
@@ -1242,6 +1278,17 @@ def compute_composite_score(
          "Moderate-High · 5–8% position",
          "Moderate · 3–5% position"],
         default="Insufficient Edge · No position (< 5% min)"
+    )
+
+    # ── Score Confidence (display-only): share of ranked inputs actually present ──
+    # reindex() returns exactly the CORE_SCORING_INPUTS columns, with an all-NaN
+    # column for any input absent from the frame — absent counts as missing, by design.
+    # Label is materialized HERE so the UI stays pure display (EV-verdict precedent).
+    _evidence = df.reindex(columns=CORE_SCORING_INPUTS).notna()
+    df["data_coverage_pct"] = _evidence.mean(axis=1) * 100.0
+    df["data_coverage_label"] = (
+        _evidence.sum(axis=1).astype(int).astype(str)
+        + f"/{len(CORE_SCORING_INPUTS)} inputs"
     )
 
     print(f"\n🏆 Composite Score: mean={df['composite_score'].mean():.1f}, "

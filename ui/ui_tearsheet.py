@@ -1276,6 +1276,21 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
                COLORS["red"] if _gov_n >= 2 else COLORS["orange"])
     ) if _gov_n >= 1 else ""
 
+    # Score-confidence badge — engine-materialized evidence coverage of the ranked
+    # inputs (data_coverage_pct / data_coverage_label, see CORE_SCORING_INPUTS).
+    # Distinguishes a true mid-score from a data-starved one whose missing inputs
+    # became neutral 50s. Pure display: no thresholds, neutral colour, hidden only
+    # when the engine columns are absent (legacy cached frames).
+    _cov_raw = stock.get("data_coverage_pct")
+    _cov_badge = ""
+    if _cov_raw is not None and pd.notna(_cov_raw):
+        _cov_lbl = str(stock.get("data_coverage_label", "") or "")
+        _cov_badge = _badge(
+            f"🔍 Evidence {float(_cov_raw):.0f}%"
+            + (f" · {_esc(_cov_lbl)}" if _cov_lbl else ""),
+            COLORS["blue"],
+        )
+
     badges_html = (
         _badge(f"{tcfg['emoji']} {tcfg['label']}", ring_clr) +
         _mg_badge +
@@ -1283,7 +1298,8 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
                         COLORS["gold"]   if "Watch"   in f_lbl else
                         COLORS["orange"] if "Caution" in f_lbl else COLORS["red"]) +
         _badge(reg_txt, reg_clr) +
-        _gov_badge
+        _gov_badge +
+        _cov_badge
     )
 
     st.markdown(f"""
