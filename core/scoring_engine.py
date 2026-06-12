@@ -1144,12 +1144,14 @@ def compute_composite_score(
     _close_m5    = df.get("close_price",      pd.Series(np.nan, index=df.index))
     _vstop_m5    = df.get("vstop_value",      pd.Series(np.nan, index=df.index))
 
+    # fillna(0.0): loss-makers have no PE → no re-rating estimate → neutral 0 term.
+    # Without it, NaN poisons the whole identity even when g* and FCF yield are known.
     _re_rating_drift = (
         np.log(
             _fair_pe_m5.fillna(_pe_m5).clip(lower=1)
             / _pe_m5.clip(lower=1)
         ) / 5.0
-    )
+    ).fillna(0.0)
     # σ²/2 Ito variance drag: converts % σ to decimal, applies geometric-vs-arithmetic correction.
     # E[log CAGR] = μ − σ²/2. At σ=20%: drag=2%; at σ=40%: drag=8%. Mathematically correct.
     _variance_drag = ((_sigma_g_m5.fillna(0.0) / 100.0) ** 2) / 2.0 * 100.0
@@ -1163,17 +1165,38 @@ def compute_composite_score(
     _total_equity_rupees = 1_000_000.0
     _traj_norm = (_traj_m5.fillna(0) + 1.0) / 2.0
     df["win_rate_proxy"] = (0.35 + (_traj_norm * 0.30)).clip(0.35, 0.65)
+    # Inner fillna(1.5): a loss-maker (NaN PE) with a negative residual would otherwise
+    # produce NaN payoff → NaN Kelly → NaN weight. Neutral 1.5 matches the else branch.
     df["payoff_ratio_proxy"] = np.where(
         df["valuation_residual"] < 0,
-        (_fair_pe_m5.fillna(1.0) / _pe_m5.clip(lower=1.0)).clip(1.0, 4.0),
+        (_fair_pe_m5.fillna(1.0) / _pe_m5.clip(lower=1.0)).clip(1.0, 4.0).fillna(1.5),
         1.5
     )
     _raw_kelly = df["win_rate_proxy"] - ((1.0 - df["win_rate_proxy"]) / df["payoff_ratio_proxy"])
     _kelly_f_weight = (_raw_kelly * 0.25).clip(lower=0.0)
 
-    _per_share_rupee_risk = (_close_m5 - _vstop_m5).clip(lower=1.0)
-    _max_allowed_shares = (_total_equity_rupees * 0.01) / _per_share_rupee_risk
-    _minervini_max_weight_pct = (_max_allowed_shares * _close_m5) / _total_equity_rupees * 100.0
+    # Minervini 1%-equity-risk cap — three regimes (vectorized, no clip(lower=1) hack):
+    #   price > stop : risk = close − vstop → max shares = 1% equity / risk → weight cap
+    #   price ≤ stop : trend broken, entry would be instantly stopped out → weight 0
+    #                  (the old clip(lower=1) bug shrank risk to ₹1, exploded the share
+    #                   cap, and silently handed breakdown stocks full Kelly weight)
+    #   stop is NaN  : no stop computable (missing data or implausible VSTOP nullified
+    #                  by the data_engine scale guard) → technical cap undefined →
+    #                  Kelly-only weight; NaN must never reach the weight/allocation.
+    _per_share_rupee_risk = _close_m5 - _vstop_m5
+    _minervini_max_weight_pct = pd.Series(
+        np.where(
+            _per_share_rupee_risk > 0,
+            ((_total_equity_rupees * 0.01) / _per_share_rupee_risk.clip(lower=0.01))
+            * _close_m5 / _total_equity_rupees * 100.0,
+            0.0                                  # price at/below stop → no position
+        ),
+        index=df.index
+    )
+    _minervini_max_weight_pct = _minervini_max_weight_pct.where(
+        _vstop_m5.notna() & _close_m5.notna(),
+        _kelly_f_weight * 100.0                  # stop unavailable → Kelly-only
+    )
 
     df["optimal_portfolio_weight_pct"] = np.minimum(
         _kelly_f_weight * 100.0, _minervini_max_weight_pct

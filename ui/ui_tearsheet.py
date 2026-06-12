@@ -1266,13 +1266,24 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
                         COLORS["gold"]  if "Quality Trap"   in mg_quad else
                         COLORS["blue"]  if "Growth Trap"    in mg_quad else COLORS["red"])
     ) if mg_quad else ""
+    # Governance risk shield badge — shown only when ownership risk signals fired.
+    # gov_risk_count / governance_risk_multiplier are pre-materialized by the engine
+    # (compute_governance_bonus); pure display, no threshold re-computation here.
+    _gov_n    = int(_g(stock, "gov_risk_count", 0))
+    _gov_mult = float(_g(stock, "governance_risk_multiplier", 1.0))
+    _gov_badge = (
+        _badge(f"⚠️ Governance Risk ×{_gov_mult:.2f} ({_gov_n} signal{'s' if _gov_n > 1 else ''})",
+               COLORS["red"] if _gov_n >= 2 else COLORS["orange"])
+    ) if _gov_n >= 1 else ""
+
     badges_html = (
         _badge(f"{tcfg['emoji']} {tcfg['label']}", ring_clr) +
         _mg_badge +
         _badge(f_lbl,   COLORS["green"]  if "Clean"   in f_lbl else
                         COLORS["gold"]   if "Watch"   in f_lbl else
                         COLORS["orange"] if "Caution" in f_lbl else COLORS["red"]) +
-        _badge(reg_txt, reg_clr)
+        _badge(reg_txt, reg_clr) +
+        _gov_badge
     )
 
     st.markdown(f"""
@@ -2675,9 +2686,10 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
 
     st.markdown("---")
 
-    # Secondary Structural Decomposition — all reads via .get() with safe defaults
-    vcv  = float(stock.get("value_creation_velocity", 0.0) or 0.0)
-    egap = float(stock.get("expectations_gap", 0.0) or 0.0)
+    # Secondary Structural Decomposition — _g() is NaN-safe ("x or 0.0" is NOT: NaN is
+    # truthy in Python, so the old pattern rendered "+nan%" for stocks missing the column)
+    vcv  = float(_g(stock, "value_creation_velocity", 0.0))
+    egap = float(_g(stock, "expectations_gap", 0.0))
     st.write(f"**Value Creation Velocity (Reinvestment Rate × Capital Spread):** {vcv:+.2f}%")
     st.write(f"**Market-Implied Expectations Gap (g_implied − g★):** {egap:+.2f}%")
 
