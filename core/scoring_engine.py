@@ -1591,7 +1591,14 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     eps_yoy_cs   = df.get("eps_gr_yoy",       pd.Series(np.nan, index=df.index)).fillna(-1)  # A: consistency
     roe_cs       = df.get("roe",              pd.Series(np.nan, index=df.index)).fillna(0)    # A: ROE ≥ 17%
     dist_wh_cs   = df.get("dist_52wh",        pd.Series(999.0,  index=df.index)).fillna(999)
-    vol_r_cs     = df.get("vol_ratio",        pd.Series(np.nan, index=df.index)).fillna(1.0)
+    # S baseline = 50-DAY average (O'Neil playbook, stated 4×: Ch.2 S-criterion, Ch.4
+    # Rule 3, Ch.12 sacred table: "breakout volume 40–50%+ above the 50-day average").
+    # vol_ratio (20D) is the fallback only when the 50D SMA is missing from the CSV.
+    vol_r_cs     = (
+        df.get("vol_ratio_50d",  pd.Series(np.nan, index=df.index))
+        .fillna(df.get("vol_ratio", pd.Series(np.nan, index=df.index)))
+        .fillna(1.0)
+    )
     rs_comp_cs   = df.get("d47_rs_composite", pd.Series(np.nan, index=df.index)).fillna(0)
     fii_cs       = df.get("change_fii_lq",    pd.Series(0.0,    index=df.index)).fillna(0)
     dii_cs       = df.get("change_dii_lq",    pd.Series(0.0,    index=df.index)).fillna(0)

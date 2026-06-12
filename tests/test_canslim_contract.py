@@ -292,6 +292,15 @@ class TestCriterionS:
         assert "vol_ratio" in block, \
             "fw_can_slim must read vol_ratio for S criterion"
 
+    def test_s_uses_50_day_volume_baseline(self):
+        """O'Neil playbook (Ch.2 S-criterion, Ch.4 Rule 3, Ch.12 sacred table — stated
+        four times): breakout volume must be measured against the 50-DAY average, not
+        the 20-day. vol_ratio_50d exists for exactly this; the 20-day vol_ratio is the
+        fallback only when the 50D SMA is missing."""
+        block = _fw_can_slim_block(_scoring_src())
+        assert "vol_ratio_50d" in block, \
+            "fw_can_slim S criterion must use vol_ratio_50d (book's 50-day baseline)"
+
 
 # ─── L Criterion — Leader vs Laggard ─────────────────────────────────────────
 
