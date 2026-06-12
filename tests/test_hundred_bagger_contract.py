@@ -290,6 +290,24 @@ def test_promoter_is_50_not_45():
         )
 
 
+def test_spec_pledge_threshold():
+    """Playbook (Quality/Promoter Integrity): 'pledged shares below 20% is safe; above
+    50% is a danger signal'. The Owner-Operator pillar certifies promoter ALIGNMENT —
+    a promoter who pledged 20%+ of holdings has compromised that alignment."""
+    spec = _load_spec()
+    t = spec["hybrid_sieve"]["owner_pledge_gate"]["threshold"]
+    assert t == 20.0, f"Spec pledge threshold should be 20.0 (book safety line), got {t}"
+
+
+def test_pledge_gate_in_fw_100_bagger():
+    block = _hb_block(_scoring_src())
+    assert "pledge_hb" in block, (
+        "pledge_hb not found in fw_100_bagger block — the book's 20% pledge safety "
+        "line must gate the Owner-Operator pillar"
+    )
+    assert "< 20" in block, "pledge < 20 threshold not found in fw_100_bagger block"
+
+
 # ── C: Cash quality (anti-fraud) gate ────────────────────────────────────────
 
 def test_cfo_pat_positive_gate_in_fw_100_bagger():

@@ -1909,6 +1909,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     pat_3y_hb   = df.get("pat_gr_3y",         _hb_nan)
     de_hb       = df.get("debt_to_equity",    _hb_nan)
     promo_hb    = df.get("promoter_holdings", _hb_nan)   # % e.g. 55.3 = 55.3%
+    pledge_hb   = df.get("pledged_percentage", _hb_nan)  # % pledged; missing in CSV = none reported
     cfo_pat_hb  = df.get("cfo_to_pat",        _hb_nan)   # PERCENTAGE: 73.0 = 73%, not 0.73
     is_fin_hb   = df.get("is_financial",      pd.Series(False, index=df.index)).fillna(False)
     peg_hb      = df.get("peg",               _hb_peg_nan)
@@ -1920,6 +1921,9 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (pat_3y_hb.fillna(0)   >= 20.0)   &       # G: PAT 3Y CAGR ≥ 20% — earnings engine firing now
         (is_fin_hb | (de_hb.fillna(999) < 0.5)) & # B: D/E < 0.5 — fortress balance sheet
         (promo_hb.fillna(0)    >= 50.0)   &       # O: Promoter ≥ 50% — majority control, skin in game
+        (pledge_hb.fillna(0)   < 20.0)    &       # O: Pledge < 20% — playbook safety line; a pledged
+                                                  #    promoter faces margin-call selling pressure that
+                                                  #    contradicts decades-horizon owner alignment
         (cfo_pat_hb.fillna(-1) >  0.0)    &       # C: CFO/PAT > 0 — real cash, not fraudulent earnings
         (peg_hb.fillna(999)    >  0.0)    &       # P: positive earnings required (no loss-maker)
         (peg_hb.fillna(999)    <= 2.0)            # P: PEG ≤ 2.0 — disciplined valuation entry
