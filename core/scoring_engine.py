@@ -2381,6 +2381,14 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
 
     # Pass: 6 hard gates (VCP is bonus only) + India market cap floor
     _mcap_sp = df.get("market_cap", _sp_nan).fillna(0)
+    # Trend Template Criterion 7 (added 2026-06-12 SEPA Codex audit): price within 25%
+    # of the 52-week high (Close ≥ 0.75 × 52WH). The codex mandates ALL 8 criteria —
+    # "almost passing = FAIL" — and C7 was the one criterion missing from this gate
+    # (d45 covers C1/C2/C3/C5, low_base covers C6, crs_aligned proxies C8; the d45
+    # comment claimed C7 was 'checked elsewhere' but nothing in fw_sepa gated it —
+    # a stock 40% below its high could pass). fillna(999): missing 52WH distance →
+    # C7 unverifiable → conservative fail. Non-pillar hard gate, same as the mcap floor.
+    _dist_wh_sp = df.get("dist_52wh", _sp_nan).fillna(999)
     fw_sepa = (
         (df["sepa_trend_template"] == 1) &
         (df["sepa_adx_confirmed"]  == 1) &
@@ -2388,6 +2396,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (df["sepa_rs_confirmed"]   == 1) &
         (df["sepa_earnings_fuel"]  == 1) &
         (df["sepa_institutional"]  == 1) &
+        (_dist_wh_sp <= 25) &
         (_mcap_sp >= 500)
     )
     df["sepa_pass"] = fw_sepa.astype(int)

@@ -121,6 +121,7 @@ def _build_mock_sepa_row(**overrides) -> dict:
         "d45_trend_structure":  5,     # T: >= 4
         "adx_14w":             25.0,   # A: >= 20
         "dist_52wl":           40.0,   # L: >= 30
+        "dist_52wh":           10.0,   # C7: <= 25 (within 25% of 52-week high)
         "crs_aligned":          1,     # R: == 1
         "eps_gr_yoy":          30.0,   # E: >= 25
         "rev_gr_yoy":          25.0,   # E: >= 20
@@ -282,6 +283,24 @@ class TestSepaPillarArithmetic:
         ])
         assert int(df["sepa_low_base"].iloc[0]) == 0
         assert int(df["sepa_low_base"].iloc[1]) == 1
+
+    def test_near_high_criterion7_gates_pass(self):
+        """Trend Template Criterion 7 (SEPA Codex Ch.2, mandatory all-8): price must be
+        within 25% of the 52-week high (Close >= 0.75 x 52wk high). Added 2026-06-12 —
+        previously a stock 40% below its high could pass SEPA. 'Almost passing = FAIL.'"""
+        df = _run_sepa([
+            _build_mock_sepa_row(dist_52wh=25.1),   # 25.1% below high → C7 fails → no pass
+            _build_mock_sepa_row(dist_52wh=25.0),   # exactly at the book line → passes
+        ])
+        assert int(df["sepa_pass"].iloc[0]) == 0, \
+            "Stock >25% below its 52-week high must fail SEPA (Trend Template C7)"
+        assert int(df["sepa_pass"].iloc[1]) == 1
+
+    def test_near_high_missing_data_fails_conservatively(self):
+        import numpy as np
+        df = _run_sepa([_build_mock_sepa_row(dist_52wh=np.nan)])
+        assert int(df["sepa_pass"].iloc[0]) == 0, \
+            "Missing 52WH distance → C7 unverifiable → conservative fail"
 
     def test_earnings_fuel_eps_boundary(self):
         df = _run_sepa([
