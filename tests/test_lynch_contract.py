@@ -1610,9 +1610,14 @@ class TestLynchV11Features:
     # ── Spec ledger v1.1 validation ───────────────────────────────────────────
 
     def test_spec_version_is_v11(self, spec):
-        """Spec version must contain '1.1'."""
-        assert "1.1" in spec["_meta"]["version"], (
-            f"Spec version must contain '1.1'; got: {spec['_meta']['version']}"
+        """Spec version must be at least the v1.1 feature generation (v1.2 = v1.1
+        features + 2026-06-13 book verification; the v1.1 feature sections are
+        still asserted individually by the tests below)."""
+        assert any(v in spec["_meta"]["version"] for v in ("1.1", "1.2")), (
+            f"Spec version must be v1.1+; got: {spec['_meta']['version']}"
+        )
+        assert "book_verification_2026_06_13" in spec["_meta"], (
+            "v1.2 book-verification block missing from spec _meta"
         )
 
     def test_spec_has_inventory_disqualifier_section(self, spec):
