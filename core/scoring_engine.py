@@ -1047,8 +1047,8 @@ def compute_composite_score(
         _mcat.isin(["Mid Cap", "Small Cap", "Micro Cap"]) &                                    # S: Scale entry
         (_roce10y >= 25.0) &                                                                    # Q: Capital quality
         (_cfopat >= EPOCH4_SQGLP["min_cfo_to_pat_ratio"]) &                                   # Q: ECV >= 80% (percentage unit — matches cfo_to_pat CSV column, e.g. 73.04)
-        (_peg_v.fillna(0.0) > 0) & (_peg_v.fillna(999.0) <= EPOCH4_SQGLP["max_peg_ratio"]) & # P: PEG <= 1.0
-        (df.get("forensic_label", pd.Series("", index=df.index)) == "🟢 Clean")                # Integrity gate
+        (_peg_v.fillna(0.0) > 0) & (_peg_v.fillna(999.0) <= EPOCH4_SQGLP["max_peg_ratio"]) & # P: PEG <= 1.5 (config)
+        (df.get("red_flag_count", pd.Series(99, index=df.index)).fillna(99) <= 2)              # Integrity gate: Watch or better (≤2 red flags)
     ).astype(int)
 
     df["composite_score"] = np.where(df["flag_sqglp_engine"] == 1, df["composite_score"] + 15.0, df["composite_score"])
@@ -2803,13 +2803,14 @@ def run_full_scoring(
       4. Composite blend using Analysis Mode + regime-adjusted momentum boost
     """
     df = df.copy()
-    # Architecture: forensic columns (forensic_score, forensic_label, piotroski_fscore, red_flag_count,
-    # schilit_forensic_score) are computed exclusively by run_forensic_analysis(), which is called
-    # AFTER run_full_scoring() in app.get_scored_data(). Framework checks inside this function
-    # (flag_sqglp_engine reads forensic_label; compute_cascading_forensic_filter reads red_flag_count)
-    # operate on the output of the single authoritative forensic pass — no pre-computation shim needed.
-    # DO NOT re-add an early forensic call here; it would cause silent double-computation and
-    # force all framework flag columns to be overwritten by the second forensic pass.
+    # Architecture (3-step contract in app.get_scored_data):
+    #   1. compute_forensic_signals()  — must run BEFORE this function so that forensic_score,
+    #      forensic_label, red_flag_count, schilit_pass are available when compute_qglp_score()
+    #      and compute_composite_score() read them (flag_sqglp_engine, Diamond, Dhandho, etc.)
+    #   2. run_full_scoring()          — this function
+    #   3. apply_forensic_penalty()    — must run AFTER composite_score is assigned here
+    # Do NOT call compute_forensic_signals() or run_forensic_analysis() inside this function —
+    # forensic signals are already on df from step 1; calling them again would double-compute.
 
     mode = ANALYSIS_MODES.get(analysis_mode, ANALYSIS_MODES["Hybrid"])
 
