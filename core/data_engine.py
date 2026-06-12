@@ -826,11 +826,20 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _fcf    = df.get("free_cash_flow",       _cf_nan)
     _fcf_1y = df.get("fcf_1yb",              _cf_nan)
     _ocf    = df.get("operating_cash_flow",  _cf_nan)
-    _ocf_1y = df.get("ocf_1yb",              _cf_nan)
+    _ocf_1y = df.get("ocf_1yb",             _cf_nan)
     _icf    = df.get("investing_cash_flow",  _cf_nan)
     _fincf  = df.get("financing_cash_flow",  _cf_nan)
     _ncf    = df.get("net_cash_flow",        _cf_nan)
     _ncf_1y = df.get("ncf_1yb",             _cf_nan)
+    # Income statement raw columns — absent when Income Statement tab fails to load
+    _pat     = df.get("pat",     _cf_nan)
+    _pat_1yb = df.get("pat_1yb", _cf_nan)
+    _pat_2yb = df.get("pat_2yb", _cf_nan)
+    _pat_3yb = df.get("pat_3yb", _cf_nan)
+    _pat_4yb = df.get("pat_4yb", _cf_nan)
+    _pat_5yb = df.get("pat_5yb", _cf_nan)
+    _revenue = df.get("revenue", _cf_nan)
+    _ebitda  = df.get("ebitda",  _cf_nan)
     df["fcf_yield"] = np.where(
         df["market_cap"].notna() & (df["market_cap"] > 0),
         _fcf / df["market_cap"] * 100,  # as percentage
@@ -868,8 +877,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (_ncf > 0) & (_ncf_1y > 0)
     ).astype(int)
     df["fcf_quality"] = np.where(
-        df["pat"].notna() & (df["pat"].abs() > 0),
-        _fcf / df["pat"].abs(),
+        _pat.notna() & (_pat.abs() > 0),
+        _fcf / _pat.abs(),
         np.nan
     )
     
@@ -1186,7 +1195,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # DPR approximated as 0.25 (typical Indian payout)
     fa = df["fixed_assets"].fillna(0)
     fa_1yb = df["fixed_assets_1yb"].fillna(0)
-    rev = df["revenue"].fillna(0)
+    rev = _revenue.fillna(0)
     npm_pct = df["npm"].fillna(0)
 
     nfat = np.where(fa > 0, rev / fa, np.nan)
@@ -1213,9 +1222,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Renamed from "tax_rate_est" to avoid confusion. Malik P3 band is widened to 30-55%
     # to account for the systematic overestimation vs true effective tax rate (~22-28%).
     df["ebitda_to_pat_gap_pct"] = np.where(
-        (df["ebitda"].fillna(0) > 0) & (df["pat"].fillna(0) > 0) &
-        (df["ebitda"].fillna(0) > df["pat"].fillna(0)),
-        (1 - df["pat"] / df["ebitda"]) * 100,
+        (_ebitda.fillna(0) > 0) & (_pat.fillna(0) > 0) &
+        (_ebitda.fillna(0) > _pat.fillna(0)),
+        (1 - _pat / _ebitda) * 100,
         np.nan
     )
     df["tax_rate_est"] = df["ebitda_to_pat_gap_pct"]  # backward-compat alias
@@ -1308,8 +1317,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["pb_lt1_flag"]  = (df["pb_ratio"].fillna(999) <  1.0).astype(int)   # doubler zone (Study 9/13)
 
     df["ps_ratio"] = np.where(
-        df["revenue"].fillna(0) > 0,
-        df["market_cap"].fillna(0) / df["revenue"],
+        _revenue.fillna(0) > 0,
+        df["market_cap"].fillna(0) / _revenue,
         np.nan
     )
     df["ps_lt1_flag"]  = (df["ps_ratio"].fillna(999) <= 1.0).astype(int)   # multi-bagger formula (Study 13)
@@ -1606,8 +1615,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── D28: FCF-to-PAT (%) ──
     # D28 > 50%: FCF covers more than half of PAT = strong real cash generation
     df["d28_fcf_to_pat_pct"] = np.where(
-        df["pat"].notna() & (df["pat"].abs() > 0),
-        _fcf.fillna(0) / df["pat"].abs() * 100,
+        _pat.notna() & (_pat.abs() > 0),
+        _fcf.fillna(0) / _pat.abs() * 100,
         np.nan
     )
 
@@ -1798,9 +1807,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #   — confirmed in every one of the 30 Annual Wealth Creation Studies
     # Conservative (0% growth): payback_0g = market_cap / (5 × current PAT)
     # Growth-adjusted: market_cap / cumulative 5Y PAT at estimated CAGR
-    pat_safe = df["pat"].fillna(0).clip(lower=0.01)
+    pat_safe = _pat.fillna(0).clip(lower=0.01)
     payback_0g = np.where(
-        (df["market_cap"].fillna(0) > 0) & (df["pat"].fillna(0) > 0),
+        (df["market_cap"].fillna(0) > 0) & (_pat.fillna(0) > 0),
         df["market_cap"] / (5.0 * pat_safe),
         np.nan
     )
@@ -1817,7 +1826,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         5.0
     )
     payback_growth = np.where(
-        (df["market_cap"].fillna(0) > 0) & (df["pat"].fillna(0) > 0),
+        (df["market_cap"].fillna(0) > 0) & (_pat.fillna(0) > 0),
         df["market_cap"] / (pat_safe * pd.Series(geo_sum, index=df.index)),
         np.nan
     )
@@ -1850,8 +1859,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #   Criterion 2: no single YoY PAT fall > 50% (catastrophic crash) across the 5 transitions.
     #   Criterion 3: terminal year PAT >= initial year PAT (pat > pat_5yb) + long-term positive CAGR.
     pat_decline_1y = np.where(
-        df["pat_1yb"].fillna(0) > 0,
-        (df["pat"].fillna(0) - df["pat_1yb"].fillna(0)) / df["pat_1yb"].abs() * 100,
+        _pat_1yb.fillna(0) > 0,
+        (_pat.fillna(0) - _pat_1yb.fillna(0)) / _pat_1yb.abs() * 100,
         np.nan
     )
     df["pat_decline_1y_pct"] = pd.Series(pat_decline_1y, index=df.index)
@@ -1863,11 +1872,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # 5 YoY transitions (full window incl. pat_4yb→pat_5yb). Only positive prior years count —
     # turnarounds (negative→positive) are not treated as declines.
     _pat_seq = [
-        (df["pat"],     df["pat_1yb"]),
-        (df["pat_1yb"], df["pat_2yb"]),
-        (df["pat_2yb"], df["pat_3yb"]),
-        (df["pat_3yb"], df["pat_4yb"]),
-        (df["pat_4yb"], df["pat_5yb"]),
+        (_pat,     _pat_1yb),
+        (_pat_1yb, _pat_2yb),
+        (_pat_2yb, _pat_3yb),
+        (_pat_3yb, _pat_4yb),
+        (_pat_4yb, _pat_5yb),
     ]
     _no_crash_5y = pd.Series(True, index=df.index)       # Criterion 2: no >50% fall
     _decline_10_count = pd.Series(0, index=df.index)     # Criterion 1: count of >10% falls
@@ -1881,15 +1890,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["pat_decline_count_5y"] = _decline_10_count
 
     # Terminal > initial (5Y criterion — skip if pat_5yb unavailable)
-    _5yb_available        = df["pat_5yb"].fillna(0) > 0
-    _terminal_gt_initial  = ~_5yb_available | (df["pat"].fillna(0) > df["pat_5yb"].fillna(0))
+    _5yb_available        = _pat_5yb.fillna(0) > 0
+    _terminal_gt_initial  = ~_5yb_available | (_pat.fillna(0) > _pat_5yb.fillna(0))
 
     df["consistency_champion"] = (
         (_decline_10_count <= 1) &        # Criterion 1: <=1 fall >10% (proportional 3-in-15 / 2-in-10)
         _no_crash_5y &                     # Criterion 2: no >50% crash
         _terminal_gt_initial &             # Criterion 3a: terminal >= initial
         (df["pat_growing_long"] == 1) &    # Criterion 3b: long-term positive CAGR
-        (df["pat"].fillna(0) > 0)
+        (_pat.fillna(0) > 0)
     ).astype(int)
 
     # ── Volatile Flag (27th Study — counterpart to consistency_champion) ──
@@ -2460,7 +2469,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # 5Y cumulative retained earnings proxy — single-year PAT × RR × 5.
     # Approximation: current PAT/RR assumed representative of trailing 5-year period.
     # Used as denominator in the Buffett VCR identity below.
-    df["retained_earnings_est_5y"] = df["pat"].fillna(0) * df["reinvestment_rate"] * 5.0
+    df["retained_earnings_est_5y"] = _pat.fillna(0) * df["reinvestment_rate"] * 5.0
 
     # Identity C (Agent 9): Buffett 1-to-1 Value Creation Ratio (VCR).
     # True VCR = (MCap_now − MCap_5YB) / ΣRetainedEarnings(5Y). MCap 5Y back not in CSV.
@@ -2683,10 +2692,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ΔProfit / |ΔFixed Assets| measures quality of recent capital deployments.
     # Positive + high = new investments are maintaining/expanding the return profile.
     # Guard: capital delta > 5 Cr filters noise from trivial reclassifications.
-    _incr_pat_e4       = df["pat"].fillna(0) - df.get("pat_1yb", pd.Series(0.0, index=df.index)).fillna(0)
+    _incr_pat_e4       = _pat.fillna(0) - _pat_1yb.fillna(0)
     _incr_cap_delta_e4 = (df["fixed_assets"].fillna(0) - df["fixed_assets_1yb"].fillna(0)).abs()
     df["incremental_roce_proxy"] = np.where(
-        (_incr_cap_delta_e4 > 5.0) & (df["pat"].fillna(0) > 0),
+        (_incr_cap_delta_e4 > 5.0) & (_pat.fillna(0) > 0),
         (_incr_pat_e4 / _incr_cap_delta_e4) * 100.0,
         np.nan
     )
@@ -2808,8 +2817,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # No financial sector exclusion: accruals ratio is informative for all sectors.
     df["accruals_ratio"] = np.where(
         df["total_assets"].notna() & (df["total_assets"] > 0) &
-        df["pat"].notna() & df["operating_cash_flow"].notna(),
-        (df["pat"] - df["operating_cash_flow"]) / df["total_assets"],
+        _pat.notna() & _ocf.notna(),
+        (_pat - _ocf) / df["total_assets"],
         np.nan
     )
     # accruals_clean: earnings are fully cash-backed (accruals ≤ 0)
