@@ -98,9 +98,9 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
         op = gate_cfg["operator"]
         threshold = gate_cfg["threshold"]
 
-        if col not in df.columns:
-            # Gate column doesn't exist — pass silently (benefit of doubt) but exclude from
-            # gates_total and gates_passed so "X/Y gates" display only counts real evaluations.
+        if col not in df.columns or df[col].isna().all():
+            # Column missing OR entire column is NaN (CSV tab failed to load — schema guard
+            # materialized it as all-NaN). Both cases: benefit of doubt, exclude from gate count.
             gate_results[gate_name] = pd.Series(True, index=df.index)
             _missing_gate_names.add(gate_name)
             continue
