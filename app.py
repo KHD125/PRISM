@@ -22,7 +22,7 @@ warnings.filterwarnings('ignore')
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core import fetch_and_clean_data, run_full_scoring, run_forensic_analysis
+from core import fetch_and_clean_data, run_full_scoring, compute_forensic_signals, apply_forensic_penalty
 from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
@@ -62,20 +62,21 @@ def get_clean_data(data_source, _file_signature: str, sheet_id, _uploaded_dict=N
 def get_scored_data(clean_df: pd.DataFrame, analysis_mode: str, scoring_profile: str) -> pd.DataFrame:
     """Tier-2+3: Instant scoring + forensic pass. NOT cached — runs in <0.5s on dropdown change.
 
-    Sequencing contract (single-source-of-truth):
-      1. run_full_scoring   : Hard gates → Quality → Momentum → Governance → Composite → Tsunami.
-                              Contains ZERO internal forensic computation.
-      2. run_forensic_analysis: Piotroski F-Score → Red Flags (27 checks) → Schilit 4-checkers →
-                              Cashflow Triangle → Cascading Forensic Multiplier (re-assigns conviction tier).
-
-    This ordering is deliberate: forensic columns (forensic_score, forensic_label, red_flag_count,
-    piotroski_fscore, schilit_forensic_score) are written exactly once by run_forensic_analysis.
-    Any scoring engine framework check that reads forensic columns (e.g. flag_sqglp_engine reads
-    forensic_label) receives the column from this second pass — the composite_score boosts are
-    non-destructive additive operations, so no re-scoring is required after forensic injection.
+    3-step sequencing contract (non-negotiable order):
+      1. compute_forensic_signals : Piotroski F-Score → 27 red flags → Schilit 4-checkers →
+                                    Cashflow Triangle. Writes forensic_score, forensic_label,
+                                    red_flag_count, piotroski_fscore, schilit_forensic_score.
+                                    MUST run first: 5 framework gates read these columns.
+      2. run_full_scoring         : Hard gates → Quality → Momentum → Governance → Composite →
+                                    Framework flags (Diamond, Dhandho, SQGLP Engine, Schilit,
+                                    Fisher all read forensic columns from step 1). → Tsunami.
+      3. apply_forensic_penalty   : Cascading multiplier on composite_score → conviction tier
+                                    reassignment. MUST run last: composite_score only exists
+                                    after step 2.
     """
-    df = run_full_scoring(clean_df, analysis_mode, scoring_profile)
-    df = run_forensic_analysis(df)
+    df = compute_forensic_signals(clean_df)
+    df = run_full_scoring(df, analysis_mode, scoring_profile)
+    df = apply_forensic_penalty(df)
     return df
 
 inject_css()
@@ -115,19 +116,38 @@ with st.sidebar:
         if sheet_id:
             data_ready = True
     elif st.session_state.data_source == "upload":
-        uploaded_files = st.file_uploader("Upload CSV files (Ratio, Income, Balance, Cashflow, Shareholding, Tech)", type="csv", accept_multiple_files=True)
+        uploaded_files = st.file_uploader("Upload all 6 CSV files (Ratio, Income, Balance, Cashflow, Shareholding, Technical)", type="csv", accept_multiple_files=True)
         if uploaded_files and len(uploaded_files) > 0:
             uploaded_dict = {}
+            _unmatched = []
             for f in uploaded_files:
-                name = f.name.lower()
-                if "ratio" in name: uploaded_dict["ratio"] = f
-                elif "income" in name: uploaded_dict["income"] = f
-                elif "balance" in name: uploaded_dict["balance"] = f
-                elif "cashflow" in name: uploaded_dict["cashflow"] = f
-                elif "shareholding" in name: uploaded_dict["shareholding"] = f
-                elif "technical" in name: uploaded_dict["technical"] = f
-            if len(uploaded_dict) >= 1:
+                fname = f.name.lower()
+                # Most-specific keywords first — prevents "cashflow_ratios.csv" misrouting to "ratio"
+                if   "shareholding" in fname: uploaded_dict["shareholding"] = f
+                elif "technical"    in fname: uploaded_dict["technical"]    = f
+                elif "cashflow"     in fname or "cash_flow" in fname: uploaded_dict["cashflow"] = f
+                elif "balance"      in fname: uploaded_dict["balance"]      = f
+                elif "income"       in fname: uploaded_dict["income"]       = f
+                elif "ratio"        in fname: uploaded_dict["ratio"]        = f
+                else: _unmatched.append(f.name)
+            # Show slot-by-slot match status so user sees exactly what mapped where
+            _slots = ["ratio", "income", "balance", "cashflow", "shareholding", "technical"]
+            _status_lines = []
+            for _s in _slots:
+                if _s in uploaded_dict:
+                    _status_lines.append(f"✅ **{_s}** ← `{uploaded_dict[_s].name}`")
+                else:
+                    _status_lines.append(f"❌ **{_s}** — not matched")
+            if _unmatched:
+                for _u in _unmatched:
+                    _status_lines.append(f"⚠️ `{_u}` — unrecognized (rename to include the sheet type)")
+            st.markdown("\n".join(_status_lines))
+            # All 6 required — load_all_csvs raises FileNotFoundError on any missing slot
+            if all(_s in uploaded_dict for _s in _slots):
                 data_ready = True
+            else:
+                _missing = [s for s in _slots if s not in uploaded_dict]
+                st.warning(f"Missing sheets: {', '.join(_missing)}. Upload all 6 to proceed.")
 
     # ══ Sidebar Data Source Ends Here ══
     # (Analysis Mode and Scoring Profile moved to Main Command Center)
