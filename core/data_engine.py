@@ -326,33 +326,25 @@ def extract_spreadsheet_id(url_or_id: str) -> str:
         return match.group(1)
     return url_or_id.strip()
 
-def _load_single_csv(filepath: str, col_map: Dict[str, str], sheet_name: str) -> pd.DataFrame:
-    """Load a single CSV, apply column mapping, and return clean DataFrame."""
-    na_vals = ["null", "NULL", "None", "N/A", "n/a", "#N/A", "#VALUE!", "#REF!", ""]
-    # Auto-detect header row: local CSVs exported from Screener.in have an emoji section-label
-    # row 0 (Details, Unnamed:1…) followed by actual column names in row 1. Direct Google Sheets
-    # exports (no emoji row) have column names in row 0. Strategy: read with header=0, then
-    # promote row 0's data to column names if "companyId" is not already a header — single-pass,
-    # works for both local files and URLs without double-downloading.
-    df = pd.read_csv(
-        filepath,
-        header=0,
-        low_memory=False,
-        na_values=na_vals,
-        keep_default_na=True,
-    )
+_NA_VALS = ["null", "NULL", "None", "N/A", "n/a", "#N/A", "#VALUE!", "#REF!", ""]
+
+
+def _apply_column_mapping(df: pd.DataFrame, col_map: Dict[str, str], sheet_name: str) -> pd.DataFrame:
+    """Promote the real header row if needed, then select+rename to snake_case columns.
+
+    Header auto-detect: local CSVs / sheet exports have an emoji section-label row 0
+    (Details, Unnamed:1…) followed by actual column names in row 1; direct exports without
+    the emoji row have column names in row 0. We scan the first 5 rows for the one
+    containing "companyId" and promote it — works for both layouts.
+    """
     if "companyId" not in df.columns:
-        # Header row is somewhere in the first few data rows. Local Screener.in exports have
-        # the emoji section-label row at 0 and headers at row 1 (offset 0 after header=0 read).
-        # The gviz Google Sheets endpoint may emit an extra auto-header line, pushing the real
-        # header row one deeper. Scan the first 5 rows for the one containing "companyId".
         hdr_idx = None
         for i in range(min(5, len(df))):
             if (df.iloc[i].astype(str) == "companyId").any():
                 hdr_idx = i
                 break
         if hdr_idx is None:
-            hdr_idx = 0   # legacy fallback: promote row 0 (pre-gviz behavior)
+            hdr_idx = 0   # legacy fallback: promote row 0
         new_cols = [str(c) if pd.notna(c) else f"_col_{i}" for i, c in enumerate(df.iloc[hdr_idx])]
         df.columns = new_cols
         df = df.iloc[hdr_idx + 1:].reset_index(drop=True)
@@ -366,14 +358,15 @@ def _load_single_csv(filepath: str, col_map: Dict[str, str], sheet_name: str) ->
     if missing:
         print(f"  ⚠️  [{sheet_name}] Missing columns: {missing}")
     # Wrong-tab guard: if NONE of the sheet-specific columns matched, the source returned a
-    # different tab entirely (e.g. Google Sheets served the first tab instead of the requested
-    # one). Silently continuing would feed all-NaN data downstream — every stock would score
-    # the neutral defaults (Growth=50, Momentum=26, Governance=0). Fail loudly instead.
+    # different tab entirely. Silently continuing would feed all-NaN data downstream — every
+    # stock would score the neutral defaults (Growth=50, Momentum=26, Governance=0).
     if col_map and not any(k in df.columns for k in col_map):
+        got = ", ".join(str(c) for c in list(df.columns)[:8])
         raise ValueError(
             f"[{sheet_name}] None of the expected columns were found — the data source "
-            f"returned the wrong sheet/tab. Check that the spreadsheet has a tab with the "
-            f"exact expected name and that it is shared (Anyone with the link → Viewer)."
+            f"returned the wrong sheet/tab. First columns received: [{got}]. Check that the "
+            f"spreadsheet has a tab with the exact expected name and that it is shared "
+            f"(Anyone with the link → Viewer)."
         )
 
     # Select and rename
@@ -382,12 +375,23 @@ def _load_single_csv(filepath: str, col_map: Dict[str, str], sheet_name: str) ->
     return df
 
 
+def _load_single_csv(filepath: str, col_map: Dict[str, str], sheet_name: str) -> pd.DataFrame:
+    """Load a single CSV, apply column mapping, and return clean DataFrame."""
+    df = pd.read_csv(
+        filepath,
+        header=0,
+        low_memory=False,
+        na_values=_NA_VALS,
+        keep_default_na=True,
+    )
+    return _apply_column_mapping(df, col_map, sheet_name)
+
+
 def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet_id: str = None) -> Dict[str, pd.DataFrame]:
     """Load all 6 CSV files and return as a dict of DataFrames."""
     print("📂 Loading CSV data...")
     datasets = {}
-    
-    from urllib.parse import quote
+
     from config import SHEET_TAB_NAMES
 
     sheet_configs = {
@@ -406,17 +410,38 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
             else:
                 raise FileNotFoundError(f"Missing uploaded file for {name}")
     elif data_source == "sheet" and sheet_id:
+        # Download the ENTIRE workbook once as XLSX, then read each tab BY NAME locally.
+        # WHY XLSX and not per-tab CSV URLs:
+        #   CSV export with a "sheet=NAME" param — the param is silently IGNORED; every
+        #     request returns the FIRST tab → 5 of 6 sheets all-NaN → every stock scores
+        #     the neutral defaults (Growth=50, Momentum=26, Governance=0).
+        #   CSV export with a GID param — GIDs are per-spreadsheet; wrong for other users.
+        #   gviz tab-by-name endpoint — mangles the 2-row header (emoji row + names).
+        # XLSX uses the SAME /export endpoint + sharing rules as CSV, selects tabs by their
+        # exact names (SHEET_TAB_NAMES contract), and is a single download instead of six.
         parsed_id = extract_spreadsheet_id(sheet_id)
+        xlsx_url = f"https://docs.google.com/spreadsheets/d/{parsed_id}/export?format=xlsx"
+        try:
+            workbook = pd.ExcelFile(xlsx_url, engine="openpyxl")
+        except Exception as e:
+            raise Exception(
+                f"Could not download the spreadsheet as XLSX. Check the Sheet ID/URL and "
+                f"that it is shared (Anyone with the link → Viewer). Underlying error: {e}"
+            )
+        available_tabs = list(workbook.sheet_names)
         for name, (cols,) in sheet_configs.items():
             tab_name = SHEET_TAB_NAMES[name]          # exact tab name e.g. "Income Statement"
-            encoded  = quote(tab_name, safe="")        # "Income%20Statement"
-            # gviz endpoint is the ONLY public CSV endpoint that selects a tab by NAME.
-            # /export?format=csv ignores a "sheet=" parameter and silently returns the FIRST
-            # tab for every request — all 6 loads got the Ratio tab, nulling out 5 sheets of
-            # data and flattening every score to neutral defaults. Do not revert to /export.
-            csv_url  = f"https://docs.google.com/spreadsheets/d/{parsed_id}/gviz/tq?tqx=out:csv&sheet={encoded}"
+            if tab_name not in available_tabs:
+                raise Exception(
+                    f"Tab '{tab_name}' not found in the spreadsheet. "
+                    f"Available tabs: {available_tabs}. Tab names must match exactly."
+                )
             try:
-                datasets[name] = _load_single_csv(csv_url, cols, name)
+                raw = workbook.parse(
+                    tab_name, header=0, na_values=_NA_VALS, keep_default_na=True
+                )
+                datasets[name] = _apply_column_mapping(raw, cols, name)
+                print(f"  ✅ {name} ('{tab_name}'): {len(datasets[name])} rows, {len(datasets[name].columns)} cols")
             except Exception as e:
                 raise Exception(f"Failed to load '{tab_name}' tab from Google Sheets: {e}")
     else:
