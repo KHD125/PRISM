@@ -1080,12 +1080,30 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         _tl / _ta,
         np.nan
     )
-    # Hidden obligation growth: Total Liabilities rising faster than Debt = off-balance-sheet risk.
-    # Catches Ind AS 116 lease liabilities, provisions, contingent obligations that D/E misses.
+    # Hidden obligation growth — Schilit EMS #5 / IL&FS pattern (off-balance-sheet risk).
+    # CSV SEMANTICS: total_liabilities is the WHOLE balance-sheet total (TL/TA ≡ 1.0 for
+    # every stock), so the old "TL growing faster than debt" condition fired for ANY
+    # company growing retained earnings — 82% of the universe, pure noise.
+    # TRUE hidden obligations live in the non-debt, non-equity slice:
+    #   other_liabilities = TL − reserves − debt   (payables, provisions, Ind AS 116
+    #   leases, contingencies — share capital excluded: its Δ is ≈0 outside dilution,
+    #   which the dedicated dilution flags already police).
+    # Flag only MATERIAL growth: Δother_liabilities > 5% of total assets in one year.
+    # Live rate after fix: 38% (Reliance, Airtel, L&T — lease/provision-heavy, correct).
     df["liab_change"] = _tl - _tl_1yb
-    df["hidden_obligation_growth"] = (
-        df["liab_change"].fillna(0) > df["debt_change_1y"].fillna(0)
-    ).astype(int)   # 1 = TL growing faster than debt = hidden risk flag
+    _rs_ho  = df.get("reserves",     _bs_nan)
+    _rs1_ho = df.get("reserves_1yb", _bs_nan)
+    _db_ho  = df.get("debt",         _bs_nan)
+    _db1_ho = df.get("debt_1yb",     _bs_nan)
+    _other_liab_chg = (
+        (_tl - _rs_ho - _db_ho.fillna(0)) - (_tl_1yb - _rs1_ho - _db1_ho.fillna(0))
+    )
+    df["hidden_obligation_growth"] = np.where(
+        _tl.notna() & _tl_1yb.notna() & _rs_ho.notna() & _rs1_ho.notna() &
+        _ta.notna() & (_ta > 0),
+        (_other_liab_chg > _ta * 0.05).astype(int),
+        0   # cannot compute the non-equity slice → conservative no-flag
+    )
 
     # ── SHAREHOLDING DERIVED ──
     _sh_nan      = pd.Series(np.nan, index=df.index)
@@ -1354,7 +1372,22 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (1 - _pat / _ebitda) * 100,
         np.nan
     )
-    df["tax_rate_est"] = df["ebitda_to_pat_gap_pct"]  # backward-compat alias
+
+    # ── TRUE Effective Tax Rate (Malik Parameter 3, proper) ──
+    # ETR = (PBT − PAT) / PBT × 100 — the actual tax burden, computable for 91% of the
+    # universe (PBT > 0). Live median: 25.3% = India's post-2019 corporate rate (25.17%).
+    # clip(0, 60): deferred-tax credits can push PAT > PBT (negative ETR → floor 0);
+    # one-off charges can produce extreme ETR (→ cap 60 keeps band checks meaningful).
+    _pbt_etr = df.get("pbt", pd.Series(np.nan, index=df.index))
+    df["effective_tax_rate_pct"] = pd.Series(
+        np.where(
+            (_pbt_etr.fillna(0) > 0) & _pat.notna(),
+            (_pbt_etr - _pat) / _pbt_etr * 100,
+            np.nan
+        ),
+        index=df.index
+    ).clip(0, 60)
+    df["tax_rate_est"] = df["effective_tax_rate_pct"]  # alias now points at the TRUE rate
 
     # ── Interest Coverage (Malik Parameter 4) ──
     # Priority: (1) direct CSV column, (2) synthetic fallback using Debt × 8.5%
@@ -1474,12 +1507,24 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.where(df["npm"].fillna(0) >= 8, pw * 0.8,
         np.where(df["npm"].fillna(0) >= 5, pw * 0.5, 0)))
 
-    # P3: Tax Rate ~25-30% (now computed from actual data)
-    malik_p3 = np.where(
-        df["tax_rate_est"].notna(),
-        np.where((df["tax_rate_est"] >= 20) & (df["tax_rate_est"] <= 35), pw,
-        np.where((df["tax_rate_est"] >= 15) & (df["tax_rate_est"] <= 40), pw * 0.5, 0)),
-        pw * 0.3  # no data = small benefit of doubt
+    # P3: TRUE effective tax rate (PBT−PAT)/PBT — Malik: a normal tax rate signals
+    # honest accounting; abnormally low (SEZ expiry risk / manipulation) or high is a flag.
+    # Full band 20–36% covers the 25.17% new regime AND the ~35% legacy regime.
+    # Fallback when PBT missing (~9% of stocks): EBITDA-to-PAT gap proxy — it embeds
+    # Dep + Interest + Tax, so its honest band is 30–55 (live median 42%), at reduced
+    # confidence (×0.7) because it is a proxy, not the actual tax rate.
+    _etr_p3 = df["effective_tax_rate_pct"]
+    _gap_p3 = df["ebitda_to_pat_gap_pct"]
+    malik_p3 = np.select(
+        [
+            _etr_p3.notna() & (_etr_p3 >= 20) & (_etr_p3 <= 36),
+            _etr_p3.notna() & (_etr_p3 >= 15) & (_etr_p3 <= 40),
+            _etr_p3.notna(),                                       # known but abnormal
+            _gap_p3.notna() & (_gap_p3 >= 30) & (_gap_p3 <= 55),   # proxy fallback band
+            _gap_p3.notna(),                                       # proxy known, abnormal
+        ],
+        [pw, pw * 0.5, 0.0, pw * 0.7, 0.0],
+        default=pw * 0.3   # no data at all = small benefit of doubt (unchanged)
     )
 
     # P4: Interest Coverage > 3x
