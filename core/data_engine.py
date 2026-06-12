@@ -328,15 +328,24 @@ def extract_spreadsheet_id(url_or_id: str) -> str:
 
 def _load_single_csv(filepath: str, col_map: Dict[str, str], sheet_name: str) -> pd.DataFrame:
     """Load a single CSV, apply column mapping, and return clean DataFrame."""
-    # Row 0 = emoji section headers, Row 1 = actual column names
-    # na_values covers: 'null', 'NULL', 'None', 'N/A', 'n/a', '#N/A', empty string
+    na_vals = ["null", "NULL", "None", "N/A", "n/a", "#N/A", "#VALUE!", "#REF!", ""]
+    # Auto-detect header row: local CSVs exported from Screener.in have an emoji section-label
+    # row 0 (Details, Unnamed:1…) followed by actual column names in row 1. Direct Google Sheets
+    # exports (no emoji row) have column names in row 0. Strategy: read with header=0, then
+    # promote row 0's data to column names if "companyId" is not already a header — single-pass,
+    # works for both local files and URLs without double-downloading.
     df = pd.read_csv(
         filepath,
-        header=1,
+        header=0,
         low_memory=False,
-        na_values=["null", "NULL", "None", "N/A", "n/a", "#N/A", "#VALUE!", "#REF!", ""],
+        na_values=na_vals,
         keep_default_na=True,
     )
+    if "companyId" not in df.columns:
+        # Row 0 was the emoji section label row; actual column names are in df.iloc[0].
+        new_cols = [str(c) if pd.notna(c) else f"_col_{i}" for i, c in enumerate(df.iloc[0])]
+        df.columns = new_cols
+        df = df.iloc[1:].reset_index(drop=True)
 
     # Build the full mapping: common + sheet-specific
     full_map = {**COMMON_COLS, **col_map}
@@ -661,56 +670,73 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["sigma_g"] = _rg_matrix.std(axis=1, ddof=1)  # % units; NaN when <2 valid points
 
-    df["pat_acceleration"]    = df["pat_gr_3y"]    - df["pat_gr_5y"]
-    df["rev_acceleration"]    = df["rev_gr_3y"]    - df["rev_gr_5y"]
-    df["ebitda_acceleration"] = df["ebitda_gr_3y"] - df["ebitda_gr_5y"]
-    df["eps_vs_pat_delta"]    = df["eps_gr_5y"]    - df["pat_gr_5y"]
+    _pg3  = df.get("pat_gr_3y",    pd.Series(np.nan, index=df.index))
+    _pg5  = df.get("pat_gr_5y",    pd.Series(np.nan, index=df.index))
+    _rg3  = df.get("rev_gr_3y",    pd.Series(np.nan, index=df.index))
+    _rg5  = df.get("rev_gr_5y",    pd.Series(np.nan, index=df.index))
+    _edg3 = df.get("ebitda_gr_3y", pd.Series(np.nan, index=df.index))
+    _edg5 = df.get("ebitda_gr_5y", pd.Series(np.nan, index=df.index))
+    _eg5  = df.get("eps_gr_5y",    pd.Series(np.nan, index=df.index))
+    _etg3 = df.get("ebit_gr_3y",   pd.Series(np.nan, index=df.index))
+    df["pat_acceleration"]    = _pg3  - _pg5
+    df["rev_acceleration"]    = _rg3  - _rg5
+    df["ebitda_acceleration"] = _edg3 - _edg5
+    df["eps_vs_pat_delta"]    = _eg5  - _pg5
     # ebit_vs_rev_spread_3y: EBIT growth minus revenue growth (same 3Y window).
     # Positive = operating engine scaling faster than top-line = true operating leverage.
     # Cleaner than pat_gr - rev_gr because EBIT excludes interest (no capital structure distortion).
     df["ebit_vs_rev_spread_3y"] = np.where(
-        df["ebit_gr_3y"].notna() & df["rev_gr_3y"].notna(),
-        df["ebit_gr_3y"] - df["rev_gr_3y"],
+        _etg3.notna() & _rg3.notna(),
+        _etg3 - _rg3,
         np.nan
     )
     # ebit_acceleration: EBIT growth minus EBITDA growth (same 3Y window).
     # Positive = D&A stable/shrinking relative to profits = asset-light model maturing.
     # Negative = D&A growing faster than EBIT = heavy capex cycle or asset ageing.
     df["ebit_acceleration"] = np.where(
-        df["ebit_gr_3y"].notna() & df["ebitda_gr_3y"].notna(),
-        df["ebit_gr_3y"] - df["ebitda_gr_3y"],
+        _etg3.notna() & _edg3.notna(),
+        _etg3 - _edg3,
         np.nan
     )
+    _q_nan   = pd.Series(np.nan, index=df.index)
+    _pat_lq  = df.get("pat_lq",    _q_nan); _pat_pyq  = df.get("pat_pyq",    _q_nan)
+    _rev_lq  = df.get("rev_lq",    _q_nan); _rev_pyq  = df.get("rev_pyq",    _q_nan)
+    _ebd_lq  = df.get("ebitda_lq", _q_nan); _ebd_pyq  = df.get("ebitda_pyq", _q_nan)
+    _eps_lq  = df.get("eps_lq",    _q_nan); _eps_pyq  = df.get("eps_pyq",    _q_nan)
     df["q_pat_yoy"] = np.where(
-        df["pat_pyq"].notna() & (df["pat_pyq"].abs() > 0),
-        (df["pat_lq"] - df["pat_pyq"]) / df["pat_pyq"].abs() * 100,
+        _pat_pyq.notna() & (_pat_pyq.abs() > 0),
+        (_pat_lq - _pat_pyq) / _pat_pyq.abs() * 100,
         np.nan
     )
     df["q_rev_yoy"] = np.where(
-        df["rev_pyq"].notna() & (df["rev_pyq"].abs() > 0),
-        (df["rev_lq"] - df["rev_pyq"]) / df["rev_pyq"].abs() * 100,
+        _rev_pyq.notna() & (_rev_pyq.abs() > 0),
+        (_rev_lq - _rev_pyq) / _rev_pyq.abs() * 100,
         np.nan
     )
     df["q_ebitda_yoy"] = np.where(
-        df["ebitda_pyq"].notna() & (df["ebitda_pyq"].abs() > 0),
-        (df["ebitda_lq"] - df["ebitda_pyq"]) / df["ebitda_pyq"].abs() * 100,
+        _ebd_pyq.notna() & (_ebd_pyq.abs() > 0),
+        (_ebd_lq - _ebd_pyq) / _ebd_pyq.abs() * 100,
         np.nan
     )
     # Quarterly EPS YoY growth — eps_lq vs eps_pyq (same quarter prior year)
     # Completes the quarterly set: q_pat_yoy, q_rev_yoy, q_ebitda_yoy, q_eps_yoy
     df["q_eps_yoy"] = np.where(
-        df["eps_pyq"].notna() & (df["eps_pyq"].abs() > 0),
-        (df["eps_lq"] - df["eps_pyq"]) / df["eps_pyq"].abs() * 100,
+        _eps_pyq.notna() & (_eps_pyq.abs() > 0),
+        (_eps_lq - _eps_pyq) / _eps_pyq.abs() * 100,
         np.nan
     )
+    _rev_er  = df.get("revenue",      pd.Series(np.nan, index=df.index))
+    _exp_er  = df.get("expenses",     pd.Series(np.nan, index=df.index))
+    _rev1_er = df.get("revenue_1yb",  pd.Series(np.nan, index=df.index))
+    _exp1_er = df.get("expenses_1yb", pd.Series(np.nan, index=df.index))
     df["expense_ratio"] = np.where(
-        df["revenue"].notna() & (df["revenue"] > 0),
-        df["expenses"] / df["revenue"],
+        _rev_er.notna() & (_rev_er > 0),
+        _exp_er / _rev_er,
         np.nan
     )
     df["expense_ratio_1yb"] = np.where(
-        df["revenue_1yb"].notna() & (df["revenue_1yb"] > 0),
-        df["expenses_1yb"] / df["revenue_1yb"],
+        _rev1_er.notna() & (_rev1_er > 0),
+        _exp1_er / _rev1_er,
         np.nan
     )
 
@@ -724,22 +750,26 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # NaN propagation: if either EBITDA or EBIT is NaN, result is NaN (safe — no false signals).
     _ebit_da    = df.get("ebit",     pd.Series(np.nan, index=df.index))
     _ebit_1yb_da = df.get("ebit_1yb", pd.Series(np.nan, index=df.index))
-    df["depreciation"]     = (df["ebitda"].fillna(np.nan)     - _ebit_da).clip(lower=0)
-    df["depreciation_1yb"] = (df["ebitda_1yb"].fillna(np.nan) - _ebit_1yb_da).clip(lower=0)
+    _ebitda_da     = df.get("ebitda",     pd.Series(np.nan, index=df.index))
+    _ebitda_1yb_da = df.get("ebitda_1yb", pd.Series(np.nan, index=df.index))
+    df["depreciation"]     = (_ebitda_da.fillna(np.nan)     - _ebit_da).clip(lower=0)
+    df["depreciation_1yb"] = (_ebitda_1yb_da.fillna(np.nan) - _ebit_1yb_da).clip(lower=0)
 
     # dep_rate: D&A as percentage of gross fixed assets (scale-invariant)
     # Used in Schilit Signal 6 (forensic_engine.py): if fixed assets grow but dep_rate falls,
     # management has extended accounting useful lives to reduce D&A expense and inflate EBIT/PAT.
     # Book anchor: Qwest (Schilit Ch.6) extended asset lives from 14→40yr → $1B earnings boost.
     # NaN when fixed_assets = 0 — asset-light companies (no FA base, dep/FA is undefined).
+    _fa_dep  = df.get("fixed_assets",     pd.Series(np.nan, index=df.index))
+    _fa1_dep = df.get("fixed_assets_1yb", pd.Series(np.nan, index=df.index))
     df["dep_rate"] = np.where(
-        df["fixed_assets"].notna() & (df["fixed_assets"] > 0) & df["depreciation"].notna(),
-        df["depreciation"] / df["fixed_assets"] * 100,
+        _fa_dep.notna() & (_fa_dep > 0) & df["depreciation"].notna(),
+        df["depreciation"] / _fa_dep * 100,
         np.nan
     )
     df["dep_rate_1yb"] = np.where(
-        df["fixed_assets_1yb"].notna() & (df["fixed_assets_1yb"] > 0) & df["depreciation_1yb"].notna(),
-        df["depreciation_1yb"] / df["fixed_assets_1yb"] * 100,
+        _fa1_dep.notna() & (_fa1_dep > 0) & df["depreciation_1yb"].notna(),
+        df["depreciation_1yb"] / _fa1_dep * 100,
         np.nan
     )
 
@@ -853,82 +883,111 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── BALANCE SHEET DERIVED ──
-    df["net_debt"] = df["debt"] - df["cash_equivalents"]
-    df["debt_slope_3y"] = df["debt"] - df["debt_3yb"]
-    df["debt_change_1y"] = df["debt"] - df["debt_1yb"]
-    df["cash_change"] = df["cash_equivalents"] - df["cash_equivalents_1yb"]
+    _bs_nan  = pd.Series(np.nan, index=df.index)
+    _debt    = df.get("debt",                   _bs_nan); _debt_1yb  = df.get("debt_1yb",            _bs_nan)
+    _debt_3yb = df.get("debt_3yb",              _bs_nan); _cash      = df.get("cash_equivalents",    _bs_nan)
+    _cash_1yb = df.get("cash_equivalents_1yb",  _bs_nan); _reserves  = df.get("reserves",            _bs_nan)
+    _res_1yb  = df.get("reserves_1yb",          _bs_nan); _cwip_bs   = df.get("cwip",                _bs_nan)
+    _fa_bs    = df.get("fixed_assets",          _bs_nan); _fa1_bs    = df.get("fixed_assets_1yb",   _bs_nan)
+    _fa2_bs   = df.get("fixed_assets_2yb",      _bs_nan); _fa3_bs    = df.get("fixed_assets_3yb",   _bs_nan)
+    _ta       = df.get("total_assets",          _bs_nan); _tl        = df.get("total_liabilities",  _bs_nan)
+    _tl_1yb   = df.get("total_liabilities_1yb", _bs_nan); _inv       = df.get("inventory",          _bs_nan)
+    _inv_1yb  = df.get("inventory_1yb",         _bs_nan)
+    df["net_debt"]       = _debt - _cash
+    df["debt_slope_3y"]  = _debt - _debt_3yb
+    df["debt_change_1y"] = _debt - _debt_1yb
+    df["cash_change"]    = _cash - _cash_1yb
     df["reserves_growth"] = np.where(
-        df["reserves_1yb"].notna() & (df["reserves_1yb"].abs() > 0),
-        (df["reserves"] - df["reserves_1yb"]) / df["reserves_1yb"].abs() * 100,
+        _res_1yb.notna() & (_res_1yb.abs() > 0),
+        (_reserves - _res_1yb) / _res_1yb.abs() * 100,
         np.nan
     )
     # cwip_conversion is computed at D19 (fixed asset expansion formula). See line below.
     df["cwip_ratio"] = np.where(
-        df["fixed_assets"].notna() & (df["fixed_assets"] > 0),
-        df["cwip"] / df["fixed_assets"] * 100,
+        _fa_bs.notna() & (_fa_bs > 0),
+        _cwip_bs / _fa_bs * 100,
         np.nan
     )
-    df["capex_3y"] = df["fixed_assets"] - df["fixed_assets_3yb"]
+    df["capex_3y"] = _fa_bs - _fa3_bs
 
     # Capex consistency: year-by-year FA growth rate variance (3 consecutive years)
     # High variance = lumpy capex = project execution risk vs smooth compounding expansion.
     _fa_g1 = np.where(
-        df["fixed_assets_1yb"].notna() & (df["fixed_assets_1yb"].abs() > 0),
-        (df["fixed_assets"] - df["fixed_assets_1yb"]) / df["fixed_assets_1yb"].abs(),
+        _fa1_bs.notna() & (_fa1_bs.abs() > 0),
+        (_fa_bs - _fa1_bs) / _fa1_bs.abs(),
         np.nan
     )
     _fa_g2 = np.where(
-        df["fixed_assets_2yb"].notna() & (df["fixed_assets_2yb"].abs() > 0),
-        (df["fixed_assets_1yb"] - df["fixed_assets_2yb"]) / df["fixed_assets_2yb"].abs(),
+        _fa2_bs.notna() & (_fa2_bs.abs() > 0),
+        (_fa1_bs - _fa2_bs) / _fa2_bs.abs(),
         np.nan
     )
     df["capex_consistency"] = np.abs(_fa_g1 - _fa_g2)   # lower = smoother expansion
 
     df["inv_growth"] = np.where(
-        df["inventory_1yb"].notna() & (df["inventory_1yb"] > 0),
-        (df["inventory"] - df["inventory_1yb"]) / df["inventory_1yb"] * 100,
+        _inv_1yb.notna() & (_inv_1yb > 0),
+        (_inv - _inv_1yb) / _inv_1yb * 100,
         np.nan
     )
-    df["inv_vs_rev_gap"] = df["inv_growth"] - df["rev_gr_yoy"]
+    df["inv_vs_rev_gap"] = df["inv_growth"] - df.get("rev_gr_yoy", _bs_nan)
     df["solvency_ratio"] = np.where(
-        df["total_assets"].notna() & (df["total_assets"] > 0),
-        df["total_liabilities"] / df["total_assets"],
+        _ta.notna() & (_ta > 0),
+        _tl / _ta,
         np.nan
     )
     # Hidden obligation growth: Total Liabilities rising faster than Debt = off-balance-sheet risk.
     # Catches Ind AS 116 lease liabilities, provisions, contingent obligations that D/E misses.
-    df["liab_change"] = df["total_liabilities"] - df["total_liabilities_1yb"]
+    df["liab_change"] = _tl - _tl_1yb
     df["hidden_obligation_growth"] = (
         df["liab_change"].fillna(0) > df["debt_change_1y"].fillna(0)
     ).astype(int)   # 1 = TL growing faster than debt = hidden risk flag
 
     # ── SHAREHOLDING DERIVED ──
+    _sh_nan      = pd.Series(np.nan, index=df.index)
+    _sh_zero     = pd.Series(0.0,    index=df.index)
+    _pledged     = df.get("pledged_percentage", _sh_nan)
+    _pledged_1qb = df.get("pledged_1qb",        _sh_nan)
+    _pledged_1yb = df.get("pledged_1yb",        _sh_nan)
+    _ch_prom_lq  = df.get("change_promoter_lq", _sh_zero)
+    _ch_fii_lq   = df.get("change_fii_lq",      _sh_zero)
+    _ch_dii_lq   = df.get("change_dii_lq",      _sh_zero)
     df["pledge_rising"] = np.where(
-        df["pledged_percentage"].notna() & df["pledged_1qb"].notna(),
-        (df["pledged_percentage"] > df["pledged_1qb"]).astype(int),
+        _pledged.notna() & _pledged_1qb.notna(),
+        (_pledged > _pledged_1qb).astype(int),
         0
     )
     df["pledge_falling_1y"] = np.where(
-        df["pledged_1yb"].notna() & df["pledged_percentage"].notna(),
-        (df["pledged_1yb"] - df["pledged_percentage"]).clip(lower=0),
+        _pledged_1yb.notna() & _pledged.notna(),
+        (_pledged_1yb - _pledged).clip(lower=0),
         0
     )
-    df["promoter_buying"] = (df["change_promoter_lq"] > 0).astype(int)
+    df["promoter_buying"] = (_ch_prom_lq > 0).astype(int)
     df["inst_convergence"] = (
-        (df["change_fii_lq"] > 0) & (df["change_dii_lq"] > 0)
+        (_ch_fii_lq > 0) & (_ch_dii_lq > 0)
     ).astype(int)
 
     # ── TECHNICAL DERIVED ──
+    _vol      = df.get("volume",     pd.Series(np.nan, index=df.index))
+    _vol20d   = df.get("vol_sma_20d", pd.Series(np.nan, index=df.index))
+    _vol50d   = df.get("vol_sma_50d", pd.Series(np.nan, index=df.index))
+    _close_t  = df.get("close_price", pd.Series(np.nan, index=df.index))
+    _crs50d   = df.get("crs_50d",    pd.Series(0.0, index=df.index))
+    _crs26w   = df.get("crs_26w",    pd.Series(0.0, index=df.index))
+    _crs52w   = df.get("crs_52w",    pd.Series(0.0, index=df.index))
+    _sma200d  = df.get("sma_200d",   pd.Series(np.nan, index=df.index))
+    _vstop_t  = df.get("vstop_value", pd.Series(np.nan, index=df.index))
+    _vstop_chg = df.get("last_vstop_change", pd.Series(np.nan, index=df.index))
+    _ret_n500_3m = df.get("ret_vs_n500_3m", pd.Series(0.0, index=df.index))
     df["vol_ratio"] = np.where(
-        df["vol_sma_20d"].notna() & (df["vol_sma_20d"] > 0),
-        df["volume"] / df["vol_sma_20d"],
+        _vol20d.notna() & (_vol20d > 0),
+        _vol / _vol20d,
         np.nan
     )
     # Minervini breakout confirmation: volume vs the 50-day baseline (book uses 50D, not 20D).
     # A pivot breakout requires volume ≥ ~1.4× the 50D average. Distinct from vol_ratio (20D).
     df["vol_ratio_50d"] = np.where(
-        df.get("vol_sma_50d", pd.Series(0, index=df.index)).fillna(0) > 0,
-        df["volume"].fillna(0) / df.get("vol_sma_50d", pd.Series(0, index=df.index)).fillna(0),
+        _vol50d.fillna(0) > 0,
+        _vol.fillna(0) / _vol50d.fillna(0),
         np.nan
     )
     # VCP volume dryup (SEPA Codex Ch.5 Chartink): 10D avg volume < 50D avg = supply exhaustion
@@ -940,10 +999,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (_v10d_vcp < _v50d_vcp).astype(int),
         0
     )
-    df["daily_value"] = df["volume"] * df["close_price"]  # in raw ₹
+    df["daily_value"] = _vol * _close_t  # in raw ₹
     df["daily_value_cr"] = df["daily_value"] / 1e7  # in ₹ Crores
     df["crs_aligned"] = (
-        (df["crs_50d"] > 0) & (df["crs_26w"] > 0) & (df["crs_52w"] > 0)
+        (_crs50d > 0) & (_crs26w > 0) & (_crs52w > 0)
     ).astype(int)
     # VSTOP scale guard: nullify implausible VSTOP values (>50× or <2% of close price).
     # Upstream data sources sometimes publish VSTOP in paise for certain stocks (e.g. MOTHERSON: VSTOP=7684 vs price=130).
@@ -954,33 +1013,35 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         implausible_count = int(implausible_vstop.sum())
         if implausible_count > 0:
             print(f"  ⚠️  VSTOP scale mismatch nullified for {implausible_count} stocks")
+    # Re-fetch after in-place guard so local vars reflect any nullifications above.
+    _vstop_t = df.get("vstop_value", pd.Series(np.nan, index=df.index))
 
-    df["vstop_fresh"] = np.where(df["last_vstop_change"].notna(), (df["last_vstop_change"] <= 30).astype(int), 0)
-    df["above_sma200"] = (df["close_price"] > df["sma_200d"]).astype(int)
-    df["vstop_green"] = np.where(df["vstop_value"].notna(), (df["close_price"] > df["vstop_value"]).astype(int), 0)
+    df["vstop_fresh"] = np.where(_vstop_chg.notna(), (_vstop_chg <= 30).astype(int), 0)
+    df["above_sma200"] = (_close_t > _sma200d).astype(int)
+    df["vstop_green"] = np.where(_vstop_t.notna(), (_close_t > _vstop_t).astype(int), 0)
 
     # ── VQS & SMART MONEY FLOW (WAVE DETECTION INTEGRATION) ──
     vqs_liquidity = np.where(df["vol_ratio"] >= 3.0, 50,
                     np.where(df["vol_ratio"] >= 2.0, 40,
                     np.where(df["vol_ratio"] >= 1.5, 30,
                     np.where(df["vol_ratio"] >= 1.0, 20, 10))))
-    
+
     vqs_smart = np.where(df["inst_convergence"] == 1, 20,
-                np.where((df["change_fii_lq"].fillna(0) > 0) | (df["change_dii_lq"].fillna(0) > 0), 10, 0))
-    
-    vqs_cons = np.where(df["crs_aligned"] == 1, 20, 
-               np.where((df["crs_50d"].fillna(0) > 0) & (df["crs_26w"].fillna(0) > 0), 10, 0))
-               
-    vqs_eff = np.where(df["ret_vs_n500_3m"].fillna(0) > 0, 10, 0)
-    
+                np.where((_ch_fii_lq.fillna(0) > 0) | (_ch_dii_lq.fillna(0) > 0), 10, 0))
+
+    vqs_cons = np.where(df["crs_aligned"] == 1, 20,
+               np.where((_crs50d.fillna(0) > 0) & (_crs26w.fillna(0) > 0), 10, 0))
+
+    vqs_eff = np.where(_ret_n500_3m.fillna(0) > 0, 10, 0)
+
     df["vqs_score"] = pd.Series(vqs_liquidity + vqs_smart + vqs_cons + vqs_eff, index=df.index).fillna(0)
-    
+
     df["smart_money_flow"] = np.select(
         [
             (df["vqs_score"] >= 80) & (df["inst_convergence"] == 1),
-            (df["vqs_score"] >= 60) & ((df["change_fii_lq"].fillna(0) > 0) | (df["change_dii_lq"].fillna(0) > 0)),
+            (df["vqs_score"] >= 60) & ((_ch_fii_lq.fillna(0) > 0) | (_ch_dii_lq.fillna(0) > 0)),
             (df["vqs_score"] >= 40),
-            (df["change_fii_lq"].fillna(0) < 0) & (df["change_dii_lq"].fillna(0) < 0) & (df["crs_50d"].fillna(0) < 0)
+            (_ch_fii_lq.fillna(0) < 0) & (_ch_dii_lq.fillna(0) < 0) & (_crs50d.fillna(0) < 0)
         ],
         [
             "🌊💎 Elite Accumulation",
@@ -994,8 +1055,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── ALPHA VECTOR: ACTIONABILITY / BUY ZONE ──
     # Tells the user WHEN to buy based on risk-reward distance to Volatility Stop.
     df["dist_to_vstop"] = np.where(
-        df["vstop_value"].notna() & (df["vstop_value"] > 0),
-        ((df["close_price"] - df["vstop_value"]) / df["vstop_value"]) * 100,
+        _vstop_t.notna() & (_vstop_t > 0),
+        ((_close_t - _vstop_t) / _vstop_t) * 100,
         np.nan
     )
     df["buy_zone_label"] = np.select(
