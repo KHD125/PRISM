@@ -985,18 +985,27 @@ def compute_composite_score(
     # ══════════════════════════════════════════════════════════════
     _n_stocks = len(df)
     if _n_stocks > 10:
-        _target_y = np.log(
-            df["pb_ratio"].fillna(df["pb_ratio"].replace(0, np.nan).median()).clip(lower=0.01)
-        ).values
-        _A_matrix = np.column_stack([
-            df["roe"].fillna(df["roe"].median()).values,
-            df["rev_gr_5y"].fillna(df["rev_gr_5y"].median()).values,
-            df["roce_med_5y"].fillna(df["roce_med_5y"].median()).values,
-            np.log(df["market_cap"].fillna(df["market_cap"].median()).clip(lower=1.0)).values,
-            np.ones(_n_stocks)
-        ])
-        _beta_coeffs, _, _, _ = np.linalg.lstsq(_A_matrix, _target_y, rcond=None)
-        df["valuation_residual"] = _target_y - (_A_matrix @ _beta_coeffs)
+        _target_y = np.nan_to_num(
+            np.log(
+                df["pb_ratio"].fillna(df["pb_ratio"].replace(0, np.nan).median()).clip(lower=0.01)
+            ).values,
+            nan=0.0
+        )
+        _A_matrix = np.nan_to_num(
+            np.column_stack([
+                df["roe"].fillna(df["roe"].median()).values,
+                df["rev_gr_5y"].fillna(df["rev_gr_5y"].median()).values,
+                df["roce_med_5y"].fillna(df["roce_med_5y"].median()).values,
+                np.log(df["market_cap"].fillna(df["market_cap"].median()).clip(lower=1.0)).values,
+                np.ones(_n_stocks)
+            ]),
+            nan=0.0
+        )
+        try:
+            _beta_coeffs, _, _, _ = np.linalg.lstsq(_A_matrix, _target_y, rcond=None)
+            df["valuation_residual"] = _target_y - (_A_matrix @ _beta_coeffs)
+        except np.linalg.LinAlgError:
+            df["valuation_residual"] = 0.0
     else:
         df["valuation_residual"] = 0.0
 
