@@ -822,9 +822,18 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             print(f"  ℹ️  FCF null for {fcf_null_count} stocks: "
                   f"{_recon_n} reconstructed via CapEx identity, {_ocf_n} via OCF fallback")
 
+    _cf_nan = pd.Series(np.nan, index=df.index)
+    _fcf    = df.get("free_cash_flow",       _cf_nan)
+    _fcf_1y = df.get("fcf_1yb",              _cf_nan)
+    _ocf    = df.get("operating_cash_flow",  _cf_nan)
+    _ocf_1y = df.get("ocf_1yb",              _cf_nan)
+    _icf    = df.get("investing_cash_flow",  _cf_nan)
+    _fincf  = df.get("financing_cash_flow",  _cf_nan)
+    _ncf    = df.get("net_cash_flow",        _cf_nan)
+    _ncf_1y = df.get("ncf_1yb",             _cf_nan)
     df["fcf_yield"] = np.where(
         df["market_cap"].notna() & (df["market_cap"] > 0),
-        df["free_cash_flow"] / df["market_cap"] * 100,  # as percentage
+        _fcf / df["market_cap"] * 100,  # as percentage
         np.nan
     )
     # Null fcf_yield for OCF-fallback imputed stocks: free_cash_flow == operating_cash_flow
@@ -835,32 +844,32 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df.get("fcf_imputed_flag", pd.Series(0, index=df.index)).fillna(0) == 0
     )
     df["fcf_growth"] = np.where(
-        df["fcf_1yb"].notna() & (df["fcf_1yb"].abs() > 0),
-        (df["free_cash_flow"] - df["fcf_1yb"]) / df["fcf_1yb"].abs() * 100,
+        _fcf_1y.notna() & (_fcf_1y.abs() > 0),
+        (_fcf - _fcf_1y) / _fcf_1y.abs() * 100,
         np.nan
     )
     df["ocf_growth"] = np.where(
-        df["ocf_1yb"].notna() & (df["ocf_1yb"].abs() > 0),
-        (df["operating_cash_flow"] - df["ocf_1yb"]) / df["ocf_1yb"].abs() * 100,
+        _ocf_1y.notna() & (_ocf_1y.abs() > 0),
+        (_ocf - _ocf_1y) / _ocf_1y.abs() * 100,
         np.nan
     )
     df["capex_coverage"] = np.where(
-        df["investing_cash_flow"].notna() & (df["investing_cash_flow"].abs() > 0),
-        df["operating_cash_flow"] / df["investing_cash_flow"].abs(),
+        _icf.notna() & (_icf.abs() > 0),
+        _ocf / _icf.abs(),
         np.nan
     )
     df["fcf_consistency"] = (
-        (df["free_cash_flow"] > 0) & (df["fcf_1yb"] > 0)
+        (_fcf > 0) & (_fcf_1y > 0)
     ).astype(int)
     df["self_funding"] = (
-        (df["operating_cash_flow"] > 0) & (df["financing_cash_flow"] < 0)
+        (_ocf > 0) & (_fincf < 0)
     ).astype(int)
     df["ncf_trend"] = (
-        (df["net_cash_flow"] > 0) & (df["ncf_1yb"] > 0)
+        (_ncf > 0) & (_ncf_1y > 0)
     ).astype(int)
     df["fcf_quality"] = np.where(
         df["pat"].notna() & (df["pat"].abs() > 0),
-        df["free_cash_flow"] / df["pat"].abs(),
+        _fcf / df["pat"].abs(),
         np.nan
     )
     
@@ -1592,22 +1601,21 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["d24_ocf_pat_delta"] = df["cfo_to_pat"].fillna(np.nan) - 100.0
 
     # ── D27: FCF Positive (binary) ──
-    df["d27_fcf_positive"] = (df["free_cash_flow"].fillna(0) > 0).astype(int)
+    df["d27_fcf_positive"] = (_fcf.fillna(0) > 0).astype(int)
 
     # ── D28: FCF-to-PAT (%) ──
     # D28 > 50%: FCF covers more than half of PAT = strong real cash generation
     df["d28_fcf_to_pat_pct"] = np.where(
         df["pat"].notna() & (df["pat"].abs() > 0),
-        df["free_cash_flow"].fillna(0) / df["pat"].abs() * 100,
+        _fcf.fillna(0) / df["pat"].abs() * 100,
         np.nan
     )
 
     # ── D29: Capex Intensity (%) ──
     # (OCF − FCF) / |OCF| × 100: how much of operating cash goes to capex
     df["d29_capex_intensity"] = np.where(
-        df["operating_cash_flow"].notna() & (df["operating_cash_flow"].abs() > 0),
-        (df["operating_cash_flow"] - df["free_cash_flow"].fillna(df["operating_cash_flow"])) /
-        df["operating_cash_flow"].abs() * 100,
+        _ocf.notna() & (_ocf.abs() > 0),
+        (_ocf - _fcf.fillna(_ocf)) / _ocf.abs() * 100,
         np.nan
     )
 
@@ -2036,8 +2044,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Only meaningful when OCF is positive; when OCF < 0, rf_negative_fcf handles it.
     _fcf_imputed = df.get("fcf_imputed_flag", pd.Series(0, index=df.index)).fillna(0).astype(bool)
     df["fcf_to_cfo_pct"] = np.where(
-        df["operating_cash_flow"].notna() & (df["operating_cash_flow"] > 0) & ~_fcf_imputed,
-        df["free_cash_flow"].fillna(0) / df["operating_cash_flow"] * 100,
+        _ocf.notna() & (_ocf > 0) & ~_fcf_imputed,
+        _fcf.fillna(0) / _ocf * 100,
         np.nan
     )
 
@@ -2596,8 +2604,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── Identity A: FCF Generation Velocity (FCF/OCF ratio) ──
     df["fcf_to_ocf_velocity"] = np.where(
-        df["operating_cash_flow"].fillna(0) > 0,
-        df["free_cash_flow"].fillna(0) / df["operating_cash_flow"],
+        _ocf.fillna(0) > 0,
+        _fcf.fillna(0) / _ocf,
         0.0
     )
 
