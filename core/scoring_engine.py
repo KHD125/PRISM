@@ -23,7 +23,8 @@ from config import (
     DEFAULT_CYCLE_TEMPERATURE, MARKS_CYCLE,
     MASTER_PROFILES, ANALYSIS_MODES, WAVE_DETECTION,
     REGIME_ADJUSTMENTS, get_adaptive_weights,
-    EPOCH2_REINVESTMENT, EPOCH3_TAXONOMY, EPOCH4_SQGLP, EPOCH5_MODERN,
+    EPOCH2_REINVESTMENT, EPOCH3_TAXONOMY, EPOCH4_SQGLP, EPOCH5_MODERN, EPOCH35_UNUSUAL_BILLIONAIRES,
+    COST_OF_EQUITY,
 )
 
 
@@ -90,6 +91,7 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     gate_results = {}
+    _missing_gate_names: set = set()
 
     for gate_name, gate_cfg in HARD_GATES.items():
         col = gate_cfg["column"]
@@ -97,8 +99,10 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
         threshold = gate_cfg["threshold"]
 
         if col not in df.columns:
-            # Gate column doesn't exist — skip but mark as N/A
+            # Gate column doesn't exist — pass silently (benefit of doubt) but exclude from
+            # gates_total and gates_passed so "X/Y gates" display only counts real evaluations.
             gate_results[gate_name] = pd.Series(True, index=df.index)
+            _missing_gate_names.add(gate_name)
             continue
 
         series = df[col]
@@ -150,11 +154,16 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
     # override the gate). It referenced key "return_on_capital" which never existed in HARD_GATES — dead code.
     # Removed. The deleveraging override above (de_slope_3y < -0.15) already covers the turnaround case.
 
-    # Overall pass: must pass ALL gates
+    # Overall pass: must pass ALL gates (missing-column gates are True, don't block pass).
+    # gates_passed / gates_total count only gates with an actual column — accurate display.
     all_gates = pd.DataFrame(gate_results)
+    _present_gates = {k: v for k, v in gate_results.items() if k not in _missing_gate_names}
     df["gate_pass"] = all_gates.all(axis=1).astype(int)
-    df["gates_passed"] = all_gates.sum(axis=1).astype(int)
-    df["gates_total"] = len(gate_results)
+    if _present_gates:
+        df["gates_passed"] = pd.DataFrame(_present_gates).sum(axis=1).astype(int)
+    else:
+        df["gates_passed"] = pd.Series(0, index=df.index)
+    df["gates_total"]  = len(_present_gates)
     df["gates_failed"] = df["gates_total"] - df["gates_passed"]
 
     # Build a human-readable failed gates string — fully vectorized (no apply/iterrows)
@@ -183,7 +192,7 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
 
 def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
     """Moat score: ROCE trajectory + ROE evaluated within industry/sector cohorts.
-    Uses groupby-based _sector_pct_rank (70% universe + 30% sector blend) for peer benchmarking.
+    Uses groupby-based _sector_pct_rank (pure sector-relative rank) for peer benchmarking.
     MEF (Moat Endurance Factor) modifier from 17th WCS boosts or penalises structural durability."""
     score = pd.Series(0.0, index=df.index)
     # Long-term signals require 10-year history to be meaningful.
@@ -704,7 +713,7 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     # Clip floor at 5 prevents log(0) blowup. Companion column quality_score_geometric —
     # the legacy quality_score is preserved intact so no existing tests or composite weights break.
     # ══════════════════════════════════════════════════════════════
-    _p1 = df["malik_score"].fillna(50).clip(5, 100).values / 100.0
+    _p1 = df.get("malik_checklist_score", pd.Series(50.0, index=df.index)).fillna(50).clip(5, 100).values / 100.0
     _p2 = df["ibas_moat_score"].fillna(50).clip(5, 100).values / 100.0
     _p3 = df["vqs_score"].fillna(50).clip(5, 100).values / 100.0
     df["quality_score_geometric"] = (
@@ -1102,7 +1111,7 @@ def compute_composite_score(
     _fair_pe_m5  = df.get("fair_pe_qglp",     pd.Series(np.nan, index=df.index))
     _g_star_m5   = df.get("g_star",           pd.Series(np.nan, index=df.index))
     _fcfy_m5     = df.get("fcf_yield",        pd.Series(np.nan, index=df.index))
-    _capex_c_m5  = df.get("capex_consistency",pd.Series(np.nan, index=df.index))
+    _sigma_g_m5  = df.get("sigma_g",          pd.Series(np.nan, index=df.index))
     _traj_m5     = df.get("trajectory_score", pd.Series(np.nan, index=df.index))
     _close_m5    = df.get("close_price",      pd.Series(np.nan, index=df.index))
     _vstop_m5    = df.get("vstop_value",      pd.Series(np.nan, index=df.index))
@@ -1113,7 +1122,9 @@ def compute_composite_score(
             / _pe_m5.clip(lower=1)
         ) / 5.0
     )
-    _variance_drag = _capex_c_m5.fillna(0) / 2.0
+    # σ²/2 Ito variance drag: converts % σ to decimal, applies geometric-vs-arithmetic correction.
+    # E[log CAGR] = μ − σ²/2. At σ=20%: drag=2%; at σ=40%: drag=8%. Mathematically correct.
+    _variance_drag = ((_sigma_g_m5.fillna(0.0) / 100.0) ** 2) / 2.0 * 100.0
     df["expected_cagr_engine"] = (
         _g_star_m5.fillna(0)
         + _fcfy_m5.fillna(0)
@@ -1563,7 +1574,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # M: Market direction gate — stored in df.attrs by run_full_scoring() before this call.
     # detect_market_regime() is called before compute_qglp_score() in run_full_scoring().
     # Fallback to SIDEWAYS (pass) when called outside run_full_scoring() (e.g. unit tests).
-    _regime_cs  = df.attrs.get("detected_market_regime", "SIDEWAYS")
+    _regime_fallback = df["_detected_market_regime"].iloc[0] if "_detected_market_regime" in df.columns and len(df) > 0 else "SIDEWAYS"
+    _regime_cs = df.attrs.get("detected_market_regime", _regime_fallback)  # "SIDEWAYS" when called outside run_full_scoring
     market_ok_cs = (_regime_cs != "BEAR")   # scalar bool — broadcasts across all rows
     fw_can_slim = (
         (q_eps_cs         >= 25.0)  &   # C: quarterly EPS per share +25%+ YoY (O'Neil Ch.3: EPS not PAT)
@@ -1739,6 +1751,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     rev_5y_ub   = df.get("rev_gr_5y",          _ub_nan)
     de_ub       = df.get("debt_to_equity",     _ub_nan)
     pledge_ub   = df.get("pledged_percentage", _ub_nan)
+    promo_ub    = df.get("promoter_holdings",  _ub_nan)
     opm_st_ub   = df.get("opm_stable",         pd.Series(0, index=df.index)).fillna(0)
     # Sector-routed Greatness Formula growth hurdle (UB/Coffee Can unified research base):
     # financial companies (banks/NBFCs) must show 15% expansion; industrials need 10%.
@@ -1750,7 +1763,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         _cc_each_year                  &                     # Year-by-year: each of years 2-5 ≥ 10% growth
         (opm_st_ub == 1)               &                     # Moat proxy: OPM stable through cycles
         (is_fin_ub | (de_ub.fillna(999) < 1.0)) &           # Capital discipline: D/E < 1 for non-financials
-        (pledge_ub.fillna(0)   < 10)                         # Governance pillar: pledge < 10%
+        (pledge_ub.fillna(0)   < 10)  &                     # Governance pillar: pledge < 10%
+        (promo_ub.fillna(0)    >= EPOCH35_UNUSUAL_BILLIONAIRES["min_promoter_stake"])  # Skin-in-game: promoter ≥ 45%
     )
     df["ub_pass"] = fw_unusual_billionaires.astype(int)
 
@@ -2040,7 +2054,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     roce_5y_dh   = df.get("roce_med_5y",     _dh_nan)   # 5Y ROCE median — moat-intact proxy
     cfo_pat_dh   = df.get("cfo_to_pat",      _dh_nan)   # PERCENTAGE: 70.0 = 70%, not 0.70
     de_dh        = df.get("debt_to_equity",  _dh_nan)
-    fscore_dh    = df.get("forensic_score",  pd.Series(999, index=df.index)).fillna(999)
+    _rfcount_dh  = df.get("red_flag_count",  pd.Series(999, index=df.index)).fillna(999)
     is_fin_dh    = df.get("is_financial",    pd.Series(False, index=df.index)).fillna(False)
     fw_dhandho = (
         (dist_wh_dh        >= 30) &              # HIGH UNCERTAINTY: fallen 30%+ from 52W high
@@ -2048,7 +2062,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (roce_5y_dh.fillna(0)  >= 15) &          # Moat intact: ROIC > 15% over 5Y — not a value trap
         (cfo_pat_dh.fillna(0)  >= 70) &          # Earnings real: CFO/PAT ≥ 70% (Pabrai's cash test)
         (is_fin_dh | (de_dh.fillna(999) < 0.5)) & # Balance sheet: D/E < 0.5 — no leverage amplifying risk
-        (fscore_dh             == 0)              # Accounting integrity: zero forensic red flags
+        (_rfcount_dh           == 0)              # Accounting integrity: zero forensic red flags
     )
 
     # 18. Parikh Contrarian (Parag Parikh — Value Investing and Behavioral Finance)
@@ -2559,8 +2573,29 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     )
     _nopat_m_ly = df["mauboussin_nopat_margin"].fillna(0.0) / 100.0
 
-    # Layer 1: Implied CAP mathematical approximation (loop-free Pandas)
+    # Layer 1: Implied CAP (legacy discriminant — empirically calibrated, not a true identity)
     df["mauboussin_implied_cap"] = _pe_ly * _nopat_m_ly * _rr_ly
+
+    # FGV% (Stern-Stewart): fraction of market cap that is a future-growth promise.
+    # SSV = NOPAT / CoE — steady-state perpetuity value assuming zero growth.
+    # FGV% < 0: priced below no-growth value (Dhandho deep value).
+    # FGV% > 0.6: 60%+ of market cap is a growth promise — high expectations risk.
+    _rev_fgv   = df.get("revenue",    pd.Series(np.nan, index=df.index))
+    _mcap_fgv  = df.get("market_cap", pd.Series(np.nan, index=df.index))
+    _nopat_abs = _nopat_m_ly * _rev_fgv
+    _ssv = pd.Series(
+        np.where(
+            _nopat_abs.notna() & (_nopat_abs > 0),
+            _nopat_abs / (COST_OF_EQUITY / 100.0),
+            np.nan
+        ),
+        index=df.index
+    )
+    df["fgv_pct"] = np.where(
+        _mcap_fgv.notna() & (_mcap_fgv > 0) & _ssv.notna(),
+        1.0 - _ssv / _mcap_fgv,
+        np.nan
+    )
 
     # Pillar T: Treadmill breach (1 = safe; treadmill sell alert not firing)
     df["mauboussin_treadmill_breach"] = np.where(
@@ -2669,8 +2704,12 @@ def compute_ep_power_curve(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # ── Cross-Sectional EP Quintile Matrix ──
-    df["ep_quintile"] = pd.Series(np.nan, index=df.index)
-    if "economic_profit" in df.columns:
+    # Preserve data_engine's rank-based ep_quintile if already computed; only recompute
+    # when running on synthetic frames (e.g., unit tests) that bypassed data_engine.
+    _ep_quintile_set = "ep_quintile" in df.columns and not df["ep_quintile"].isna().all()
+    if not _ep_quintile_set:
+        df["ep_quintile"] = pd.Series(np.nan, index=df.index)
+    if not _ep_quintile_set and "economic_profit" in df.columns:
         ep_valid = df["economic_profit"].notna()
         if ep_valid.sum() >= 10:
             try:
@@ -2767,7 +2806,8 @@ def run_full_scoring(
 
     # ── Step 0: Detect market regime from the data ──
     regime = detect_market_regime(df)
-    df.attrs["detected_market_regime"] = regime
+    df.attrs["detected_market_regime"] = regime          # primary: fast scalar lookup
+    df["_detected_market_regime"] = regime               # defensive: survives merge/concat
 
     # ── Step 1: Get regime-adaptive weights ──
     adaptive = get_adaptive_weights(scoring_profile, regime)
