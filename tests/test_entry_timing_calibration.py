@@ -128,6 +128,30 @@ def test_extended_far_above_stop():
     assert (out["buy_zone_label"] == "🔴 Extended (Wait for Pullback)").all()
 
 
+def test_d45_missing_ma_data_scores_zero_not_free_points():
+    """SEPA Trend Template components must fail conservatively on missing MA data.
+    Old bug: fillna(0) inside the comparisons inverted conservatism — a stock with
+    MISSING sma_30w got a free C2 point (close > 0 is always true), and missing
+    sma_200d gave a free C3 point. 32 + 54 stocks were affected on live data."""
+    out = compute_derived_signals(_frame(
+        close_price=100.0, sma_200d=90.0, sma_50d=95.0, sma_30w=np.nan,
+    ))
+    # above_sma200=1; C2 (close>30W)=0 NaN; C3 (30W>200D)=0 NaN; C5=0 NaN; vstop=0
+    assert (out["d45_trend_structure"] == 1).all(), (
+        f"Got {out['d45_trend_structure'].iloc[0]} — missing sma_30w must zero "
+        "C2/C3/C5, not award free points"
+    )
+
+
+def test_d45_full_right_stacking_scores_four():
+    """All MAs present and right-stacked (50D > 150D > 200D, price above all)."""
+    out = compute_derived_signals(_frame(
+        close_price=100.0, sma_200d=90.0, sma_50d=95.0, sma_30w=92.0,
+    ))
+    # above_sma200=1 + C2=1 + C3=1 + C5=1 + vstop_green=0 (no vstop in frame)
+    assert (out["d45_trend_structure"] == 4).all()
+
+
 def test_marks_price_value_pillar_rejects_below_stop():
     """The Marks Shield P pillar reads the label — broken trends must fail it."""
     from scoring_engine import compute_qglp_score

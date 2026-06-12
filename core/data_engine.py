@@ -1911,12 +1911,17 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # NaN on sma_50d/sma_30w → fillna(0) → that component scores 0 (conservative).
     _sma_50d_d45 = df.get("sma_50d", pd.Series(np.nan, index=df.index))
     _sma_30w_d45 = df.get("sma_30w", pd.Series(np.nan, index=df.index))
+    # NO fillna inside the comparisons (fixed 2026-06-12): NaN comparisons are False in
+    # pandas, which is the conservative direction for every "+1" component. The old
+    # fillna(0) INVERTED conservatism on two legs — missing sma_30w made C2 a free point
+    # (close > 0 always true; 32 live stocks) and missing sma_200d made C3 a free point
+    # (sma_30w > 0; 54 live stocks). Missing data must never score a trend criterion.
     df["d45_trend_structure"] = (
         df["above_sma200"].fillna(0) +
-        (df["close_price"] > _sma_30w_d45.fillna(0)).astype(int) +
-        (_sma_30w_d45.fillna(0) > df["sma_200d"].fillna(0)).astype(int) +
-        ((_sma_50d_d45.fillna(0) > _sma_30w_d45.fillna(0)) &
-         (_sma_50d_d45.fillna(0) > df["sma_200d"].fillna(0))).astype(int) +
+        (df["close_price"] > _sma_30w_d45).astype(int) +
+        (_sma_30w_d45 > df["sma_200d"]).astype(int) +
+        ((_sma_50d_d45 > _sma_30w_d45) &
+         (_sma_50d_d45 > df["sma_200d"])).astype(int) +
         df["vstop_green"].fillna(0)
     )
 
