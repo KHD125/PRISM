@@ -342,10 +342,20 @@ def _load_single_csv(filepath: str, col_map: Dict[str, str], sheet_name: str) ->
         keep_default_na=True,
     )
     if "companyId" not in df.columns:
-        # Row 0 was the emoji section label row; actual column names are in df.iloc[0].
-        new_cols = [str(c) if pd.notna(c) else f"_col_{i}" for i, c in enumerate(df.iloc[0])]
+        # Header row is somewhere in the first few data rows. Local Screener.in exports have
+        # the emoji section-label row at 0 and headers at row 1 (offset 0 after header=0 read).
+        # The gviz Google Sheets endpoint may emit an extra auto-header line, pushing the real
+        # header row one deeper. Scan the first 5 rows for the one containing "companyId".
+        hdr_idx = None
+        for i in range(min(5, len(df))):
+            if (df.iloc[i].astype(str) == "companyId").any():
+                hdr_idx = i
+                break
+        if hdr_idx is None:
+            hdr_idx = 0   # legacy fallback: promote row 0 (pre-gviz behavior)
+        new_cols = [str(c) if pd.notna(c) else f"_col_{i}" for i, c in enumerate(df.iloc[hdr_idx])]
         df.columns = new_cols
-        df = df.iloc[1:].reset_index(drop=True)
+        df = df.iloc[hdr_idx + 1:].reset_index(drop=True)
 
     # Build the full mapping: common + sheet-specific
     full_map = {**COMMON_COLS, **col_map}
@@ -355,6 +365,16 @@ def _load_single_csv(filepath: str, col_map: Dict[str, str], sheet_name: str) ->
     missing = set(col_map.keys()) - set(df.columns)
     if missing:
         print(f"  ⚠️  [{sheet_name}] Missing columns: {missing}")
+    # Wrong-tab guard: if NONE of the sheet-specific columns matched, the source returned a
+    # different tab entirely (e.g. Google Sheets served the first tab instead of the requested
+    # one). Silently continuing would feed all-NaN data downstream — every stock would score
+    # the neutral defaults (Growth=50, Momentum=26, Governance=0). Fail loudly instead.
+    if col_map and not any(k in df.columns for k in col_map):
+        raise ValueError(
+            f"[{sheet_name}] None of the expected columns were found — the data source "
+            f"returned the wrong sheet/tab. Check that the spreadsheet has a tab with the "
+            f"exact expected name and that it is shared (Anyone with the link → Viewer)."
+        )
 
     # Select and rename
     df = df[list(available.keys())].rename(columns=available)
@@ -390,7 +410,11 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
         for name, (cols,) in sheet_configs.items():
             tab_name = SHEET_TAB_NAMES[name]          # exact tab name e.g. "Income Statement"
             encoded  = quote(tab_name, safe="")        # "Income%20Statement"
-            csv_url  = f"https://docs.google.com/spreadsheets/d/{parsed_id}/export?format=csv&sheet={encoded}"
+            # gviz endpoint is the ONLY public CSV endpoint that selects a tab by NAME.
+            # /export?format=csv ignores a "sheet=" parameter and silently returns the FIRST
+            # tab for every request — all 6 loads got the Ratio tab, nulling out 5 sheets of
+            # data and flattening every score to neutral defaults. Do not revert to /export.
+            csv_url  = f"https://docs.google.com/spreadsheets/d/{parsed_id}/gviz/tq?tqx=out:csv&sheet={encoded}"
             try:
                 datasets[name] = _load_single_csv(csv_url, cols, name)
             except Exception as e:
