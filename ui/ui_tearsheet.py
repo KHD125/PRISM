@@ -126,13 +126,18 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
     )
     fig.add_vline(x=15, line_width=1, line_dash="dash", line_color=COLORS["border"])
     fig.add_hline(y=15, line_width=1, line_dash="dash", line_color=COLORS["border"])
-    fig.add_annotation(x=80,  y=80,  text="⭐ Wealth Creators", showarrow=False,
+    # Annotation x-coords are data-relative: right labels at 85% of x_max, left labels at
+    # 70% of the -50 left bound. Y coords are absolute (range fixed at [-25, 105]).
+    # Hardcoding x=80 clips labels when x_max=50 (low-growth filtered universes).
+    _ann_x_right = x_max * 0.85
+    _ann_x_left  = -35
+    fig.add_annotation(x=_ann_x_right, y=90,  text="⭐ Wealth Creators", showarrow=False,
                        font=dict(color=COLORS["green"], size=16), opacity=0.3)
-    fig.add_annotation(x=-20, y=80,  text="🛡️ Quality Traps",  showarrow=False,
+    fig.add_annotation(x=_ann_x_left,  y=90,  text="🛡️ Quality Traps",  showarrow=False,
                        font=dict(color=COLORS["gold"],  size=16), opacity=0.3)
-    fig.add_annotation(x=80,  y=-10, text="⚡ Growth Traps",   showarrow=False,
+    fig.add_annotation(x=_ann_x_right, y=-18, text="⚡ Growth Traps",   showarrow=False,
                        font=dict(color=COLORS["blue"],  size=16), opacity=0.3)
-    fig.add_annotation(x=-20, y=-10, text="💀 Destroyers",     showarrow=False,
+    fig.add_annotation(x=_ann_x_left,  y=-18, text="💀 Destroyers",     showarrow=False,
                        font=dict(color=COLORS["red"],   size=16), opacity=0.3)
 
     if highlight_stock:
@@ -332,16 +337,13 @@ def render_bruised_blue_chip_badge(stock: pd.Series):
             </div>
             <div style="display:flex;gap:14px;flex-wrap:wrap;">
                 <span style="font-size:0.78rem;color:{COLORS['green']};">
-                    ✅ MCap ≥ ₹20,000 Cr &nbsp;(₹{mcap:,.0f} Cr)
+                    ✅ Top-50 / Top-250 Quality MCap &nbsp;(₹{mcap:,.0f} Cr)
                 </span>
                 <span style="font-size:0.78rem;color:{COLORS['green']};">
                     ✅ ROCE 10Y ≥ 20% &nbsp;({roce_10y:.1f}%)
                 </span>
                 <span style="font-size:0.78rem;color:{COLORS['green']};">
                     ✅ P/B ≤ 2.0× &nbsp;({pb:.2f}×)
-                </span>
-                <span style="font-size:0.78rem;color:{COLORS['green']};">
-                    ✅ Sector Tailwind
                 </span>
             </div>
             <div style="margin-top:10px;font-size:0.75rem;color:{COLORS['text_secondary']};
