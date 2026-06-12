@@ -2620,9 +2620,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["d32_pe_vs_median"].fillna(0) < 0
     ).astype(int)
 
-    # ── Lynch Category (Peter Lynch — One Up on Dalal Street) ──
+    # ── Lynch Category (Peter Lynch — One Up on Wall Street) ──
     # Classifies each stock by growth trajectory for tearsheet display.
     # Fast Grower: Lynch's primary hunting ground for 10-100× returns.
+    # DISPLAY PROXY (book audit 2026-06-13): the book's six categories are defined by
+    # EARNINGS growth (stalwarts "10 to 12 percent", fast growers "20 to 25") and include
+    # cyclicals/turnarounds/asset plays, which are not classifiable from a growth rate.
+    # These revenue bands are a 4-bucket display approximation, not Lynch's taxonomy.
     df["lynch_category"] = np.select(
         [
             df["rev_gr_5y"].fillna(0) >= 20,
