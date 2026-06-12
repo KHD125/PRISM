@@ -518,7 +518,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # 26. PSU Value-Destruction Loop (Epoch 3)
     df["rf_psu_value_destruction"] = df.get("psu_value_destruction_flag", pd.Series(0, index=df.index)).fillna(0).astype(int)
 
-    # 26. CFO/EBITDA Below Coffee Can Clean Accounts Floor
+    # 27. CFO/EBITDA Below Coffee Can Clean Accounts Floor
     # Saurabh Mukherjea "Coffee Can Investing" Ch.3: "CFO/EBITDA must be above 0.9
     # for every one of the last 10 years." Below 0.9 (= 90%) for any year demands
     # investigation; below 0.8 is a disqualifying signal — cash is not backing profits.
@@ -533,7 +533,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
 
-    # 27. Ind AS 116 Lease Inflation — D4 forensic shield
+    # 28. Ind AS 116 Lease Inflation — D4 forensic shield
     # Ind AS 116 (effective FY2020) forces companies to capitalise operating leases as Right-of-Use
     # (RoU) assets. Lease rentals move out of "Other Expenses" into Depreciation + Finance Costs.
     # Net effect: EBITDA looks inflated (rentals no longer in opex), OCF looks depressed (lease
@@ -947,6 +947,9 @@ def compute_cascading_forensic_filter(df: pd.DataFrame) -> pd.DataFrame:
         df["tier_label"] = df["conviction_tier"].map(
             {t["tier"]: f"{t['emoji']} {t['label']}" for t in CONVICTION_TIERS}
         )
+        df["tier_emoji"] = df["conviction_tier"].map(
+            {t["tier"]: t["emoji"] for t in CONVICTION_TIERS}
+        )
 
     return df
 
@@ -984,19 +987,43 @@ def compute_cashflow_triangle(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════
-# MASTER FORENSIC PIPELINE
+# MASTER FORENSIC PIPELINE — split into two callable phases
 # ═══════════════════════════════════════════════════════════════
 
-def run_forensic_analysis(df: pd.DataFrame) -> pd.DataFrame:
-    """Execute the complete forensic analysis pipeline."""
+def compute_forensic_signals(df: pd.DataFrame) -> pd.DataFrame:
+    """Phase 1: Piotroski + 27 red flags + Schilit + cashflow triangle.
+
+    Safe to run BEFORE scoring. Writes forensic columns that 5 framework gates
+    read (forensic_score, forensic_label, red_flag_count, piotroski_fscore,
+    schilit_forensic_score, schilit_pass). Must complete before run_full_scoring.
+    """
     print("\n" + "="*60)
     print("🔬 FORENSIC ENGINE — Risk Intelligence")
     print("="*60)
 
     df = compute_piotroski_fscore(df)
     df = compute_red_flags(df)
-    df = compute_schilit_forensic_score(df)      # Schilit 4-checker overlay
+    df = compute_schilit_forensic_score(df)
     df = compute_cashflow_triangle(df)
-    df = compute_cascading_forensic_filter(df)
+    return df
 
+
+def apply_forensic_penalty(df: pd.DataFrame) -> pd.DataFrame:
+    """Phase 2: Cascading multiplier on composite_score + conviction tier reassignment.
+
+    Must run AFTER run_full_scoring — composite_score must already exist.
+    """
+    return compute_cascading_forensic_filter(df)
+
+
+def run_forensic_analysis(df: pd.DataFrame) -> pd.DataFrame:
+    """Legacy entry point: compute_forensic_signals + apply_forensic_penalty in sequence.
+
+    Used only when forensic signals and scoring penalty are applied in one pass
+    (i.e. when forensic columns are NOT needed by the scoring engine). The preferred
+    3-step pipeline in get_scored_data() calls the two phases separately so that
+    scoring framework gates can read forensic columns.
+    """
+    df = compute_forensic_signals(df)
+    df = apply_forensic_penalty(df)
     return df
