@@ -613,11 +613,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #   Tier 2: Meaningful    (3% to 10%)      → dilution_flag = 2 (Caution — Penalty)
     #   Tier 3: Predatory QIP (>10%)           → dilution_flag = 3 (Hard Reject)
     # The Hard Gate in config.py is now updated to reject ONLY Tier 3 (>10%).
-    shares_valid = df["equity_shares"].notna() & df["equity_shares_1yb"].notna() & (df["equity_shares_1yb"] > 0)
+    _eq     = df.get("equity_shares",     pd.Series(np.nan, index=df.index))
+    _eq_1yb = df.get("equity_shares_1yb", pd.Series(np.nan, index=df.index))
+    shares_valid = _eq.notna() & _eq_1yb.notna() & (_eq_1yb > 0)
 
     df["dilution_pct"] = np.where(
         shares_valid,
-        (df["equity_shares"] - df["equity_shares_1yb"]) / df["equity_shares_1yb"] * 100,
+        (_eq - _eq_1yb) / _eq_1yb * 100,
         0.0  # no data = benefit of doubt
     )
 
