@@ -1994,18 +1994,26 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     )
     df["diamonds_pass"] = fw_diamond.astype(int)
 
-    # 14. Dorsey Wide Moat (Pat Dorsey — The Moat Investor's Codex)
+    # 14. Dorsey Wide Moat (Pat Dorsey — The Five Rules for Successful Stock Investing)
     #    Confirmed Wide Moat at an attractive free-cash-flow price.
-    #    Three signals unique to this framework — none of the 13 existing tags use them together:
-    #      1. ROCE ≥ 20%: "confirmed moat" (all other frameworks gate at 15%; Dorsey explicitly says
-    #         "above 15% = likely moated; above 20% = confirmed wide moat" — a materially different bar)
-    #      2. FCF yield ≥ 5%: Dorsey's primary valuation gate for wide moat stocks — no other framework
-    #         in this system uses absolute FCF yield as a hard filter
-    #      3. d35_roce_trend ≥ 0: moat DIRECTION — rising/stable ROIC = moat widening or intact;
-    #         all existing frameworks are point-in-time snapshots, none check trajectory direction
-    #    CFO/PAT ≥ 80%: stricter than Diamond's 75%, matches Dorsey: "< 70% = investigate, > 80% = genuine"
-    #    D/E < 1.0 (not 0.5): Dorsey explicitly allows up to 1.0 for capital-intensive moat businesses
-    #    (asset-heavy moats with switching costs pass where Diamond's 0.5 gate would reject them)
+    #    THRESHOLD PROVENANCE (book-verified 2026-06-12 against the converted text; see
+    #    docs/dorsey_moat_specs.json — the book is DIRECTIONAL, most numbers are proxies):
+    #      1. ROCE ≥ 20% (both windows): BOOK-ANCHORED LEVEL — "consistent ROEs over 20
+    #         percent, there's a good chance you're really on to something" (book, ROE
+    #         benchmarks; ≥10% = worth investigating). ROCE-for-India + dual 10Y/5Y window
+    #         construction = engineering proxy.
+    #      2. FCF yield ≥ 5%: ENGINEERING PROXY — the book's 5% rule is FCF/SALES ("free
+    #         cash flow as a percentage of sales is around 5 percent" = cash machine), and
+    #         its valuation yield metric is "cash return" = FCF/Enterprise Value with NO
+    #         fixed threshold. This gate blends the two: book metric family, transplanted
+    #         number, market-cap denominator simplification. Do NOT quote as "Dorsey says".
+    #      3. d35_roce_trend ≥ 0: moat DIRECTION — book-true concept (returns eroding
+    #         toward cost of capital = moat narrowing); the 2Y-slope metric is a proxy.
+    #    CFO/PAT ≥ 80%: ENGINEERING PROXY — no 0.8 threshold exists in the book; the
+    #    cash-backs-earnings concept is book-true (shared bar with Diamond/Marks).
+    #    D/E < 1.0: BOOK-EXACT investigate-line — "a debt-to-equity ratio over 1.0 — ask
+    #    yourself the following [questions]" (book, financial-health chapter); financials
+    #    exempt per the book's own banking-leverage caveat (ROE bar 12% for financials).
     #    NOT implementable: moat source classification (brand/network/switching — qualitative),
     #    margin-of-safety vs intrinsic value (requires DCF), CASA/GNPA banking metrics (not in CSV)
     _dw_nan      = pd.Series(np.nan, index=df.index)
@@ -2020,15 +2028,17 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # ── Dorsey Pillar Materialization ──────────────────────────────────────────
     # Single source of truth: all scoring logic lives here; ui_tearsheet reads
     # these flat 0/1 integers (pure display — zero threshold re-computation in UI).
-    # M — Wide Moat Return Level: both 10Y AND 5Y ROCE ≥ 20% (Dorsey Ch.7: 'confirmed wide moat')
+    # M — Wide Moat Return Level: both 10Y AND 5Y ROCE ≥ 20% (book-anchored level: ROE>20%
+    #     consistent = "really on to something"; ROCE/dual-window = proxy construction)
     df["dorsey_moat_level"]    = ((roce_10y_dw.fillna(0) >= 20.0) & (roce_5y_dw.fillna(0) >= 20.0)).astype(int)
-    # D — Moat Direction: ROCE trajectory stable or widening (Dorsey Ch.7: direction matters as much as level)
+    # D — Moat Direction: ROCE trajectory stable or widening (book-true concept; 2Y-slope metric = proxy)
     df["dorsey_moat_direction"] = (roce_dir_dw.fillna(-1) >= 0).astype(int)
-    # V — FCF Valuation Yield: FCF yield ≥ 5% (Dorsey Ch.9: 'above 5% = attractive for Wide Moat')
+    # V — FCF Valuation Yield ≥ 5% (PROXY: book's 5% is FCF/SALES; book's yield metric is
+    #     cash return FCF/EV with no threshold — see provenance block above)
     df["dorsey_fcf_valuation"]  = (fcf_yield_dw.fillna(0) >= 5.0).astype(int)
-    # Q — Cash Realization Quality: CFO/PAT ≥ 80% (Dorsey Ch.8: 'above 0.8 = genuine earnings')
+    # Q — Cash Realization Quality: CFO/PAT ≥ 80% (PROXY: no 0.8 in the book; concept book-true)
     df["dorsey_cash_quality"]   = (cfo_pat_dw.fillna(0) >= 80.0).astype(int)
-    # C — Capital Structure Cushion: D/E < 1.0 (Dorsey Ch.8: allows capital-intensive moats); fin exempt
+    # C — Capital Structure Cushion: D/E < 1.0 (BOOK-EXACT investigate-line); financials exempt
     df["dorsey_cap_structure"]  = (is_fin_dw | (de_dw.fillna(999) < 1.0)).astype(int)
 
     # Combine 5 materialized pillars into the pass flag and score
