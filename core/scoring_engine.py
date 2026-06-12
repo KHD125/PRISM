@@ -714,8 +714,8 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     # the legacy quality_score is preserved intact so no existing tests or composite weights break.
     # ══════════════════════════════════════════════════════════════
     _p1 = df.get("malik_checklist_score", pd.Series(50.0, index=df.index)).fillna(50).clip(5, 100).values / 100.0
-    _p2 = df["ibas_moat_score"].fillna(50).clip(5, 100).values / 100.0
-    _p3 = df["vqs_score"].fillna(50).clip(5, 100).values / 100.0
+    _p2 = df.get("ibas_moat_score", pd.Series(50.0, index=df.index)).fillna(50).clip(5, 100).values / 100.0
+    _p3 = df.get("vqs_score",       pd.Series(50.0, index=df.index)).fillna(50).clip(5, 100).values / 100.0
     df["quality_score_geometric"] = (
         100.0 * np.exp(
             (0.40 * np.log(_p1)) +
