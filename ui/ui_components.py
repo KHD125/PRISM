@@ -519,10 +519,6 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     _f_cnt = int(row.get("red_flag_count", 0) or 0)
     if "Clean" in _f_lbl:
         _forensic_v = f'<span style="color:{COLORS["green"]};font-size:0.72rem;">🟢 Clean</span>'
-    elif "Watch" in _f_lbl:
-        _forensic_v = f'<span style="color:{COLORS["gold"]};font-size:0.72rem;">🟡 Watch — {_f_cnt}⚑</span>'
-    elif "Caution" in _f_lbl:
-        _forensic_v = f'<span style="color:{COLORS["orange"]};font-size:0.72rem;">🟠 Caution — {_f_cnt}⚑</span>'
     else:
         _forensic_v = f'<span style="color:{COLORS["red"]};font-size:0.72rem;">🔴 Risk — {_f_cnt}⚑</span>'
 
@@ -569,15 +565,20 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     else:
         _score_bars_html = ""
 
+    _esc_name     = _html.escape(str(row.get('name', 'N/A') or 'N/A'))
+    _esc_sector   = _html.escape(str(row.get('sector', '') or ''))
+    _esc_industry = _html.escape(str(row.get('industry', '') or ''))
+    _esc_mcat     = _html.escape(str(row.get('market_category', '') or ''))
+
     card_html = f"""
     <div class="stock-card" style="border-left: 3px solid {tc['border']};">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
             <div style="flex:1;min-width:0;">
                 <div style="font-weight:800; font-size:1.05rem; color:{COLORS['text_primary']};">
-                    {row.get('tier_emoji', '')} #{int(row.get('rank', 0))} · {row.get('name', 'N/A')}
+                    {row.get('tier_emoji', '')} #{int(row.get('rank', 0))} · {_esc_name}
                 </div>
                 <div style="font-size:0.75rem; color:{COLORS['text_secondary']}; margin-top:2px;">
-                    {row.get('sector', '')} · {row.get('industry', '')} · ₹{row.get('market_cap', 0):,.0f} Cr · {row.get('market_category', '')}
+                    {_esc_sector} · {_esc_industry} · ₹{row.get('market_cap', 0):,.0f} Cr · {_esc_mcat}
                 </div>
                 <div style="margin-top:5px;">{_verdict_strip}</div>
             </div>
