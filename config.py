@@ -53,7 +53,7 @@ CSV_FILES = {
 # Google Sheets Configuration
 DEFAULT_SHEET_ID = None  # Must be set before using data_source="sheet"; "" causes cryptic errors deep in data_engine
 DEFAULT_GIDS = {
-    "ratio": "854180998",
+    "ratio": "1823439984",
     "income": "1179123585",
     "balance": "492995744",
     "cashflow": "458676223",
@@ -746,7 +746,7 @@ EPOCH4_SQGLP = {
 # ═══════════════════════════════════════════════════════════════
 EPOCH5_MODERN = {
     "bbc_roce_floor":    20.0,          # 29th WCS: minimum 10Y median ROCE for BBC flag
-    "bbc_pb_ceiling":    3.0,           # 29th WCS: maximum P/B for deep-value BBC entry (unified with bruised_blue_chip_29)
+    "bbc_pb_ceiling":    2.0,           # 29th WCS: "typically P/B less than 2x" — verbatim from p.285
     "tipping_sectors": [                # 30th WCS: sectors hitting multi-trillion tipping point
         # Names verified against CSV Sector column (81 unique values)
         "Financial Services",
