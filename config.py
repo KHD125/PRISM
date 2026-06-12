@@ -395,14 +395,34 @@ GOVERNANCE_BONUS = {
     # Selling from low base (<40% + declining): promoter telling you something the price hasn't yet reflected.
     "promoter_high_alignment":  15,  # holdings ≥ 60%: dynasty mode
     "promoter_good_alignment":   8,  # holdings 50-60%: well-aligned owner-operator
-    "promoter_low_declining":  -12,  # holdings < 40% AND falling 1Y: structural misalignment
     # 3-year promoter trend — most powerful ownership signal; single quarter buys/sells are noise
     "promoter_3y_accumulation": 10,  # 3Y net buying > 3%: sustained conviction = dynasty building
-    "promoter_3y_exit":        -15,  # 3Y net selling > 5%: systematic structural exit
-    "promoter_2y_recent_exit":  -8,  # 2Y selling > 3% (and 3Y not yet at threshold): early warning
-    # Dilution penalties (negative — deducted from bonus)
-    "dilution_tier2_penalty": -25,   # 3-10% dilution: significant governance failure
+    # Dilution: tier-1 minor ESOP stays a small additive deduction; tier-2 (3-10%) is a
+    # HARD RISK SIGNAL handled by GOVERNANCE_RISK_MULTIPLIERS below, not additive points.
     "dilution_tier1_minor":    -5,   # <3% ESOP dilution: minor deduction vs zero-dilution
+}
+
+# ── Asymmetric Governance Risk Shield ──
+# Negative ownership signals predict DISASTERS far better than positive signals predict
+# winners (Yes Bank, DHFL, Zee, Manpasand all showed promoter exit / pledge / dilution
+# patterns before collapse, while fundamentals still screened fine). Therefore:
+#   Positive signals → additive governance_bonus (engine, GOVERNANCE_BONUS above)
+#   Negative signals → composite MULTIPLIER (shield, this table)
+# A multiplier scales with conviction: a 90-composite stock loses more absolute points
+# than a 20-composite stock — exactly right, because the risk threatens a larger position.
+# The four hard risk signals counted in gov_risk_count (scoring_engine.compute_governance_bonus):
+#   1. Tier-2 dilution (dilution_flag == 2: 3-10% share dilution)
+#   2. Promoter 3Y systematic exit  (change_promoter_3y < -5)
+#   3. Promoter 2Y recent exit      (change_promoter_2y < -3 AND 3Y >= -5) — mutually
+#      exclusive with #2 by construction; the same exit is never double-counted
+#   4. Low + declining promoter     (promoter_holdings < 40 AND change_promoter_1y < 0)
+# Deliberately milder than the forensic cascade (x0.50 floor): ownership signals are
+# warnings; forensic red flags are evidence.
+GOVERNANCE_RISK_MULTIPLIERS = {
+    0: 1.00,   # no ownership risk signals
+    1: 0.92,   # one signal — caution
+    2: 0.82,   # two signals — structural concern
+    3: 0.70,   # three or more — the promoter is telling you something
 }
 
 # ═══════════════════════════════════════════════════════════════

@@ -18,7 +18,7 @@ from config import (
     MOAT_SIGNALS, GROWTH_SIGNALS, CASH_SIGNALS, MARGIN_SIGNALS,
     BALANCE_SHEET_SIGNALS, RS_SIGNALS, TREND_SIGNALS, BREAKOUT_SIGNALS,
     SECTOR_SIGNALS, GOVERNANCE_BONUS, CONVICTION_TIERS, RSI_ZONES, HIGH_AGE_ZONES,
-    MCAP_TIERS, MCAP_MIN_FLOOR,
+    MCAP_TIERS, MCAP_MIN_FLOOR, GOVERNANCE_RISK_MULTIPLIERS,
     VALUATION_SIGNALS, PEG_ZONES, PAYBACK_ZONES, MEAN_REVERSION, BAID_SELL_TRIGGERS,
     DEFAULT_CYCLE_TEMPERATURE, MARKS_CYCLE,
     MASTER_PROFILES, ANALYSIS_MODES, WAVE_DETECTION,
@@ -885,7 +885,11 @@ def compute_momentum_score(df: pd.DataFrame) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════
 
 def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute governance bonus from shareholding signals (0-100)."""
+    """Asymmetric governance: positive ownership signals → additive bonus (engine);
+    the four hard risk signals → governance_risk_multiplier on composite (shield).
+    Negative signals predict disasters far better than positive signals predict winners,
+    so risk acts as a multiplier (scales with conviction) instead of flat point deductions.
+    Outputs: governance_bonus, gov_risk_count, governance_risk_multiplier."""
     df = df.copy()
     bonus = pd.Series(0.0, index=df.index)
 
@@ -917,44 +921,51 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
     # Promoter holding alignment (Mayer 100-Bagger: 10/10 Indian 100-baggers had ≥40%+ promoter)
     # Rewards baseline alignment LEVEL — distinct from promoter_buying which rewards quarterly activity.
     # promoter_holdings = numeric percentage (e.g. 55.3 = 55.3%)
+    promo_pct = df.get("promoter_holdings",   pd.Series(np.nan, index=df.index)).fillna(0)
+    promo_1y  = df.get("change_promoter_1y",  pd.Series(0.0, index=df.index)).fillna(0)
+    promo_2y  = df.get("change_promoter_2y",  pd.Series(0.0, index=df.index)).fillna(0)
+    promo_3y  = df.get("change_promoter_3y",  pd.Series(0.0, index=df.index)).fillna(0)
     if "promoter_holdings" in df.columns:
-        promo_pct = df["promoter_holdings"].fillna(0)
-        promo_1y  = df.get("change_promoter_1y", pd.Series(0.0, index=df.index)).fillna(0)
-        promo_2y  = df.get("change_promoter_2y", pd.Series(0.0, index=df.index)).fillna(0)
-        promo_3y  = df.get("change_promoter_3y", pd.Series(0.0, index=df.index)).fillna(0)
         bonus += (promo_pct >= 60).astype(float) * GOVERNANCE_BONUS["promoter_high_alignment"]
         bonus += ((promo_pct >= 50) & (promo_pct < 60)).astype(float) * GOVERNANCE_BONUS["promoter_good_alignment"]
-        bonus += ((promo_pct < 40) & (promo_1y < 0)).astype(float) * GOVERNANCE_BONUS["promoter_low_declining"]
         # 3-year trend signals — single-quarter buys/sells are noise; 3Y patterns are decisions.
         # Accumulation: net buying >3% over 3 years = sustained conviction, dynasty building.
         bonus += (promo_3y > 3).astype(float) * GOVERNANCE_BONUS["promoter_3y_accumulation"]
-        # Systematic exit: net selling >5% over 3 years = structural concern, promoter leaving.
-        bonus += (promo_3y < -5).astype(float) * GOVERNANCE_BONUS["promoter_3y_exit"]
-        # Early warning: 2Y selling >3% but 3Y hasn't crossed threshold yet = trend forming.
-        _recent_exit = (promo_2y < -3) & (promo_3y >= -5)
-        bonus += _recent_exit.astype(float) * GOVERNANCE_BONUS["promoter_2y_recent_exit"]
 
     # Undiscovered alpha: low FII + Tier C
     if "fii_holdings" in df.columns and "market_cap" in df.columns:
         undiscovered = (df["fii_holdings"] < 5) & (df["market_cap"] < 5000)
         bonus += undiscovered.astype(float) * GOVERNANCE_BONUS["undiscovered_alpha"]
 
-    # Dilution penalty: Tier 3 (>10%) is hard-gated and never reaches here.
-    # Tier 2 (3-10%) = -25 pts governance; Tier 1 (<3% ESOP) = -5 pts.
+    # Dilution: Tier 3 (>10%) is hard-gated and never reaches here.
+    # Tier 1 (<3% ESOP) = -5 additive (routine noise). Tier 2 (3-10%) is a HARD RISK
+    # SIGNAL — handled below via the governance risk multiplier, not additive points.
+    dilution = df.get("dilution_flag", pd.Series(0, index=df.index)).fillna(0)
     if "dilution_flag" in df.columns:
-        dilution = df["dilution_flag"].fillna(0)
-        bonus += pd.Series(
-            np.where(
-                dilution == 2, GOVERNANCE_BONUS["dilution_tier2_penalty"],
-                np.where(dilution == 1, GOVERNANCE_BONUS["dilution_tier1_minor"], 0)
-            ),
-            index=df.index
-        )
+        bonus += (dilution == 1).astype(float) * GOVERNANCE_BONUS["dilution_tier1_minor"]
 
-    # G3 FIX: _safe_clip([0,100]) was erasing dilution penalties for companies starting at 0 governance.
-    # A company with 0 base + dilution_flag=2 → bonus=-25 → clipped to 0 (penalty vanished).
-    # Allow negative governance to drag down the composite score for serial diluters.
+    # G3 FIX heritage: penalties must never be silently erased. The additive bonus keeps the
+    # clip(lower=-50) floor for the tier-1 deduction; the four HARD risk signals now act
+    # through the composite multiplier below — stronger than flat points and impossible to clip away.
     df["governance_bonus"] = bonus.clip(lower=-50, upper=100)
+
+    # ── Asymmetric Governance Risk Shield ──
+    # Four hard ownership risk signals → composite multiplier (GOVERNANCE_RISK_MULTIPLIERS).
+    # Negative signals predict disasters far better than positive signals predict winners,
+    # so risk scales the WHOLE conviction instead of deducting flat points: a 90-composite
+    # stock loses more absolute points than a 20-composite stock — the risk threatens more.
+    _r_dilution_t2   = (dilution == 2)                              # 3-10% share dilution
+    _r_3y_exit       = (promo_3y < -5)                              # systematic 3Y exit
+    _r_2y_exit       = (promo_2y < -3) & (promo_3y >= -5)           # early warning (excl. of 3Y)
+    _r_low_declining = (promo_pct < 40) & (promo_1y < 0)            # low base AND falling
+    df["gov_risk_count"] = (
+        _r_dilution_t2.astype(int) + _r_3y_exit.astype(int) +
+        _r_2y_exit.astype(int) + _r_low_declining.astype(int)
+    )
+    _max_tier = max(GOVERNANCE_RISK_MULTIPLIERS)
+    df["governance_risk_multiplier"] = (
+        df["gov_risk_count"].clip(upper=_max_tier).map(GOVERNANCE_RISK_MULTIPLIERS)
+    )
     return df
 
 
@@ -1095,6 +1106,14 @@ def compute_composite_score(
     # 19% avg CAGR (31 companies) vs 16% for Consistents in Consistent sectors (27th WCS data).
     _civ_boost = df.get("consistent_in_volatile_flag", pd.Series(0, index=df.index)).fillna(0)
     df["composite_score"] = _safe_clip(df["composite_score"] + _civ_boost * 5.0)
+
+    # ── Asymmetric Governance Risk Shield (applied LAST, before tier assignment) ──
+    # Hard ownership risk signals (tier-2 dilution, promoter 3Y/2Y exit, low+declining
+    # holdings) multiply the composite down. Applied after all boosts so the penalty
+    # scales the WHOLE conviction (a boosted stock with promoter exodus is still risky).
+    # .get() fallback: synthetic test frames without the column are not penalized.
+    _gov_mult = df.get("governance_risk_multiplier", pd.Series(1.0, index=df.index)).fillna(1.0)
+    df["composite_score"] = _safe_clip(df["composite_score"] * _gov_mult)
 
     # Assign conviction tiers
     conditions = []

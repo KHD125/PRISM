@@ -252,8 +252,17 @@ def test_agent6_negative_ocf_forces_zero_fcf_cfo_component():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_agent7_governance_penalty_not_clipped_at_zero():
-    """Heavy dilution + promoter systematic selling must produce a NEGATIVE governance bonus."""
+    """Heavy dilution + promoter systematic selling must produce a real penalty.
+
+    Contract updated 2026-06-12 (Asymmetric Governance Risk Shield): the four hard risk
+    signals no longer deduct additive points — they set governance_risk_multiplier < 1,
+    which scales the composite down. This is STRONGER than the old flat deduction
+    (-25 pts × 15% weight = -3.75 composite pts; the x0.70 multiplier costs a
+    70-composite stock 21 pts) and, unlike additive points, can never be clipped away —
+    the original G3 bug class is structurally impossible.
+    """
     from scoring_engine import compute_governance_bonus
+    from config import GOVERNANCE_RISK_MULTIPLIERS
 
     df = _mk(10,
         promoter_buying=0,
@@ -267,21 +276,25 @@ def test_agent7_governance_penalty_not_clipped_at_zero():
         change_promoter_3y=-6.0,     # systematic 3-year exit pattern
         fii_holdings=10.0,
         market_cap=5000.0,
-        dilution_flag=2,             # Tier 2 dilution = -25 pts penalty
+        dilution_flag=2,             # Tier 2 dilution = hard risk signal
         insider_trading=np.nan,
     )
     result = compute_governance_bonus(df)
-    bonus = result["governance_bonus"].mean()
 
-    assert bonus < 0, (
-        f"AGENT 7 FAIL: governance_bonus = {bonus:.1f} is not negative. "
-        "Heavy dilution + promoter selling must produce a negative governance bonus. "
-        "Previous bug: _safe_clip([0,100]) erased penalties for companies starting at 0. "
-        "Fix: bonus.clip(lower=-50, upper=100)."
+    # 3 risk signals fire: tier-2 dilution + 3Y exit + low-declining
+    # (2Y early warning is suppressed because the 3Y exit already crossed threshold)
+    assert (result["gov_risk_count"] == 3).all(), (
+        f"AGENT 7 FAIL: expected 3 governance risk signals, got "
+        f"{result['gov_risk_count'].iloc[0]}. Dilution tier-2 + promoter 3Y exit + "
+        "low-declining holdings must each count once (2Y warning mutually exclusive with 3Y)."
+    )
+    assert (result["governance_risk_multiplier"] == GOVERNANCE_RISK_MULTIPLIERS[3]).all(), (
+        f"AGENT 7 FAIL: governance_risk_multiplier = "
+        f"{result['governance_risk_multiplier'].iloc[0]} — heavy ownership risk must map "
+        f"to the harshest tier (x{GOVERNANCE_RISK_MULTIPLIERS[3]})."
     )
     assert result["governance_bonus"].min() >= -50, (
-        f"AGENT 7 FAIL: governance_bonus below -50 hard floor ({result['governance_bonus'].min():.1f}). "
-        "Penalty floor must be capped at -50 to prevent composite score distortion."
+        f"AGENT 7 FAIL: governance_bonus below -50 hard floor ({result['governance_bonus'].min():.1f})."
     )
 
 
