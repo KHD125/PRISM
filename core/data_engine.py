@@ -457,7 +457,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # sheet), the guard is a no-op. New columns just get added to the list.
     # ═══════════════════════════════════════════════════════════════
     _EXPECTED_COLS = [
-        # ── Income Statement ──
+        # ── Income Statement: absolute values ──
         "pat", "pat_1yb", "pat_2yb", "pat_3yb", "pat_4yb", "pat_5yb",
         "revenue", "revenue_1yb", "revenue_2yb", "revenue_3yb", "revenue_4yb", "revenue_5yb",
         "ebitda", "ebit", "pbt",
@@ -465,6 +465,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         "depreciation", "depreciation_1yb",
         "eps", "eps_1yb",
         "equity_shares", "equity_shares_1yb",
+        "opm", "opm_1yb", "npm", "npm_1yb",
+        # ── Income Statement: growth rates (absent when Income tab fails to load) ──
+        "eps_gr_yoy", "eps_gr_3y", "eps_gr_5y", "eps_gr_10y",
+        "pat_gr_yoy", "pat_gr_3y", "pat_gr_5y", "pat_gr_10y",
+        "rev_gr_yoy", "rev_gr_3y", "rev_gr_5y", "rev_gr_10y",
+        "ebitda_gr_5y", "ebitda_gr_3y", "ebit_gr_3y",
+        # individual year-by-year growth rates (computed from income raw data)
+        "rev_gr_y2", "rev_gr_y3", "rev_gr_y4", "rev_gr_y5",
+        "pat_gr_y2", "pat_gr_y3", "pat_gr_y4", "pat_gr_y5",
         # ── Balance Sheet ──
         "fixed_assets", "fixed_assets_1yb", "fixed_assets_2yb", "fixed_assets_3yb",
         "total_assets", "total_assets_1yb",
