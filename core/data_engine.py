@@ -647,6 +647,16 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             (_num_s - _den_s) / _den_s.abs() * 100,
             np.nan
         )
+    # Revenue growth volatility σ — std dev of the 4 year-on-year growth rates.
+    # Used downstream as σ²/2 in the Ito variance-drag correction on expected CAGR:
+    # E[log return] = μ − σ²/2. Volatile earners compound less at equal average growth.
+    _rg_matrix = pd.concat(
+        [df.get(f"rev_gr_y{_yr}", pd.Series(np.nan, index=df.index)).clip(-100, 300)
+         for _yr in range(2, 6)],
+        axis=1
+    )
+    df["sigma_g"] = _rg_matrix.std(axis=1, ddof=1)  # % units; NaN when <2 valid points
+
     df["pat_acceleration"]    = df["pat_gr_3y"]    - df["pat_gr_5y"]
     df["rev_acceleration"]    = df["rev_gr_3y"]    - df["rev_gr_5y"]
     df["ebitda_acceleration"] = df["ebitda_gr_3y"] - df["ebitda_gr_5y"]
@@ -737,45 +747,58 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # FCF by ignoring CapEx, but far better than arbitrary 50th-pct neutral assignment).
     if "free_cash_flow" in df.columns and "operating_cash_flow" in df.columns:
         fcf_null_count = df["free_cash_flow"].isna().sum()
-        # Record which rows were imputed BEFORE filling — used below to suppress
-        # fcf_to_cfo_pct for these stocks (imputed FCF = OCF gives a misleading 100%).
-        df["fcf_imputed_flag"] = df["free_cash_flow"].isna().astype(int)
+        _orig_null = df["free_cash_flow"].isna()
 
-        # ── CapEx reconstruction (preferred over raw OCF fallback) ──
-        # Direct CapEx is absent from the CSV, so estimate it from the balance-sheet identity:
-        #   CapEx ≈ Δ Gross Block + Δ CWIP + Depreciation
-        # (net additions to fixed assets and work-in-progress, grossed back up by the year's
-        # depreciation charge). fcf_reconstructed = OCF − CapEx_est is a far better proxy than
-        # treating all OCF as free (the old behaviour), because it actually subtracts investment.
-        # NaN propagates (semantic truth): if ANY component is missing, capex_est is NaN and the
-        # row falls through to the conservative OCF fallback below.
+        # ── CapEx reconstruction via balance-sheet identity ──
+        # CapEx ≈ max(0, Δ Gross Block + Δ CWIP) + Depreciation
+        # max(0,·) prevents net asset disposals from inflating reconstructed FCF.
+        # Missing FA/CWIP deltas filled with 0 (conservative lower bound on net additions)
+        # so reconstruction succeeds whenever Depreciation is available, even if one
+        # balance-sheet line is absent. NaN propagates only when Depreciation is missing.
         _fa = _safe_numeric(df.get("fixed_assets", pd.Series(np.nan, index=df.index)))
         _fa_1yb = _safe_numeric(df.get("fixed_assets_1yb", pd.Series(np.nan, index=df.index)))
         _cwip = _safe_numeric(df.get("cwip", pd.Series(np.nan, index=df.index)))
         _cwip_1yb = _safe_numeric(df.get("cwip_1yb", pd.Series(np.nan, index=df.index)))
         _dep = _safe_numeric(df.get("depreciation", pd.Series(np.nan, index=df.index)))
-        df["capex_est"] = (_fa - _fa_1yb) + (_cwip - _cwip_1yb) + _dep
+        _net_capex_chg = (_fa - _fa_1yb).fillna(0.0) + (_cwip - _cwip_1yb).fillna(0.0)
+        df["capex_est"] = np.where(
+            _dep.notna(),
+            np.maximum(0.0, _net_capex_chg) + _dep,
+            np.nan
+        )
         df["fcf_reconstructed"] = df["operating_cash_flow"] - df["capex_est"]
 
-        # fcf_reconstructed_flag: 1 where a null FCF was filled by the CapEx reconstruction
-        # (capex_est present). Pure-OCF fallback rows stay 0. Diagnostic only — does NOT alter
-        # fcf_imputed_flag, so the downstream fcf_to_cfo_pct suppression remains conservative.
-        _orig_null = df["fcf_imputed_flag"] == 1
+        # fcf_reconstructed_flag: 1 where a null FCF was filled by reconstruction.
         _recon_ok = _orig_null & df["fcf_reconstructed"].notna()
         df["fcf_reconstructed_flag"] = _recon_ok.astype(int)
 
-        # Fill priority: reconstructed FCF first, then raw OCF where reconstruction unavailable.
+        # Fill priority: reconstruction first, raw OCF fallback last.
         df["free_cash_flow"] = df["free_cash_flow"].fillna(df["fcf_reconstructed"])
         df["free_cash_flow"] = df["free_cash_flow"].fillna(df["operating_cash_flow"])
+
+        # fcf_imputed_flag = 1 ONLY for OCF-fallback stocks (FCF set to OCF directly →
+        # fcf_to_cfo_pct would show a misleading 100%). Reconstructed stocks get 0 because
+        # their FCF = OCF − capex_est is a real capex-adjusted estimate, not an OCF copy.
+        _ocf_fallback = _orig_null & df["fcf_reconstructed"].isna()
+        df["fcf_imputed_flag"] = _ocf_fallback.astype(int)
+
         if fcf_null_count > 0:
-            _recon_n = int(df["fcf_reconstructed_flag"].sum())
-            print(f"  ℹ️  FCF imputed for {fcf_null_count} null stocks "
-                  f"({_recon_n} via CapEx reconstruction, {fcf_null_count - _recon_n} via OCF fallback)")
+            _recon_n = int(_recon_ok.sum())
+            _ocf_n = int(_ocf_fallback.sum())
+            print(f"  ℹ️  FCF null for {fcf_null_count} stocks: "
+                  f"{_recon_n} reconstructed via CapEx identity, {_ocf_n} via OCF fallback")
 
     df["fcf_yield"] = np.where(
         df["market_cap"].notna() & (df["market_cap"] > 0),
         df["free_cash_flow"] / df["market_cap"] * 100,  # as percentage
         np.nan
+    )
+    # Null fcf_yield for OCF-fallback imputed stocks: free_cash_flow == operating_cash_flow
+    # means capex was never deducted. For a capex-heavy stock the yield is overstated,
+    # falsely passing Dorsey (≥5%), Dhandho (≥8%), Baid, and Quality Compounder gates.
+    # fillna(0)==0 → keep, ==1 → null → downstream fillna(0) produces correct gate fail.
+    df["fcf_yield"] = df["fcf_yield"].where(
+        df.get("fcf_imputed_flag", pd.Series(0, index=df.index)).fillna(0) == 0
     )
     df["fcf_growth"] = np.where(
         df["fcf_1yb"].notna() & (df["fcf_1yb"].abs() > 0),
@@ -1275,14 +1298,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
                np.where(cfo_pat_pct >= 70, pw * 0.7,       # 70-100% = pass
                np.where(cfo_pat_pct >= 50, pw * 0.3, 0)))  # 50-70% = partial
 
-    df["malik_score"] = pd.Series(
+    df["malik_checklist_score"] = pd.Series(
         malik_p1 + malik_p2 + malik_p3 + malik_p4 +
         malik_p5 + malik_p6 + malik_p7 + malik_p8,
         index=df.index
     ).clip(0, 100).round(1)
 
     df["malik_label"] = np.select(
-        [df["malik_score"] >= 80, df["malik_score"] >= 60, df["malik_score"] >= 40],
+        [df["malik_checklist_score"] >= 80, df["malik_checklist_score"] >= 60, df["malik_checklist_score"] >= 40],
         ["🟢 Strong", "🟡 Moderate", "🟠 Weak"],
         default="🔴 Poor"
     )
@@ -1898,7 +1921,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # series, so this OR-pair best approximates "50% off 5Y high" — catching both recently-fallen
     # and quietly-derated quality names. (Pure dist_52wh>40 is too strict near all-time-high markets.)
     _bbc29_bruised    = (df["dist_52wh"].fillna(0) > 25) | (df["pe_discount"].fillna(0) >= 25)
-    _bbc29_pb_entry   = df["pb_ratio"].fillna(999) < 2.0        # verbatim P/B < 2x golden entry
+    _bbc29_pb_entry   = df["pb_ratio"].fillna(999) < EPOCH5_MODERN["bbc_pb_ceiling"]  # verbatim P/B < 2x golden entry
     df["bruised_blue_chip_29"] = (
         _bbc29_blue_chip & _bbc29_bruised & _bbc29_pb_entry
     ).astype(int)
@@ -2351,8 +2374,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).clip(0.0, 1.0)
 
     # Mayer 100-Bagger companion: Retention Rate as PERCENTAGE (distinct from reinvestment_rate above).
-    # retention_rate = 100 - DPR. Used by fw_100_bagger gate (>= 80.0%). DPR fillna(0) → full
-    # retention assumed for stocks with missing dividend data (conservative: they pass the gate).
+    # retention_rate = 100 - DPR. DPR fillna(0) → full retention assumed for missing dividend data.
     df["retention_rate"] = (
         100.0 - df.get("dividend_payout_ratio", pd.Series(0.0, index=df.index)).fillna(0.0)
     ).clip(0.0, 100.0)
@@ -2367,23 +2389,33 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Used as denominator in the Buffett VCR identity below.
     df["retained_earnings_est_5y"] = df["pat"].fillna(0) * df["reinvestment_rate"] * 5.0
 
-    # Identity C (Agent 9): Buffett 1-to-1 Value Creation Ratio (VCR) proxy.
+    # Identity C (Agent 9): Buffett 1-to-1 Value Creation Ratio (VCR).
     # True VCR = (MCap_now − MCap_5YB) / ΣRetainedEarnings(5Y). MCap 5Y back not in CSV.
-    # Cross-sectional proxy: market_cap × 0.5 as center-of-distribution approximation.
-    # Benchmarks from 11th WCS: VCR ≥ 2.0 = elite, ≥ 1.0 = passing, < 1.0 = concern.
+    # RIGOROUS REPLACEMENT: VCR = ROCE_5Y_median / COST_OF_EQUITY (12%).
+    # Mathematical equivalence: VCR ≥ 1.0 ↔ ROCE ≥ CoE ↔ company earns above its hurdle rate
+    # ↔ each rupee retained creates more than a rupee of intrinsic value → same Buffett test.
+    # Benchmarks from 11th WCS remain valid: VCR ≥ 2.0 (ROCE ≥ 24%) = elite,
+    # ≥ 1.0 (ROCE ≥ 12%) = passing, < 1.0 = value-destroys on retained capital.
+    # Correctly handles declining stocks: ROCE < 0 → VCR < 0 < 1.0 → correctly flagged.
+    # Cascade: 5Y median → 10Y median → current ROCE (best available history).
+    _roce_vcr = (
+        df.get("roce_med_5y",  pd.Series(np.nan, index=df.index))
+        .fillna(df.get("roce_med_10y", pd.Series(np.nan, index=df.index)))
+        .fillna(df.get("roce",         pd.Series(np.nan, index=df.index)))
+    )
     df["value_creation_ratio"] = np.where(
-        df["retained_earnings_est_5y"] > 0,
-        (df["market_cap"].fillna(0) * 0.5) / df["retained_earnings_est_5y"],
-        0.0
+        _roce_vcr.notna(),
+        _roce_vcr / COST_OF_EQUITY,   # CoE = 12.0 (config.py). Constant > 0, no guard needed.
+        np.nan
     )
 
     # Capital Misallocation Risk (Agent 9): retaining >50% of earnings but VCR < 1.0.
     # Destroying minority shareholder value despite appearing to "conserve" capital.
     # Scoring engine applies a 10% quality penalty to these stocks.
+    # fillna(1.0): missing ROCE history → benefit of doubt, no misallocation penalty.
     df["capital_misallocation_risk"] = (
-        (df["reinvestment_rate"]    >  0.5) &
-        (df["value_creation_ratio"] <  1.0) &
-        (df["value_creation_ratio"] >  0.0)   # exclude zero (no data / negative PAT)
+        (df["reinvestment_rate"]                >  0.5) &
+        (df["value_creation_ratio"].fillna(1.0) <  1.0)
     ).astype(int)
 
     # ══════════════════════════════════════════════════════════════
@@ -2399,6 +2431,34 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["value_creation_velocity"] = (
         df["reinvestment_rate"].fillna(0.0) * (df["roce"] - COST_OF_EQUITY)
     )
+
+    # DuPont ROE attribution: first-order decomposition of year-on-year ROE change into three
+    # sources — margin improvement, asset-efficiency improvement, and leverage expansion.
+    # ROE = NPM × Asset_Turnover × Financial_Leverage (where Lev = Total_Assets / Net_Worth).
+    # roe_leverage_driven = 1 when leverage is the dominant positive contributor to ROE change:
+    # a rising ROE driven by debt expansion is a value trap, not a quality improvement.
+    _dup_nan  = pd.Series(np.nan, index=df.index)
+    _npm0     = _safe_numeric(df.get("npm",              _dup_nan)) / 100.0
+    _npm1     = _safe_numeric(df.get("npm_1yb",          _dup_nan)) / 100.0
+    _at0      = _safe_numeric(df.get("asset_turnover",   _dup_nan))
+    _at1      = _safe_numeric(df.get("asset_turnover_1yb", _dup_nan))
+    _ta0      = _safe_numeric(df.get("total_assets",     _dup_nan))
+    _ta1      = _safe_numeric(df.get("total_assets_1yb", _dup_nan))
+    _nw0      = _safe_numeric(df.get("net_worth",        _dup_nan)).clip(lower=1.0)
+    _nw1      = _safe_numeric(df.get("net_worth_1yb",    _dup_nan)).clip(lower=1.0)
+    _lev0     = np.where(_ta0.notna() & (_nw0 > 0), _ta0 / _nw0, np.nan)
+    _lev1     = np.where(_ta1.notna() & (_nw1 > 0), _ta1 / _nw1, np.nan)
+    _lev0_s   = pd.Series(_lev0, index=df.index)
+    _lev1_s   = pd.Series(_lev1, index=df.index)
+    _mc = ((_npm0 - _npm1) * _at1 * _lev1_s) * 100.0           # margin contrib (% ROE pts)
+    _tc = (_npm1 * (_at0 - _at1) * _lev1_s) * 100.0            # turnover contrib
+    _lc = (_npm1 * _at1 * (_lev0_s - _lev1_s)) * 100.0         # leverage contrib
+    df["roe_margin_contrib"]   = _mc
+    df["roe_turnover_contrib"] = _tc
+    df["roe_leverage_contrib"] = _lc
+    df["roe_leverage_driven"]  = (
+        (_lc > 0) & (_lc.abs() > _mc.abs()) & (_lc.abs() > _tc.abs())
+    ).astype(int)
 
     # Expectations gap (Mauboussin): growth the market PRICES IN minus growth the business can
     # SUSTAIN.  g_implied inverts the P/B–Gordon identity; g_star is the lower of the two organic
