@@ -1157,9 +1157,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # in the base. Distinct from can_slim_vcp (5D < 20D). Missing vol data → 0 (no dryup).
     _v10d_vcp = df.get("vol_sma_10d", pd.Series(np.nan, index=df.index))
     _v50d_vcp = df.get("vol_sma_50d", pd.Series(np.nan, index=df.index))
+    # Materiality factor 0.70 (recalibrated 2026-06-12 Minervini audit): the plain
+    # 10D < 50D comparison is true ~half the time for any stock (fired for 61% of the
+    # universe — a coin flip, not a signal). The book demands volume that "dries up
+    # DRAMATICALLY, accompanied by tightness in price" (Trade Like a Stock Market
+    # Wizard; also "dries up considerably"). 10D below 70% of 50D = a genuine 30%+
+    # contraction — supply actually exhausted in the base, not daily noise.
     df["vcp_volume_dryup"] = np.where(
         _v10d_vcp.notna() & _v50d_vcp.notna() & (_v50d_vcp > 0),
-        (_v10d_vcp < _v50d_vcp).astype(int),
+        (_v10d_vcp < _v50d_vcp * 0.70).astype(int),
         0
     )
     df["daily_value"] = _vol * _close_t  # in raw ₹

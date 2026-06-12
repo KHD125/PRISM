@@ -1268,6 +1268,12 @@ def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
     # signal and STILL requires full technical confirmation including above_sma200.
     # (A stock in a correction with great fundamentals can score well — but to be
     # called a TSUNAMI setup, everything must align: gates + quality + technicals.)
+    # Quality bar 65 (recalibrated 2026-06-12): the original 70 was set before the
+    # GRUESOME ×0.50 haircut and trap penalties compressed quality scores (live
+    # median ~31). On real data the 7 technical/governance conditions leave ~12
+    # candidates and quality ≥ 70 killed ALL of them — the signal was DEAD (0 of
+    # 2107, permanently). At 65 (still ~top 15% of post-penalty quality) Tsunami
+    # fires for ~2 stocks: rarest-signal design intent, alive.
     tsunami_conditions = (
         (df["gate_pass"] == 1) &
         (df.get("above_sma200", pd.Series(0, index=df.index)) == 1) &
@@ -1275,7 +1281,7 @@ def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
         (df["vstop_fresh"] == 1) &
         (df["promoter_buying"] == 1) &
         (df.get("change_fii_lq", pd.Series(0, index=df.index)) > 0) &
-        (df["quality_score"] >= 70) &
+        (df["quality_score"] >= 65) &
         (df.get("crs_aligned", pd.Series(0, index=df.index)) == 1)
     )
 
