@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import html as _html
-from config import COLORS, CONVICTION_TIERS, TIER_COLORS
+from config import COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS
 
 
 # ─── Display Utilities ──────────────────────────────────────────────────────
@@ -1548,6 +1548,9 @@ def render_raw_signals(stock: pd.Series):
     # Valuation
     _section("💰 Valuation", COLORS["gold"],
         _cell("PE",            g("pe"),              "{:.1f}×") +
+        _cell("Fair PE (QGLP)",g("fair_pe_qglp"),    "{:.1f}×") +
+        _cell("Industry PE",   g("industry_pe"),     "{:.1f}×") +
+        _cell("P/B",           g("price_to_book"),   "{:.2f}×") +
         _cell("PEG",           g("peg"),             "{:.2f}") +
         _cell("PEG Zone",      stock.get("peg_zone","") or "", "") +
         _cell("Earnings Yield",g("earnings_yield"),  "{:.1f}%") +
@@ -1559,14 +1562,17 @@ def render_raw_signals(stock: pd.Series):
         _cell("Buy Zone",      stock.get("buy_zone_label","") or "", "")
     )
 
-    # Ownership
+    # Ownership — 3Y promoter change shown because the governance engine itself
+    # gates on it (accumulation > +3 / exit < −5): the user must see what the shield sees.
     _section("👥 Ownership & Governance", COLORS["orange"],
         _cell("Promoter %",    g("promoter_holdings"),    "{:.1f}%") +
         _cell("Pledge %",      g("pledged_percentage"),   "{:.1f}%") +
         _cell("FII %",         g("fii_holdings"),         "{:.1f}%") +
         _cell("DII %",         g("dii_holdings"),         "{:.1f}%") +
         _cell("Promoter Chg", g("change_promoter_lq"),   "{:+.1f}%") +
+        _cell("Promoter 3Y Δ", g("change_promoter_3y"),   "{:+.1f}%") +
         _cell("FII Chg",       g("change_fii_lq"),        "{:+.1f}%") +
+        _cell("DII Chg",       g("change_dii_lq"),        "{:+.1f}%") +
         _cell("Smart Money",   stock.get("smart_money_flow","") or "","") +
         _cell("Gov Bonus",     g("governance_bonus"),     "{:.0f}") +
         _cell("Mgmt Integrity",g("management_integrity_score"),"{:.0f}/3") +
@@ -1589,7 +1595,7 @@ def render_raw_signals(stock: pd.Series):
 
     # Forensic flags summary
     _section("🔬 Forensic Summary", COLORS["red"],
-        _cell("Red Flags",     g("red_flag_count"),      "{:.0f}/25") +
+        _cell("Red Flags",     g("red_flag_count"),      f"{{:.0f}}/{FORENSIC_MAX_FLAGS}") +
         _cell("Forensic Scr",  g("forensic_score"),      "{:.0f}/100") +
         _cell("Forensic Mult", g("forensic_multiplier"), "{:.0%}") +
         _cell("Piotroski",     g("piotroski_fscore"),    "{:.0f}/9") +
