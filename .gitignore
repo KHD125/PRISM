@@ -5,9 +5,14 @@
 Other Resources/
 Stockscan-main (old version) (v1)/
 Stockscan-main(old version) (v2)/
-docs/complete_book_parsed.txt
-docs/schilit_full_text.txt
-docs/unusual_billionaires_master_compiled.txt
+docs/
+
+# Local-only project files (repo contains ONLY: app.py, config.py, requirements.txt,
+# .gitignore, .devcontainer/, core/, ui/, tests/)
+CLAUDE.md
+parse_book.py
+compile_ub_codex.py
+run_schilit_analysis.py
 
 # Personal working notes
 *.txt
