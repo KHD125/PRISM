@@ -358,7 +358,8 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
     print("📂 Loading CSV data...")
     datasets = {}
     
-    from config import DEFAULT_GIDS
+    from urllib.parse import quote
+    from config import SHEET_TAB_NAMES
 
     sheet_configs = {
         "ratio":        (RATIO_COLS,),
@@ -378,12 +379,13 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
     elif data_source == "sheet" and sheet_id:
         parsed_id = extract_spreadsheet_id(sheet_id)
         for name, (cols,) in sheet_configs.items():
-            gid = DEFAULT_GIDS.get(name, "0")
-            csv_url = f"https://docs.google.com/spreadsheets/d/{parsed_id}/export?format=csv&gid={gid}"
+            tab_name = SHEET_TAB_NAMES[name]          # exact tab name e.g. "Income Statement"
+            encoded  = quote(tab_name, safe="")        # "Income%20Statement"
+            csv_url  = f"https://docs.google.com/spreadsheets/d/{parsed_id}/export?format=csv&sheet={encoded}"
             try:
                 datasets[name] = _load_single_csv(csv_url, cols, name)
             except Exception as e:
-                raise Exception(f"Failed to load {name} from Google Sheets: {e}")
+                raise Exception(f"Failed to load '{tab_name}' tab from Google Sheets: {e}")
     else:
         for name, (cols,) in sheet_configs.items():
             path = CSV_FILES[name]
