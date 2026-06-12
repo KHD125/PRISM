@@ -145,3 +145,42 @@ def test_missing_reserves_conservative_zero():
     assert (out["hidden_obligation_growth"] == 0).all(), (
         "Missing reserves data -> cannot compute other-liabilities -> conservative 0"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Ind AS 116 / Debt Restatement Guard (plan item D4 — implemented, was untested)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_debt_restatement_spike_flagged_and_slope_neutralised():
+    """D/E spikes >2.5x after a stable year (lease capitalization pattern):
+    flag fires AND de_slope_3y is neutralised to NaN (trend data unreliable)."""
+    out = compute_derived_signals(_frame(
+        debt_to_equity=1.5, debt_to_equity_1yb=0.5,
+        debt_to_equity_2yb=0.5, debt_to_equity_3yb=0.5,
+    ))
+    assert (out["debt_restatement_suspected"] == 1).all()
+    assert out["de_slope_3y"].isna().all(), (
+        "de_slope_3y must be NaN when the spike is a suspected restatement"
+    )
+
+
+def test_debt_restatement_genuine_leveraging_not_flagged():
+    """Gradual debt build-up (already rising in prior year) is GENUINE leveraging —
+    not a restatement; the slope must survive."""
+    out = compute_derived_signals(_frame(
+        debt_to_equity=1.5, debt_to_equity_1yb=1.0,
+        debt_to_equity_2yb=0.5, debt_to_equity_3yb=0.3,
+    ))
+    assert (out["debt_restatement_suspected"] == 0).all()
+    assert not out["de_slope_3y"].isna().any()
+
+
+def test_debt_restatement_deleveraging_not_flagged():
+    """G5 inversion regression: a company AGGRESSIVELY PAYING DOWN debt (D/E dropping)
+    must never be flagged — the original bug caught drops instead of spikes."""
+    out = compute_derived_signals(_frame(
+        debt_to_equity=0.2, debt_to_equity_1yb=0.8,
+        debt_to_equity_2yb=0.9, debt_to_equity_3yb=1.0,
+    ))
+    assert (out["debt_restatement_suspected"] == 0).all()
+    assert not out["de_slope_3y"].isna().any()
