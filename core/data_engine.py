@@ -2408,15 +2408,19 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Screen 4: "Average RoE ≥ 15% for last 12 years" — proxy = roe_med_10y ≥ 15%.
     # Screen 3: "Earnings growth in 7/12 years" — proxy = consistency_champion (no PAT crash).
     # Screen 1/2: "Dividend longevity + growth" — proxy = dividend_payout_ratio ≥ 20%.
-    # Screen 5: "≥ 5 million shares outstanding" — proxy = equity_shares ≥ 5 (in millions).
+    # Screen 5: "≥ 5 million shares outstanding" — equity_shares holds ABSOLUTE share count
+    #           (universe median ~51M), so the Weiss threshold is 5_000_000 shares.
     # From 3,000+ stocks, only 48 (1.5%) passed all 6 screens. This is appropriately rare.
+    # KNOWN DATA GAP (2026-06-12 census): the CSV "Dividend Payout Ratio" column is broken at
+    # source (96% empty; the rest negative) → the dpr leg cannot pass → flag fires 0 until the
+    # sheet formula is fixed. Logic is correct and self-revives when real DPR data arrives.
     _dpr_bc    = df.get("dividend_payout_ratio", pd.Series(np.nan, index=df.index))
     _eq_shares = df.get("equity_shares",         pd.Series(np.nan, index=df.index))
     df["blue_chip_quality_flag"] = (
         (_dpr_bc.fillna(0)          >= 20) &      # Screen 1/2: consistent dividend payout
         (df["roe_med_10y"].fillna(0) >= 15) &      # Screen 4: 10yr ROE ≥ 15% (India CoE threshold)
         (df["consistency_champion"]  == 1) &       # Screen 3: PAT no-crash consistency proxy
-        (_eq_shares.fillna(0)        >= 5)         # Screen 5: ≥ 5M shares liquidity proxy
+        (_eq_shares.fillna(0)        >= 5_000_000) # Screen 5: ≥ 5M shares (absolute count)
     ).astype(int)
 
     # Synthetic dividend yield estimate (DPR × Earnings Yield)
@@ -2641,6 +2645,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # RR = 1 − (DPR/100). High RR = self-funding compounder; low RR = defensive income asset.
     # DPR fillna(0): no dividend data → full retention (conservative for growth companies).
     # clip(0,1): guards against DPR > 100 (data artefacts in some screeners).
+    # KNOWN DATA GAP (2026-06-12 census): the CSV DPR column is broken at source (96% empty,
+    # rest negative) → RR ≡ 1.0 universe-wide, which deadens every RR-gated signal downstream
+    # (stagnant_cash_cow_flag, capital_misallocation_risk RR leg). Self-heals when DPR is fixed.
     df["reinvestment_rate"] = (
         1.0 - (df["dividend_payout_ratio"].fillna(0) / 100.0)
     ).clip(0.0, 1.0)

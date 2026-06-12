@@ -10,6 +10,7 @@ docs/
 # Local-only project files (repo contains ONLY: app.py, config.py, requirements.txt,
 # .gitignore, .devcontainer/, core/, ui/, tests/)
 CLAUDE.md
+tools/
 parse_book.py
 compile_ub_codex.py
 run_schilit_analysis.py

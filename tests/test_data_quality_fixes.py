@@ -184,3 +184,45 @@ def test_debt_restatement_deleveraging_not_flagged():
     ))
     assert (out["debt_restatement_suspected"] == 0).all()
     assert not out["de_slope_3y"].isna().any()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FIX 12 — Blue Chip Quality (Study 16): equity_shares unit contract
+# Census 2026-06-12: the flag fired 0/2107. Root causes: (a) source CSV's
+# Dividend Payout Ratio column broken (96% empty, rest negative) — DATA GAP,
+# self-heals when the sheet formula is fixed; (b) the Weiss "≥ 5 million shares"
+# screen was coded as `>= 5` against an ABSOLUTE share-count column (median
+# ~51M) — vacuously true for every stock. These tests lock the corrected
+# 5_000_000 absolute threshold and the dpr leg's missing-data behavior.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_BLUE_CHIP_LEGS = dict(
+    dividend_payout_ratio=30.0,           # Screen 1/2 lit (real data, once sheet fixed)
+    roe_med_10y=20.0,                     # Screen 4 lit
+    # consistency_champion inputs: smooth rising PAT, positive long CAGR
+    pat=75.0, pat_1yb=70.0, pat_2yb=65.0, pat_3yb=60.0, pat_4yb=55.0, pat_5yb=50.0,
+    pat_gr_5y=8.0,
+)
+
+
+def test_blue_chip_fires_with_all_legs_and_5m_shares():
+    """All four screens lit + 6M absolute shares -> flag must fire."""
+    out = compute_derived_signals(_frame(equity_shares=6_000_000.0, **_BLUE_CHIP_LEGS))
+    assert (out["blue_chip_quality_flag"] == 1).all()
+
+
+def test_blue_chip_share_count_is_absolute_not_millions():
+    """1M absolute shares is below Weiss's 5M floor -> must NOT fire.
+    Regression: the old `>= 5` threshold (written for a millions-unit column)
+    passed every stock in the universe, making the screen vacuous."""
+    out = compute_derived_signals(_frame(equity_shares=1_000_000.0, **_BLUE_CHIP_LEGS))
+    assert (out["blue_chip_quality_flag"] == 0).all()
+
+
+def test_blue_chip_missing_dpr_never_passes():
+    """Missing dividend data -> dpr leg fails closed (fillna(0) < 20).
+    Documents the live-data state: with the CSV DPR column broken, the flag
+    is correctly 0 rather than firing on garbage."""
+    legs = {k: v for k, v in _BLUE_CHIP_LEGS.items() if k != "dividend_payout_ratio"}
+    out = compute_derived_signals(_frame(equity_shares=6_000_000.0, **legs))
+    assert (out["blue_chip_quality_flag"] == 0).all()
