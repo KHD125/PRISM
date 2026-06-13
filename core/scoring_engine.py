@@ -3113,16 +3113,21 @@ def run_full_scoring(
     #   GRUESOME = 10yr-avg Adjusted RoE < 10%;   GOOD = neither.
     #   (Adjusted RoE = PAT less 7% of cash, over Net Worth less excess cash — p.31.)
     # data_engine's great_company_screen / gruesome_flag follow this faithfully (ROE 25/10).
-    # corporate_class below DELIBERATELY DEVIATES for the scoring haircut: it uses ROCE not RoE (ROCE
-    # is leverage-immune — consistent with the book's "low capital intensity, very high RoE" Great
-    # profile, p.28), adds an asset-light FCF-velocity gate (the book's qualitative Great trait), and a
-    # CURRENT-ROCE floor so an eroded moat (Crompton: 10Y med 21% but current ROCE -1.2%) is demoted
-    # from GREAT, not boosted. Thresholds 20/12 are a calibration of the book's 25/10 onto the full
-    # 2107-stock universe (the book screened only its top-100 wealth creators). NOTE: the prior comment
-    # cited "p.935" — fabricated (the study is 48 pp; the framework is p.31). [Flagged for calibration review.]
+    # corporate_class below uses ROCE not RoE (ROCE is leverage-immune — consistent with the book's
+    # "low capital intensity, very high RoE" Great profile, p.28) + an asset-light FCF-velocity gate
+    # (the book's qualitative Great trait) + a CURRENT-ROCE floor so an eroded moat (Crompton: 10Y med
+    # 21% but current ROCE -1.2%) is demoted from GREAT, not boosted.
+    # THRESHOLDS (book-aligned 2026-06-13, was 20/12; prior comment's "p.935" cite was fabricated — the
+    # 48-pg study's framework is Annexure 2 p.31):
+    #   GREAT roce_med_10y >= 25  — the book sets GREAT at avg RoE > 25% and explicitly puts the 15-25%
+    #     band in GOOD (p.29). The old >=20 mislabeled 63 GOOD-band businesses (median ROCE 22%) as GREAT;
+    #     25 matches the book AND the sibling great_company_screen, reserving the +10% boost for the elite.
+    #   GRUESOME roce_med_10y < 12  — KEPT at 12 (NOT the book's RoE<10). 12 = COST_OF_EQUITY, so ROCE<12
+    #     = earning below cost of capital = destroying economic value (coherent with economic_profit).
+    #     This is a deliberate, justified deviation: the book's <10 is for RoE; <12 is correct for ROCE.
     df["corporate_class"] = np.select(
         [
-            (df["roce_med_10y"].fillna(0) >= 20.0) &
+            (df["roce_med_10y"].fillna(0) >= 25.0) &           # 13th WCS Annexure 2: GREAT = avg RoE > 25%
             (df["fcf_to_ocf_velocity"].fillna(0) >= 0.60) &
             (df["roce"].fillna(0) >= 15.0),                    # 13th WCS: still high NOW (not eroding)
             (df["roce_med_10y"].fillna(0) >= 12.0) &
