@@ -767,7 +767,7 @@ def render_guru_frameworks(stock: pd.Series):
         "Quality Momentum":        (COLORS["green"],  "🚀", "High quality fundamentals + price momentum confluence"),
         "Lynch Dream":             (COLORS["green"],  "👓", "PEG ≤1.0 + Rev outpacing costs — Peter Lynch"),
         "EP Improver":             (COLORS["green"],  "📈", "Economic Profit expanding — moving up Power Curve"),
-        "SMILE":                   (COLORS["green"],  "😊", "Small cap + Moat + Institutional + Longevity + Earnings"),
+        "SMILE":                   (COLORS["green"],  "😊", "Vijay Kedia: Small + Integrity + Large aspiration + Extra-large potential"),
         # ── 🛡️ Valuation, Capital Allocation & System Defense Shields ──
         "Magic Formula":           (COLORS["gold"],   "🧮", "High ROCE + High Earnings Yield — Joel Greenblatt"),
         "Dhandho Asymmetry":       (COLORS["gold"],   "🎲", "Pabrai: Heads I win, tails I don't lose much"),

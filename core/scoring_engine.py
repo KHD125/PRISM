@@ -1550,10 +1550,30 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (mcap_mf >= 500)                        # Greenblatt size floor (~$60M, system standard)
     )
 
-    # 4. SMILE (Maheshwari) — Small/mid cap + high growth + ROCE
-    mcap_sm  = df.get("market_cap", pd.Series(np.nan, index=df.index)).fillna(0)
-    pat_gr_sm = df.get("pat_gr_5y", pd.Series(np.nan, index=df.index)).fillna(0)
-    fw_smile = (mcap_sm < 15000) & (pat_gr_sm >= 20) & (roce_mf >= 20)
+    # 4. SMILE (Vijay Kedia — the "SMILE" multibagger principle)
+    # PROVENANCE (web-researched 2026-06-13; Kedia wrote no book — sourced from his own X post
+    # @VijayKedia1 + Value Research / Trendlyne profiles): "S-mall in size, M-edium in experience,
+    # I-ntegrity (honest management), L-arge in aspiration, E-xtra-large market potential." The
+    # framework is QUALITATIVE — Kedia states NO numeric thresholds (he stresses market share over
+    # absolute size). Every number below is an ENGINEERING PROXY, not a Kedia quote.
+    # CORRECTION 2026-06-13: was mislabeled "(Maheshwari)" and gated mcap < 15000 (mid-cap) —
+    # both wrong. SMILE is Kedia's; his "small" = institutionally-ignored small-caps, not mid-caps.
+    # Letter mapping (4 of 5 implementable; M-edium experience needs a listing-age column not in CSV):
+    #   S (Small)      → market_cap ≤ 2000 Cr (small-cap band; floor 100 excludes illiquid micro-caps)
+    #   I (Integrity)  → management_integrity_score ≥ 2 (Kedia's non-negotiable "honest management";
+    #                    ≥2 of {clean forensics, pledge<5%, promoter≥50%}) — UNIQUE: only small-cap
+    #                    framework gating on the forensic integrity score.
+    #   L (Large aspiration) → pat_gr_5y ≥ 20% (the growth ambition / "fire in the belly")
+    #   E (Extra-large potential / efficiency) → roce ≥ 20% (capital efficiency in a scalable space)
+    mcap_sm   = df.get("market_cap", pd.Series(np.nan, index=df.index)).fillna(0)
+    pat_gr_sm = df.get("pat_gr_5y",  pd.Series(np.nan, index=df.index)).fillna(0)
+    integ_sm  = df.get("management_integrity_score", pd.Series(0, index=df.index)).fillna(0)
+    fw_smile = (
+        (mcap_sm >= 100) & (mcap_sm <= 2000) &   # S: Kedia small-cap band
+        (pat_gr_sm >= 20) &                       # L: large aspiration (growth)
+        (roce_mf  >= 20) &                        # E: efficiency / quality
+        (integ_sm >= 2)                           # I: honest management (forensic integrity)
+    )
 
     # 5. Lynch Fast Grower v1.1 — One Up on Wall Street (Ch7+Ch10+Ch13+Ch15) + India Calibration
     # v1.1 book-grounded improvements over v1.0:
