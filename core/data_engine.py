@@ -72,6 +72,7 @@ RATIO_COLS = {
     "PEG":                               "peg",
     "EV To EBITDA":                      "ev_ebitda",
     "EV To EBITDA 1 Year Back":          "ev_ebitda_1yb",
+    "Enterprise Value":                  "enterprise_value",   # direct EV (added 2026-06-13) — Magic Formula EBIT/EV
     "Price To Earnings Median 10 Years": "pe_med_10y",
     "Price To Earnings Median 5 Years":  "pe_med_5y",
     "Price To Earnings":                 "pe",
@@ -1678,10 +1679,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # BOOK-EXACT (The Little Book That Still Beats the Market, appendix): the Magic Formula's
     # earnings yield is EBIT/EV, NOT net-income/price (= 100/PE = the `earnings_yield` above).
     # Greenblatt insists on EBIT/EV precisely to neutralize the capital-structure and tax-rate
-    # differences that distort net-income/price. EV reconstructed as ev_ebitda × ebitda (both
-    # mapped, ~99.8% coverage). Separate column so the shared earnings_yield (Parikh, valuation
-    # scoring) is untouched; only fw_magic_formula consumes this one.
-    _mf_ev = df["ev_ebitda"] * df["ebitda"]
+    # differences that distort net-income/price.
+    # EV SOURCE (2026-06-13): use the DIRECT `enterprise_value` column (real Stockscan figure,
+    # 2106/2107 coverage) — replaces the prior `ev_ebitda × ebitda` reconstruction (proxy). The
+    # reconstruction is kept ONLY as a per-row fallback where the direct EV is missing/non-positive.
+    # Separate column so the shared earnings_yield (Parikh, valuation scoring) is untouched.
+    _mf_ev_direct = df.get("enterprise_value", pd.Series(np.nan, index=df.index))
+    _mf_ev_recon  = df["ev_ebitda"] * df["ebitda"]
+    _mf_ev = np.where(_mf_ev_direct > 0.0, _mf_ev_direct, _mf_ev_recon)
     df["magic_formula_earnings_yield"] = np.where(
         _mf_ev > 0.0,
         df["ebit"] / _mf_ev * 100.0,
