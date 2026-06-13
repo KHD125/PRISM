@@ -1837,6 +1837,22 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         _ta1_ag > 0, (_ta_ag - _ta1_ag) / _ta1_ag * 100.0, np.nan
     )
 
+    # ── Sector capital cycle (Chancellor: asset growth matters at the SECTORAL level too) ──
+    # Capital flooding INTO a sector (high sector-median asset growth) pressures future returns
+    # for ALL its constituents; capital-STARVED sectors (low/negative growth) set up recovery.
+    # This is the capital cycle's distinctive sectoral signal — orthogonal to firm-level rf_snoa.
+    # Guarded by sector size >= 5 (median unstable below that → Neutral). Thresholds are engineering
+    # proxies (Chancellor states no numeric gate). Live: Power Infra +147%, Ship Building +58% =
+    # hot capital; Sugar/Cement-Products/Entertainment ~0% = capital starved.
+    _sec_size = df.groupby("sector")["sector"].transform("size")
+    _sec_ag   = df.groupby("sector")["asset_growth_yoy"].transform("median")
+    df["sector_asset_growth"] = np.where(_sec_size >= 5, _sec_ag, np.nan)
+    df["sector_capital_phase"] = np.select(
+        [df["sector_asset_growth"] > 30.0, df["sector_asset_growth"] < 5.0],
+        ["🔥 Hot Capital (caution)", "❄️ Capital Starved (opportunity)"],
+        default="⚖️ Neutral",
+    )
+
     # ── D24: OCF/PAT Delta (CFO/PAT − 100) ──
     # D24 ≥ 0: OCF ≥ PAT = earnings are cash-backed (Clean Accounts signal)
     df["d24_ocf_pat_delta"] = df["cfo_to_pat"].fillna(np.nan) - 100.0
