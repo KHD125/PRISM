@@ -2538,12 +2538,24 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     df["sepa_pass"] = fw_sepa.astype(int)
 
     # ── Framework 22: fw_basant — Basant 30% Club (Basant Maheshwari, "The Thoughtful Investor") ──
-    # Maheshwari's "30% Club" thesis: companies sustaining 30% EPS CAGR re-rate massively as
-    # the market prices in sustained growth. Three signals unique in the system:
-    #   1. eps_gr_5y >= 30: no framework requires 30% EPS CAGR (SMILE=20%, Lynch=20% YoY only)
-    #   2. promoter_holdings >= 55: strictest promoter threshold (100-Bagger=50%, Lynch=45%)
-    #   3. market_cap <= 5000: max-cap sweet spot — Basant's "reasonable size" for multibaggers
-    # Sources: Chapter 3 (30% Club criteria), Chapter 5 (3P Framework), Chapter 7 (Screener filters).
+    # Book-verified 2026-06-13 (439-pg image scan read via PyMuPDF→vision). Maheshwari's ACTUAL book:
+    #   • Secular growth bar is "companies that can promise 20% or more growth year on year" (Ch 38,
+    #     "Analysing Secular Growth Stocks") — BOOK-EXACT is 20%. The 30% EPS-CAGR gate below is a
+    #     DELIBERATE high-conviction tightening (the popular "30% Club" branding, NOT a book chapter)
+    #     that keeps this framework ORTHOGONAL — it is the system's only 30%-growth screen (SMILE/Lynch=20%).
+    #   • Small/mid-cap hunting ground: Ch 28 "Multibaggers from Small and Midcap Stocks" → mcap<=5000 Cr.
+    #   • Operating leverage + RoE quality (Ch 22, Ch 16); cash-earnings quality / fictitious-cash
+    #     suspicion (Ch 34, the Satyam example) → cfo_to_pat gate; sell-on-deceleration (Ch 30) →
+    #     the eps_gr_yoy "no-stumble" current-year check.
+    # CALIBRATION, not book numbers: Maheshwari is explicitly qualitative and disavows screeners — the
+    #   book gives NO promoter %, NO D/E cap, NO ROCE/CFO-PAT/PEG thresholds. The 55% promoter, 0.5 D/E,
+    #   20% ROCE, 75% CFO-PAT and 1.5 PEG are the SYSTEM's quality calibration applied to his style;
+    #   they must NOT be presented as Maheshwari's stated rules.
+    # PROVENANCE FIX 2026-06-13: prior comment cited "Ch 3 30% Club criteria / Ch 5 3P Framework /
+    #   Ch 7 Screener filters" — ALL FABRICATED (real Ch 3=Asset Classes, Ch 5=Risk vs Return,
+    #   Ch 7=Macro Numbers; no "3P Framework" or screener chapter exists; book disavows screeners).
+    #   7th codex fabrication carrier. Logic UNCHANGED. Live: 5 passers (0.2%, rare-by-design like
+    #   Dhandho/CAN SLIM) — Sharda Motor, Cantabil Retail, Nitta Gelatin, Quess Corp.
     _bs_nan      = pd.Series(np.nan, index=df.index)
     eps_5y_bs    = df.get("eps_gr_5y",           _bs_nan)   # UNIQUE: 30% EPS CAGR — highest bar in system
     eps_yoy_bs   = df.get("eps_gr_yoy",          _bs_nan)   # No-stumble proxy: current year still ≥ 20%
