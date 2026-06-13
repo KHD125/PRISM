@@ -3107,13 +3107,19 @@ def run_full_scoring(
     # ── Layer 2: Quality Score ──
     df = compute_quality_score(df)
 
-    # ── Epoch 3: Great/Good/Gruesome Taxonomy (13th WCS, vectorized, zero apply) ──
-    # Study (13th WCS p.935): GREAT = "Very high AND RISING RoE"; GRUESOME = "Low / falling RoE".
-    # The "rising / still-high-now" dimension matters: a company with a stellar 10Y median but whose
-    # CURRENT return has collapsed has an ERODING moat — the study would NOT call it Great. So GREAT
-    # adds a current-ROCE floor (>=15%, still genuinely high today) on top of the 10Y-median + asset-
-    # light tests. Without it, a name like Crompton (10Y med 21% but current ROCE -1.2%) wrongly got
-    # tagged GREAT and handed a +10% boost. Demoting such eroded moats to GOOD is faithful to the study.
+    # ── Epoch 3: Great/Good/Gruesome Taxonomy (13th WCS 2003-08, Annexure 2 p.31) ──
+    # Book-verified 2026-06-13. The study's EXACT mathematical screen (Annexure 2, p.31):
+    #   GREAT    = 10yr-avg Adjusted RoE > 25% AND RoE >= 15% in EVERY one of the 10 years AND rising;
+    #   GRUESOME = 10yr-avg Adjusted RoE < 10%;   GOOD = neither.
+    #   (Adjusted RoE = PAT less 7% of cash, over Net Worth less excess cash — p.31.)
+    # data_engine's great_company_screen / gruesome_flag follow this faithfully (ROE 25/10).
+    # corporate_class below DELIBERATELY DEVIATES for the scoring haircut: it uses ROCE not RoE (ROCE
+    # is leverage-immune — consistent with the book's "low capital intensity, very high RoE" Great
+    # profile, p.28), adds an asset-light FCF-velocity gate (the book's qualitative Great trait), and a
+    # CURRENT-ROCE floor so an eroded moat (Crompton: 10Y med 21% but current ROCE -1.2%) is demoted
+    # from GREAT, not boosted. Thresholds 20/12 are a calibration of the book's 25/10 onto the full
+    # 2107-stock universe (the book screened only its top-100 wealth creators). NOTE: the prior comment
+    # cited "p.935" — fabricated (the study is 48 pp; the framework is p.31). [Flagged for calibration review.]
     df["corporate_class"] = np.select(
         [
             (df["roce_med_10y"].fillna(0) >= 20.0) &
