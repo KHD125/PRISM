@@ -2574,8 +2574,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── Study 14 (2009): Winner Category — the sector-tailwind layer (the missing half) ──
-    # VERBATIM (14th WCS p.933): "Winner Categories are those expected to grow @ 18%+ i.e. at least
-    # 1.5x faster than ~12% nominal GDP." category_winner_flag above is the LEADER half (Category
+    # VERBATIM (14th WCS p.22): "Winner Categories are those which are expected to grow annually @ 18%+
+    # i.e. at least 1.5x faster than our nominal GDP growth rate assumption of ~12%." (Book-verified
+    # 2026-06-13: quote accurate; prior "p.933" cite was fabricated — the 48-pg study's def is p.22.)
+    # category_winner_flag above is the LEADER half (Category
     # Winner = leader within a sector); this is the SECTOR half (is the sector itself winning?).
     # Universe-median revenue growth proxies nominal GDP, so the regime-robust faithful form is:
     # sector-median 5Y revenue growth >= 1.5x universe-median growth. "Winning investment" (study's
