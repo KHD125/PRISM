@@ -1565,6 +1565,7 @@ def render_raw_signals(stock: pd.Series):
         _cell("P/E vs ROE MoS",g("pe_vs_roe_mos"),  "{:.1f}") +
         _cell("Valuation Scr", g("valuation_score"), "{:.0f}/100") +
         _cell("O'Shaughnessy VC", g("oshaughnessy_value_composite"), "{:.0f}/100") +  # 5-factor value composite
+        _cell("Trending Value", "Yes ✅" if g("trending_value_flag") == 1 else "No", "") +  # cheap + 6M momentum
         _cell("Buy Zone",      stock.get("buy_zone_label","") or "", "")
     )
 

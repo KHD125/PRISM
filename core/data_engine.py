@@ -1543,6 +1543,18 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         _vc_osh.notna().sum(axis=1) >= 3, _vc_osh.mean(axis=1) * 100.0, np.nan
     )
 
+    # ── Trending Value — O'Shaughnessy's FLAGSHIP strategy (his single best) ──
+    # "Buy the best 6-month-momentum stocks from the upper 10% of the value composite — earns
+    # 20%+/year since 1963 with LOWER risk than the universe." Combines deep value with momentum
+    # confirmation: the cheap stock must ALSO be outperforming (avoids value traps — cheap stocks
+    # that keep falling). value_composite top decile (>=90) AND positive 6-month relative strength
+    # (crs_26w > 0, CRS vs Nifty 500 over 26 weeks ≈ 6 months). No existing framework pairs the
+    # multi-ratio value composite with momentum — this is the orthogonal O'Shaughnessy combination.
+    _tv_crs = df.get("crs_26w", pd.Series(np.nan, index=df.index))
+    df["trending_value_flag"] = (
+        (df["oshaughnessy_value_composite"] >= 90.0) & (_tv_crs > 0.0)
+    ).astype(int)
+
     # ── High Cash + High Debt Flag (Malik Shenanigan 4) ──
     df["high_cash_high_debt"] = (
         (df["cash_equivalents"].fillna(0) > 0) &

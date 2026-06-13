@@ -66,3 +66,32 @@ def test_requires_min_three_factors():
     ))
     # rows 1,2 have 0 valid factors -> NaN
     assert out["oshaughnessy_value_composite"].iloc[1] != out["oshaughnessy_value_composite"].iloc[1]  # NaN
+
+
+# ── Trending Value (O'Shaughnessy flagship: value composite top decile + 6-month momentum) ──
+
+def _trending_frame(crs_cheap):
+    """20 stocks; stock 0 is clearly cheapest (top value composite). crs_cheap = its crs_26w."""
+    n = 20
+    pe = [3.0] + [40.0] * (n - 1)              # stock 0 far cheaper than the rest
+    pb = [0.4] + [8.0] * (n - 1)
+    ps = [0.2] + [6.0] * (n - 1)
+    ev = [3.0] + [25.0] * (n - 1)
+    crs = [crs_cheap] + [0.0] * (n - 1)
+    return compute_derived_signals(_frame(
+        n=n, pe=pe, price_to_book=pb, ps_ratio=ps, ev_ebitda=ev,
+        market_cap=[1000.0] * n, operating_cash_flow=[300.0] + [40.0] * (n - 1),
+        revenue=[5000.0] + [200.0] * (n - 1), crs_26w=crs,
+    ))
+
+
+def test_trending_value_fires_cheap_and_rising():
+    """Cheapest stock (top value composite) WITH positive 6-month momentum -> Trending Value."""
+    out = _trending_frame(crs_cheap=15.0)
+    assert out["trending_value_flag"].iloc[0] == 1
+
+
+def test_trending_value_needs_momentum():
+    """Same cheap stock but NEGATIVE 6-month momentum -> NOT Trending Value (avoids value trap)."""
+    out = _trending_frame(crs_cheap=-15.0)
+    assert out["trending_value_flag"].iloc[0] == 0
