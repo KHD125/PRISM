@@ -1862,6 +1862,17 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         default="⚖️ Neutral",
     )
 
+    # ── Cash Return on Invested Capital (CFROIC) — Tortoriello Ch.6, a STRONGEST building block ──
+    # CFROIC = Free Cash Flow / Invested Capital, where Invested Capital = common equity + total debt
+    # (Tortoriello: "book value of common equity plus long-term debt plus preferred + minority").
+    # This is a CASH-based return — distinct from the system's EBIT-based economic_profit_spread /
+    # roce (corr ~0.34): it rewards businesses that convert capital into actual free cash, not just
+    # accounting EBIT. Recurs across Tortoriello's top two-factor Sharpe tables (Table 12.5).
+    _cfroic_ic = df["net_worth"].fillna(0) + df["debt"].fillna(0)
+    df["cfroic"] = np.where(
+        _cfroic_ic > 0, df["free_cash_flow"] / _cfroic_ic * 100.0, np.nan
+    )
+
     # ── Sector capital cycle (Chancellor: asset growth matters at the SECTORAL level too) ──
     # Capital flooding INTO a sector (high sector-median asset growth) pressures future returns
     # for ALL its constituents; capital-STARVED sectors (low/negative growth) set up recovery.

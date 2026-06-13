@@ -1544,6 +1544,7 @@ def render_raw_signals(stock: pd.Series):
         _cell("Current Ratio", g("current_ratio"),   "{:.2f}") +
         _cell("Tax Rate Est",  g("tax_rate_est"),    "{:.1f}%") +
         _cell("Asset Growth",  g("asset_growth_yoy"), "{:.1f}%") +  # Capital cycle: low = disciplined
+        _cell("CFROIC",        g("cfroic"),           "{:.1f}%") +  # Tortoriello: cash return on invested capital
         _cell("Ext Financing", g("external_financing_to_assets"), "{:.1f}%") +  # Tortoriello: neg = returning capital
         _cell("Capital Alloc", stock.get("capital_allocation_signal","") or "", "") +
         _cell("Sector Capital", stock.get("sector_capital_phase","") or "", "")  # Chancellor sectoral cycle

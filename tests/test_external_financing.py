@@ -54,3 +54,22 @@ def test_sign_convention_inflow_is_raising():
     _, sig_in = _ef(180.0)
     _, sig_out = _ef(-180.0)
     assert "Raising" in sig_in and "Returning" in sig_out
+
+
+# ── CFROIC (Tortoriello Ch.6 cash return on invested capital) ──
+
+def test_cfroic_formula():
+    """CFROIC = FCF / (equity + debt). reserves 500 -> net_worth 500, debt 200 -> IC 700.
+    FCF 70 -> 70/700 = 10%."""
+    out = compute_derived_signals(
+        _frame(free_cash_flow=70.0, reserves=500.0, debt=200.0, pb_ratio=np.nan)
+    )
+    assert np.isclose(out["cfroic"].iloc[0], 70.0 / 700.0 * 100.0)
+
+
+def test_cfroic_is_cash_based_not_ebit():
+    """CFROIC moves with FCF, independent of EBIT — a high-FCF firm scores high
+    regardless of accounting EBIT (the orthogonality to roce/economic_profit)."""
+    hi = compute_derived_signals(_frame(free_cash_flow=140.0, reserves=500.0, debt=200.0, pb_ratio=np.nan))
+    lo = compute_derived_signals(_frame(free_cash_flow=7.0,   reserves=500.0, debt=200.0, pb_ratio=np.nan))
+    assert hi["cfroic"].iloc[0] > lo["cfroic"].iloc[0]
