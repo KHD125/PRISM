@@ -1542,7 +1542,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("D/E Ratio",     g("debt_to_equity"),  "{:.2f}") +
         _cell("Int Coverage",  g("interest_coverage"),"{:.1f}×") +
         _cell("Current Ratio", g("current_ratio"),   "{:.2f}") +
-        _cell("Tax Rate Est",  g("tax_rate_est"),    "{:.1f}%")
+        _cell("Tax Rate Est",  g("tax_rate_est"),    "{:.1f}%") +
+        _cell("Asset Growth",  g("asset_growth_yoy"), "{:.1f}%")   # Capital cycle: low = disciplined
     )
 
     # Valuation

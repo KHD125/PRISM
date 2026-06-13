@@ -1822,6 +1822,21 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
 
+    # ── Total Asset Growth YoY (%) — Capital Returns (Chancellor) asset-growth anomaly ──
+    # Fama-French "investment" factor: firms with the LOWEST asset growth outperform those with
+    # the highest (asset expansion → low future returns, persisting ~5 years). The EXACT anomaly
+    # metric is TOTAL asset growth (distinct from d20 fixed-asset CAGR and from rf_snoa's asset
+    # LEVEL). Capital discipline = low/negative; aggressive capacity expansion = high.
+    # NOTE (audit 2026-06-13): rf_snoa (Quantitative Value) already operationalizes the scoring
+    # side of this anomaly — capital cycle is the economic STORY behind why asset-bloat predicts
+    # low returns. This column is the faithful continuous measure (capital-discipline visibility),
+    # deliberately NOT a second forensic flag (62% of high-AG already fires rf_snoa — redundant).
+    _ta_ag  = df["total_assets"]
+    _ta1_ag = df["total_assets_1yb"]
+    df["asset_growth_yoy"] = np.where(
+        _ta1_ag > 0, (_ta_ag - _ta1_ag) / _ta1_ag * 100.0, np.nan
+    )
+
     # ── D24: OCF/PAT Delta (CFO/PAT − 100) ──
     # D24 ≥ 0: OCF ≥ PAT = earnings are cash-backed (Clean Accounts signal)
     df["d24_ocf_pat_delta"] = df["cfo_to_pat"].fillna(np.nan) - 100.0
