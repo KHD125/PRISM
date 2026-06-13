@@ -2519,17 +2519,25 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #   1. rs_pctrank_qm >= 80 as PRIMARY gate: RS composite in top 20% of all 2108 stocks
     #      (CAN SLIM also uses rs_pctrank >= 80, but CAN SLIM requires EPS 25%+, quarterly
     #       growth, near-52WH, volume surge, ROE 17% — fundamentals-first. Here RS is the door.)
-    #   2. pledged_percentage <= 30: India QMOM operator-manipulation defense threshold
-    #      (all 22 prior frameworks use <= 10% or <= 20% for governance quality; 30% is the
-    #       specific momentum-strategy threshold per handbook Ch.7 — excludes operator-driven
-    #       discrete spikes that create false momentum signals)
-    # What CANNOT be implemented (missing data):
-    #   - 12-1 skip-month momentum (requires monthly price history not in CSV)
-    #   - FIP score (requires 11 months of monthly returns not in CSV)
-    #   - Regime filter (requires Nifty 500 index time-series not in stock CSV)
-    # Best available proxies used: crs_aligned (all-timeframe RS positive = smooth persistence),
-    #   d47_rs_composite percentile rank (top-decile proxy), d51_qmom_quality_score available.
-    # Sources: Chapters 2 (12-1 momentum), 3 (FIP), 4 (quality overlay), 7 (India operator filter).
+    #   2. pledged_percentage <= 30: ENGINEERING ADAPTATION (India), NOT from Gray's book.
+    #      Gray (US-focused) has no pledge concept; this defends against operator-driven discrete
+    #      spikes that fake momentum. The companion India codex carried it as "Ch.7" — FALSE:
+    #      Gray's Ch.7 is Seasonality. Threshold is a defensible India proxy, not a book quote.
+    # BOOK PROVENANCE (audited 2026-06-13 against the real Gray & Vogel text):
+    #   - Generic momentum = "2-12 momentum" (cumulative 12-mo return SKIPPING the most recent
+    #     month to dodge short-term reversal), top decile — Gray Ch.5 (NOT Ch.2).
+    #   - "Frog-in-the-pan" path quality = Information Discreteness ID = sign(PRET)x(%neg-%pos)
+    #     over daily returns; CONTINUOUS (smooth, many small up-days) beats DISCRETE (jumpy) by
+    #     ~10.8% 3-factor alpha (Da-Gurun-Warachka, Table 6.3) — Gray Ch.6 (NOT Ch.3).
+    #   - Quality is NOT a Gray prerequisite: Ch.4 argues value & momentum belong in SEPARATE
+    #     sleeves combined at portfolio level. Our ROCE/CFO/D-E filter is an India junk-momentum
+    #     defense (engineering choice), faithful to QMOM's spirit of excluding crash-prone movers.
+    # What CANNOT be implemented (genuine data gaps, CSV has no monthly/daily return series):
+    #   - 2-12 skip-month momentum (needs monthly price history) → crs_52w/RS composite is the proxy
+    #   - FIP / Information Discreteness score (needs ~252 daily returns for %pos vs %neg) — same
+    #     daily-OHLCV gap as the Weis/Wyckoff audit; d51_qmom_quality_score is a FUNDAMENTAL
+    #     quality composite (ROCE+D/E+CFO ranks), NOT a path-quality/FIP proxy — display only.
+    #   - Seasonality timing & monthly rebalancing (Ch.7) — a static screener can't time months.
     _qm_nan       = pd.Series(np.nan, index=df.index)
     rs_comp_qm    = df.get("d47_rs_composite",   pd.Series(0.0, index=df.index)).fillna(0)
     crs_ali_qm    = df.get("crs_aligned",         pd.Series(0, index=df.index)).fillna(0)
