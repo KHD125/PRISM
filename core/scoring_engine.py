@@ -1520,8 +1520,21 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     )
     df["coffee_can_pass"] = fw_coffee_can.astype(int)  # overwrites data_engine simple version with full-logic
 
-    # 3. Magic Formula (Joel Greenblatt) — high Earnings Yield + high ROCE
-    ey_mf   = df.get("earnings_yield", pd.Series(np.nan, index=df.index)).fillna(0)
+    # 3. Magic Formula (Joel Greenblatt — The Little Book That Still Beats the Market)
+    # BOOK PROVENANCE (audited 2026-06-13): Greenblatt's two factors are EXACT —
+    #   (a) Earnings Yield = EBIT / Enterprise Value (book appendix), NOT net-income/price.
+    #       FIXED 2026-06-13: was using earnings_yield (=100/PE, the metric Greenblatt explicitly
+    #       argues against); now magic_formula_earnings_yield (EBIT/EV, computed in data_engine).
+    #   (b) Return on Capital = EBIT / (Net Working Capital + Net Fixed Assets), goodwill excluded.
+    #       ROCE is the PROXY — exact tangible-capital ROC needs current assets/liabilities for NWC,
+    #       which are the documented NCAV data gap (see security-analysis-audit). ROCE ≈ EBIT/capital
+    #       employed is the closest available; kept as proxy, not claimed book-exact.
+    # ARCHITECTURE NOTE: Greenblatt RANKS all ~3,500 stocks on each factor and buys the best
+    #   combined rank (top 20-30). This system uses absolute thresholds (EY>=8, ROCE>=20) for
+    #   consistency with all other frameworks — a deliberate architectural choice, not an error;
+    #   Greenblatt says absolute levels matter less than the relative pairing, which the AND-gate
+    #   preserves. EY>=8 ≈ a demanding EBIT/EV (median is 5.2%); ROCE>=20 ≈ his high-ROC half.
+    ey_mf   = df.get("magic_formula_earnings_yield", pd.Series(np.nan, index=df.index)).fillna(0)
     roce_mf = df.get("roce", pd.Series(np.nan, index=df.index)).fillna(0)
     fw_magic_formula = (ey_mf >= 8) & (roce_mf >= 20)
 

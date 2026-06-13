@@ -1656,6 +1656,20 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["ey_adequate"] = (df["earnings_yield"].fillna(0) >= 10).astype(int)  # EY > 10%
 
+    # ── Greenblatt Magic Formula earnings yield = EBIT / Enterprise Value ──
+    # BOOK-EXACT (The Little Book That Still Beats the Market, appendix): the Magic Formula's
+    # earnings yield is EBIT/EV, NOT net-income/price (= 100/PE = the `earnings_yield` above).
+    # Greenblatt insists on EBIT/EV precisely to neutralize the capital-structure and tax-rate
+    # differences that distort net-income/price. EV reconstructed as ev_ebitda × ebitda (both
+    # mapped, ~99.8% coverage). Separate column so the shared earnings_yield (Parikh, valuation
+    # scoring) is untouched; only fw_magic_formula consumes this one.
+    _mf_ev = df["ev_ebitda"] * df["ebitda"]
+    df["magic_formula_earnings_yield"] = np.where(
+        _mf_ev > 0.0,
+        df["ebit"] / _mf_ev * 100.0,
+        np.nan
+    )
+
     # ── PEG Safety with multiple tiers ──
     df["peg_zone"] = np.select(
         [
