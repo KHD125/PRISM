@@ -2716,12 +2716,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── Study 22 (2017): CAP & GAP — Competitive + Growth Advantage Period ──
-    # CAP (p.342): "time during which a company generates returns above its cost of capital."
+    # Book-verified 2026-06-13 (prior "p.342"/"p.1722" cites were fabricated — the study is 60 pp).
+    # CAP (§3.1, VERBATIM): "Competitive Advantage Period (CAP) is the time during which a company
+    #   generates returns on investment that exceed its cost of capital."
     #   → ROCE > cost of capital. Use COST_OF_EQUITY (12%) as the system-wide hurdle (consistent with
     #   economic_profit). Prior code used a hardcoded 10% — BELOW the 12% hurdle, so an 11%-ROCE
     #   company earning below its cost of capital (no real moat) was wrongly flagged. Now corrected.
-    # GAP (p.1722, VERBATIM): "long-period earnings growth of Indian benchmark indices is ~15%; GAP =
-    #   successive years with growth above 15%." Prior code used 12%/8% — below the study's 15% bar.
+    # GAP (§5.1, VERBATIM): "Growth Advantage Period (GAP) is the time during which a company grows its
+    #   profits at a faster rate than that of the benchmark indices." The book's GAP chart (p.19) labels
+    #   the "15% threshold (benchmark growth rate)". Prior code used 12%/8% — below the study's 15% bar.
     # The study's whole thesis is LONGEVITY (duration), so we also expose year-count proxies.
     # "Moat without growth underperforms; growth without moat ends soon." — MOSL 22nd Study.
 
