@@ -1291,6 +1291,16 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
             COLORS["blue"],
         )
 
+    # Data-recency companion to the Evidence badge: the score rests on the last reported result,
+    # so a stock that has not reported in >120 days is scored on stale fundamentals (and is often
+    # in distress — Gensol Engineering sat 477 days stale before its collapse). Shown only when
+    # stale; display-only, no scoring impact.
+    _stale_badge = ""
+    if int(stock.get("result_stale_flag", 0) or 0) == 1:
+        _age = stock.get("result_age_days")
+        if _age is not None and pd.notna(_age):
+            _stale_badge = _badge(f"⏳ Stale {int(_age)}d", COLORS["orange"])
+
     badges_html = (
         _badge(f"{tcfg['emoji']} {tcfg['label']}", ring_clr) +
         _mg_badge +
@@ -1299,7 +1309,8 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
                         COLORS["orange"] if "Caution" in f_lbl else COLORS["red"]) +
         _badge(reg_txt, reg_clr) +
         _gov_badge +
-        _cov_badge
+        _cov_badge +
+        _stale_badge
     )
 
     st.markdown(f"""

@@ -1517,6 +1517,17 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         default=""
     )
 
+    # ── Result Staleness (data-recency guard, sibling to data_coverage_pct) ──
+    # days_from_result: negative = days SINCE the last reported result (past), positive = an
+    # upcoming scheduled result. result_age_days flips the sign so positive = days the financials
+    # have gone stale. A company that has not reported in >120 days is (a) scored on outdated
+    # fundamentals and (b) frequently in distress — Gensol Engineering sat 477 days stale before
+    # its 2025 collapse. Display-only companion to the Evidence badge; never gates or scores.
+    # NaN days_from_result → age NaN → comparison False → not flagged (don't assert staleness blind).
+    _dfr = df.get("days_from_result", pd.Series(np.nan, index=df.index))
+    df["result_age_days"]   = -_dfr
+    df["result_stale_flag"] = (df["result_age_days"] > 120).astype(int)
+
     # ── P/Sales and P/B Ratios (Studies 9, 13 multi-bagger formulas) ──
     # Study 13: "PE < 10x, P/B < 1x, P/Sales ≤ 1x, Payback ≤ 1x" = four explicit multi-bagger formulas.
     # Study 9: "If you want a doubler, buy at: P/Book < 1x, P/E < 10x, P/Sales < 0.5x"
