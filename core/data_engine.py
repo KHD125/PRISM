@@ -2542,8 +2542,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ══════════════════════════════════════════════════════════════
 
     # ── Study 17 (2012): Economic Moat — Sector-Relative ROE Persistence (EMC Flag) ──
-    # Backtested 1995-2012: EMC portfolio → 25% CAGR, non-EMC → 12% CAGR, Alpha = +7%, mortality <15%.
-    # VERBATIM definition (17th Study p.28): "RoE higher than sector average for 6 years or more" (of 8).
+    # Book-verified 2026-06-13. Backtest (EMP 1995-2002, returns 2002-2012): EMC 25% CAGR vs non-EMC
+    # 12% vs Sensex 18% (alpha +7% over Sensex); EMC mortality 16% / 84% survival (12 of 74 EMCs fell —
+    # prior comment's "<15%" was the one inaccuracy; the 25/12/18 figures are book-exact).
+    # VERBATIM definition (17th Study; methodology p.35): "Companies whose RoE was higher than sector
+    # average for 6 years or more [of the 8-yr 1995-2002 window] were deemed to enjoy an Economic Moat."
     # Faithful proxy: 5 ROE timeframes (current, 1yb, 3y/5y/10y medians) each vs their own sector median;
     # require >= 4 of 5 above sector (80% persistence ~ the study's 6/8 = 75% sustained-outperformance bar).
     # Stronger than the prior 2-point check — captures sustained moat, not a single-snapshot beat.
