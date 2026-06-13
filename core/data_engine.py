@@ -1496,6 +1496,27 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Q1/Q2 = the market-beating zone (NaN EP → 99 → not flagged, conservative).
     df["ep_top_quintile_flag"] = (df["ep_quintile"].fillna(99) <= 2).astype(int)
 
+    # ── Earnings Power Box (Heiserman, "It's Earnings That Count") ──
+    # Heiserman's trademarked 2×2: cross self-funding (DEFENSIVE) with value-creation (ENTERPRISING).
+    # Simplified Indian-market form (freefincal Earnings Power Box): enterprising = economic_profit
+    # (Net Income − cost-of-equity charge, computed above); defensive = free_cash_flow > 0 (funds its
+    # own growth without external capital). The distinctive read is the cross — value-creation WITH vs
+    # WITHOUT self-funding (the cash-hungry grower needs dilutive financing; the earnings-power name
+    # self-funds AND creates value). Display-only label — never gates, scores, or penalizes.
+    _epb_defensive    = df["free_cash_flow"] > 0    # self-funds growth
+    _epb_enterprising = df["economic_profit"] > 0   # earns above cost of equity
+    _epb_valid = df["free_cash_flow"].notna() & df["economic_profit"].notna()
+    df["earnings_power_box"] = np.select(
+        [
+            _epb_valid &  _epb_defensive &  _epb_enterprising,
+            _epb_valid &  _epb_defensive & ~_epb_enterprising,
+            _epb_valid & ~_epb_defensive &  _epb_enterprising,
+            _epb_valid & ~_epb_defensive & ~_epb_enterprising,
+        ],
+        ["📦 Earnings Power", "💰 Cash Cow", "🚀 Cash-Hungry Grower", "⚠️ Weakest"],
+        default=""
+    )
+
     # ── P/Sales and P/B Ratios (Studies 9, 13 multi-bagger formulas) ──
     # Study 13: "PE < 10x, P/B < 1x, P/Sales ≤ 1x, Payback ≤ 1x" = four explicit multi-bagger formulas.
     # Study 9: "If you want a doubler, buy at: P/Book < 1x, P/E < 10x, P/Sales < 0.5x"

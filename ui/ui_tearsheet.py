@@ -1609,6 +1609,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("Piotroski",     g("piotroski_fscore"),    "{:.0f}/9") +
         _cell("Econ Profit",   g("economic_profit"),     "₹{:,.0f} Cr") +
         _cell("EP Quintile",   stock.get("ep_quintile","") or "","") +
+        _cell("Earnings Power",stock.get("earnings_power_box","") or "","") +  # Heiserman defensive×enterprising box
+
         _cell("QGLP Score",    g("qglp_score"),          "{:.0f}/100") +
         _cell("QGLP Pass",     "Yes ✅" if g("qglp_pass") == 1 else "No","") +
         _cell("Composite Scr", g("composite_score"),     "{:.0f}/100") +
