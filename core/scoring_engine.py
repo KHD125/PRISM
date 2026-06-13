@@ -2195,10 +2195,22 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (is_fin_qi | (de_qi.fillna(999) < 0.5))      # Balance sheet: D/E < 0.5 (book Stage 1 threshold)
     )
 
-    # 17. Dhandho Asymmetry (Mohnish Pabrai — The Dhandho Investors Codex)
+    # 17. Dhandho Asymmetry (Mohnish Pabrai — The Dhandho Investor)
     #    "Heads I win, tails I don't lose much." — Pabrai's framework identifies situations where
     #    the stock price implies catastrophe but fundamentals confirm the business is intact.
     #    The two-part test: HIGH UNCERTAINTY (price signal) + LOW ACTUAL RISK (quality signal).
+    #    BOOK PROVENANCE (audited 2026-06-13 against the real Pabrai text — book now in library,
+    #    previously codex-only): the book is 9 QUALITATIVE principles (Ch.5), NO numeric screen.
+    #    Every threshold below is an ENGINEERING PROXY mapping to a principle, not a book quote:
+    #      dist_52wh>=30 → P3 "buy distressed businesses in distressed industries" + P8 "low-risk,
+    #        high-uncertainty"; fcf_yield>=8 + roce>=15 → P7 "big discount to intrinsic value"
+    #        (margin of safety) + P4 "durable moat"; rf==0 + cfo/pat + D/E<0.5 → P8 low-risk +
+    #        "buy SIMPLE businesses". The book's case-study discounts ("two-thirds of intrinsic
+    #        value", "75% discount") are examples, NOT universal gates.
+    #    CENSUS RARITY IS BOOK-CORRECT: ~2 passers (0.1%) is Ch.10 "Few Bets, Big Bets, Infrequent
+    #        Bets" quantified — Pabrai mandates rare, concentrated, Kelly-sized wagers. Like CAN
+    #        SLIM's 1-passer = O'Neil's all-seven rule, this NEAR-DEAD rate is design intent, not a
+    #        calibration bug. Do NOT loosen thresholds to manufacture passers.
     #    Three signals unique across all 17 frameworks when combined:
     #      1. dist_52wh >= 30: fallen 30%+ from 52W high — the UNCERTAINTY proxy. Market has
     #         priced in distress. Bruised Blue Chip uses >40%; Dhandho's 30% threshold is
