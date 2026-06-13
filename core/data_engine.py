@@ -1514,6 +1514,35 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["ps_lt1_flag"]  = (df["ps_ratio"].fillna(999) <= 1.0).astype(int)   # multi-bagger formula (Study 13)
     df["ps_lt05_flag"] = (df["ps_ratio"].fillna(999) <= 0.5).astype(int)   # doubler formula (Study 9)
 
+    # ── O'Shaughnessy Value Composite (What Works on Wall Street, 4th ed.) ──
+    # His signature factor: percentile-rank multiple value ratios and average them. "These
+    # composited value factors outperform all the single-factor value factors." 5-factor pure-play
+    # VC1: Price-to-Book, P/E, Price-to-Sales, EBITDA/EV, Price-to-Cash-Flow. CHEAP (low ratio) =
+    # high rank (O'Shaughnessy: "lowest 1% PE → score 100"). 0-100, high = cheapest across all 5.
+    # NOTE: VC2/VC3 add shareholder yield (buyback + dividend) — NOT added: buybacks are rare in
+    # India (median 0, only 47 net buybacks) and dividend yield is the broken DPR column. The
+    # capital-return dimension is already covered by external_financing_to_assets (Tortoriello).
+    # Cross-sectional ranks (cheapest positive ratio → highest pct). CRITICAL: a NEGATIVE ratio
+    # (loss-maker PE, negative book, negative EBITDA) is DISTRESS, not cheapness — it must score
+    # WORST (0), never be excluded (excluding lets a distressed stock rank on its other factors —
+    # the classic value-composite trap, e.g. negative-book State Trading scoring top-decile).
+    # Missing stays NaN; require >=3 valid factors for a meaningful composite.
+    def _osh_rank(s):
+        r = s.where(s > 0).rank(pct=True, ascending=False)  # positives: cheapest = highest
+        return r.mask(s <= 0, 0.0)                           # negative/zero = worst; missing = NaN
+    _pcf_osh = pd.Series(
+        np.where(df["operating_cash_flow"].fillna(0) > 0,
+                 df["market_cap"] / df["operating_cash_flow"], np.nan),
+        index=df.index,
+    )
+    _vc_osh = pd.concat([
+        _osh_rank(df["pe"]), _osh_rank(df["price_to_book"]), _osh_rank(df["ps_ratio"]),
+        _osh_rank(df["ev_ebitda"]), _osh_rank(_pcf_osh),
+    ], axis=1)
+    df["oshaughnessy_value_composite"] = np.where(
+        _vc_osh.notna().sum(axis=1) >= 3, _vc_osh.mean(axis=1) * 100.0, np.nan
+    )
+
     # ── High Cash + High Debt Flag (Malik Shenanigan 4) ──
     df["high_cash_high_debt"] = (
         (df["cash_equivalents"].fillna(0) > 0) &
