@@ -228,8 +228,6 @@ SHAREHOLDING_COLS = {
     "Change In DII Holdings 1 Year": "change_dii_1y",
     # ACTIVITY
     "Insider Trading": "insider_trading",
-    # GATE-SPECIFIC PROMOTER (may exclude promoter group / cross-holdings for cleaner gate signal)
-    "Promoter Holdings (Gate Use)": "promoter_holdings_gate",
 }
 
 TECHNICAL_COLS = {
