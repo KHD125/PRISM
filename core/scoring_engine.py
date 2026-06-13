@@ -2524,6 +2524,12 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #      spikes that fake momentum. The companion India codex carried it as "Ch.7" — FALSE:
     #      Gray's Ch.7 is Seasonality. Threshold is a defensible India proxy, not a book quote.
     # BOOK PROVENANCE (audited 2026-06-13 against the real Gray & Vogel text):
+    #   - Gray's exact 5-step QMOM recipe (Ch.8): universe → top 10% generic momentum (100 of
+    #     1000) → rank those on FIP, keep smoothest top 50% (~50 stocks) → equal-weight →
+    #     rebalance end of Feb/May/Aug/Nov. Net selectivity ≈ 5% of universe.
+    #   - OUR gate uses top-QUINTILE RS (rs_pctrank >= 80 = top 20%, LOOSER than Gray's decile)
+    #     but tightens with the ROCE/CFO/D-E/pledge quality filters to 76 passers ≈ 3.6% — close
+    #     to Gray's final 5% by a different path (quality filter substitutes for the FIP cut).
     #   - Generic momentum = "2-12 momentum" (cumulative 12-mo return SKIPPING the most recent
     #     month to dodge short-term reversal), top decile — Gray Ch.5 (NOT Ch.2).
     #   - "Frog-in-the-pan" path quality = Information Discreteness ID = sign(PRET)x(%neg-%pos)
