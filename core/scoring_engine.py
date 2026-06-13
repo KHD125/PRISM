@@ -1534,9 +1534,21 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #   consistency with all other frameworks — a deliberate architectural choice, not an error;
     #   Greenblatt says absolute levels matter less than the relative pairing, which the AND-gate
     #   preserves. EY>=8 ≈ a demanding EBIT/EV (median is 5.2%); ROCE>=20 ≈ his high-ROC half.
+    # UNIVERSE EXCLUSIONS (book Step 2 + Option 2, added 2026-06-13): Greenblatt explicitly
+    #   "Eliminate all utilities and financial stocks" (rate-capped/leverage-driven returns
+    #   distort the ROC ranking) and applies a market-cap floor ("$50 million or $100 million
+    #   should be of sufficient size"). ₹500 Cr (~$60M) sits in that range and matches the
+    #   system's standard liquidity floor.
     ey_mf   = df.get("magic_formula_earnings_yield", pd.Series(np.nan, index=df.index)).fillna(0)
     roce_mf = df.get("roce", pd.Series(np.nan, index=df.index)).fillna(0)
-    fw_magic_formula = (ey_mf >= 8) & (roce_mf >= 20)
+    is_fin_mf  = df.get("is_financial", pd.Series(False, index=df.index)).fillna(False)
+    is_util_mf = df.get("is_utility",   pd.Series(False, index=df.index)).fillna(False)
+    mcap_mf    = df.get("market_cap",   pd.Series(np.nan, index=df.index)).fillna(0)
+    fw_magic_formula = (
+        (ey_mf >= 8) & (roce_mf >= 20) &
+        (~is_fin_mf) & (~is_util_mf) &          # Greenblatt: eliminate financials & utilities
+        (mcap_mf >= 500)                        # Greenblatt size floor (~$60M, system standard)
+    )
 
     # 4. SMILE (Maheshwari) — Small/mid cap + high growth + ROCE
     mcap_sm  = df.get("market_cap", pd.Series(np.nan, index=df.index)).fillna(0)

@@ -11,7 +11,7 @@ import numpy as np
 import warnings
 from typing import Dict, Tuple, Optional
 from config import (CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR,
-                    FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES,
+                    FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES, UTILITY_SECTOR_NAMES,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS)
 
@@ -1280,6 +1280,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["industry"].fillna("").isin(FINANCIAL_SECTORS)
         | df["sector"].fillna("").isin(FINANCIAL_SECTOR_NAMES)
     )
+
+    # ── REGULATED UTILITY FLAG ── Greenblatt's Magic Formula excludes utilities (rate-capped
+    # returns distort the ROC ranking). Used by fw_magic_formula; sector-name based.
+    df["is_utility"] = df["sector"].fillna("").isin(UTILITY_SECTOR_NAMES)
 
     # ── Atoms-to-Bits Classification (26th Study — Digital Business Design) ──
     # Maps every industry in the CSV to Bits / Atoms / Hybrid using a vectorized dict lookup.

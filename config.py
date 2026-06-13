@@ -207,6 +207,15 @@ FINANCIAL_SECTOR_NAMES = frozenset([
     "Credit Rating Agencies",
 ])
 
+# Regulated utilities — Greenblatt's Magic Formula explicitly excludes "utilities and
+# financial stocks" because their returns are rate-capped, distorting the ROC ranking.
+# ONLY regulated power/gas distribution — NOT electrical-equipment makers or upstream E&P.
+UTILITY_SECTOR_NAMES = frozenset([
+    "Power Generation & Distribution",
+    "Gas Distribution",
+    "Power Infrastructure",
+])
+
 # ═══════════════════════════════════════════════════════════════
 # 4. QUALITY SCORE WEIGHTS (Layer 2) — 0 to 100
 # ═══════════════════════════════════════════════════════════════

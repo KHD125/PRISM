@@ -48,15 +48,39 @@ def test_magic_formula_yield_guards_nonpositive_ev():
     assert out["magic_formula_earnings_yield"].isna().all()
 
 
+def _magic_df(**overrides):
+    """Build a scored frame of qualifying Magic Formula stocks, with optional overrides."""
+    from scoring_engine import run_full_scoring
+    from forensic_engine import compute_forensic_signals
+    base = dict(n=30, ebit=100.0, ebitda=140.0, ev_ebitda=8.0, roce=25.0, pe=22.0,
+                market_cap=3000.0)
+    base.update(overrides)
+    df = _frame(**base)
+    df = compute_derived_signals(df)
+    df = compute_forensic_signals(df)
+    return run_full_scoring(df)
+
+
 def test_magic_formula_framework_consumes_ebit_ev_yield():
     """A stock cheap on EBIT/EV (>=8%) with ROCE>=20 passes the Magic Formula even
     when its net-income yield would be lower — the whole point of the fix."""
-    from scoring_engine import run_full_scoring
-    from forensic_engine import compute_forensic_signals
-    # EBIT/EV = 100/(140*8) = 8.93% (>=8); roce 25; modest PE so net-income yield is lower.
-    df = _frame(n=30, ebit=100.0, ebitda=140.0, ev_ebitda=8.0, roce=25.0, pe=22.0,
-                market_cap=3000.0)
-    df = compute_derived_signals(df)
-    df = compute_forensic_signals(df)
-    df = run_full_scoring(df)
+    df = _magic_df()
     assert df["frameworks_passed"].str.contains("Magic Formula", na=False).any()
+
+
+def test_magic_formula_excludes_financials():
+    """Greenblatt Step: eliminate financial stocks — even a qualifying financial must not pass."""
+    df = _magic_df(sector="Finance", industry="Finance")
+    assert not df["frameworks_passed"].str.contains("Magic Formula", na=False).any()
+
+
+def test_magic_formula_excludes_utilities():
+    """Greenblatt Step: eliminate utilities — a qualifying gas/power distributor must not pass."""
+    df = _magic_df(sector="Gas Distribution", industry="Gas Distribution")
+    assert not df["frameworks_passed"].str.contains("Magic Formula", na=False).any()
+
+
+def test_magic_formula_applies_mcap_floor():
+    """Greenblatt size floor — a qualifying but sub-₹500 Cr micro-cap must not pass."""
+    df = _magic_df(market_cap=200.0)
+    assert not df["frameworks_passed"].str.contains("Magic Formula", na=False).any()
