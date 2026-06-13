@@ -2155,9 +2155,10 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #    Source: docs/outsider_specs.json
     #
     #    Pillar S (Share Retirement): dilution_flag == 0
-    #      Thorndike’s core finding: the best CEOs never diluted per-share value. Singleton
-    #      repurchased 90% of Teledyne at 8× earnings; Graham/Washington Post reduced share count
-    #      by 43%. fillna(1) = missing data → diluted assumed → conservative exclusion.
+    #      Thorndike’s core finding: the best CEOs never diluted per-share value. Book-verified
+    #      2026-06-13 (text PDF): Singleton bought in over 90% of Teledyne's shares at single-digit
+    #      P/Es (Ch 2); Murphy ~50% of Capital Cities (Ch 1); Graham almost 40% of the Washington
+    #      Post (Ch 5); Malone's TCI over 40% (Ch 4). fillna(1) = missing → diluted assumed → excluded.
     #
     #    Pillar D (Debt Discipline): de_slope_3y <= 0
     #      3-year D/E slope flat or declining = management is deleveraging from cash generation,
