@@ -1842,6 +1842,26 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         _ta1_ag > 0, (_ta_ag - _ta1_ag) / _ta1_ag * 100.0, np.nan
     )
 
+    # ── External Financing to Assets — Tortoriello (Quantitative Strategies, Ch.5/8) ──
+    # His SINGLE STRONGEST factor: the bottom quintile (firms RAISING external capital) underperforms
+    # by 15.3% — "the highest negative excess returns of any two-factor strategy." External financing
+    # = (share issuance − buybacks + debt issuance − debt retirement) / total assets, all from the
+    # financing section of the cash-flow statement. financing_cash_flow IS that section (it also nets
+    # dividends, which Tortoriello scores as returning-capital too → directionally aligned).
+    # SIGN: positive = cash INFLOW = RAISING external capital (dilutive/leveraging = risk);
+    #       negative = cash OUTFLOW = RETURNING capital (buybacks/debt-cut/dividends = disciplined).
+    # Orthogonal to asset_growth_yoy (corr 0.13) — captures the COMBINED external-capital measure
+    # that dilution_flag (shares only) and debt_slope (debt only) each see just half of.
+    _ef_fincf = df.get("financing_cash_flow", pd.Series(np.nan, index=df.index))
+    df["external_financing_to_assets"] = np.where(
+        df["total_assets"] > 0, _ef_fincf / df["total_assets"] * 100.0, np.nan
+    )
+    df["capital_allocation_signal"] = np.select(
+        [df["external_financing_to_assets"] < -5.0, df["external_financing_to_assets"] > 15.0],
+        ["💰 Returning Capital", "⚠️ Raising Capital"],
+        default="⚖️ Neutral",
+    )
+
     # ── Sector capital cycle (Chancellor: asset growth matters at the SECTORAL level too) ──
     # Capital flooding INTO a sector (high sector-median asset growth) pressures future returns
     # for ALL its constituents; capital-STARVED sectors (low/negative growth) set up recovery.
