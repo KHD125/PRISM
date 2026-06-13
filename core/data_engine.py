@@ -1993,6 +1993,31 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["vstop_green"].fillna(0)
     )
 
+    # ── Weinstein Stage Analysis (Secrets for Profiting in Bull & Bear Markets) ──
+    # Stan Weinstein's 4 stages off the 30-week MA — his core actionable framework:
+    #   "Stocks trading beneath their 30-week MAs should never be considered for purchase."
+    # Mapped to a 2×2 of price-vs-30W-MA and 30W-MA-vs-200D (the trend structure):
+    #   Stage 2 Advancing (BUY)   : close > 30W MA AND 30W > 200D — above a rising MA, bullish stack
+    #   Stage 1 Basing            : close > 30W MA AND 30W <= 200D — early recovery, crossed up
+    #   Stage 3 Top               : close <= 30W MA AND 30W > 200D — early weakness, dropped below MA
+    #   Stage 4 Declining (AVOID) : close <= 30W MA AND 30W <= 200D — below a falling MA, bearish
+    # The MA SLOPE (Weinstein's literal stage differentiator) isn't in the CSV; the 30W-vs-200D
+    # stacking is the faithful proxy for "rising vs falling MA". Display/context label, not a gate.
+    _w_close = df["close_price"]; _w_30 = df.get("sma_30w", pd.Series(np.nan, index=df.index))
+    _w_200 = df.get("sma_200d", pd.Series(np.nan, index=df.index))
+    _w_ok = _w_close.notna() & _w_30.notna() & _w_200.notna()
+    _w_above = _w_close > _w_30
+    _w_stack = _w_30 > _w_200
+    df["weinstein_stage"] = np.select(
+        [_w_ok & _w_above & _w_stack,
+         _w_ok & _w_above & ~_w_stack,
+         _w_ok & ~_w_above & _w_stack,
+         _w_ok & ~_w_above & ~_w_stack],
+        ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing",
+         "⚠️ Stage 3 Top", "📉 Stage 4 Declining"],
+        default="❔ Unknown",
+    )
+
     # ── D47: RS Composite — IBD-weighted (40% recent / 30% mid / 30% long) ──
     # IBD RS Rating formula: most recent quarter receives double weight vs prior periods.
     # Mapping: crs_50d (~10W) ≈ recent quarter → 40%; crs_26w (6M) → 30%; crs_52w (12M) → 30%.

@@ -1592,7 +1592,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("Dist 52WH",     g("dist_52wh"),       "{:.1f}%") +
         _cell("VSTOP Green",   "Yes ✅" if g("vstop_green") == 1 else "No","") +
         _cell("Breakout Scr",  g("breakout_score"),  "{:.0f}") +
-        _cell("Momentum Scr",  g("momentum_score"),  "{:.0f}/100")
+        _cell("Momentum Scr",  g("momentum_score"),  "{:.0f}/100") +
+        _cell("Weinstein Stage", stock.get("weinstein_stage","") or "", "")  # 30W-MA stage analysis
     )
 
     # Forensic flags summary
