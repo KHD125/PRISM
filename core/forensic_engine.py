@@ -563,6 +563,18 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0,
     ).astype(int)
 
+    # 28. Scaled Net Operating Assets bloat (Quantitative Value, Gray & Carlisle Ch.3)
+    # SNOA > 1.0 = net operating assets exceed the entire (lagged) asset base — an unambiguous
+    # cumulative accrual build-up (the "historical manipulation" weapon, orthogonal to the
+    # single-period rf_high_accruals/STA: corr ~0.21 on live data). Upper guard < 10 excludes
+    # tiny-denominator data artifacts. scaled_net_operating_assets computed in data_engine.
+    _snoa = df.get("scaled_net_operating_assets", pd.Series(np.nan, index=df.index))
+    df["rf_snoa"] = np.where(
+        _snoa.notna(),
+        ((_snoa > 1.0) & (_snoa < 10.0)).astype(int),
+        0,
+    )
+
     # Sum all red flags
     rf_cols = [c for c in df.columns if c.startswith("rf_")]
     df["red_flag_count"] = df[rf_cols].sum(axis=1)
@@ -657,6 +669,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_itr_declining": "Inventory turnover declining (Malik S3)",
         "rf_ssgr_deficit": "Growth exceeds SSGR by 5%+ (debt-dependent)",
         "rf_high_accruals":   "High accruals — PAT not backed by cash (Beneish TATA >5%)",
+        "rf_snoa":            "Net operating assets bloat — cumulative accrual build-up (QV SNOA >1.0)",
         "rf_low_fcf_ebitda":  "FCF/EBITDA <30% — EBITDA overstates real earnings (Malik S5)",
         "rf_fcf_to_cfo_low":           "FCF/CFO <15% — capital trap, capex consuming all operating cash",
         "rf_opm_volatile":             "OPM >30% off 5Y median — commodity trap, no pricing power",

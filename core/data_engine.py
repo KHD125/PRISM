@@ -1437,6 +1437,20 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["net_worth"]     = pd.Series(_nw_from_pb, index=df.index).fillna(df["reserves"].fillna(0))
     df["net_worth_1yb"] = df["reserves_1yb"].fillna(0)
 
+    # ── Scaled Net Operating Assets (SNOA) — Quantitative Value (Gray & Carlisle) Ch.3 ──
+    # QV's second earnings-manipulation weapon (after STA/accruals): captures a management's
+    # CUMULATIVE (historical) balance-sheet accrual build-up, where STA captures the single-period
+    # flow. Hirshleifer-Hou-Teoh-Zhang (2004): high SNOA predicts low future returns.
+    # NOA = Operating Assets − Operating Liabilities = (Total Assets − Cash) − (Total Assets − Debt
+    #       − Equity) = Debt + Equity − Cash. Scaled by LAGGED total assets (book convention).
+    # All inputs are real mapped columns (debt, net_worth, cash_equivalents, total_assets_1yb) —
+    # no proxy. MUST follow net_worth (computed just above). Artifact guard at the flag (rf_snoa).
+    _snoa_noa = df["debt"].fillna(0) + df["net_worth"].fillna(0) - df["cash_equivalents"].fillna(0)
+    _snoa_ta_lag = df.get("total_assets_1yb", pd.Series(np.nan, index=df.index))
+    df["scaled_net_operating_assets"] = np.where(
+        _snoa_ta_lag > 0, _snoa_noa / _snoa_ta_lag, np.nan
+    )
+
     df["economic_profit"] = (
         df["net_worth"] * (df["roe"].fillna(0) / 100.0 - COST_OF_EQUITY / 100.0)
     )
