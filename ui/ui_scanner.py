@@ -22,7 +22,7 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
     # both cash_machine_score and cash_machine_label unintentionally
     all_cols = list(df.columns)
     _PINNED = [
-        "rank", "name", "corporate_class", "sector", "composite_score",
+        "rank", "name", "verdict_direction", "corporate_class", "sector", "composite_score",
         "moat_growth_quad", "fisher_lifecycle_quadrant", "cash_score", "buy_zone_label",
     ]
     seen: set = set()

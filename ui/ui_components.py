@@ -570,6 +570,16 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     _esc_industry = _html.escape(str(row.get('industry', '') or ''))
     _esc_mcat     = _html.escape(str(row.get('market_category', '') or ''))
 
+    # ── Engine verdict chip: the card LEADS with the decision (scan the list by BUY/WATCH/AVOID) ──
+    _vdir   = str(row.get("verdict_direction", "") or "")
+    _vemoji = str(row.get("verdict_emoji", "") or "")
+    _vclr = {"BUY": COLORS["green"], "WATCH": COLORS["gold"], "AVOID": COLORS["text_muted"]}.get(
+        _vdir, COLORS["text_muted"])
+    _verdict_chip = (
+        f'<div style="font-size:0.8rem;font-weight:900;color:{_vclr};letter-spacing:0.6px;'
+        f'white-space:nowrap;margin-bottom:2px;">{_vemoji} {_html.escape(_vdir)}</div>'
+    ) if _vdir else ""
+
     card_html = f"""
     <div class="stock-card" style="border-left: 3px solid {tc['border']};">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -583,6 +593,7 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
                 <div style="margin-top:5px;">{_verdict_strip}</div>
             </div>
             <div style="text-align:right;flex-shrink:0;margin-left:12px;">
+                {_verdict_chip}
                 <div style="font-size:1.8rem; font-weight:900; color:{tc['text']};">{row.get('composite_score', 0):.0f}</div>
                 <div style="font-size:0.65rem; color:{COLORS['text_muted']};">COMPOSITE</div>
             </div>
