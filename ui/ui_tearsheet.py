@@ -1650,8 +1650,9 @@ def render_raw_signals(stock: pd.Series):
         # 14th — Winner Category (sector tailwind) × Category Winner (leader)
         _cell("Winner Category",  _yn("winner_category_flag"), "") +
         _cell("Winning Invest.",  _yn("category_winner_in_winner_cat"), "") +
-        # 17th — 100x candidate (Mouse-to-Elephant)
+        # 19th — 100x candidate (SQGLP, small-cap) + 20th — Mid→Mega (MQGLP, mid-cap rank 101-300)
         _cell("100x Candidate",   _yn("mosl_100x_candidate"), "") +
+        _cell("Mid→Mega",         _yn("mid_to_mega_candidate"), "") +
         # 29th — Bruised Blue Chip (P/B < 2x quality fallen)
         _cell("Bruised Blue Chip", _yn("bruised_blue_chip_29"), "") +
         # 23rd — Growth-Value trap (growth + ROE < cost of equity)
