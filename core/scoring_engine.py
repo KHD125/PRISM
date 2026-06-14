@@ -2681,8 +2681,10 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # Score >= 4/5: highest-probability 100x candidate profile.
     fw_sqglp = df.get("century_stock_flag", pd.Series(0, index=df.index)).fillna(0) == 1
 
-    # ── Framework 35: fw_mosl_100x — 100x Candidate (MOSL 17th Study, 2012 theme) ──
-    # "Mouse to Elephant": all 5 mandatory conditions from the 17th Study must hold.
+    # ── Framework 35: fw_mosl_100x — 100x Candidate (MOSL 19th Study, 2014 theme "100x") ──
+    # Book-verified 2026-06-13: 100x is the 19TH study (not 17th); "Mouse to Elephant" is not the
+    # study's phrase. These 5 gates are the engine's computable quality-100x proxy (the study's own
+    # screen is mcap<₹30b + value-migration + P/E<25x; its primary process is the qualitative SQGLP):
     # (1) PAT CAGR 5Y ≥ 20%  (2) ROCE ≥ 20%  (3) Market Cap ≤ ₹15,000 Cr
     # (4) D/E < 0.5  (5) ROE ≥ 15% — clean, unlevered compounding engine at early stage.
     fw_mosl_100x = df.get("mosl_100x_candidate", pd.Series(0, index=df.index)).fillna(0) == 1

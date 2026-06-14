@@ -2302,14 +2302,16 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (df["pat_gr_5y"].fillna(999)   <   0.0)      # B: 5Y earnings contraction
     ).astype(int)
 
-    # ── 100x Candidate Screen (17th Study — "Mouse to Elephant") ──
-    # The 17th Study empirically identified century-stock characteristics:
-    # (1) 20%+ PAT CAGR: compounding engine proven over 5Y.
-    # (2) ROCE ≥ 20%: high return on deployed capital = reinvestment quality.
-    # (3) Market cap ≤ ₹15,000 Cr: small enough for 100x mathematically possible.
-    # (4) D/E < 0.5: clean balance sheet — leverage cannot fuel compounding.
-    # (5) ROE ≥ 15%: accounting profit quality above cost of equity.
-    # All 5 conditions are mandatory (AND, not OR) — this is deliberately rare.
+    # ── 100x Candidate Screen (19th Study, 2014 — "100x: The Power of Growth") ──
+    # Book-verified 2026-06-13: the 100x theme is the 19TH study (the 17th was Economic Moat; the
+    # "Mouse to Elephant" phrase appears 0 times in the 19th study). The study's OWN numeric 100x
+    # screen is: mcap < ₹30b + value-migration/niche play + P/E < 25x (value-migration is qualitative).
+    # The 5 gates below are the ENGINE's computable QUALITY-focused 100x proxy (not the book's verbatim
+    # screen) — a clean, unlevered, early-stage compounding profile:
+    # (1) 20%+ PAT CAGR (compounding proven over 5Y) (2) ROCE ≥ 20% (3) Market cap ≤ ₹15,000 Cr
+    #   (100x headroom) (4) D/E < 0.5 (leverage cannot fuel compounding) (5) ROE ≥ 15%.
+    # All 5 mandatory (AND, not OR) — deliberately rare. The study's PRIMARY 100x process is the
+    # qualitative SQGLP checklist — faithfully implemented as sqglp_score (S/Q/G/L/P) in this module.
     df["mosl_100x_candidate"] = (
         (df["pat_gr_5y"].fillna(0)           >= 20.0)  &
         (df["roce"].fillna(0)                >= 20.0)  &
