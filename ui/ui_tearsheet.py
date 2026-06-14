@@ -1189,6 +1189,62 @@ def render_financial_insights(stock: pd.Series):
 
 
 # ═══════════════════════════════════════════════════════════════
+# VERDICT SCORECARD — the 6-axis evidence grid (Layer 2 of the verdict)
+# ═══════════════════════════════════════════════════════════════
+
+def render_verdict_scorecard(stock: pd.Series):
+    """6-axis decision scorecard, mounted right under the verdict header.
+    Each cell = the engine's axis pill (verdict_axis_*) + the key supporting metrics, and it
+    deliberately surfaces signals that were computed-but-never-shown (IBAS moat, Magic-Formula
+    earnings yield, payback ratio, Emerging-VC, SNOA). PURE DISPLAY — pre-materialized columns only.
+    """
+    def _v(k, d=np.nan):
+        x = stock.get(k, d)
+        return d if (x is None or (isinstance(x, float) and np.isnan(x))) else x
+
+    def _n(k, fmt="{:.0f}", suf=""):
+        x = _v(k)
+        try:
+            return (fmt.format(float(x)) + suf) if (x == x and x is not None) else "—"
+        except Exception:
+            return "—"
+
+    def _pill(k):
+        return str(stock.get(k, "") or "")
+
+    _emerg = "🌱 Emerging VC" if _v("emerging_vc_flag", 0) == 1 else "Mature"
+    _snoa  = "⚠ bloating" if _v("rf_snoa", 0) == 1 else "✓ clean"
+    axes = [
+        (_pill("verdict_axis_quality"),
+         f"ROCE {_n('roce_med_10y', suf='%')} · ROE {_n('roe_med_10y', suf='%')} · IBAS Moat {_n('ibas_moat_score')}"),
+        (_pill("verdict_axis_growth"),
+         f"EPS·5y {_n('eps_gr_5y', suf='%')} · Rev·5y {_n('rev_gr_5y', suf='%')} · {_emerg}"),
+        (_pill("verdict_axis_value"),
+         f"PE {_n('pe', '{:.1f}')} vs Fair {_n('fair_pe_qglp', '{:.1f}')} · Magic-Yld {_n('magic_formula_earnings_yield', '{:.1f}', suf='%')} · Payback {_n('payback_ratio', '{:.1f}', suf='x')}"),
+        (_pill("verdict_axis_forensics"),
+         f"Piotroski {_n('piotroski_fscore')}/9 · Red flags {_n('red_flag_count')} · SNOA {_snoa}"),
+        (_pill("verdict_axis_governance"),
+         f"Promoter {_n('promoter_holdings', suf='%')} · Pledge {_n('pledged_percentage', suf='%')} · Dilution {_n('dilution_pct', '{:.1f}', suf='%')}"),
+        (_pill("verdict_axis_timing"),
+         f"Marks {_n('marks_score')} · {_esc(_v('buy_zone_label', '—'))} · Breakout {_n('breakout_score')}"),
+    ]
+    cells = "".join(
+        f'<div style="flex:1 1 30%;min-width:185px;background:{COLORS["bg_secondary"]};'
+        f'border:1px solid {COLORS["border"]};border-radius:8px;padding:8px 11px;">'
+        f'<div style="font-size:0.73rem;font-weight:800;color:{COLORS["text_primary"]};'
+        f'white-space:nowrap;">{_esc(hdr)}</div>'
+        f'<div style="font-size:0.65rem;color:{COLORS["text_secondary"]};margin-top:3px;'
+        f'line-height:1.5;">{metrics}</div>'
+        f'</div>'
+        for hdr, metrics in axes
+    )
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px 0;">{cells}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
 # STOCK HERO HEADER — Premium identity card
 # ═══════════════════════════════════════════════════════════════
 

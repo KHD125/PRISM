@@ -26,7 +26,7 @@ from core import fetch_and_clean_data, run_full_scoring, compute_forensic_signal
 from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
-                render_financial_insights, render_stock_hero, render_score_strip,
+                render_financial_insights, render_stock_hero, render_verdict_scorecard, render_score_strip,
                 render_sell_alerts_panel, render_raw_signals,
                 render_canslim_radar, render_sepa_radar, render_schilit_shield, render_dorsey_radar,
                 render_outsider_radar, render_marks_radar, render_malik_radar,
@@ -982,6 +982,9 @@ with tabs[2]:
             {_verdict_reason}</div>
         </div>
         """, unsafe_allow_html=True)
+
+        # ── Verdict scorecard: the 6-axis evidence grid (Layer 2, directly under the verdict) ──
+        render_verdict_scorecard(stock)
 
         # Sell alerts panel — only rendered when active
         if _sell_any:

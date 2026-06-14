@@ -16,6 +16,7 @@ try:
         render_guru_frameworks,
         render_financial_insights,
         render_stock_hero,
+        render_verdict_scorecard,
         render_score_strip,
         render_sell_alerts_panel,
         render_raw_signals,
@@ -47,6 +48,7 @@ except ImportError as e:
     render_guru_frameworks = _stub
     render_financial_insights = _stub
     render_stock_hero = _stub
+    render_verdict_scorecard = _stub
     render_score_strip = _stub
     render_sell_alerts_panel = _stub
     render_raw_signals = _stub
@@ -86,6 +88,7 @@ __all__ = [
     "render_guru_frameworks",
     "render_financial_insights",
     "render_stock_hero",
+    "render_verdict_scorecard",
     "render_score_strip",
     "render_sell_alerts_panel",
     "render_raw_signals",

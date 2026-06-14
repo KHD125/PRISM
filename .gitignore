@@ -29,3 +29,4 @@ __pycache__/
 .playwright-mcp/
 baseline-*.png
 page-*.png
+phase*.png

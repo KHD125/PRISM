@@ -1,0 +1,11 @@
+# Force the DARK theme always — the app's custom CSS is built for dark, and the user
+# only uses dark (never light). Without this, Streamlit follows the browser's
+# light/dark preference, which puts the dark cards on a light base (mismatch).
+# Colors mirror the COLORS palette in config.py (GitHub-dark).
+[theme]
+base = "dark"
+primaryColor = "#3fb950"
+backgroundColor = "#0d1117"
+secondaryBackgroundColor = "#161b22"
+textColor = "#e6edf3"
+font = "sans serif"
