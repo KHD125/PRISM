@@ -91,8 +91,9 @@ def test_all_verdict_columns_materialized():
     df = compute_verdict(_frame())
     expected = {
         "verdict_direction", "verdict_emoji", "verdict_strength", "verdict_confidence",
-        "verdict_axis_quality", "verdict_axis_growth", "verdict_axis_value",
-        "verdict_axis_forensics", "verdict_axis_governance", "verdict_axis_timing",
+        # 6 orthogonal axes (Moat·Growth·Valuation·Balance·Governance·Forensics — no double-count)
+        "verdict_axis_moat", "verdict_axis_growth", "verdict_axis_valuation",
+        "verdict_axis_balance", "verdict_axis_governance", "verdict_axis_forensics",
         "verdict_top_risk", "verdict_narrative",
     }
     assert expected.issubset(set(df.columns))

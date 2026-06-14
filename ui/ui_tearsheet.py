@@ -1237,19 +1237,21 @@ def render_verdict_scorecard(stock: pd.Series):
 
     _emerg = "🌱 Emerging VC" if _v("emerging_vc_flag", 0) == 1 else "Mature"
     _snoa  = "⚠ bloating" if _v("rf_snoa", 0) == 1 else "✓ clean"
+    _netcash = "✓ net cash" if _v("net_debt_negative", 0) == 1 else "net debt"
+    # 6 ORTHOGONAL axes (no double-counting): Moat·Growth·Valuation·Balance·Governance·Forensics.
     axes = [
-        (_pill("verdict_axis_quality"),
-         f"ROCE {_n('roce_med_10y', suf='%')} · ROE {_n('roe_med_10y', suf='%')} · IBAS Moat {_n('ibas_moat_score')}"),
+        (_pill("verdict_axis_moat"),
+         f"ROCE {_n('roce_med_10y', suf='%')} · ROE {_n('roe_med_10y', suf='%')} · IBAS {_n('ibas_moat_score')}"),
         (_pill("verdict_axis_growth"),
          f"EPS·5y {_n('eps_gr_5y', suf='%')} · Rev·5y {_n('rev_gr_5y', suf='%')} · {_emerg}"),
-        (_pill("verdict_axis_value"),
+        (_pill("verdict_axis_valuation"),
          f"PE {_n('pe', '{:.1f}')} vs Fair {_n('fair_pe_qglp', '{:.1f}')} · Magic-Yld {_n('magic_formula_earnings_yield', '{:.1f}', suf='%')} · Payback {_n('payback_ratio', '{:.1f}', suf='x')}"),
-        (_pill("verdict_axis_forensics"),
-         f"Piotroski {_n('piotroski_fscore')}/9 · Red flags {_n('red_flag_count')} · SNOA {_snoa}"),
+        (_pill("verdict_axis_balance"),
+         f"D/E {_n('debt_to_equity', '{:.2f}')} · Int-Cov {_n('interest_coverage', '{:.1f}', suf='x')} · {_netcash}"),
         (_pill("verdict_axis_governance"),
          f"Promoter {_n('promoter_holdings', suf='%')} · Pledge {_n('pledged_percentage', suf='%')} · Dilution {_n('dilution_pct', '{:.1f}', suf='%')}"),
-        (_pill("verdict_axis_timing"),
-         f"Marks {_n('marks_score')} · {_esc(_v('buy_zone_label', '—'))} · Breakout {_n('breakout_score')}"),
+        (_pill("verdict_axis_forensics"),
+         f"Piotroski {_n('piotroski_fscore')}/9 · Red flags {_n('red_flag_count')} · SNOA {_snoa}"),
     ]
     cells = "".join(
         f'<div style="flex:1 1 30%;min-width:185px;background:{COLORS["bg_secondary"]};'

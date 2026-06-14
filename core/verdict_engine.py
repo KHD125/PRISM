@@ -41,14 +41,20 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     rflags  = _col("red_flag_count", 0).fillna(0).astype(float)
     cclass  = _col("corporate_class", "").astype(str)
     cov     = _col("data_coverage_pct", 100.0).fillna(0.0)
-    q       = _col("quality_score", np.nan)
+    q       = _col("quality_score", np.nan)      # overall quality (narrative only — see note)
     g       = _col("growth_score", np.nan)
     eer     = _col("expected_excess_return", np.nan)
     pe      = _col("pe", np.nan)
     fair_pe = _col("fair_pe_qglp", np.nan)
     bz      = _col("buy_zone_label", "").astype(str)
-    marks   = _col("marks_score", np.nan)
     govmult = _col("governance_risk_multiplier", 1.0).fillna(1.0)
+    # Orthogonal scorecard axes — the engine's INDEPENDENT sub-scores, NOT the quality_score
+    # composite (which already contains growth 22% + valuation 10% → showing Quality+Growth+Value
+    # would triple-count). Polarity verified 2026-06-14: all high=good (valuation_score corr w/ PE
+    # is −0.14 → high = cheap = good).
+    moat    = _col("moat_score", np.nan)
+    valn    = _col("valuation_score", np.nan)
+    bal     = _col("balance_sheet_score", np.nan)
 
     # ── Hard-risk veto masks (cap downward only) ──
     # CALIBRATED 2026-06-14: forensic_label is "🚨" for 98.6% of the universe (only 29 "Clean") →
@@ -96,16 +102,12 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
         val = s.map(lambda x: fmt.format(x) if pd.notna(x) else "N/A")
         return pd.Series([f"{label} {d} {vv}" for d, vv in zip(dot, val)], index=idx)
 
-    df["verdict_axis_quality"] = _pill_num("Quality", q, 70, 50)
-    df["verdict_axis_growth"]  = _pill_num("Growth",  g, 65, 45)
-    # Value axis uses expected_excess_return (unambiguous: + = priced for upside)
-    _val_dot = np.select(
-        [eer.isna(), eer >= 5.0, eer >= 0.0], ["⚪", "🟢", "🟡"], default="🔴"
-    )
-    df["verdict_axis_value"] = pd.Series(
-        [f"Value {d} {('%+.0f%%' % x) if pd.notna(x) else 'N/A'}" for d, x in zip(_val_dot, eer)],
-        index=idx,
-    )
+    # 4 numeric axes (0-100 sub-scores, 🟢≥60 🟡≥40) + 2 categorical (Governance/Forensics —
+    # cleaner than a compressed bonus score). Orthogonal: Moat·Growth·Valuation·Balance·Govern·Forensics.
+    df["verdict_axis_moat"]      = _pill_num("Moat",      moat, 60, 40)
+    df["verdict_axis_growth"]    = _pill_num("Growth",    g,    60, 40)
+    df["verdict_axis_valuation"] = _pill_num("Valuation", valn, 60, 40)
+    df["verdict_axis_balance"]   = _pill_num("Balance",   bal,  55, 38)
     df["verdict_axis_forensics"] = np.where(
         forensic_veto | schilit_fail, "Forensics 🔴 Flagged",
         np.where(rflags >= 5, "Forensics 🟡 Watch", "Forensics 🟢 Clean"),
@@ -113,10 +115,6 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     df["verdict_axis_governance"] = np.select(
         [govmult < 0.85, govmult < 1.0], ["Govern 🔴 Risk", "Govern 🟡 Caution"],
         default="Govern 🟢 Safe",
-    )
-    df["verdict_axis_timing"] = np.where(
-        timing_poor, "Timing 🔴 Poor",
-        np.where(marks.fillna(0) >= 60, "Timing 🟢 Good", "Timing 🟡 Watch"),
     )
 
     # ── Single most important risk (one line, only the top one) ──
