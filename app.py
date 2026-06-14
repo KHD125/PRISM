@@ -1021,6 +1021,38 @@ with tabs[2]:
                 st.plotly_chart(fig, use_container_width=True)
 
             with _ov2:
+                # Quality facets — the radar's LEGEND (the polygon shows shape; these are the exact
+                # scores). Cash + Margin are unique here — the orthogonal scorecard omits them.
+                def _qfrow(lbl, key):
+                    sc = _sg(key, None)
+                    if sc is None:
+                        clr, vs = COLORS["text_muted"], "—"
+                    else:
+                        sc = float(sc)
+                        clr = (COLORS["green"] if sc >= 60 else
+                               COLORS["gold"]  if sc >= 40 else COLORS["red"])
+                        vs = f"{sc:.0f}"
+                    return (
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                        f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
+                        f'<span style="font-size:0.72rem;color:{COLORS["text_secondary"]};">{lbl}</span>'
+                        f'<span style="font-size:0.82rem;font-weight:800;color:{clr};">{vs}'
+                        f'<span style="font-size:0.6rem;color:{COLORS["text_muted"]};">/100</span></span></div>'
+                    )
+                _facets = (
+                    _qfrow("🛡️ Moat",   "moat_score")          +
+                    _qfrow("📈 Growth", "growth_score")        +
+                    _qfrow("💰 Cash",   "cash_score")          +
+                    _qfrow("📊 Margin", "margin_score")        +
+                    _qfrow("⚖️ Balance","balance_sheet_score")
+                )
+                st.markdown(
+                    f'<div style="font-size:0.62rem;font-weight:800;color:{COLORS["text_muted"]};'
+                    f'text-transform:uppercase;letter-spacing:0.8px;margin:2px 0 4px 0;">Quality Facets</div>'
+                    f'{_facets}',
+                    unsafe_allow_html=True,
+                )
+
                 # Signal badges
                 pio_raw = stock.get("piotroski_fscore", None)
                 pio_val = None
@@ -1049,7 +1081,7 @@ with tabs[2]:
                 )
                 st.markdown(
                     f'<div style="font-size:0.62rem;font-weight:800;color:{COLORS["text_muted"]};'
-                    f'text-transform:uppercase;letter-spacing:0.8px;margin:4px 0 8px 0;">Signals</div>'
+                    f'text-transform:uppercase;letter-spacing:0.8px;margin:13px 0 8px 0;">Signals</div>'
                     f'{bdgs}',
                     unsafe_allow_html=True,
                 )
