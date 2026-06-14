@@ -554,7 +554,8 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     #   2002-07" claim was a CODEX FABRICATION — the 12th study is macro ("Next Trillion $ Opportunity"
     #   + New/Old-Economy classification) with ZERO reinvestment/retention/payout content. The
     #   RR+ROCE+small-cap compounder logic is a sound quant construct (cf. Donville/Speziale ROE≥20 +
-    #   retention), NOT a 12th-WCS finding. The Buffett-VCR lineage below (Identity C) traces to the 11th WCS.
+    #   retention), NOT a 12th-WCS finding. (Identity C's Buffett-VCR is Buffett's OWN concept, NOT
+    #   from the 11th WCS either — verified 2026-06-14; the 11th study is Terms of Trade = debtors/creditors.)
     # LIVE DEGENERACY: condition (1) is currently INERT — reinvestment_rate ≡ 1.0 universe-wide (broken
     #   DPR source) → RR≥60% passes for ALL → flag fires on ROCE+size only (~338), silently bypassing the
     #   retention filter (a high-payout "defensive income asset" can still get the boost). Self-corrects on DPR fix.
@@ -574,7 +575,9 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["flag_epoch2_compounder"] = 0
 
-    # Capital Misallocation Risk Penalty (Agent 9 / 11th WCS): Buffett VCR test.
+    # Capital Misallocation Risk Penalty (Agent 9): Buffett's VCR test — the "one-dollar premise"
+    # (every retained $1 must create ≥$1 of value). Buffett's OWN concept, NOT an 11th-WCS finding
+    # (the 11th is Terms of Trade = debtors/creditors; VCR was a codex mis-attribution, fixed 2026-06-14).
     # Companies retaining >50% of earnings but generating VCR < 1.0 are destroying minority value.
     # Apply 10% quality_score haircut — business is structurally misallocating the retained capital.
     if "capital_misallocation_risk" in df.columns:

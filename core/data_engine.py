@@ -2029,7 +2029,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── Terms of Trade (MOSL 11th Study) — DPO vs DSO working capital leverage ──
     # terms_of_trade_spread: days_payable − days_receivable.
     # Positive = company collects from customers faster than it pays suppliers (supplier-financed model).
-    # Classic examples: D-Mart (0 DSO, 30+ DPO), HUL, Nestle. Validated across all 30 MOSL studies.
+    # Classic examples: D-Mart (0 DSO, 30+ DPO), HUL, Nestle. 11th study's EXACT metric is the
+    # debtors/creditors ratio (lower = better, = bargaining power vs suppliers/customers); DPO−DSO
+    # spread is the directionally-equivalent days form (high DPO + low DSO = favorable terms).
     # NaN for financials (days_payable NaN-out upstream).
     _dso = df["days_receivable"].fillna(np.nan)
     _dpo = df["days_payable"].fillna(np.nan)
@@ -2194,8 +2196,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ══════════════════════════════════════════════════════════════
 
     # ── Payback Ratio (MOSL's single most validated supernormal-return predictor) ──
-    # "Payback Ratio < 1x is the most reliable valuation metric for supernormal returns."
-    #   — confirmed in every one of the 30 Annual Wealth Creation Studies
+    # ORIGIN = 5th WCS (2001): first defined payback = MCap(1995) / Σprofits(1996-2000), band→return
+    #   table ≤1 → 73.1%, 1-2 → 37.4%, 2-3 → 36.9% mean RoR (all verified 2026-06-14; cites Buffett's
+    #   "lay out money now to get more back later"). Re-made the EXPLICIT THEME of the 15th WCS (2010,
+    #   "UU Investing"), same MCap/next-5yr-profits definition, ladder <0.5→61%, 0.5-1→36%, 1-1.5→23% CAGR.
+    #   (Recurs across many studies, but "every one of the 30" was an overclaim — trimmed.)
     # Conservative (0% growth): payback_0g = market_cap / (5 × current PAT)
     # Growth-adjusted: market_cap / cumulative 5Y PAT at estimated CAGR
     pat_safe = _pat.fillna(0).clip(lower=0.01)
@@ -2665,9 +2670,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── Study 18 (2013): Uncommon Profits — Emerging vs Enduring Value Creators ──
-    # Emerging VC: first-time ROE crossing 15% (Cost of Equity threshold) = Emergence event.
-    # Filter: corporate-parent quality + non-cyclical + PE ≤ 20x at emergence.
-    # "In most cases, there is no significant gain in pre-empting emergence."
+    # Emerging VC: first-time ROE crossing 15% = Emergence event. VERIFIED book-exact (2026-06-14):
+    # study defines Value Creator = RoE consistently > Cost of Equity, "in India CoE is ~15%"; emergence
+    # = entering the "Value Creation zone i.e. RoE of 15% or higher". roe_med_5y<15 operationalizes the
+    # study's "don't pre-empt emergence" pitfall (§2.2.1) — wait for the actual crossing, not the run-up.
+    # Study's emergence-probability drivers = strong corporate-parent (= promoter/majority holder) +
+    # non-cyclical business — both VERIFIED in the study but NOT coded (no parent/cyclicality column);
+    # engine substitutes screenable proxies pat_gr_3y>15 + economic_profit_positive. PE ≤ 20x is the
+    # engine's OWN "reasonable valuation at emergence" guard, NOT a study number.
     df["emerging_vc_flag"] = (
         (df["roe"].fillna(0) >= 15) &             # Current: crossed the 15% CoE threshold
         (df["roe_med_5y"].fillna(0) < 15) &        # Historical: was below (first-time crossing)
@@ -2870,8 +2880,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Identity C: Buffett 1-to-1 Value Creation Ratio
     # PROVENANCE (audited 2026-06-14): the old "EPOCH 2 / MOSL Studies 7-12" attribution is codex
     # framing, NOT book-exact — the 12th WCS is macro ("Next Trillion $ Opportunity" + New/Old-Economy
-    # classification), zero reinvestment content. RR/VCR lineage = Buffett's 1-to-1 value-creation
-    # test (11th WCS) + general MOSL reinvestment philosophy, not a 12th-study empirical finding.
+    # classification), zero reinvestment content. The VCR (Identity C) is Buffett's OWN 1-to-1
+    # value-creation test ("one-dollar premise") — NOT from the 11th WCS either (the 11th is Terms
+    # of Trade = debtors/creditors, verified 2026-06-14). RR is general MOSL reinvestment philosophy.
     # ══════════════════════════════════════════════════════════════
 
     # Identity A (Agent 8): Reinvestment Rate (RR) — fraction of net profit retained in business.
@@ -2880,9 +2891,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # clip(0,1): guards against DPR > 100 (data artefacts in some screeners).
     # KNOWN DATA GAP (2026-06-12 census): the CSV DPR column is broken at source (96% empty,
     # rest negative) → RR ≡ 1.0 universe-wide. This corrupts RR-gated signals two ways:
-    #   • DEADENS low-RR conditions (stagnant_cash_cow_flag, capital_misallocation_risk RR leg fire 0)
-    #   • makes high-RR gates INERT/always-pass (flag_epoch2_compounder's RR≥60% → fires on ROCE+size
-    #     only, silently bypassing the retention filter — noise, not death). Self-heals when DPR fixed.
+    #   • DEADENS low-RR conditions (stagnant_cash_cow_flag needs RR<0.30 → fires 0)
+    #   • makes high-RR gates INERT/always-pass: flag_epoch2_compounder (RR≥0.60) AND
+    #     capital_misallocation_risk (RR>0.50) both pass for ALL → those flags fire on their OTHER
+    #     legs only (ROCE+size / VCR<1.0) — noise, not death. Self-heals when DPR is fixed.
     df["reinvestment_rate"] = (
         1.0 - (df["dividend_payout_ratio"].fillna(0) / 100.0)
     ).clip(0.0, 1.0)
@@ -2908,8 +2920,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # RIGOROUS REPLACEMENT: VCR = ROCE_5Y_median / COST_OF_EQUITY (12%).
     # Mathematical equivalence: VCR ≥ 1.0 ↔ ROCE ≥ CoE ↔ company earns above its hurdle rate
     # ↔ each rupee retained creates more than a rupee of intrinsic value → same Buffett test.
-    # Benchmarks from 11th WCS remain valid: VCR ≥ 2.0 (ROCE ≥ 24%) = elite,
-    # ≥ 1.0 (ROCE ≥ 12%) = passing, < 1.0 = value-destroys on retained capital.
+    # PROVENANCE (audited 2026-06-14): VCR is BUFFETT's own concept (the "one-dollar premise"), NOT
+    # from any Wealth Creation Study — the old "Benchmarks from 11th WCS" stamp was a codex fabrication
+    # (11th = Terms of Trade = debtors/creditors, zero VCR content). Bands: VCR ≥ 2.0 = elite,
+    # ≥ 1.0 (ROCE ≥ 12%) = passing, < 1.0 = value-destroys on retained capital. The 2.0 elite cut is a
+    # quant choice; "ROCE ≥ 24%" is just its arithmetic (2 × 12% CoE), not an 11th-study number.
     # Correctly handles declining stocks: ROCE < 0 → VCR < 0 < 1.0 → correctly flagged.
     # Cascade: 5Y median → 10Y median → current ROCE (best available history).
     _roce_vcr = (
