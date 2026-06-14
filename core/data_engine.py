@@ -2684,8 +2684,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── Study 19 (2014): 100x / SQGLP — Five-Factor Century Stock Screen ──
     # "100x requires vision to see, courage to buy, and patience to hold." — Thomas Phelps
     # SQGLP: S=Size, Q=Quality, G=Growth, L=Longevity, P=Price
-    # 100x stock profile: avg P/E 6x at purchase → 24x at exit; mcap < USD 500M at entry.
-    _sqglp_s = (df["market_cap"].fillna(0) < 40_000).astype(int)    # S: < ~USD 500M mcap
+    # 100x stock profile (19th WCS): small base at entry (the study cites mcap < ~USD 500M).
+    # FIX 2026-06-13: was < 40_000 Cr (~USD 4.8B) — a 10x unit bug vs the stated "USD 500M": it let
+    # 92% of the universe pass the SMALL-size gate, so S was dead weight (sqglp_score ≈ QGLP). ₹5,000 Cr
+    # (~USD 500-600M) is the genuine small-cap base a 100x needs (5,000 Cr × 100 = ₹5L cr, achievable).
+    _sqglp_s = (df["market_cap"].fillna(0) < 5_000).astype(int)     # S: < ₹5,000 Cr ≈ USD 500M small-cap
     _sqglp_q = (
         (df["roce"].fillna(0)      >= 15) &
         (df["roe"].fillna(0)       >= 15) &
@@ -3068,6 +3071,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         r"\bNTPC\b|\bNHPC\b|\bGAIL\b|\bSAIL\b|\bONGC\b|\bIOC\b|\bBPCL\b|\bHPCL\b|\bIRFC\b|\bRVNL\b|\bHUDCO\b|\bLIC\b|\bBHEL\b|\bBEL\b|\bHAL\b|Coal India|NMDC|NALCO|MOIL|RINL|MTNL|BSNL|RITES|IRCTC|IRCON|RAILTEL",
         case=False, na=False
     )
+    # NOTE 2026-06-13: this sector/industry branch is DEAD — "Public Sector|Govt" matches 0 of the
+    # CSV's 84 sector / 354 industry names (they classify by business, never by ownership). PSU
+    # detection therefore relies entirely on the _psu_name list above. Kept (harmless OR, 0 matches)
+    # to document the gap: the CSV has no ownership column, so PSUs outside the name list aren't caught.
     _psu_sector = df["sector"].fillna("").astype(str).str.contains("Public Sector|Govt", case=False, na=False) | \
                   df["industry"].fillna("").astype(str).str.contains("Public Sector|Govt", case=False, na=False)
     _is_psu_proxy = (_psu_name | _psu_sector) & (df["promoter_holdings"].fillna(0) >= 50) & (df["pledged_percentage"].fillna(0) == 0)
