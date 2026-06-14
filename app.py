@@ -920,58 +920,66 @@ with tabs[2]:
         _tier_cfg = next((t for t in CONVICTION_TIERS if t["tier"] == _tier_num), CONVICTION_TIERS[-1])
         _comp_sc  = float(_sg("composite_score", 0))
 
-        # ── Verdict logic: one clear signal, always at the top ─────────────
+        # ── Verdict header: reads the pre-computed verdict_* columns (core/verdict_engine.py) ──
+        # Hard overrides (gate fail / sell alert) take precedence; otherwise the engine's veto-aware
+        # verdict drives the band. No verdict logic is computed here — single source of truth is the engine.
+        _vdir  = str(_sg("verdict_direction", "AVOID") or "AVOID")
+        _vstr  = str(stock.get("verdict_strength", "") or "")
+        _vconf = str(stock.get("verdict_confidence", "") or "")
+        _vnarr = str(stock.get("verdict_narrative", "") or "")
+        _vrisk = str(stock.get("verdict_top_risk", "") or "")
+        _vemoji = str(stock.get("verdict_emoji", "") or "")
+
         if not _gate_ok:
-            _verdict     = "SYSTEM REJECTED"
-            _verdict_clr = COLORS["red"]
-            _verdict_bg  = "rgba(248,81,73,0.09)"
+            _verdict, _verdict_clr, _verdict_bg = "SYSTEM REJECTED", COLORS["red"], "rgba(248,81,73,0.09)"
             _verdict_reason = f"Hard Gate Failure — {stock.get('failed_gates', 'Unknown')}"
         elif _sell_any:
-            _verdict     = "SELL ALERT"
-            _verdict_clr = COLORS["red"]
-            _verdict_bg  = "rgba(248,81,73,0.07)"
+            _verdict, _verdict_clr, _verdict_bg = "SELL ALERT", COLORS["red"], "rgba(248,81,73,0.07)"
             _verdict_reason = "One or more Baid sell triggers have fired — review Forensics tab."
-        elif _tier_num <= 2 and _comp_sc >= 70:
-            _verdict     = "BUY CANDIDATE"
-            _verdict_clr = COLORS["green"]
-            _verdict_bg  = "rgba(63,185,80,0.08)"
-            _verdict_reason = (
-                f"{_tier_cfg['emoji']} {_tier_cfg['label']} · "
-                f"Score {_comp_sc:.0f}/100 · All hard gates passed"
-            )
-        elif _tier_num <= 3 and _comp_sc >= 55:
-            _verdict     = "MONITOR"
-            _verdict_clr = COLORS["gold"]
-            _verdict_bg  = "rgba(228,179,65,0.07)"
-            _verdict_reason = (
-                f"{_tier_cfg['emoji']} {_tier_cfg['label']} · "
-                f"Score {_comp_sc:.0f}/100 · Watch for better entry point"
-            )
         else:
-            _verdict     = "AVOID"
-            _verdict_clr = COLORS["text_muted"]
-            _verdict_bg  = "rgba(110,118,129,0.06)"
-            _verdict_reason = (
-                f"Tier {_tier_num} · Score {_comp_sc:.0f}/100 · "
-                f"Does not meet investment threshold"
-            )
+            _dir_map = {
+                "BUY":   (COLORS["green"],      "rgba(63,185,80,0.08)"),
+                "WATCH": (COLORS["gold"],       "rgba(228,179,65,0.07)"),
+                "AVOID": (COLORS["text_muted"], "rgba(110,118,129,0.06)"),
+            }
+            _verdict_clr, _verdict_bg = _dir_map.get(_vdir, _dir_map["AVOID"])
+            _verdict = f"{_vemoji} {_vdir}".strip()
+            _verdict_reason = _vnarr or f"Tier {_tier_num} · Score {_comp_sc:.0f}/100"
 
+        # Strength · Score · Confidence subline (engine path only)
+        _meta_bits = []
+        if _gate_ok and not _sell_any:
+            if _vstr:
+                _meta_bits.append(_vstr)
+            _meta_bits.append(f"Score {_comp_sc:.0f}/100")
+            if _vconf:
+                _meta_bits.append(f"🔍 {_vconf} data")
+        _meta_line = " · ".join(_meta_bits)
+
+        _pill_css = ("font-size:0.67rem;font-weight:700;padding:2px 10px;border-radius:12px;"
+                     "white-space:nowrap;")
+        _risk_pill = (
+            f'<span style="{_pill_css}background:rgba(248,81,73,0.13);color:{COLORS["red"]};'
+            f'border:1px solid rgba(248,81,73,0.4);">{_vrisk}</span>'
+        ) if (_vrisk and _gate_ok and not _sell_any) else ""
         _mr_pill = (
-            f'<span style="font-size:0.67rem;font-weight:700;padding:2px 10px;'
-            f'border-radius:12px;background:rgba(228,179,65,0.15);color:{COLORS["gold"]};'
-            f'border:1px solid rgba(228,179,65,0.4);white-space:nowrap;">⚠️ Mean Reversion</span>'
+            f'<span style="{_pill_css}background:rgba(228,179,65,0.15);color:{COLORS["gold"]};'
+            f'border:1px solid rgba(228,179,65,0.4);">⚠️ Mean Reversion</span>'
         ) if _mr_risk else ""
 
         st.markdown(f"""
         <div style="background:{_verdict_bg};border:1px solid {_verdict_clr}55;
              border-left:4px solid {_verdict_clr};border-radius:10px;
-             padding:11px 16px;margin:6px 0 10px 0;display:flex;
-             align-items:center;gap:14px;flex-wrap:wrap;">
-          <span style="font-size:0.77rem;font-weight:900;color:{_verdict_clr};
-               letter-spacing:1.2px;white-space:nowrap;">{_verdict}</span>
-          <span style="font-size:0.75rem;color:{COLORS['text_secondary']};
-               flex:1;min-width:160px;">{_verdict_reason}</span>
-          {_mr_pill}
+             padding:11px 16px;margin:6px 0 10px 0;">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:0.85rem;font-weight:900;color:{_verdict_clr};
+                 letter-spacing:1.1px;white-space:nowrap;">{_verdict}</span>
+            <span style="font-size:0.7rem;color:{COLORS['text_secondary']};
+                 white-space:nowrap;">{_meta_line}</span>
+            {_risk_pill}{_mr_pill}
+          </div>
+          <div style="font-size:0.75rem;color:{COLORS['text_secondary']};margin-top:5px;">
+            {_verdict_reason}</div>
         </div>
         """, unsafe_allow_html=True)
 
