@@ -24,3 +24,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+
+# Playwright visual-audit artifacts (local only)
+.playwright-mcp/
+baseline-*.png
+page-*.png

@@ -22,7 +22,7 @@ warnings.filterwarnings('ignore')
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core import fetch_and_clean_data, run_full_scoring, compute_forensic_signals, apply_forensic_penalty
+from core import fetch_and_clean_data, run_full_scoring, compute_forensic_signals, apply_forensic_penalty, compute_verdict
 from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
@@ -71,12 +71,17 @@ def get_scored_data(clean_df: pd.DataFrame, analysis_mode: str, scoring_profile:
                                     Framework flags (Diamond, Dhandho, SQGLP Engine, Schilit,
                                     Fisher all read forensic columns from step 1). → Tsunami.
       3. apply_forensic_penalty   : Cascading multiplier on composite_score → conviction tier
-                                    reassignment. MUST run last: composite_score only exists
-                                    after step 2.
+                                    reassignment. MUST run last among scoring steps: composite_score
+                                    only exists after step 2.
+      4. compute_verdict          : Display-only decision-synthesis. Reads the POST-penalty
+                                    composite_score / conviction_tier (consistent after step 3) +
+                                    the 6 axes → verdict_direction / strength / narrative / risk.
+                                    Adds ZERO scoring; only verdict_* label columns.
     """
     df = compute_forensic_signals(clean_df)
     df = run_full_scoring(df, analysis_mode, scoring_profile)
     df = apply_forensic_penalty(df)
+    df = compute_verdict(df)
     return df
 
 inject_css()
