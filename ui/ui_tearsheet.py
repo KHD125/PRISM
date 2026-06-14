@@ -1196,8 +1196,10 @@ def render_financial_insights(stock: pd.Series):
                f"FII {fii:.1f}%  ·  DII {dii:.1f}%",
                f"Smart Money: {smart}")
 
-    # ── Render in a packed responsive 2-col CSS grid (no st.columns gutter padding) ──
-    # auto-fit minmax collapses to 1 column on narrow viewports, 2 on wide — zero wasted space.
+    # ── Render in a balanced 2×2 CSS grid (no st.columns gutter padding) ──
+    # FIXED 2 columns so the 4 cards always lay out 2×2 — auto-fit fit 3 per row on wide desktops,
+    # which orphaned the 4th card (Ownership) alone on row 2 with empty space beside it. 2 cols also
+    # gives each card half-width (vs third) → roomier rows, fewer truncated context notes.
     grid_cards = (
         _card("Business Quality",    "🏭", bq, COLORS["purple"]) +
         _card("Cash & Debt Quality", "💵", cd, COLORS["green"])  +
@@ -1205,7 +1207,7 @@ def render_financial_insights(stock: pd.Series):
         _card("Ownership Alignment", "👥", ow, COLORS["blue"])
     )
     st.markdown(
-        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));'
+        f'<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'
         f'gap:10px;align-items:start;">{grid_cards}</div>',
         unsafe_allow_html=True,
     )
