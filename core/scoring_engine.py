@@ -618,10 +618,12 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
             index=df.index
         )
 
-    # ── 28th Study: EP Power Curve Top-Quintile Bonus (Exhibit 10) ──
-    # Companies in EP Quintile 1/2 (top-40% by absolute economic profit) delivered 24%/21% CAGR
-    # vs 4-8% for Q4/Q5 — averaged across six overlapping 10-year periods. +3 modest reinforcement
-    # (kept small to avoid over-rewarding size, since absolute EP correlates with market cap).
+    # ── 28th Study: EP Power Curve Top-Quintile Bonus ──
+    # Book-verified 2026-06-13: the top-EP portfolio delivered +8% alpha (80% hit rate) vs the
+    # Economic-LOSS portfolio's +2% (Exhibit 7) — so high CURRENT EP (Q1/Q2) is a genuine quality
+    # marker worth a small reinforcement. (Prior "24%/21% vs 4-8% CAGR by quintile" matched no
+    # exhibit; the study's 24-26% figures are MOVE-UP returns Q5→Q2 / Q2→Q1, captured separately by
+    # ep_hockey_stick.) +3 modest (kept small since absolute EP correlates with market cap).
     if "ep_top_quintile_flag" in df.columns:
         df["quality_score"] = pd.Series(
             np.where(

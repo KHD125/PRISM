@@ -1481,11 +1481,17 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         default="📉 Value Trap"
     )
 
-    # ── EP Power Curve QUINTILE (28th WCS, Exhibit 7/10 — the study's actual methodology) ──
+    # ── EP Power Curve QUINTILE (28th WCS — the study's actual methodology) ──
     # Rank the universe by ABSOLUTE economic profit into 5 quintiles: Q1 = highest EP, Q5 = deepest loss.
-    # Backtested finding (avg of six 10-year periods 2008-2023): companies ENDING in Q1/Q2 deliver
-    # market-beating 24% / 21% CAGR; Q4/Q5 deliver only 8% / 4%. "It pays to start from Q2/Q3."
-    # Distinct from ep_power_curve (sign/direction label) — this is population-relative EP position.
+    # Book-verified 2026-06-13. The study's REAL findings (prior comment's "ending in Q1/Q2 → 24/21%
+    # CAGR, Q4/Q5 → 8/4%" matched no exhibit):
+    #   • EP > Accounting Profit: top-EP portfolio +8% alpha (80% hit rate) vs Economic-LOSS +2% (Exhibit 7).
+    #   • Returns come from MOVING UP the curve (the "Hockey Stick"): Q5→Q2 = 26% CAGR (25 cos),
+    #     Q2→Q1 = 25% (21 cos) over 2013-23; 6-period 10yr avg = Exhibit 10.
+    #   • Best to START from Quintile 2/3 — 68% of up-moves originate there, highest HSR probability
+    #     (18%/19%). Q1 is already at the top; Q4/Q5 (Economic Loss) are erratic.
+    # ep_top_quintile_flag below = high CURRENT EP (Q1/Q2 = quality marker); the UP-MOVE is captured
+    # separately by ep_hockey_stick (EP positive + improving). Distinct from ep_power_curve (sign label).
     df["ep_quintile"] = np.nan
     _ep_valid = df["economic_profit"].notna()
     if int(_ep_valid.sum()) >= 5:
