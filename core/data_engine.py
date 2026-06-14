@@ -2624,7 +2624,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Screen 1/2: "Dividend longevity + growth" — proxy = dividend_payout_ratio ≥ 20%.
     # Screen 5: "≥ 5 million shares outstanding" — equity_shares holds ABSOLUTE share count
     #           (universe median ~51M), so the Weiss threshold is 5_000_000 shares.
-    # From 3,000+ stocks, only 48 (1.5%) passed all 6 screens. This is appropriately rare.
+    # Screen 6: "≥ 80 institutional investors" (wide popularity) — OMITTED: the CSV shareholding
+    #           tab carries institutional holding % not a COUNT of distinct institutions, and a
+    #           %-holding proxy captures concentration, not the breadth Weiss intends → data gap.
+    # In the book, 48 stocks (1.5% of 3,000+) passed all 6 screens; this flag implements 5 of 6.
     # KNOWN DATA GAP (2026-06-12 census): the CSV "Dividend Payout Ratio" column is broken at
     # source (96% empty; the rest negative) → the dpr leg cannot pass → flag fires 0 until the
     # sheet formula is fixed. Logic is correct and self-revives when real DPR data arrives.
@@ -2862,10 +2865,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ══════════════════════════════════════════════════════════════
-    # EPOCH 2 (7th–12th WCS, 2002–2007): REINVESTMENT MOAT VECTORS
-    # Scalability & Self-Funding Reinvestment frameworks from Motilal Oswal Studies 7-12.
+    # REINVESTMENT MOAT VECTORS — Scalability & Self-Funding Reinvestment
     # Identity A: Reinvestment Rate | Identity B: Fundamental Growth Capacity
     # Identity C: Buffett 1-to-1 Value Creation Ratio
+    # PROVENANCE (audited 2026-06-14): the old "EPOCH 2 / MOSL Studies 7-12" attribution is codex
+    # framing, NOT book-exact — the 12th WCS is macro ("Next Trillion $ Opportunity" + New/Old-Economy
+    # classification), zero reinvestment content. RR/VCR lineage = Buffett's 1-to-1 value-creation
+    # test (11th WCS) + general MOSL reinvestment philosophy, not a 12th-study empirical finding.
     # ══════════════════════════════════════════════════════════════
 
     # Identity A (Agent 8): Reinvestment Rate (RR) — fraction of net profit retained in business.
@@ -2873,8 +2879,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # DPR fillna(0): no dividend data → full retention (conservative for growth companies).
     # clip(0,1): guards against DPR > 100 (data artefacts in some screeners).
     # KNOWN DATA GAP (2026-06-12 census): the CSV DPR column is broken at source (96% empty,
-    # rest negative) → RR ≡ 1.0 universe-wide, which deadens every RR-gated signal downstream
-    # (stagnant_cash_cow_flag, capital_misallocation_risk RR leg). Self-heals when DPR is fixed.
+    # rest negative) → RR ≡ 1.0 universe-wide. This corrupts RR-gated signals two ways:
+    #   • DEADENS low-RR conditions (stagnant_cash_cow_flag, capital_misallocation_risk RR leg fire 0)
+    #   • makes high-RR gates INERT/always-pass (flag_epoch2_compounder's RR≥60% → fires on ROCE+size
+    #     only, silently bypassing the retention filter — noise, not death). Self-heals when DPR fixed.
     df["reinvestment_rate"] = (
         1.0 - (df["dividend_payout_ratio"].fillna(0) / 100.0)
     ).clip(0.0, 1.0)

@@ -545,13 +545,19 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
         _roe_elite_contrib = df["roe_elite_flag"].fillna(0) * 100.0 * 0.25 * QUALITY_WEIGHTS["moat"]
         df["quality_score"] = df["quality_score"] + _roe_elite_contrib
 
-    # ── EPOCH 2 (7th–12th WCS, 2002–2007): Self-Funding Scale Velocity ──
-    # Agent 10 / 12th WCS: flag_epoch2_compounder — high-retention mid/small-cap ROCE leaders.
+    # ── Self-Funding Scale Velocity: flag_epoch2_compounder — high-retention mid/small-cap ROCE leaders ──
     # Three concurrent conditions (all must hold):
     #   (1) RR ≥ 60%: retaining ≥60% of earnings internally — no payout dilution of compounding base.
     #   (2) ROCE_10Y ≥ 20%: sustained capital efficiency — proven reinvestment returns over full cycle.
     #   (3) Scalable category: Mid/Small/Micro/Nano Cap — hasn't hit structural size ceiling yet.
-    # 12th WCS empirical: this configuration produced the highest wealth-creation velocity in 2002-07.
+    # PROVENANCE (audited 2026-06-14): the old "12th WCS empirical: highest wealth-creation velocity
+    #   2002-07" claim was a CODEX FABRICATION — the 12th study is macro ("Next Trillion $ Opportunity"
+    #   + New/Old-Economy classification) with ZERO reinvestment/retention/payout content. The
+    #   RR+ROCE+small-cap compounder logic is a sound quant construct (cf. Donville/Speziale ROE≥20 +
+    #   retention), NOT a 12th-WCS finding. The Buffett-VCR lineage below (Identity C) traces to the 11th WCS.
+    # LIVE DEGENERACY: condition (1) is currently INERT — reinvestment_rate ≡ 1.0 universe-wide (broken
+    #   DPR source) → RR≥60% passes for ALL → flag fires on ROCE+size only (~338), silently bypassing the
+    #   retention filter (a high-payout "defensive income asset" can still get the boost). Self-corrects on DPR fix.
     # Boost: +10 pts to quality_score (threshold-agnostic; final _safe_clip caps at 100).
     _epoch2_req_cols = ["reinvestment_rate", "fundamental_growth_capacity", "mcap_tier"]
     if all(c in df.columns for c in _epoch2_req_cols):

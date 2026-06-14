@@ -1659,8 +1659,12 @@ def render_raw_signals(stock: pd.Series):
         _cell("Growth-Value Trap", _yn("growth_value_trap"), "") +
         # 9th — Cyclical peak trap (commodity at peak-cycle deceptive low P/E)
         _cell("Cyclical Peak Trap", _yn("cyclical_peak_trap"), "") +
-        # 26th — Atoms vs Bits business design
-        _cell("Atoms/Bits",       stock.get("atoms_to_bits_label","") or "N/A", "")
+        # 26th — Atoms vs Bits business design + PSG (Price/Sales-to-Growth), the study's
+        # signature valuation lens for Bits cos whose PE/PEG mislead under "optical losses".
+        # Study uses PSG peer-relative ("compared with suitable peers") — NO absolute cutoff,
+        # so we show the raw value for cross-stock comparison, not a fabricated verdict.
+        _cell("Atoms/Bits",       stock.get("atoms_to_bits_label","") or "N/A", "") +
+        _cell("PSG",              g("psg_ratio"),       "{:.2f}")
     )
 
     # Dorsey Wide Moat pillar cells
