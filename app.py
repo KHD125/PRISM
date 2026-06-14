@@ -1009,14 +1009,19 @@ with tabs[2]:
         ])
 
         # ══ Tab A: Overview ════════════════════════════════════════════════
+        # Visual quality profile (radar) + signal badges → the deep financial breakdown.
+        # The old 7-KPI buy-checklist was REMOVED (2026-06-14): every one of its metrics is shown,
+        # with more depth, in the Business & Financial Analysis below, and its tier/score header
+        # duplicated the verdict header above. The verdict + 6-axis scorecard are now the at-a-glance.
         with _itabs[0]:
-            col1, col2 = st.columns([1, 1])
+            _ov1, _ov2 = st.columns([3, 2])
 
-            with col1:
+            with _ov1:
                 fig = render_radar_chart(stock, f"{selected} — Quality Radar")
                 st.plotly_chart(fig, use_container_width=True)
 
-                # Signal badges row
+            with _ov2:
+                # Signal badges
                 pio_raw = stock.get("piotroski_fscore", None)
                 pio_val = None
                 if pio_raw is not None and not (isinstance(pio_raw, float) and np.isnan(pio_raw)):
@@ -1042,64 +1047,12 @@ with tabs[2]:
                     f'background:{c}18;border:1px solid {c}40;color:{c};">{lbl}</span>'
                     for lbl, c in badge_items
                 )
-                st.markdown(bdgs, unsafe_allow_html=True)
-
-            with col2:
-                # 7-KPI buy decision checklist
-                _roce_r = _sg("roce_med_10y", None)
-                roce_ov = float(_roce_r if _roce_r is not None else _sg("roce", 0))
-                pat5_ov = float(_sg("pat_gr_5y", 0))
-                peg_ov  = float(_sg("peg", 0))
-                cfo_ov  = float(_sg("cfo_to_pat", 0))
-                de_ov   = float(_sg("debt_to_equity", 0))
-                prom_ov = float(_sg("promoter_holdings", 0))
-                plg_ov  = float(_sg("pledged_percentage", 0))
-                fcfy_ov = float(_sg("fcf_yield", 0))
-
-                def _krow(label, val_str, passed, note=""):
-                    ico, clr = (("✅", COLORS["green"]) if passed is True else
-                                ("❌", COLORS["red"])   if passed is False else
-                                ("⚪", COLORS["text_muted"]))
-                    nh = (
-                        f'<span style="font-size:0.63rem;color:{COLORS["text_muted"]};'
-                        f'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;'
-                        f'white-space:nowrap;margin-left:6px;">{note}</span>'
-                    ) if note else ""
-                    return (
-                        f'<div style="display:flex;align-items:center;gap:8px;padding:6px 0;'
-                        f'border-bottom:1px solid rgba(255,255,255,0.04);">'
-                        f'<span style="width:18px;text-align:center;flex-shrink:0;">{ico}</span>'
-                        f'<span style="font-size:0.74rem;color:{COLORS["text_secondary"]};'
-                        f'width:128px;flex-shrink:0;">{label}</span>'
-                        f'<span style="font-size:0.82rem;font-weight:700;color:{clr};'
-                        f'white-space:nowrap;flex-shrink:0;">{val_str}</span>{nh}</div>'
-                    )
-
-                peg_str  = f"{peg_ov:.2f}×" if peg_ov > 0 else "N/A"
-                peg_pass = (0 < peg_ov <= 1.0) if peg_ov > 0 else None
-                pr_note  = f"⚠️ {plg_ov:.0f}% pledged" if plg_ov > 10 else "≥50% aligned"
-
-                kpi_html = (
-                    _krow("ROCE 10Y Median", f"{roce_ov:.1f}%",  roce_ov >= 15,   "≥15%")      +
-                    _krow("PAT CAGR 5Y",     f"{pat5_ov:.1f}%",  pat5_ov >= 15,   "≥15%")      +
-                    _krow("PEG Ratio",         peg_str,           peg_pass,       "Lynch ≤1.0") +
-                    _krow("CFO / PAT",       f"{cfo_ov:.1f}%",   cfo_ov >= 70,    "≥70% cash") +
-                    _krow("D / E Ratio",     f"{de_ov:.2f}",      de_ov < 0.5,    "<0.5 safe") +
-                    _krow("Promoter Hold.",  f"{prom_ov:.1f}%",   prom_ov >= 50,  pr_note)     +
-                    _krow("FCF Yield",       f"{fcfy_ov:.1f}%",   fcfy_ov >= 3,   "≥3% solid")
+                st.markdown(
+                    f'<div style="font-size:0.62rem;font-weight:800;color:{COLORS["text_muted"]};'
+                    f'text-transform:uppercase;letter-spacing:0.8px;margin:4px 0 8px 0;">Signals</div>'
+                    f'{bdgs}',
+                    unsafe_allow_html=True,
                 )
-
-                st.markdown(f"""
-                <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                            border-left:3px solid {_tc['text']};border-radius:10px;
-                            padding:14px 16px;">
-                  <div style="font-size:0.64rem;font-weight:800;color:{_tc['text']};
-                              text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px;">
-                    {_tier_cfg['emoji']} {_tier_cfg['label']} &nbsp;·&nbsp; Score {_comp_sc:.0f} / 100
-                  </div>
-                  {kpi_html}
-                </div>
-                """, unsafe_allow_html=True)
 
             st.markdown(
                 f"<div class='sec-head'>📊 Business & Financial Analysis</div>",
