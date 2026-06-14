@@ -2379,13 +2379,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _bbc_cheap    = df["d32_pe_vs_median"].fillna(0) < -25
     df["bruised_blue_chip"] = (_bbc_fallen & _bbc_quality & _bbc_cheap).astype(int)
 
-    # ── Bruised Blue Chip 29th WCS — faithful to the study's verbatim definition ──
-    # Blue Chip (29th WCS p.278-284): (a) top 50 by market cap, OR
-    #   (b) top 250 by market cap AND 10-year average ROE >= 20%. (10Y listing track record proxied
-    #   by roe_med_10y being available.) Study uses ROE (not ROCE) — blue chips include banks.
-    # Bruised (p.264, 297): price fallen 50%+ from 5-year high. CSV lacks 5Y-high, so dist_52wh > 40
-    #   (>40% off the 52-week high) is the conservative available proxy for a deep drawdown.
-    # Entry (p.13, 285): "typically Price/Book less than 2x" — the verbatim golden entry valuation.
+    # ── Bruised Blue Chip 29th WCS — faithful to the study's verbatim definition (§2/§2.1, p.5) ──
+    # Blue Chip (§2.1, p.5, VERBATIM): track record >=10yr; (a) top 50 by market cap, OR (b) top 250
+    #   by market cap AND 10-year average ROE >= 20%. (Book identifies 68 Blue Chips.) 10Y track record
+    #   proxied by roe_med_10y availability. Study uses ROE (not ROCE) — blue chips include banks.
+    # Bruised (§2, p.5, VERBATIM): "Blue Chips which have fallen more than 50% from their 5-year high."
+    #   CSV lacks a 5Y-high series, so the dist_52wh/pe_discount proxy below approximates the deep drawdown.
+    # Entry (Highlights + process, VERBATIM): "Buy at attractive valuations, typically Price/Book less than 2x".
+    # Book-verified 2026-06-13: prior "p.278-284 / p.264, 297 / p.13, 285" cites were ALL fabricated
+    #   (the 80-pg study's definitions are on p.5); the criteria themselves were verbatim-accurate.
     _mcap_rank        = df["market_cap"].rank(ascending=False, method="min")   # 1 = largest
     _bbc29_top50      = _mcap_rank <= 50
     _bbc29_top250_q   = (_mcap_rank <= 250) & (df["roe_med_10y"].fillna(0) >= 20.0)
