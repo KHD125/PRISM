@@ -1239,7 +1239,34 @@ def render_verdict_scorecard(stock: pd.Series):
         for hdr, metrics in axes
     )
     st.markdown(
-        f'<div style="display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px 0;">{cells}</div>',
+        f'<div style="display:flex;flex-wrap:wrap;gap:7px;margin:0 0 7px 0;">{cells}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Deep Signals: cross-cutting synthesis metrics that were computed-but-invisible ──
+    # (WCS wealth-creation composite, economic profit, Buffett VCR, terms-of-trade, cash machine).
+    # Scales verified 2026-06-14: wcs 0-9, EP ₹Cr, VCR ~1x, ToT days, cash 0-100.
+    def _ds(label, val_str, good):
+        clr = (COLORS["green"] if good is True else
+               COLORS["red"] if good is False else COLORS["text_secondary"])
+        return (f'<span style="font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:10px;'
+                f'background:{COLORS["bg_tertiary"]};border:1px solid {COLORS["border"]};'
+                f'color:{clr};white-space:nowrap;">{label}&nbsp;{val_str}</span>')
+
+    _wcs, _ep = _v("wcs_score"), _v("economic_profit")
+    _vcr, _tot, _cash = _v("value_creation_ratio"), _v("terms_of_trade_spread"), _v("cash_machine_score")
+    _ep_str = (f"₹{_ep:,.0f}cr" if _ep == _ep else "—")
+    deep = "".join([
+        _ds("WCS",            (f"{_wcs:.0f}/9"  if _wcs  == _wcs  else "—"), (_wcs  >= 5)   if _wcs  == _wcs  else None),
+        _ds("Econ-Profit",    _ep_str,                                       (_ep   > 0)    if _ep   == _ep   else None),
+        _ds("VCR",            (f"{_vcr:.1f}x"   if _vcr  == _vcr  else "—"), (_vcr  >= 1.0) if _vcr  == _vcr  else None),
+        _ds("Terms-of-Trade", (f"{_tot:+.0f}d"  if _tot  == _tot  else "—"), (_tot  > 0)    if _tot  == _tot  else None),
+        _ds("Cash-Machine",   (f"{_cash:.0f}"   if _cash == _cash else "—"), (_cash >= 50)  if _cash == _cash else None),
+    ])
+    st.markdown(
+        f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 12px 0;">'
+        f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
+        f'letter-spacing:0.5px;">🔬 DEEP SIGNALS</span>{deep}</div>',
         unsafe_allow_html=True,
     )
 
