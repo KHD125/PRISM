@@ -3016,6 +3016,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── Anti-Pattern B: Stagnant Cash-Cow Trap ──
     # Elite optical ROE (>35%) + high payout (DPR >70%, RR < 30%) + flat fixed assets + zero CWIP.
     # These are defensive income assets not compounders — 12th WCS: remove from high-velocity scan.
+    # KNOWN-DEAD (census 2026-06-13): the reinvestment_rate < 0.30 leg requires DPR > 70%, but the CSV
+    # "Dividend Payout Ratio" column is broken at source (non-null 4%, >0 for 0%) → reinvestment_rate
+    # is forced to ≡ 1.0 for the whole universe → this flag fires 0. Same root cause as
+    # blue_chip_quality_flag. Logic is correct; self-revives when the sheet DPR formula is fixed.
     _scc_flat_assets = (
         df["fixed_assets"].fillna(0) <= df["fixed_assets_1yb"].fillna(0) * 1.05  # <5% FA growth
     )
