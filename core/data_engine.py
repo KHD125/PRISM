@@ -2717,13 +2717,16 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ══════════════════════════════════════════════════════════════
 
     # ── Study 20 (2015): MQGLP — Mid-to-Mega Candidate ──
-    # "Mid-to-Mega" template: median 46% return, 28% alpha vs Sensex (2010-2015).
-    # Entry profile from backtested wealth creators: PE 15x, ROE 20%, PAT CAGR 35%.
-    # MQGLP = QGLP applied to mid-cap (rank 101-300 by mcap) entry universe.
-    # Proxy for mid-cap range: ₹5,000-20,000 Cr (India 2025 midcap band).
+    # Book-verified 2026-06-13. The study (§1.1) classifies by market-cap RANK: Mega = top 100,
+    # Mid = ranks 101-300, Mini = rest. Mid-to-Mega = a Mid stock crossing into the top 100 within
+    # ~5yr. Backtest (§ summary, verified): "median return of 46%, portfolio RoE 20%, P/E 15-23x at
+    # purchase, probability 5-12%". MQGLP = QGLP applied to the Mid (101-300) entry universe.
+    # FIX: the prior absolute proxy ₹5,000-20,000 Cr mapped to ranks ~277-629 (SMALL caps) — it missed
+    # the book's Mid (ranks 101-300 ≈ ₹18-84k Cr); only 1 of 34 candidates was actually Mid. Now use
+    # the actual rank, which is book-exact and self-calibrating to the live universe.
+    _mtm_rank = df["market_cap"].rank(ascending=False, method="min")
     df["mid_to_mega_candidate"] = (
-        (df["market_cap"].fillna(0) >= 5_000) &
-        (df["market_cap"].fillna(0) <= 20_000) &
+        (_mtm_rank >= 101) & (_mtm_rank <= 300) &              # S: Mid = market-cap ranks 101-300 (§1.1)
         (df["roce_med_5y"].fillna(df["roce"]).fillna(0) >= 15) &
         (df["pat_gr_5y"].fillna(0) >= 20) &
         (df["pe"].fillna(999) <= 25)
