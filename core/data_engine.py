@@ -2338,8 +2338,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── Sector Tailwind (30th Study: India Multi-Trillion Dollar Opportunity) ──
-    # Financials + Consumer Discretionaries = explosive tipping-point sectors 2025-2040
-    _tailwind_patt = "Bank|NBFC|Insurance|Finance|Auto|Consumer|Health|Pharma|Retail|Capital Market"
+    # Financials (INCLUDING Capital Market) + Consumer Discretionaries = the explosive tipping-point
+    # sectors (30th WCS headline). Pattern fixed 2026-06-13 vs the real CSV sector names: the old
+    # "NBFC|Capital Market" tokens matched 0 sectors, and "Finance" missed "Financial Services" — so
+    # BSE (the #1 fastest wealth creator!), CRISIL, MCX were wrongly excluded. "Financ" now catches
+    # Finance + Financial Services; "Broker"/"Rating" catch the Capital-Markets ecosystem.
+    _tailwind_patt = "Bank|Insurance|Financ|Broker|Rating|Auto|Consumer|Health|Pharma|Retail"
     df["sector_tailwind"] = (
         df["industry"].fillna("").astype(str).str.contains(_tailwind_patt, case=False, na=False) |
         df["sector"].fillna("").astype(str).str.contains(_tailwind_patt, case=False, na=False)
