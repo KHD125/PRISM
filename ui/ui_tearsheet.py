@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import html as _html
-from config import COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS
+from config import COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS, FRAMEWORK_CATEGORIES
 
 
 # ─── Display Utilities ──────────────────────────────────────────────────────
@@ -792,10 +792,13 @@ def render_guru_frameworks(stock: pd.Series):
     pct = int(passed_n / total_fw * 100)
     bar_clr = COLORS["green"] if pct >= 30 else COLORS["gold"] if pct >= 10 else COLORS["orange"]
 
-    grid_cards = ""
-    for fw in fw_list:
+    # Group the passed frameworks under the 5 §7 category headers (not a flat grid) —
+    # so the drill-down reads as "this stock's conviction comes from X, Y, Z styles".
+    fw_set = set(fw_list)
+
+    def _fw_card(fw):
         color, icon, desc = _FW_META.get(fw, (COLORS["text_muted"], "✅", fw))
-        grid_cards += (
+        return (
             f'<div class="ts-fw-card" style="background:{color}10;border-color:{color}40;">'
             f'<div class="ts-fw-card-head">'
             f'<span style="font-size:1.1rem;">{icon}</span>'
@@ -803,6 +806,26 @@ def render_guru_frameworks(stock: pd.Series):
             f'</div>'
             f'<div class="ts-fw-card-desc">{_esc(desc)}</div>'
             f'</div>'
+        )
+
+    grid_cards = ""
+    _categorized = set()
+    for _cemoji, _clbl, _cclr, _cfws in FRAMEWORK_CATEGORIES:
+        _categorized.update(_cfws)
+        _hits = [f for f in _cfws if f in fw_set]
+        if not _hits:
+            continue
+        grid_cards += (
+            f'<div style="font-size:0.68rem;font-weight:800;color:{_cclr};letter-spacing:0.6px;'
+            f'margin:12px 0 6px 0;">{_cemoji} {_clbl.upper()} · {len(_hits)}</div>'
+            f'<div class="ts-fw-grid">{"".join(_fw_card(f) for f in _hits)}</div>'
+        )
+    _other = [f for f in fw_list if f not in _categorized]
+    if _other:
+        grid_cards += (
+            f'<div style="font-size:0.68rem;font-weight:800;color:{COLORS["text_muted"]};'
+            f'letter-spacing:0.6px;margin:12px 0 6px 0;">OTHER · {len(_other)}</div>'
+            f'<div class="ts-fw-grid">{"".join(_fw_card(f) for f in _other)}</div>'
         )
 
     st.markdown(f"""
@@ -821,7 +844,7 @@ def render_guru_frameworks(stock: pd.Series):
       </div>
       <div style="font-size:0.7rem;color:{COLORS['text_muted']};">{pct}%</div>
     </div>
-    <div class="ts-fw-grid">{grid_cards}</div>
+    {grid_cards}
     """, unsafe_allow_html=True)
 
 

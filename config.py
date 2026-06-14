@@ -944,3 +944,38 @@ TIER_COLORS = {
     4: {"bg": "rgba(210,153,34,0.06)", "border": "rgba(210,153,34,0.3)", "text": "#d29922"},
     5: {"bg": "rgba(248,81,73,0.06)",  "border": "rgba(248,81,73,0.3)",  "text": "#f85149"},
 }
+
+# Framework taxonomy — the 5 §7 (CLAUDE.md) groups. Used to categorize the 37 frameworks in the UI:
+# compact category COUNTS on cards, grouped chips on the tearsheet. Reveals a stock's conviction
+# CHARACTER (quality-moat vs momentum vs value play) instead of a flat undifferentiated pill list.
+# Names MUST match _FW_META / frameworks_passed exactly (the §7 zero-duplicate contract;
+# the 36 live names were verified against frameworks_passed 2026-06-14; "Blue Chip Quality" is the
+# 37th — currently DPR-dead so it never appears, but it is mapped for when the source column is fixed).
+FRAMEWORK_CATEGORIES = [
+    ("🏛️", "MOSL",     COLORS["blue"], [
+        "QGLP", "MOSL Wealth Creator", "SQGLP Century Stock", "100x Candidate",
+        "Fallen Quality", "CAP-GAP Compounder", "Economic Moat", "Blue Chip Quality",
+        "Consistent in Volatile", "EP Hockey Stick", "Bruised Blue Chip 29", "Multi-Trillion Cap",
+    ]),
+    ("📚", "Moats",    COLORS["green"], [
+        "Coffee Can", "Diamond", "Peaceful Investing", "Unusual Billionaires",
+        "Long Game Quality", "Baid Compounder", "Basant 30% Club", "Quality Compounder",
+    ]),
+    ("⚡", "Momentum", COLORS["orange"], [
+        "CAN SLIM", "SEPA Momentum", "Quality Momentum", "Lynch Dream", "EP Improver", "SMILE",
+    ]),
+    ("🛡️", "Value",    COLORS["gold"], [
+        "Magic Formula", "Dhandho Asymmetry", "Parikh Contrarian", "Wide Moat",
+        "Outsider CEO", "Expectations Matrix", "Financial Shenanigans", "Marks Cycle Shield",
+    ]),
+    ("🎣", "Fisher",   COLORS["cyan"], [
+        "Fisher Quality", "Fisher Scalability", "100-Bagger",
+    ]),
+]
+
+# Reverse lookup: framework name → (emoji, short label, color).
+FRAMEWORK_TO_CATEGORY = {
+    fw: (emoji, label, color)
+    for emoji, label, color, fws in FRAMEWORK_CATEGORIES
+    for fw in fws
+}

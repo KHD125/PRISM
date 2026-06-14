@@ -11,7 +11,7 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 import html as _html
-from config import COLORS, TIER_COLORS, CONVICTION_TIERS, UI
+from config import COLORS, TIER_COLORS, CONVICTION_TIERS, UI, FRAMEWORK_CATEGORIES
 
 
 def inject_css():
@@ -446,15 +446,19 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     if row.get("cat_deleveraging", 0) == 1:
         pills += '<span class="pill pill-gold">🔥 Deleveraging Cycle</span>'
         
-    # Frameworks — generic gray pills for every passed framework.
-    # EXCEPT those that have a dedicated colour pill below (avoids duplicate display).
-    _DEDICATED_FW = {"100x Candidate", "Bruised Blue Chip 29"}
+    # Frameworks — compact CATEGORY-COUNT chips (the 5 §7 groups) instead of a flat pill list.
+    # Reveals the stock's conviction CHARACTER at a glance (quality-moat vs momentum vs value play),
+    # and declutters: ~9 framework pills → up to 5 category chips. Full grouped list is on the tearsheet.
     fw_str = row.get("frameworks_passed", "None")
-    if fw_str != "None":
-        for fw in fw_str.split(", "):
-            if fw.strip() in _DEDICATED_FW:
-                continue
-            pills += f'<span class="pill" style="border-color:rgba(255,255,255,0.4); color:#eee; background:rgba(255,255,255,0.05);">🏛️ {_html.escape(fw)}</span>'
+    _passed = set(fw_str.split(", ")) if (fw_str and fw_str != "None") else set()
+    if _passed:
+        for _cemoji, _clbl, _cclr, _cfws in FRAMEWORK_CATEGORIES:
+            _cn = sum(1 for f in _cfws if f in _passed)
+            if _cn:
+                pills += (
+                    f'<span class="pill" style="border-color:{_cclr}66;color:{_cclr};'
+                    f'background:{_cclr}14;font-weight:700;">{_cemoji} {_clbl} {_cn}</span>'
+                )
             
     # Legacy specific tags
     if row.get("tsunami_signal", 0) == 1:
