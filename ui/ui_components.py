@@ -522,21 +522,10 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     else:
         _forensic_v = f'<span style="color:{COLORS["red"]};font-size:0.72rem;">🔴 Risk — {_f_cnt}⚑</span>'
 
-    _mg = str(row.get("moat_growth_quad", "") or "")
-    if "Wealth Creator" in _mg:
-        _mg_v = f'<span style="color:{COLORS["green"]};font-size:0.72rem;">⭐ Wealth Creator</span>'
-    elif "Quality Trap" in _mg:
-        _mg_v = f'<span style="color:{COLORS["gold"]};font-size:0.72rem;">🛡️ Quality Trap</span>'
-    elif "Growth Trap" in _mg:
-        _mg_v = f'<span style="color:{COLORS["blue"]};font-size:0.72rem;">⚡ Growth Trap</span>'
-    elif "Destroyer" in _mg:
-        _mg_v = f'<span style="color:{COLORS["red"]};font-size:0.72rem;">💀 Destroyer</span>'
-    else:
-        _mg_v = ""
-
+    # The moat-growth quadrant is already a coloured pill in the tag row — don't duplicate it here.
+    # The status strip is now just gate + forensic, complementing (not repeating) the verdict chip.
     _dot = '<span style="color:#555;font-size:0.65rem;margin:0 3px;">·</span>'
-    _verdict_parts = [_gate_v, _forensic_v] + ([_mg_v] if _mg_v else [])
-    _verdict_strip = _dot.join(_verdict_parts)
+    _verdict_strip = _dot.join([_gate_v, _forensic_v])
 
     if show_scores:
         _bars = [
@@ -576,8 +565,9 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     _vclr = {"BUY": COLORS["green"], "WATCH": COLORS["gold"], "AVOID": COLORS["text_muted"]}.get(
         _vdir, COLORS["text_muted"])
     _verdict_chip = (
-        f'<div style="font-size:0.8rem;font-weight:900;color:{_vclr};letter-spacing:0.6px;'
-        f'white-space:nowrap;margin-bottom:2px;">{_vemoji} {_html.escape(_vdir)}</div>'
+        f'<div style="display:inline-block;font-size:0.78rem;font-weight:900;color:{_vclr};'
+        f'letter-spacing:0.6px;white-space:nowrap;margin-bottom:5px;padding:3px 11px;border-radius:11px;'
+        f'background:{_vclr}1f;border:1px solid {_vclr}66;">{_vemoji} {_html.escape(_vdir)}</div>'
     ) if _vdir else ""
 
     card_html = f"""
