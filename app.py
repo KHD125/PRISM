@@ -1177,32 +1177,34 @@ with tabs[2]:
             )
             render_guru_frameworks(stock)
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_canslim_radar(stock)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_sepa_radar(stock)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_dorsey_radar(stock)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_outsider_radar(stock)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_marks_radar(stock)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_malik_radar(stock)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_lynch_radar(stock)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_mauboussin_radar(stock)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            render_mosl_wealth_matrix(stock)
+            # Deep-dive guru radars — collapsed by default (Layer 3 evidence). The verdict header,
+            # 6-axis scorecard and categorized frameworks above already SUMMARIZE these same
+            # dimensions; expand a radar only to audit one methodology's detail. Nothing removed —
+            # just decluttered (9 stacked radars → 9 collapsed expanders). Calls kept explicit so the
+            # app-wiring contract tests (canslim→sepa→dorsey order) still hold.
+            st.markdown(
+                "<div class='sec-cap' style='margin-top:16px;'>🔬 Deep-dive radars — expand to audit "
+                "a specific methodology (its signals are already summarized in the scorecard above).</div>",
+                unsafe_allow_html=True,
+            )
+            with st.expander("📊 CAN SLIM — Tactical Momentum (O'Neil)", expanded=False):
+                render_canslim_radar(stock)
+            with st.expander("⚡ Minervini SEPA — Momentum & VCP", expanded=False):
+                render_sepa_radar(stock)
+            with st.expander("🌊 Dorsey — Wide-Moat Pillars", expanded=False):
+                render_dorsey_radar(stock)
+            with st.expander("🎯 Outsider CEO — Capital Allocation", expanded=False):
+                render_outsider_radar(stock)
+            with st.expander("🛡️ Marks — Cycle Position", expanded=False):
+                render_marks_radar(stock)
+            with st.expander("📚 Malik — Quality Checklist", expanded=False):
+                render_malik_radar(stock)
+            with st.expander("👓 Lynch — Category & PEG", expanded=False):
+                render_lynch_radar(stock)
+            with st.expander("🔮 Mauboussin — Expectations & Payoff", expanded=False):
+                render_mauboussin_radar(stock)
+            with st.expander("🏛️ MOSL Wealth-Creation Matrix", expanded=False):
+                render_mosl_wealth_matrix(stock)
 
         # ══ Tab D: Matrix & WCS ════════════════════════════════════════════
         with _itabs[3]:
