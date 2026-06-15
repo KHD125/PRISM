@@ -972,6 +972,32 @@ with tabs[2]:
             f'border:1px solid rgba(228,179,65,0.4);">⚠️ Mean Reversion</span>'
         ) if _mr_risk else ""
 
+        # ── WHAT-vs-WHEN reconciliation: the verdict is a FUNDAMENTAL call (own this business?);
+        # Weinstein stage is the TECHNICAL trend (is the trend with you?). They're orthogonal and
+        # can disagree — a BUY/WATCH on a stock below its falling 30-week MA (Stage 3/4) is a
+        # watchlist candidate, not a buy-now. Surface that tension (display only — the verdict
+        # engine is untouched; this never changes the direction). Fires only on real conflict.
+        _wstage = str(stock.get("weinstein_stage", "") or "")
+        _trend_conflict = (_gate_ok and not _sell_any and _vdir in ("BUY", "WATCH")
+                           and ("Stage 4" in _wstage or "Stage 3" in _wstage))
+        _trend_pill = (
+            f'<span style="{_pill_css}background:rgba(228,179,65,0.15);color:{COLORS["gold"]};'
+            f'border:1px solid rgba(228,179,65,0.4);">⚠️ Against 30-wk trend</span>'
+        ) if _trend_conflict else ""
+        if _trend_conflict and "Stage 4" in _wstage:
+            _trend_msg = ("📉 Strong business, weak trend — price is below a falling 30-week MA "
+                          "(Stage 4). A watchlist candidate; wait for a Stage-2 base before buying.")
+        elif _trend_conflict:  # Stage 3 Top
+            _trend_msg = ("⚠️ Strong business, topping trend — price has slipped below its 30-week MA "
+                          "(Stage 3). Don't chase; wait for the trend to reset.")
+        else:
+            _trend_msg = ""
+        _trend_action = (
+            f'<div style="font-size:0.72rem;color:{COLORS["gold"]};margin-top:6px;line-height:1.4;'
+            f'background:rgba(228,179,65,0.08);border:1px solid rgba(228,179,65,0.25);'
+            f'border-radius:7px;padding:6px 10px;">{_trend_msg}</div>'
+        ) if _trend_conflict else ""
+
         st.markdown(f"""
         <div style="background:{_verdict_bg};border:1px solid {_verdict_clr}55;
              border-left:4px solid {_verdict_clr};border-radius:10px;
@@ -981,10 +1007,11 @@ with tabs[2]:
                  letter-spacing:1.1px;white-space:nowrap;">{_verdict}</span>
             <span style="font-size:0.7rem;color:{COLORS['text_secondary']};
                  white-space:nowrap;">{_meta_line}</span>
-            {_risk_pill}{_mr_pill}
+            {_risk_pill}{_mr_pill}{_trend_pill}
           </div>
           <div style="font-size:0.75rem;color:{COLORS['text_secondary']};margin-top:5px;">
             {_verdict_reason}</div>
+          {_trend_action}
         </div>
         """, unsafe_allow_html=True)
 
