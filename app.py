@@ -1178,8 +1178,9 @@ with tabs[2]:
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f"<div class='sec-cap'>Every computed signal across all 6 data sheets. "
-                f"Grouped by category. All values are engine-computed — no re-calculation here.</div>",
+                f"<div class='sec-cap'>Every final, decision-grade signal the engine computes, grouped by "
+                f"category — intermediate working columns are omitted here (the Export below carries the "
+                f"complete machine-readable row). Engine-computed; nothing is re-calculated on this tab.</div>",
                 unsafe_allow_html=True,
             )
             render_raw_signals(stock)

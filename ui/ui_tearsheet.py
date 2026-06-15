@@ -1650,10 +1650,17 @@ def render_raw_signals(stock: pd.Series):
         _cell("OPM",           g("opm"),            "{:.1f}%") +
         _cell("Malik Score",   g("malik_score"),    "{:.0f}/5") +
         _cell("Malik Pass",    "Yes ✅" if g("malik_pass") == 1 else "No", "") +
+        _cell("Malik Label",   stock.get("malik_label", "") or "", "") +
         # Lynch Score/Pass live in their own 🚀 Lynch Fast Grower Pillars block below (de-duped).
         _cell("Piotroski",     g("piotroski_fscore"),"{:.0f}/9") +
         _cell("Fisher Scal. Score", g("fisher_score"),   "{:.0f}/4") +
-        _cell("Fisher Quadrant",    stock.get("fisher_lifecycle_quadrant", "⚪ Laggard") or "⚪ Laggard", "")
+        _cell("Fisher Quadrant",    stock.get("fisher_lifecycle_quadrant", "⚪ Laggard") or "⚪ Laggard", "") +
+        # IBAS moat decomposition — the 4 sub-scores that average to the scorecard's "IBAS" aggregate
+        # (Mukherjea's Intangibles/Brand/Architecture/Strategic-assets moat lens), previously orphaned.
+        _cell("IBAS Architecture",   g("ibas_architecture_score"),     "{:.0f}") +
+        _cell("IBAS Innovation",     g("ibas_innovation_score"),       "{:.0f}") +
+        _cell("IBAS Reputation",     g("ibas_reputation_score"),       "{:.0f}") +
+        _cell("IBAS Strategic",      g("ibas_strategic_assets_score"), "{:.0f}")
     )
 
     # Growth
@@ -1667,7 +1674,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("EPS 5Y CAGR",   g("eps_gr_5y"),      "{:.1f}%") +
         _cell("EPS YoY",       g("eps_gr_yoy"),     "{:.1f}%") +
         _cell("Q PAT YoY",     g("q_pat_yoy"),      "{:.1f}%") +
-        _cell("Op Leverage",   "Yes" if g("operating_leverage") == 1 else "No", "")
+        _cell("Op Leverage",   "Yes" if g("operating_leverage") == 1 else "No", "") +
+        _cell("Lynch Category", stock.get("lynch_category", "") or "", "")  # Fast Grower / Stalwart / Slow Grower / Turnaround
     )
 
     # Cash & Debt
@@ -1676,6 +1684,9 @@ def render_raw_signals(stock: pd.Series):
         _cell("FCF Yield",     g("fcf_yield"),       "{:.1f}%") +
         _cell("FCF/CFO",       g("fcf_to_cfo_pct"),  "{:.1f}%") +
         _cell("FCF/PAT",       g("d28_fcf_to_pat_pct"), "{:.1f}%") +
+        # FCF provenance — tells a verifier the FCF above is NOT raw (imputed from OCF / reconstructed).
+        _cell("FCF Imputed",      "Yes" if g("fcf_imputed_flag") == 1 else "No", "") +
+        _cell("FCF Reconstructed","Yes" if g("fcf_reconstructed_flag") == 1 else "No", "") +
         _cell("SSGR",          g("ssgr"),            "{:.1f}%") +
         _cell("SSGR Cushion",  g("ssgr_cushion"),    "{:.1f}%") +
         _cell("D/E Ratio",     g("debt_to_equity"),  "{:.2f}") +
@@ -1745,8 +1756,10 @@ def render_raw_signals(stock: pd.Series):
         _cell("Red Flags",     g("red_flag_count"),      f"{{:.0f}}/{FORENSIC_MAX_FLAGS}") +
         _cell("Forensic Scr",  g("forensic_score"),      "{:.0f}/100") +
         _cell("Forensic Mult", g("forensic_multiplier"), "{:.0%}") +
+        _cell("Accruals Ratio",g("accruals_ratio"),      "{:.2f}") +  # Sloan accruals — negative = conservative
         # Piotroski shown in 🏭 Business Quality; EP Quintile in 🏛️ MOSL Signals (both de-duped).
         _cell("Econ Profit",   g("economic_profit"),     "₹{:,.0f} Cr") +
+        _cell("EP Spread",     g("economic_profit_spread"), "{:.1f}%") +  # ROIC − WACC spread (EP per capital)
         _cell("Earnings Power",stock.get("earnings_power_box","") or "","") +  # Heiserman defensive×enterprising box
 
         _cell("QGLP Score",    g("qglp_score"),          "{:.0f}/100") +
