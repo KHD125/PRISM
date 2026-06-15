@@ -339,15 +339,20 @@ with st.sidebar:
     # drift between options and results).
     # Defensive: stored multiselect selections are pruned to the current valid options
     # before each widget renders, preventing Streamlit's "value not in options" crash.
-    def _ms_cascade(label, options, key, default, help=None):
+    def _ms_cascade(label, options, key, default, help=None, format_func=None):
         """Cascade-safe multiselect. Fully manages session_state (no `default=` arg, which
         avoids Streamlit's default-plus-session-state warning) and prunes any stale stored
-        selection down to the current options each run. Empty selection = no filter."""
+        selection down to the current options each run. Empty selection = no filter.
+        format_func lets the OPTION VALUES stay stable (so pruning holds) while the DISPLAY
+        can vary per run (e.g. a live count) — never bake volatile text into the values."""
         if key not in st.session_state:
             st.session_state[key] = [v for v in default if v in options]
         else:
             st.session_state[key] = [v for v in st.session_state[key] if v in options]
-        return st.multiselect(label, options, key=key, help=help)
+        _kw = {"key": key, "help": help}
+        if format_func is not None:
+            _kw["format_func"] = format_func
+        return st.multiselect(label, options, **_kw)
 
     def _ordered_present(frame, col, order):
         """Labels present in frame[col], in canonical `order`; unknown labels appended last."""
@@ -527,6 +532,36 @@ with st.sidebar:
     if sel_buy_zone and "buy_zone_label" in _cf.columns:
         _cf = _cf[_cf["buy_zone_label"].isin(sel_buy_zone)]
 
+    # 9. Catalyst — fast-moving EVENT triggers (debt repair, new capacity, margin inflection,
+    # early institutional discovery, Lynch GARP). OR logic: show stocks with ANY selected catalyst.
+    # Option VALUES are the stable cat_* column names (so the cascade pruning holds); the live
+    # count is shown only via format_func. Only catalysts present in the remaining frame are listed.
+    _CATALYSTS = {
+        "🔥 Capacity Explosion": "cat_capacity",
+        "🔥 OpLev Inflection":    "cat_oplev",
+        "🔥 Deleveraging":         "cat_deleveraging",
+        "🔥 Lynch Dream":          "cat_lynch_dream",
+        "🔥 Inst Discovery":       "cat_inst_discovery",
+    }
+    _cat_name = {v: k for k, v in _CATALYSTS.items()}
+    _cat_opts = [c for c in _CATALYSTS.values() if c in _cf.columns and int(_cf[c].sum()) > 0]
+    sel_catalyst = _ms_cascade(
+        "🔥 Catalyst", _cat_opts, "sb_catalyst", default=[],
+        help="Show stocks where ANY selected catalyst (a fast-moving change) is firing. OR logic. "
+             "Empty = all stocks. Count = stocks with that catalyst in the current filtered set.",
+        format_func=lambda c: f"{_cat_name[c]} ({int(_cf[c].sum())})",
+    )
+    if sel_catalyst:
+        _cat_mask = pd.Series(False, index=_cf.index)
+        for _c in sel_catalyst:
+            _cat_mask = _cat_mask | (_cf[_c] == 1)
+        _cf = _cf[_cat_mask]
+        st.markdown(
+            f'<div style="font-size:0.6rem;color:{COLORS["orange"]};padding:0 0 6px 2px;"'
+            f'>🔥 {len(sel_catalyst)} catalyst(s) (OR) · {len(_cf)} stocks remaining</div>',
+            unsafe_allow_html=True,
+        )
+
     # Institutional Sweep Vector
     st.markdown("---")
     st.markdown("<div style='font-size:0.8rem; font-weight:700; color:#8b5cf6; margin-bottom:5px;'>🌊 ALPHA VECTORS</div>", unsafe_allow_html=True)
@@ -536,7 +571,7 @@ with st.sidebar:
     min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
 
 # Apply filters — the cascade frame (_cf) already encodes every option-based filter
-# (Market Category → Sector → Industry → Tier → Framework → Moat → PEG Zone → Buy Zone),
+# (Market Category → Sector → Industry → Tier → Framework → Moat → PEG Zone → Buy Zone → Catalyst),
 # so the dropdown options and the result set are guaranteed identical. Only the bottom
 # Alpha-Vector toggles remain to apply.
 filt = _cf.copy()
