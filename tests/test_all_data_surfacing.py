@@ -43,3 +43,23 @@ def test_verified_orphan_is_surfaced(col, reason):
     """Each verified-alive orphan must appear in render_raw_signals (kept honest, no drift)."""
     block = _raw_signals_block()
     assert col in block, f"render_raw_signals must surface {col} — {reason}"
+
+
+# ── Plain-language "?" tooltip glossary (the Learner persona) ──
+def test_glossary_entries_are_nonempty_plain_language():
+    """Every glossary key must map to a real, non-empty plain-language sentence — this is the
+    completeness net: a term with no explanation is a flag to write one or remove the cell."""
+    from ui.ui_tearsheet import _RAW_GLOSSARY
+    assert len(_RAW_GLOSSARY) >= 50, "glossary should cover the tab's jargon"
+    for term, definition in _RAW_GLOSSARY.items():
+        assert isinstance(definition, str), f"{term!r} definition must be a string"
+        assert len(definition.strip()) >= 20, (
+            f"{term!r} definition is too short to be a real plain-language explanation"
+        )
+
+
+def test_cell_helper_wires_the_tooltip():
+    """The _cell helper must render the CSS '?' affordance from the glossary (no widget/state)."""
+    block = _raw_signals_block()
+    assert 'class="ts-help"' in block, "_cell must render the .ts-help '?' affordance"
+    assert "_RAW_GLOSSARY.get(label" in block, "_cell must auto-look-up the glossary by label"

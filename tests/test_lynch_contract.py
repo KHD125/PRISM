@@ -1291,7 +1291,8 @@ class TestLynchUIContract:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestLynchRawSignalsContract:
-    """Verify Lynch cells appear in render_raw_signals grid."""
+    """Verify Lynch cells are surfaced in the tearsheet UI (render_lynch_radar in the Frameworks
+    tab — the All Data pillar grid was removed as a duplicate; whole-source scan stays robust)."""
 
     def test_raw_signals_has_lynch_score_cell(self, ui_source):
         assert "lynch_score" in ui_source

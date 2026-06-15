@@ -454,16 +454,26 @@ class TestSepaUIContract:
 # TestSepaRawSignals
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _render_sepa_radar_block(src: str) -> str:
+    """The SEPA pillar grid was removed from the All Data tab (it duplicated the Frameworks-tab
+    radar); render_sepa_radar is now the single on-screen home for these cells. Export still
+    carries every column."""
+    start = src.find("def render_sepa_radar")
+    assert start != -1, "Cannot find render_sepa_radar in ui_tearsheet.py"
+    nxt = src.find("\ndef ", start + 10)
+    return src[start:nxt] if nxt != -1 else src[start:]
+
+
 class TestSepaRawSignals:
-    def test_all_pillar_columns_in_raw_signals(self, ui_source):
-        block = _render_raw_block(ui_source)
+    def test_all_pillar_columns_in_radar(self, ui_source):
+        block = _render_sepa_radar_block(ui_source)
         for col in ("sepa_trend_template", "sepa_adx_confirmed", "sepa_low_base",
                     "sepa_rs_confirmed", "sepa_earnings_fuel", "sepa_institutional",
                     "sepa_vcp_dryup"):
-            assert col in block, f"render_raw_signals must display {col}"
+            assert col in block, f"render_sepa_radar must display {col}"
 
-    def test_score_and_pass_in_raw_signals(self, ui_source):
-        block = _render_raw_block(ui_source)
+    def test_score_and_pass_in_radar(self, ui_source):
+        block = _render_sepa_radar_block(ui_source)
         assert "sepa_score" in block
         assert "sepa_pass" in block
 

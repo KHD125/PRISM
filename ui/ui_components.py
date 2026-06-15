@@ -370,6 +370,27 @@ def inject_css():
         font-size: 1.1rem; font-weight: 800;
         color: {COLORS['text_primary']}; margin-top: 3px;
     }}
+    /* Plain-language "?" help affordance + pure-CSS hover tooltip (no widget, no JS, no state) */
+    .ts-help {{
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 13px; height: 13px; margin-left: 4px; vertical-align: middle;
+        border: 1px solid {COLORS['text_muted']}; border-radius: 50%;
+        font-size: 9px; font-weight: 700; line-height: 1; cursor: help;
+        color: {COLORS['text_muted']}; text-transform: none; position: relative;
+    }}
+    .ts-help:hover {{ border-color: {COLORS['blue']}; color: {COLORS['blue']}; }}
+    .ts-help::after {{
+        content: attr(data-tip);
+        position: absolute; bottom: 160%; left: 50%; transform: translateX(-50%);
+        width: 200px; background: {COLORS['bg_primary']};
+        border: 1px solid {COLORS['border_hover']}; border-radius: 8px; padding: 9px 11px;
+        font-size: 0.72rem; font-weight: 400; line-height: 1.45; letter-spacing: normal;
+        text-transform: none; text-align: left; color: {COLORS['text_secondary']};
+        white-space: normal; z-index: 9999; pointer-events: none;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+        opacity: 0; visibility: hidden; transition: opacity 0.13s ease;
+    }}
+    .ts-help:hover::after {{ opacity: 1; visibility: visible; }}
 
     /* KPI strip in forensics */
     .ts-kpi-strip {{

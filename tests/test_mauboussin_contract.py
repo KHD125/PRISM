@@ -785,31 +785,35 @@ class TestMauboussinUIContract:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestMauboussinRawSignalsContract:
-    """Mauboussin cells must appear in render_raw_signals."""
+    """Mauboussin cells must be surfaced in render_mauboussin_radar.
 
-    def test_raw_signals_has_mauboussin_score_cell(self, ui_source):
-        raw_start = ui_source.find("def render_raw_signals")
-        raw_end_match = re.search(r'\ndef \w', ui_source[raw_start + 10:])
-        body = ui_source[raw_start:raw_start + raw_end_match.start() + 10] if raw_end_match else ui_source[raw_start:]
-        assert "mauboussin_score" in body, "render_raw_signals must display mauboussin_score"
+    The All Data tab's Mauboussin pillar grid was removed (it duplicated the Frameworks-tab
+    radar, which shows the pillars with labels + thresholds; every column still ships in the
+    Export). The radar is now the single on-screen home for these cells.
+    """
 
-    def test_raw_signals_has_mauboussin_pass_cell(self, ui_source):
-        raw_start = ui_source.find("def render_raw_signals")
-        raw_end_match = re.search(r'\ndef \w', ui_source[raw_start + 10:])
-        body = ui_source[raw_start:raw_start + raw_end_match.start() + 10] if raw_end_match else ui_source[raw_start:]
-        assert "mauboussin_pass" in body, "render_raw_signals must display mauboussin_pass"
+    @staticmethod
+    def _radar_body(ui_source):
+        start = ui_source.find("def render_mauboussin_radar")
+        assert start != -1, "render_mauboussin_radar not defined in ui_tearsheet.py"
+        m = re.search(r'\ndef \w', ui_source[start + 10:])
+        return ui_source[start:start + m.start() + 10] if m else ui_source[start:]
 
-    def test_raw_signals_has_implied_cap_cell(self, ui_source):
-        raw_start = ui_source.find("def render_raw_signals")
-        raw_end_match = re.search(r'\ndef \w', ui_source[raw_start + 10:])
-        body = ui_source[raw_start:raw_start + raw_end_match.start() + 10] if raw_end_match else ui_source[raw_start:]
-        assert "mauboussin_implied_cap" in body, "render_raw_signals must display mauboussin_implied_cap"
+    def test_radar_has_mauboussin_score_cell(self, ui_source):
+        assert "mauboussin_score" in self._radar_body(ui_source), \
+            "render_mauboussin_radar must display mauboussin_score"
 
-    def test_raw_signals_mauboussin_section_has_amethyst_color(self, ui_source):
-        raw_start = ui_source.find("def render_raw_signals")
-        raw_end_match = re.search(r'\ndef \w', ui_source[raw_start + 10:])
-        body = ui_source[raw_start:raw_start + raw_end_match.start() + 10] if raw_end_match else ui_source[raw_start:]
-        assert "#8b5cf6" in body, "Mauboussin section in render_raw_signals must use amethyst color #8b5cf6"
+    def test_radar_has_mauboussin_pass_cell(self, ui_source):
+        assert "mauboussin_pass" in self._radar_body(ui_source), \
+            "render_mauboussin_radar must display mauboussin_pass"
+
+    def test_radar_has_implied_cap_cell(self, ui_source):
+        assert "mauboussin_implied_cap" in self._radar_body(ui_source), \
+            "render_mauboussin_radar must display mauboussin_implied_cap"
+
+    def test_radar_mauboussin_section_has_amethyst_color(self, ui_source):
+        assert "#8b5cf6" in self._radar_body(ui_source), \
+            "render_mauboussin_radar must use amethyst color #8b5cf6"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

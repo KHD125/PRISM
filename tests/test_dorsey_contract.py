@@ -540,12 +540,17 @@ class TestDorseyUIContract:
             "render_dorsey_radar function not defined in ui_tearsheet.py"
         )
 
-    def test_raw_signals_includes_dorsey_cells(self):
-        """render_raw_signals must include dorsey_score and dorsey_pass cells."""
+    def test_dorsey_score_pass_surfaced_in_radar(self):
+        """dorsey_score and dorsey_pass must be surfaced in render_dorsey_radar.
+
+        The All Data tab's Dorsey pillar grid was removed (it duplicated the Frameworks-tab
+        radar, which shows the pillars with labels + thresholds; every column still ships in
+        the Export). The radar is now the single on-screen home for these cells.
+        """
         src = _ui_src()
-        assert re.search(r'_cell\(.*Dorsey Score.*dorsey_score', src, re.DOTALL), (
-            "render_raw_signals does not include dorsey_score cell"
-        )
-        assert re.search(r'_cell\(.*Dorsey Pass.*dorsey_pass', src, re.DOTALL), (
-            "render_raw_signals does not include dorsey_pass cell"
-        )
+        start = src.find("def render_dorsey_radar")
+        assert start != -1, "render_dorsey_radar not defined in ui_tearsheet.py"
+        end = src.find("\ndef ", start + 1)
+        body = src[start:end if end != -1 else len(src)]
+        assert "dorsey_score" in body, "render_dorsey_radar must reference dorsey_score"
+        assert "dorsey_pass" in body, "render_dorsey_radar must reference dorsey_pass"
