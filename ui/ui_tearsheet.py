@@ -1628,6 +1628,7 @@ _RAW_GLOSSARY = {
     "IBAS Innovation":    "One of Mukherjea's 4 moat sources — advantage from genuine, hard-to-copy innovation.",
     "IBAS Reputation":    "One of Mukherjea's 4 moat sources — advantage from brand trust and reputation customers pay up for.",
     "IBAS Strategic":     "One of Mukherjea's 4 moat sources — advantage from strategic assets (licences, networks, locations). The four IBAS scores average into the overall moat number.",
+    "Moat Endurance":     "Whether the company's competitive advantage (moat) is widening, holding, eroding or degrading over time — durability, not just how big the moat is today.",
     # ── Growth ──
     "PAT 5Y CAGR":   "Net profit's smoothed yearly growth rate over 5 years (CAGR = compound annual growth rate).",
     "PAT 3Y CAGR":   "Net profit's smoothed yearly growth rate over the last 3 years.",
@@ -1639,6 +1640,7 @@ _RAW_GLOSSARY = {
     "EPS YoY":       "Earnings-per-share growth this year versus last year.",
     "Q PAT YoY":     "Latest quarter's net profit versus the same quarter last year — the most recent profit trend.",
     "Op Leverage":   "Operating leverage — whether profit is growing faster than sales (a sign fixed costs are being spread over more revenue).",
+    "Op Lev (3Y)":   "Operating leverage over 3 years — how much faster (or slower) profit grew than sales. Positive means profits are scaling faster than revenue.",
     "Lynch Category":"Peter Lynch's stock type — Fast Grower, Stalwart, Slow Grower or Turnaround — which sets how to judge it.",
     # ── Cash & Debt ──
     "CFO/PAT":       "Cash from operations divided by reported profit. Near or above 100% means profits are backed by real cash; well below is a warning.",
@@ -1663,6 +1665,8 @@ _RAW_GLOSSARY = {
     "Fair PE (QGLP)":"An estimated 'fair' PE for this company based on its quality and growth — compare it to the actual PE.",
     "Industry PE":   "The typical PE of this company's industry — context for whether it's cheap or dear versus peers.",
     "P/B":           "Price-to-Book — share price versus the company's net asset (book) value per share.",
+    "P/S":           "Price-to-Sales — the share price versus the company's yearly sales per share. Useful when profits are thin, lumpy or negative and PE becomes meaningless.",
+    "FGV":           "Future Growth Value — the slice of today's share price that rests on FUTURE growth rather than the profits the company already makes. High means a lot of growth is already priced in.",
     "PEG":           "PE divided by growth — a way to judge if the PE is justified by growth. Around 1 is often considered fair.",
     "PEG Zone":      "A simple band (cheap / fair / stretched) based on the PEG ratio.",
     "Earnings Yield":"Profit per share divided by price — the flip side of PE, shown as a % (like an interest rate the earnings 'pay').",
@@ -1724,6 +1728,7 @@ _RAW_GLOSSARY = {
     "EP Quintile":   "Which fifth (1 = best) the company falls into on economic-profit power versus the universe.",
     "EP Top Q1/Q2":  "Whether the company is in the top two-fifths for economic-profit creation.",
     "Winner Category":"Whether it sits in a sector enjoying a structural tailwind.",
+    "Sector Leader":  "How strong a leader the company is inside its own sector (0-100), judged against sector peers rather than the whole market.",
     "Winning Invest.":"Whether it's a category leader inside a winning sector.",
     "100x Candidate":"Passes Motilal Oswal's tough small-cap screen for stocks that could compound enormously over the long run.",
     "Mid→Mega":      "A mid-cap candidate with the profile to grow into a mega-cap.",
@@ -1795,7 +1800,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("IBAS Architecture",   g("ibas_architecture_score"),     "{:.0f}") +
         _cell("IBAS Innovation",     g("ibas_innovation_score"),       "{:.0f}") +
         _cell("IBAS Reputation",     g("ibas_reputation_score"),       "{:.0f}") +
-        _cell("IBAS Strategic",      g("ibas_strategic_assets_score"), "{:.0f}")
+        _cell("IBAS Strategic",      g("ibas_strategic_assets_score"), "{:.0f}") +
+        _cell("Moat Endurance",      stock.get("mef_label", "") or "", "")  # widening / intact / eroding / degrading
     )
 
     # Growth
@@ -1810,7 +1816,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("EPS YoY",       g("eps_gr_yoy"),     "{:.1f}%") +
         _cell("Q PAT YoY",     g("q_pat_yoy"),      "{:.1f}%") +
         _cell("Op Leverage",   "Yes" if g("operating_leverage") == 1 else "No", "") +
-        _cell("Lynch Category", stock.get("lynch_category", "") or "", "")  # Fast Grower / Stalwart / Slow Grower / Turnaround
+        _cell("Lynch Category", stock.get("lynch_category", "") or "", "") +  # Fast Grower / Stalwart / Slow Grower / Turnaround
+        _cell("Op Lev (3Y)",    g("ebit_vs_rev_spread_3y"), "{:.1f}%")  # 3Y EBIT-minus-revenue growth spread; + = operating leverage
     )
 
     # Cash & Debt
@@ -1841,6 +1848,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("Fair PE (QGLP)",g("fair_pe_qglp"),    "{:.1f}×") +
         _cell("Industry PE",   g("industry_pe"),     "{:.1f}×") +
         _cell("P/B",           g("price_to_book"),   "{:.2f}×") +
+        _cell("P/S",           g("ps_ratio"),        "{:.2f}×") +
+        _cell("FGV",           g("fgv_pct"),         "{:.0%}") +
         _cell("PEG",           g("peg"),             "{:.2f}") +
         _cell("PEG Zone",      stock.get("peg_zone","") or "", "") +
         _cell("Earnings Yield",g("earnings_yield"),  "{:.1f}%") +
@@ -1924,6 +1933,7 @@ def render_raw_signals(stock: pd.Series):
         _cell("EP Top Q1/Q2",     _yn("ep_top_quintile_flag"), "") +
         # 14th — Winner Category (sector tailwind) × Category Winner (leader)
         _cell("Winner Category",  _yn("winner_category_flag"), "") +
+        _cell("Sector Leader",    g("sector_leader_score"), "{:.0f}") +  # leadership rank within its own sector (0-100)
         _cell("Winning Invest.",  _yn("category_winner_in_winner_cat"), "") +
         # 19th — 100x candidate (SQGLP, small-cap) + 20th — Mid→Mega (MQGLP, mid-cap rank 101-300)
         _cell("100x Candidate",   _yn("mosl_100x_candidate"), "") +

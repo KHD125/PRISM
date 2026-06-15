@@ -35,7 +35,16 @@ SURFACED_ORPHANS = [
     ("economic_profit_spread",      "ROIC − WACC spread, complements the shown economic_profit"),
     ("fcf_imputed_flag",            "FCF provenance — the FCF shown is imputed, not raw"),
     ("fcf_reconstructed_flag",      "FCF provenance — the FCF shown is reconstructed, not raw"),
+    # ── pass 2: valuation lenses + competitive-position finals (verified alive 2026-06-15) ──
+    ("ps_ratio",                    "Price-to-Sales — a standard valuation multiple that was absent"),
+    ("fgv_pct",                     "Future Growth Value — share of price betting on future growth"),
+    ("mef_label",                   "Moat Endurance verdict (widening / intact / eroding / degrading)"),
+    ("sector_leader_score",         "leadership rank within the company's own sector"),
+    ("ebit_vs_rev_spread_3y",       "numeric 3Y operating leverage (the Op-Leverage Yes/No was binary)"),
 ]
+
+# New cell label → its expected glossary key (the "?" tooltip must exist for each new term).
+_PASS2_LABELS = ["P/S", "FGV", "Moat Endurance", "Sector Leader", "Op Lev (3Y)"]
 
 
 @pytest.mark.parametrize("col,reason", SURFACED_ORPHANS, ids=[c for c, _ in SURFACED_ORPHANS])
@@ -63,3 +72,11 @@ def test_cell_helper_wires_the_tooltip():
     block = _raw_signals_block()
     assert 'class="ts-help"' in block, "_cell must render the .ts-help '?' affordance"
     assert "_RAW_GLOSSARY.get(label" in block, "_cell must auto-look-up the glossary by label"
+
+
+@pytest.mark.parametrize("label", _PASS2_LABELS)
+def test_new_labels_have_glossary_tooltip(label):
+    """Every newly-surfaced cell must carry a plain-language '?' tooltip (no bare jargon)."""
+    from ui.ui_tearsheet import _RAW_GLOSSARY
+    assert label in _RAW_GLOSSARY, f"new cell {label!r} must have a _RAW_GLOSSARY entry"
+    assert len(_RAW_GLOSSARY[label].strip()) >= 20, f"{label!r} tooltip too short"
