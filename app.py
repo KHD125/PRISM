@@ -398,6 +398,20 @@ with st.sidebar:
     if sel_tier:
         _cf = _cf[_cf["conviction_tier"].isin(sel_tier)]
 
+    # 4b. Verdict — the engine's BUY/WATCH/AVOID decision (filter to the rare BUYs/WATCHes)
+    _verdict_opts = _ordered_present(_cf, "verdict_direction", ["BUY", "WATCH", "AVOID"])
+    sel_verdict = _ms_cascade("Verdict", _verdict_opts, "sb_verdict", default=[],
+                              help="The engine's top-line decision. Empty = all stocks.")
+    if sel_verdict and "verdict_direction" in _cf.columns:
+        _cf = _cf[_cf["verdict_direction"].isin(sel_verdict)]
+
+    # 4c. Corporate Class — Motilal Oswal capital-allocation quality (Great / Good / Gruesome)
+    _corp_opts = _ordered_present(_cf, "corporate_class", ["🏆 GREAT", "👍 GOOD", "💀 GRUESOME"])
+    sel_corp = _ms_cascade("Corporate Class", _corp_opts, "sb_corpclass", default=[],
+                           help="Capital-allocation quality. 'Only Great', or exclude Gruesome.")
+    if sel_corp and "corporate_class" in _cf.columns:
+        _cf = _cf[_cf["corporate_class"].isin(sel_corp)]
+
     # ── 3-TIER FRAMEWORK FILTER ENGINE ───────────────────────────────────────
     # Set Algebra: (Universe − Excluded) ∩ (Included ∪ ∅) ∩ (∀ Combined)
     # Evaluation order: Exclude first → Include second → Combination last.
@@ -532,6 +546,49 @@ with st.sidebar:
     if sel_buy_zone and "buy_zone_label" in _cf.columns:
         _cf = _cf[_cf["buy_zone_label"].isin(sel_buy_zone)]
 
+    # 8b. Weinstein Stage — the 30-week-trend stage (Stage 2 = uptrend buy, Stage 4 = avoid)
+    _WEIN_ORDER = ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing", "⚠️ Stage 3 Top",
+                   "📉 Stage 4 Declining", "❔ Unknown"]
+    _wein_opts = _ordered_present(_cf, "weinstein_stage", _WEIN_ORDER)
+    sel_wein = _ms_cascade("Weinstein Stage", _wein_opts, "sb_weinstein", default=[],
+                           help="Long-term price trend stage. Empty = all stocks.")
+    if sel_wein and "weinstein_stage" in _cf.columns:
+        _cf = _cf[_cf["weinstein_stage"].isin(sel_wein)]
+
+    # 8c. Lynch Type — Peter Lynch's stock archetype
+    _lynch_opts = _ordered_present(_cf, "lynch_category",
+                                   ["Fast Grower", "Stalwart", "Slow Grower", "Declining"])
+    sel_lynch = _ms_cascade("Lynch Type", _lynch_opts, "sb_lynchcat", default=[],
+                            help="Lynch's classification (Fast Grower / Stalwart / …). Empty = all.")
+    if sel_lynch and "lynch_category" in _cf.columns:
+        _cf = _cf[_cf["lynch_category"].isin(sel_lynch)]
+
+    # 8d. Moat Endurance — is the competitive advantage widening or eroding
+    _mef_opts = _ordered_present(_cf, "mef_label",
+                                 ["🟢 Expanding", "✅ Intact", "🟡 Eroding", "🔴 Degrading"])
+    sel_mef = _ms_cascade("Moat Endurance", _mef_opts, "sb_mef", default=[],
+                          help="Whether the moat is widening or eroding over time. Empty = all.")
+    if sel_mef and "mef_label" in _cf.columns:
+        _cf = _cf[_cf["mef_label"].isin(sel_mef)]
+
+    # 8e. Cash-Flow Triangle — cash-flow quality pattern
+    _cftri_opts = _ordered_present(_cf, "cf_triangle",
+                                   ["✅ Perfect — Buy Zone", "⚪ Mixed Pattern",
+                                    "⚠️ Growth Phase — Watch D/E", "🚨 Debt Trap — Avoid"])
+    sel_cftri = _ms_cascade("Cash-Flow Triangle", _cftri_opts, "sb_cftri", default=[],
+                            help="Operating/investing/financing cash-flow quality. Empty = all.")
+    if sel_cftri and "cf_triangle" in _cf.columns:
+        _cf = _cf[_cf["cf_triangle"].isin(sel_cftri)]
+
+    # 8f. Smart-Money Flow — the 5-level institutional-flow read
+    _smf_opts = _ordered_present(_cf, "smart_money_flow",
+                                 ["🌊💎 Elite Accumulation", "🎯 Strong Accumulation",
+                                  "✅ Moderate Interest", "⚪ Neutral", "❌ Distribution"])
+    sel_smf = _ms_cascade("Smart-Money Flow", _smf_opts, "sb_smartflow", default=[],
+                          help="Institutional accumulation/distribution level. Empty = all.")
+    if sel_smf and "smart_money_flow" in _cf.columns:
+        _cf = _cf[_cf["smart_money_flow"].isin(sel_smf)]
+
     # 9. Catalyst — fast-moving EVENT triggers (debt repair, new capacity, margin inflection,
     # early institutional discovery, Lynch GARP). OR logic: show stocks with ANY selected catalyst.
     # Option VALUES are the stable cat_* column names (so the cascade pruning holds); the live
@@ -562,6 +619,34 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
+    # 10. Sell Alerts — Baid sell triggers (separate 0/1 cols). OR logic: show stocks with ANY
+    # selected alert (surface risk to review). Same stable-column-name + format_func pattern as 🔥.
+    _SELL_ALERTS = {
+        "🚨 Cash Collapse":      "sell_alert_cash_collapse",
+        "🚨 Overvalued":         "sell_alert_overvalued",
+        "🚨 Thesis Broken":      "sell_alert_thesis_broken",
+        "🚨 Treadmill":          "sell_alert_treadmill",
+        "🚨 Sequential Decline": "sell_alert_sequential_decline",
+        "🚨 Mgmt Deteriorated":  "sell_alert_mgmt_deteriorated",
+    }
+    _sa_name = {v: k for k, v in _SELL_ALERTS.items()}
+    _sa_opts = [c for c in _SELL_ALERTS.values() if c in _cf.columns and int(_cf[c].sum()) > 0]
+    sel_alert = _ms_cascade(
+        "🚨 Sell Alerts", _sa_opts, "sb_sellalert", default=[],
+        help="Show stocks where ANY selected Baid sell trigger is active. OR logic. Empty = all.",
+        format_func=lambda c: f"{_sa_name[c]} ({int(_cf[c].sum())})",
+    )
+    if sel_alert:
+        _sa_mask = pd.Series(False, index=_cf.index)
+        for _c in sel_alert:
+            _sa_mask = _sa_mask | (_cf[_c] == 1)
+        _cf = _cf[_sa_mask]
+        st.markdown(
+            f'<div style="font-size:0.6rem;color:{COLORS["red"]};padding:0 0 6px 2px;"'
+            f'>🚨 {len(sel_alert)} alert(s) (OR) · {len(_cf)} stocks remaining</div>',
+            unsafe_allow_html=True,
+        )
+
     # Institutional Sweep Vector
     st.markdown("---")
     st.markdown("<div style='font-size:0.8rem; font-weight:700; color:#8b5cf6; margin-bottom:5px;'>🌊 ALPHA VECTORS</div>", unsafe_allow_html=True)
@@ -571,7 +656,8 @@ with st.sidebar:
     min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
 
 # Apply filters — the cascade frame (_cf) already encodes every option-based filter
-# (Market Category → Sector → Industry → Tier → Framework → Moat → PEG Zone → Buy Zone → Catalyst),
+# (Market Category → Sector → Industry → Tier → Verdict → Corporate Class → Framework → Moat →
+#  PEG Zone → Buy Zone → Weinstein → Lynch → Moat Endurance → CF Triangle → Smart-Money → Catalyst → Sell Alerts),
 # so the dropdown options and the result set are guaranteed identical. Only the bottom
 # Alpha-Vector toggles remain to apply.
 filt = _cf.copy()
