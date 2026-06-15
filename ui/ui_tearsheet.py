@@ -1,6 +1,6 @@
 """
-Multibagger Discovery System — Tearsheet Visualization Layer
-=============================================================
+PRISM — Tearsheet Visualization Layer
+=====================================
 Deep-dive charts and WCS 28/29/30 framework cards for individual stocks.
 All functions are PURE DISPLAY — zero sorting, grouping, or math.
 Pre-calculated vectors arrive from data_engine + scoring_engine + forensic_engine.

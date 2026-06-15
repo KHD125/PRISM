@@ -906,9 +906,9 @@ HIGH_AGE_ZONES = {
 # 10. UI CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 UI = {
-    "app_title": "Multibagger Discovery System",
-    "app_icon": "🏆",
-    "app_subtitle": "Quantamental Compounding Engine",
+    "app_title": "PRISM",
+    "app_icon": "🔷",
+    "app_subtitle": "Every lens. One verdict.",
     "version": "1.0.0",
     "max_display_default": 100,
     "font_url": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap",

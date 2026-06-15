@@ -1,14 +1,14 @@
 """
-The Systematic Architect's Index v2.0
-======================================
-Adaptive Quantamental Engine — Regime-Aware, Master-Driven
+PRISM — Quantamental Intelligence
+=================================
+Every lens. One verdict. — Regime-Aware, Master-Driven
 Dr. Malik + Raamdeo Agrawal + O'Neil + Mukherjea + Marks + Fisher + Lynch
 """
 import os
 os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
 
 import streamlit as st
-st.set_page_config(page_title="Systematic Architect's Index", page_icon="🏛️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="PRISM — Quantamental Intelligence", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
 
 import pandas as pd
 import numpy as np
@@ -1613,7 +1613,7 @@ with tabs[4]:
     st.markdown("---")
     st.markdown(f"""
     <div style="text-align:center; padding:20px; color:{COLORS['text_muted']}; font-size:0.75rem;">
-        The Systematic Architect's Index v{UI['version']} · Adaptive Quantamental Engine<br>
+        PRISM v{UI['version']} · Quantamental Intelligence · Every lens, one verdict<br>
         Dr. Malik (SSGR+8 Params) · Raamdeo (QGLP) · O'Neil (CAN-SLIM) · Mukherjea (Coffee Can)<br>
         Howard Marks (Cycles) · Philip Fisher · Peter Lynch (PEG) · Schilit (Forensics)<br>
         {total} stocks · {len(df.columns)} signals · {load_time:.1f}s pipeline<br>

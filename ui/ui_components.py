@@ -1,10 +1,11 @@
 """
-Multibagger Discovery System — UI Components
-=============================================
+PRISM — UI Components
+=====================
 Reusable Streamlit UI widgets, cards, and charts.
 Premium dark-mode design system.
 """
 
+import base64
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
@@ -12,6 +13,32 @@ import pandas as pd
 import numpy as np
 import html as _html
 from config import COLORS, TIER_COLORS, CONVICTION_TIERS, UI, FRAMEWORK_CATEGORIES
+
+
+# ── PRISM brand mark ──────────────────────────────────────────────────────────
+# A geometric triangular prism: a single white beam enters the left face and refracts
+# out the right into the product's OWN 6-axis spectrum (purple Moat / green Growth /
+# blue Cash / orange Momentum / gold Governance). Embedded as a base64 data-URI <img>
+# so it survives Streamlit's HTML sanitizer and renders crisp at any size (16px → header).
+_PRISM_SVG = (
+    '<svg viewBox="0 0 72 56" xmlns="http://www.w3.org/2000/svg" fill="none">'
+    '<line x1="3" y1="29" x2="19" y2="29" stroke="#e6edf3" stroke-width="2.4" stroke-linecap="round"/>'
+    '<path d="M28 7 L11 47 L45 47 Z" stroke="#e6edf3" stroke-width="2.4" stroke-linejoin="round" fill="#e6edf3" fill-opacity="0.05"/>'
+    '<line x1="39" y1="33" x2="69" y2="21" stroke="#a371f7" stroke-width="2.3" stroke-linecap="round"/>'
+    '<line x1="39" y1="33" x2="69" y2="28" stroke="#3fb950" stroke-width="2.3" stroke-linecap="round"/>'
+    '<line x1="39" y1="33" x2="69" y2="34" stroke="#58a6ff" stroke-width="2.3" stroke-linecap="round"/>'
+    '<line x1="39" y1="33" x2="69" y2="40" stroke="#f0883e" stroke-width="2.3" stroke-linecap="round"/>'
+    '<line x1="39" y1="33" x2="69" y2="47" stroke="#d29922" stroke-width="2.3" stroke-linecap="round"/>'
+    '</svg>'
+)
+PRISM_LOGO_URI = "data:image/svg+xml;base64," + base64.b64encode(_PRISM_SVG.encode("utf-8")).decode("ascii")
+
+
+def prism_mark(px: int = 48) -> str:
+    """Inline PRISM logo at the given pixel width (height auto-scaled to the 72×56 viewBox)."""
+    h = round(px * 56 / 72)
+    return (f'<img src="{PRISM_LOGO_URI}" alt="PRISM" '
+            f'style="width:{px}px;height:{h}px;display:block;margin:0 auto;" />')
 
 
 def inject_css():
@@ -415,7 +442,7 @@ def render_hero_banner(total_stocks: int, gate_passed: int, tier1_count: int):
     """Render the main hero banner."""
     st.markdown(f"""
     <div class="hero-banner">
-        <div class="hero-icon">🏆</div>
+        <div class="hero-icon">{prism_mark(60)}</div>
         <h1 class="hero-title">{UI['app_title']}</h1>
         <p class="hero-sub">{UI['app_subtitle']}</p>
         <div class="hero-badge">v{UI['version']} · {total_stocks} STOCKS SCANNED · {gate_passed} QUALIFIED · {tier1_count} CROWN JEWELS</div>
@@ -687,9 +714,9 @@ def render_sidebar_brand():
     """Render the sidebar brand card."""
     st.markdown(f"""
     <div class="sb-brand">
-        <div class="sb-brand-icon">🏆</div>
-        <div class="sb-brand-title">Multibagger<br>Discovery</div>
-        <div class="sb-brand-ver">v{UI['version']} · QUANTAMENTAL ENGINE</div>
+        <div class="sb-brand-icon">{prism_mark(42)}</div>
+        <div class="sb-brand-title">PRISM</div>
+        <div class="sb-brand-ver">v{UI['version']} · QUANTAMENTAL INTELLIGENCE</div>
     </div>
     """, unsafe_allow_html=True)
 
