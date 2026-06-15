@@ -1184,6 +1184,8 @@ with tabs[2]:
                 unsafe_allow_html=True,
             )
             render_raw_signals(stock)
+            # Breathing room before the Export so it doesn't crowd the last data section.
+            st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
             _stock_export = pd.DataFrame({
                 "Signal": df[df["name"] == selected].iloc[0].index,
                 "Value":  df[df["name"] == selected].iloc[0].values,
