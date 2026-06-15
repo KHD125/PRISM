@@ -1094,39 +1094,9 @@ with tabs[2]:
 
         # ══ Tab B: Forensics ═══════════════════════════════════════════════
         with _itabs[1]:
-            # ── Forensic KPI strip — F-Score · Red Flags · Forensic% · CF Triangle
-            _f_fscore  = int(_sg("piotroski_fscore", 0))
-            _f_flags   = int(_sg("red_flag_count", 0))
-            _f_forensic = float(_sg("forensic_score", 0))
-            _f_cftri   = str(stock.get("cf_triangle", "—") or "—")
-            _fkpi_data = [
-                (str(_f_fscore), "/9",  "F-Score",
-                 COLORS["green"] if _f_fscore >= 7 else COLORS["gold"] if _f_fscore >= 5 else COLORS["red"]),
-                (str(_f_flags),  "",    "Red Flags",
-                 COLORS["green"] if _f_flags == 0 else COLORS["gold"] if _f_flags <= 2 else COLORS["red"]),
-                (f"{_f_forensic:.0f}", "%", "Forensic",
-                 COLORS["green"] if _f_forensic >= 80 else COLORS["gold"] if _f_forensic >= 60 else COLORS["red"]),
-                (_f_cftri, "", "CF Triangle",
-                 COLORS["green"] if any(x in _f_cftri for x in ("✅", "🟢")) else
-                 COLORS["gold"]  if "🟡" in _f_cftri else COLORS["red"]),
-            ]
-            _fkpi_html = "".join(
-                f'<div style="flex:1;min-width:80px;background:{COLORS["bg_secondary"]};'
-                f'border:1px solid {COLORS["border"]};border-radius:10px;'
-                f'padding:10px 14px;text-align:center;">'
-                f'<div style="font-size:1.4rem;font-weight:900;color:{clr};line-height:1;">'
-                f'{val}<span style="font-size:0.75rem;color:{COLORS["text_muted"]};">{suf}</span></div>'
-                f'<div style="font-size:0.57rem;color:{COLORS["text_muted"]};text-transform:uppercase;'
-                f'letter-spacing:0.6px;margin-top:4px;">{lbl}</div>'
-                f'</div>'
-                for val, suf, lbl, clr in _fkpi_data
-            )
-            st.markdown(
-                f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">'
-                f'{_fkpi_html}</div>',
-                unsafe_allow_html=True,
-            )
-
+            # The Fraud Perimeter renders its own richer KPI row (Red Flags · Forensic Score ·
+            # Score Multiplier · Piotroski · Mgmt Integrity); a separate strip here just duplicated
+            # F-Score/Red Flags/Forensic. CF Triangle still shows in the Overview "Signals" strip.
             st.markdown(
                 f"<div class='sec-head'>🔬 Forensic Fraud Perimeter (25-Flag Cascade)</div>",
                 unsafe_allow_html=True,

@@ -594,6 +594,21 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
     return ""
 
 
+def _forensic_status(forensic_score: float, flag_count: int):
+    """Selective forensic verdict from the cascade's OWN metrics (forensic_score + red_flag_count).
+
+    NOT the forensic_label column — that reads "🚨 Sharp Practices Detected" for ~98.6% of the
+    universe (only 29/2107 are "🟢 Clean"), so it cried wolf on clean Crown Jewels and CONTRADICTED
+    the Schilit shield's "Clean Audit". Census 2026-06-15 on the 2107-stock universe:
+    🔴 Sharp 474 (22%) · 🟡 Watch 879 (42%) · 🟢 Clean 754 (36%). Returns (text, color, is_clean).
+    """
+    if forensic_score < 60 or flag_count >= 8:
+        return ("🚨 Sharp Practices Detected", COLORS["red"], False)
+    if forensic_score >= 80 and flag_count <= 3:
+        return ("🟢 Clean — No Material Red Flags", COLORS["green"], True)
+    return ("🟡 Elevated — Watch the Accounts", COLORS["gold"], False)
+
+
 def render_forensic_perimeter(stock: pd.Series):
     """
     Vectorized Fraud Perimeter Display.
@@ -602,7 +617,7 @@ def render_forensic_perimeter(stock: pd.Series):
     """
     flag_count     = int(_g(stock, "red_flag_count",         0))
     forensic_score = _g(stock,  "forensic_score",            100)
-    forensic_label = stock.get("forensic_label", "🟢 Clean") or "🟢 Clean"
+    status_txt, status_clr, _ = _forensic_status(forensic_score, flag_count)
     f_mult         = _g(stock,  "forensic_multiplier",       1.0)
     piotroski      = int(_g(stock, "piotroski_fscore",        0))
     pio_label      = stock.get("piotroski_label",  "") or ""
@@ -648,7 +663,7 @@ def render_forensic_perimeter(stock: pd.Series):
       </div>
     </div>
     <div style="font-size:0.72rem;color:{COLORS['text_muted']};margin-bottom:12px;">
-      Status: <strong style="color:{COLORS['text_primary']};">{_esc(forensic_label)}</strong>
+      Status: <strong style="color:{status_clr};">{_esc(status_txt)}</strong>
       &nbsp;·&nbsp; Piotroski: <strong style="color:{pio_clr};">{_esc(pio_label)}</strong>
     </div>
     """, unsafe_allow_html=True)
@@ -944,11 +959,13 @@ def render_fisher_module(stock: pd.Series):
     proxies.append(("P13: No Equity Dilution (Share Count Stable)",
                     p13_pass, "Clean" if p13_pass else "Diluted"))
 
-    # P15 — Management Integrity: forensic_label pre-classified by forensic_engine
-    forensic_label = stock.get("forensic_label", "") or ""
-    p15_pass = forensic_label == "🟢 Clean"
+    # P15 — Accounting Integrity: selective forensic verdict (forensic_score + red_flag_count), so
+    # P15 agrees with the Fraud Perimeter status and the Schilit shield instead of failing 98.6% of
+    # the universe off the near-universal forensic_label. See _forensic_status().
+    _f15_txt, _, p15_pass = _forensic_status(_g(stock, "forensic_score", 100),
+                                             int(_g(stock, "red_flag_count", 0)))
     proxies.append(("P15: Accounting Integrity (Clean/Watch)",
-                    p15_pass, _esc(forensic_label)))
+                    p15_pass, _esc(_f15_txt)))
 
     passed     = sum(1 for _, is_pass, _ in proxies if is_pass)
     total      = len(proxies)
@@ -1319,7 +1336,11 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     mcap       = _g(stock, "market_cap", 0)
     mcat       = _esc(stock.get("market_category", "") or "")
     mg_quad    = _esc(stock.get("moat_growth_quad", "") or "")
-    f_lbl      = _esc(stock.get("forensic_label", "🟢 Clean") or "🟢 Clean")
+    # Selective forensic badge (forensic_score + red_flag_count) — the forensic_label column reads
+    # "Sharp Practices Detected" for 98.6% of the universe, which contradicted the BUY/Clean-Audit
+    # verdict in the hero. See _forensic_status() (same logic powers the Perimeter + Fisher P15).
+    f_txt, f_clr, _ = _forensic_status(_g(stock, "forensic_score", 100),
+                                       int(_g(stock, "red_flag_count", 0)))
     reg_map    = {"BULL": ("🟢 Bull", COLORS["green"]), "BEAR": ("🔴 Bear", COLORS["red"])}
     reg_txt, reg_clr = reg_map.get(regime, ("🟡 Sideways", COLORS["gold"]))
 
@@ -1414,9 +1435,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     badges_html = (
         _badge(f"{tcfg['emoji']} {tcfg['label']}", ring_clr) +
         _mg_badge +
-        _badge(f_lbl,   COLORS["green"]  if "Clean"   in f_lbl else
-                        COLORS["gold"]   if "Watch"   in f_lbl else
-                        COLORS["orange"] if "Caution" in f_lbl else COLORS["red"]) +
+        _badge(f_txt, f_clr) +
         _badge(reg_txt, reg_clr) +
         _gov_badge +
         _cov_badge +
