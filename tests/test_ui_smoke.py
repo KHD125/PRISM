@@ -62,12 +62,13 @@ def _render_tearsheet_app():
         render_financial_insights, render_forensic_perimeter, render_guru_frameworks,
         render_mauboussin_radar, render_valuation_inversion_and_sizing_cockpit,
         render_canslim_radar, render_sepa_radar, render_marks_radar,
-        render_mosl_wealth_matrix,
+        render_mosl_wealth_matrix, render_sector_peer_strip,
     )
     stock = st.session_state["stock_row"]
     render_stock_hero(stock)
     render_score_strip(stock)
     render_sell_alerts_panel(stock)
+    render_sector_peer_strip(stock)
     render_financial_insights(stock)
     render_forensic_perimeter(stock)
     render_guru_frameworks(stock)

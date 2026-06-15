@@ -563,7 +563,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         0,
     ).astype(int)
 
-    # 28. Scaled Net Operating Assets bloat (Quantitative Value, Gray & Carlisle Ch.3)
+    # 29. Scaled Net Operating Assets bloat (Quantitative Value, Gray & Carlisle Ch.3)
     # SNOA > 1.0 = net operating assets exceed the entire (lagged) asset base — an unambiguous
     # cumulative accrual build-up (the "historical manipulation" weapon, orthogonal to the
     # single-period rf_high_accruals/STA: corr ~0.21 on live data). Upper guard < 10 excludes

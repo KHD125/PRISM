@@ -77,6 +77,9 @@ _FLAG_DISPLAY = {
     "rf_receivables_bloat":        ("DSO expansion >20 days above sector median — relative receivables manipulation", "🟡"),
     "rf_psu_value_destruction":    ("PSU Value-Destruction Loop — low capital spread + high payout + CWIP delays", "🟠"),
     "rf_lease_inflation":          ("Ind AS 116 lease mirage — EBITDA inflated by RoU capitalisation (QSR/Retail/Aviation)", "🟡"),
+    "rf_low_cfo_ebitda":           ("CFO/EBITDA <50% — cash conversion far below tax-math par; EBITDA likely inflated", "🟠"),
+    "rf_wc_double_squeeze":        ("DSO rising >10 days AND DPO falling >10 days simultaneously — double working capital squeeze", "🟠"),
+    "rf_snoa":                     ("Net operating assets bloat — cumulative accrual build-up (QV SNOA >1.0)", "🟡"),
 }
 
 
@@ -312,12 +315,25 @@ def render_bruised_blue_chip_badge(stock: pd.Series):
     if not bbc29 and not bbc_og:
         return
 
-    # ── Agent 9 variant: Large-Cap Elite ROCE + P/B ≤ 2.0 (primary badge) ──
+    # ── Agent 9 variant: Large-Cap Elite blue chip + P/B ≤ 2.0 (primary badge) ──
     if bbc29:
         mcap     = _g(stock, "market_cap",    0)
-        roce_10y = _g(stock, "roce_med_10y",  0)
+        roe_10y  = _g(stock, "roe_med_10y",   0)   # engine gates on ROE (not ROCE) — blue chips incl. banks
         pb       = _g(stock, "pb_ratio",      0)
+        dist52   = _g(stock, "dist_52wh",     0)
         pe_disc  = _g(stock, "pe_discount",   0)
+        # "Bruised" proxy — show whichever condition actually gated (the card's previously-missing thesis)
+        _bruise_bits = []
+        if dist52 > 25:   _bruise_bits.append(f"{dist52:.0f}% off 52-wk high")
+        if pe_disc >= 25: _bruise_bits.append(f"PE {pe_disc:.0f}% below history")
+        _bruise_txt = " · ".join(_bruise_bits) if _bruise_bits else "deep historical drawdown"
+        # ROE ≥ 20 only gates the top-250 branch (top-50 has NO floor) → conditional, never a false ✅
+        if roe_10y >= 20:
+            _roe_html = (f'<span style="font-size:0.78rem;color:{COLORS["green"]};">'
+                         f'✅ ROE 10Y ≥ 20% &nbsp;({roe_10y:.1f}%)</span>')
+        else:
+            _roe_html = (f'<span style="font-size:0.78rem;color:{COLORS["text_muted"]};">'
+                         f'ROE 10Y: {roe_10y:.1f}%</span>')
 
         st.markdown(f"""
         <div style="background:linear-gradient(135deg,#091624,#0c2040);
@@ -340,16 +356,16 @@ def render_bruised_blue_chip_badge(stock: pd.Series):
                     ✅ Top-50 / Top-250 Quality MCap &nbsp;(₹{mcap:,.0f} Cr)
                 </span>
                 <span style="font-size:0.78rem;color:{COLORS['green']};">
-                    ✅ ROCE 10Y ≥ 20% &nbsp;({roce_10y:.1f}%)
+                    ✅ Bruised — {_esc(_bruise_txt)}
                 </span>
                 <span style="font-size:0.78rem;color:{COLORS['green']};">
                     ✅ P/B ≤ 2.0× &nbsp;({pb:.2f}×)
                 </span>
+                {_roe_html}
             </div>
             <div style="margin-top:10px;font-size:0.75rem;color:{COLORS['text_secondary']};
                         border-top:1px solid rgba(88,166,255,0.2);padding-top:8px;">
-                Capital-efficient compounder with a decade of sustained value creation
-                ({roce_10y:.1f}% 10Y ROCE), now trading at P/B {pb:.2f}× —
+                Premium franchise at a historical valuation floor — P/B {pb:.2f}×, {_esc(_bruise_txt)} —
                 asymmetric risk/reward per MOSL 29th Annual Wealth Creation Study.
             </div>
         </div>
@@ -457,9 +473,9 @@ def render_multitrillioncap_card(stock: pd.Series):
         <div style="display:flex;gap:8px;flex-wrap:wrap;">{sigs_html}</div>
         <div style="margin-top:10px;font-size:0.74rem;color:{COLORS['text_muted']};
                     border-top:1px solid rgba(139,92,246,0.2);padding-top:8px;">
-            India's Financial Services and Consumer sectors are on track to 3× their combined
-            market cap by 2030 per MOSL 30th Study. Stocks reaching volume + earnings + breakout
-            confluence are the structural compounders at compounding tipping velocity.
+            {_esc(sector_nm)} screens as a structural-tailwind sector — MOSL's 30th Study projects
+            India's high-growth sectors to 3× their market cap by 2030. Stocks reaching volume +
+            earnings + breakout confluence are the structural compounders at tipping velocity.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -591,6 +607,19 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
     if rf_col == "rf_lease_inflation":
         opm = _v("opm", "{:.1f}%")
         return f"EBITDA-level OPM: {opm}  ·  Ind AS 116 RoU removes operating lease costs from EBITDA" if opm else ""
+    if rf_col == "rf_low_cfo_ebitda":
+        v = _v("cfo_to_ebitda", "{:.1f}%")
+        return f"cfo_to_ebitda: {v}  ·  threshold: ≥50%" if v else ""
+    if rf_col == "rf_wc_double_squeeze":
+        dso = _v("days_receivable", "{:.0f}d")
+        dpo = _v("days_payable",    "{:.0f}d")
+        parts = []
+        if dso: parts.append(f"DSO: {dso} (rising >10d)")
+        if dpo: parts.append(f"DPO: {dpo} (falling >10d)")
+        return "  ·  ".join(parts)
+    if rf_col == "rf_snoa":
+        v = _v("scaled_net_operating_assets", "{:.2f}")
+        return f"SNOA: {v}  ·  threshold: >1.0 (net op assets exceed lagged asset base)" if v else ""
     return ""
 
 
@@ -677,8 +706,8 @@ def render_forensic_perimeter(stock: pd.Series):
             Clean Bill of Health
           </div>
           <div style="font-size:0.72rem;color:{COLORS['text_muted']};margin-top:4px;">
-            Zero forensic red flags across all 25 accounting checks —
-            17 Schilit/Malik shenanigans + 8 WCS 24 defensive protocols.
+            Zero forensic red flags across all {FORENSIC_MAX_FLAGS} accounting checks —
+            the full Schilit / Malik / WCS-24 forensic perimeter.
           </div>
         </div>
         """, unsafe_allow_html=True)
@@ -2972,6 +3001,92 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
             "Volume accumulation phase tracking historical norms. "
             "Watch for pocket pivot breakout volumes."
         )
+
+
+# ═══════════════════════════════════════════════════════════════
+# vs SECTOR PEERS — per-stock sector-relative context (the value-trap guard)
+# ═══════════════════════════════════════════════════════════════
+
+def _sector_peer_strip_html(stock: pd.Series) -> str:
+    """Build the 'vs Sector Peers' HTML strip — PURE function, zero st calls (unit-testable).
+
+    Surfaces four already-computed-but-orphaned sector-relative columns so the Overview can
+    answer the one question the absolute 6-axis scorecard structurally cannot: is this stock
+    genuinely strong, or only strong *for a weak sector* (and vice-versa) — the value-trap guard.
+
+    Thresholds are the engine's OWN, not invented: 0.70 = the `category_winner_flag` top-30%
+    sector-ROCE line; 0.50 = the sector median. Reads sector_roce_pct_rank (0-1, fillna 0.5 in
+    the engine), emc_flag / emc_sector_beat_count (ROE beats sector median in N of 5 windows),
+    and sector_capital_phase (Chancellor capital-cycle: Hot / Starved / Neutral).
+    """
+    GOLD, GREEN, RED, MUTE = (
+        COLORS["gold"], COLORS["green"], COLORS["red"], COLORS["text_muted"]
+    )
+
+    # ── Tile 1: ROCE percentile within sector (the value-trap signal) ───────────
+    raw_rank = _g(stock, "sector_roce_pct_rank", None)   # _g returns None on NaN/missing
+    if raw_rank is None:
+        rk_clr, rk_val, rk_sub = MUTE, "—", "No sector peer rank"
+    else:
+        pct = float(raw_rank) * 100.0
+        if pct >= 70.0:
+            rk_clr, rk_sub = GREEN, "Top 30% — sector ROCE leader"
+        elif pct >= 50.0:
+            rk_clr, rk_sub = GOLD, "Above sector median"
+        else:
+            rk_clr, rk_sub = RED, "Below sector median — value-trap check"
+        rk_val = f"{pct:.0f}"
+
+    # ── Tile 2: Sector ROE moat (EMC — 17th WCS sector-relative persistence) ────
+    emc_on   = int(_g(stock, "emc_flag", 0)) == 1
+    emc_beat = int(_g(stock, "emc_sector_beat_count", 0))
+    emc_clr  = GREEN if emc_on else MUTE
+    emc_val  = f"{emc_beat}/5"
+    emc_sub  = "Beats sector ROE (EMC moat)" if emc_on else "Lags sector ROE"
+
+    # ── Tile 3: Sector capital cycle (Chancellor — Capital Returns) ─────────────
+    phase = str(_g(stock, "sector_capital_phase", "⚖️ Neutral") or "⚖️ Neutral")
+    _phase_map = {
+        "🔥 Hot Capital (caution)":        (GOLD,  "🔥 Hot",     "Sector over-investing — mean-reversion risk"),
+        "❄️ Capital Starved (opportunity)": (GREEN, "❄️ Starved", "Under-invested sector — supply opportunity"),
+        "⚖️ Neutral":                      (MUTE,  "⚖️ Neutral", "Balanced sector capital cycle"),
+    }
+    cap_clr, cap_val, cap_sub = _phase_map.get(
+        phase, (MUTE, "⚖️ Neutral", "Balanced sector capital cycle")
+    )
+
+    sector = _esc(_g(stock, "sector", "—") or "—")
+
+    def _tile(color, value, label, sub):
+        return (
+            f"<div style='flex:1;flex-shrink:0;min-width:150px;"
+            f"background:{color}12;border:1px solid {color}40;border-radius:10px;padding:11px 14px;'>"
+            f"<div style='font-size:0.6rem;font-weight:700;color:{MUTE};text-transform:uppercase;"
+            f"letter-spacing:0.6px;white-space:nowrap;'>{_esc(label)}</div>"
+            f"<div style='font-size:1.3rem;font-weight:900;color:{color};line-height:1.2;"
+            f"margin-top:3px;white-space:nowrap;'>{_esc(value)}</div>"
+            f"<div style='font-size:0.62rem;color:{color};margin-top:2px;'>{_esc(sub)}</div>"
+            f"</div>"
+        )
+
+    header = (
+        f"<div style='font-size:0.62rem;font-weight:800;color:{MUTE};text-transform:uppercase;"
+        f"letter-spacing:0.8px;margin:16px 0 6px 0;'>📊 vs Sector Peers · {sector}</div>"
+    )
+    tiles = (
+        _tile(rk_clr,  rk_val,  "🛡️ ROCE Percentile in Sector", rk_sub) +
+        _tile(emc_clr, emc_val, "📈 Sector ROE Moat",           emc_sub) +
+        _tile(cap_clr, cap_val, "🔄 Sector Capital Cycle",       cap_sub)
+    )
+    return (
+        header
+        + f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;'>{tiles}</div>"
+    )
+
+
+def render_sector_peer_strip(stock: pd.Series):
+    """Mount the 'vs Sector Peers' strip (Overview tab). Stateless — single st.markdown."""
+    st.markdown(_sector_peer_strip_html(stock), unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════

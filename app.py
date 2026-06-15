@@ -31,6 +31,7 @@ from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_mo
                 render_canslim_radar, render_sepa_radar, render_schilit_shield, render_dorsey_radar,
                 render_outsider_radar, render_marks_radar, render_malik_radar,
                 render_lynch_radar, render_mauboussin_radar, render_mosl_wealth_matrix,
+                render_sector_peer_strip,
                 render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
@@ -1233,6 +1234,11 @@ with tabs[2]:
                     f'{bdgs}',
                     unsafe_allow_html=True,
                 )
+
+            # vs Sector Peers — contextualizes the at-a-glance quality (radar + facets) against
+            # the stock's OWN sector before the absolute financials below: the value-trap guard
+            # (a high absolute score that is bottom-quartile for its sector, or vice-versa).
+            render_sector_peer_strip(stock)
 
             st.markdown(
                 f"<div class='sec-head'>📊 Business & Financial Analysis</div>",
