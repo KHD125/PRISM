@@ -39,7 +39,7 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
                     BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
-                    MASTER_PROFILES, ANALYSIS_MODES)
+                    MASTER_PROFILES, ANALYSIS_MODES, FORENSIC_MAX_FLAGS)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1098,7 +1098,7 @@ with tabs[2]:
             # Score Multiplier · Piotroski · Mgmt Integrity); a separate strip here just duplicated
             # F-Score/Red Flags/Forensic. CF Triangle still shows in the Overview "Signals" strip.
             st.markdown(
-                f"<div class='sec-head'>🔬 Forensic Fraud Perimeter (25-Flag Cascade)</div>",
+                f"<div class='sec-head'>🔬 Forensic Fraud Perimeter ({FORENSIC_MAX_FLAGS}-Flag Cascade)</div>",
                 unsafe_allow_html=True,
             )
             render_forensic_perimeter(stock)

@@ -466,7 +466,7 @@ def render_multitrillioncap_card(stock: pd.Series):
 
 
 # ═══════════════════════════════════════════════════════════════
-# FORENSIC FRAUD PERIMETER — WCS 24 / 25-Flag Cascade
+# FORENSIC FRAUD PERIMETER — WCS 24 / FORENSIC_MAX_FLAGS-flag cascade (28, self-updating)
 # ═══════════════════════════════════════════════════════════════
 
 def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
@@ -643,7 +643,7 @@ def render_forensic_perimeter(stock: pd.Series):
     <div class="ts-kpi-strip">
       <div class="ts-kpi-cell" style="border-top:3px solid {flag_color};">
         <div class="ts-kpi-val" style="color:{flag_color};">{flag_count}</div>
-        <div class="ts-kpi-lbl">Red Flags / 25</div>
+        <div class="ts-kpi-lbl">Red Flags / {FORENSIC_MAX_FLAGS}</div>
       </div>
       <div class="ts-kpi-cell" style="border-top:3px solid {fsc_clr};">
         <div class="ts-kpi-val" style="color:{fsc_clr};">{forensic_score:.0f}</div>
@@ -1650,8 +1650,7 @@ def render_raw_signals(stock: pd.Series):
         _cell("OPM",           g("opm"),            "{:.1f}%") +
         _cell("Malik Score",   g("malik_score"),    "{:.0f}/5") +
         _cell("Malik Pass",    "Yes ✅" if g("malik_pass") == 1 else "No", "") +
-        _cell("Lynch Score",   g("lynch_score"),    "{:.0f}/4") +
-        _cell("Lynch Pass",    "Yes ✅" if g("lynch_pass") == 1 else "No", "") +
+        # Lynch Score/Pass live in their own 🚀 Lynch Fast Grower Pillars block below (de-duped).
         _cell("Piotroski",     g("piotroski_fscore"),"{:.0f}/9") +
         _cell("Fisher Scal. Score", g("fisher_score"),   "{:.0f}/4") +
         _cell("Fisher Quadrant",    stock.get("fisher_lifecycle_quadrant", "⚪ Laggard") or "⚪ Laggard", "")
@@ -1746,9 +1745,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("Red Flags",     g("red_flag_count"),      f"{{:.0f}}/{FORENSIC_MAX_FLAGS}") +
         _cell("Forensic Scr",  g("forensic_score"),      "{:.0f}/100") +
         _cell("Forensic Mult", g("forensic_multiplier"), "{:.0%}") +
-        _cell("Piotroski",     g("piotroski_fscore"),    "{:.0f}/9") +
+        # Piotroski shown in 🏭 Business Quality; EP Quintile in 🏛️ MOSL Signals (both de-duped).
         _cell("Econ Profit",   g("economic_profit"),     "₹{:,.0f} Cr") +
-        _cell("EP Quintile",   stock.get("ep_quintile","") or "","") +
         _cell("Earnings Power",stock.get("earnings_power_box","") or "","") +  # Heiserman defensive×enterprising box
 
         _cell("QGLP Score",    g("qglp_score"),          "{:.0f}/100") +
