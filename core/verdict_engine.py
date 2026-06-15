@@ -140,14 +140,26 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     clean  = ~(forensic_veto | gruesome_veto | schilit_fail)
     great  = cclass.str.contains("GREAT", case=False)
     eer_pos = eer.fillna(0) >= 5.0
+    # DIRECTION-AWARE so the narrative can NEVER contradict the direction. The positive archetypes
+    # describe a good FUNDAMENTAL setup (quality/growth/cheap), but the direction reads the post-
+    # penalty composite — so a cheap-and-clean stock whose composite still lands in AVOID (momentum /
+    # risk-adjusted quality dragging it — a classic value trap, e.g. Sarda Energy: q71 g66 cheap but
+    # composite 42 / Stage-4) must NOT read "high-conviction core holding". AVOID is matched FIRST so
+    # it can never fall through to a buy-toned line; the strongest BUY phrasing is reserved for BUYs.
+    dir_avoid = pd.Series(direction == "AVOID", index=idx)
+    dir_buy   = pd.Series(direction == "BUY",   index=idx)
 
     df["verdict_narrative"] = np.select(
         [
             forensic_veto,
             gruesome_veto,
             schilit_fail & (tier <= 2),
+            # AVOID matched up-front (after the hard-reason vetoes) → never a buy-toned narrative
+            dir_avoid & q_hi & (cheap | eer_pos),
+            dir_avoid,
             q_hi & g_hi & pricey & clean,
-            q_hi & g_hi & (cheap | eer_pos) & clean,
+            dir_buy & q_hi & g_hi & (cheap | eer_pos) & clean,   # strongest phrasing: BUY only
+            q_hi & g_hi & (cheap | eer_pos) & clean,             # same setup, non-BUY → softer
             q_hi & g_hi & clean,
             (cheap | eer_pos) & ~q_hi & clean,
             q_hi & ~g_hi & clean,
@@ -158,8 +170,11 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
             "Severe forensic / accounting-quality flags override the thesis — avoid until the accounts are clean.",
             "Capital allocation destroys value (Gruesome) — avoid regardless of how cheap it looks.",
             "Quality screens well, but Schilit forensic checkers flag it — verify the accounts before buying.",
+            "Cheap with decent quality on the screens — but the overall score is weak enough to land in AVOID; treat it as a value-trap watch, not a buy.",
+            "Overall score lands in AVOID — the weak axes outweigh the strengths; pass until they improve.",
             "Elite franchise, but priced for perfection — wonderful business, demanding price; wait for a pullback.",
             "Elite compounder at a reasonable price — high-conviction core holding.",
+            "A high-quality compounder trading at a fair price — quality and value aligned.",
             "Strong quality and growth, fairly valued — a solid compounder.",
             "Statistically cheap, but quality is thin — verify it isn't a value trap before buying.",
             "Quality intact but growth is decelerating — watch the next few prints before adding.",

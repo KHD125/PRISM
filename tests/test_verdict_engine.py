@@ -77,6 +77,21 @@ def test_low_tier_is_avoid():
     assert df["verdict_direction"].iloc[0] == "AVOID"
 
 
+def test_avoid_narrative_is_never_buy_toned():
+    """The Sarda Energy value-trap pattern: AVOID (tier 4 / composite 42) yet cheap + high
+    quality/growth + clean. The narrative reads the fundamental sub-scores, but it must NEVER
+    contradict the direction with a buy-toned line ('high-conviction core holding' etc.)."""
+    df = compute_verdict(_frame(
+        conviction_tier=4, composite_score=42.0, quality_score=71.0, growth_score=66.0,
+        pe=16.0, fair_pe_qglp=27.0, expected_excess_return=33.0,
+    ))
+    assert df["verdict_direction"].iloc[0] == "AVOID"
+    narr = df["verdict_narrative"].iloc[0].lower()
+    for phrase in ("high-conviction", "core holding", "elite compounder", "solid compounder"):
+        assert phrase not in narr, f"AVOID narrative must not be buy-toned — got: {narr!r}"
+    assert "avoid" in narr or "value-trap" in narr or "pass" in narr
+
+
 # ── Display-only guarantee ──
 def test_compute_verdict_does_not_mutate_scoring_columns():
     df_in = _frame(composite_score=77.0, conviction_tier=2)
