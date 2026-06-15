@@ -1341,8 +1341,10 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     # verdict in the hero. See _forensic_status() (same logic powers the Perimeter + Fisher P15).
     f_txt, f_clr, _ = _forensic_status(_g(stock, "forensic_score", 100),
                                        int(_g(stock, "red_flag_count", 0)))
-    reg_map    = {"BULL": ("🟢 Bull", COLORS["green"]), "BEAR": ("🔴 Bear", COLORS["red"])}
-    reg_txt, reg_clr = reg_map.get(regime, ("🟡 Sideways", COLORS["gold"]))
+    # Label as "… Market" so this market-wide regime badge isn't mistaken for a per-stock trait
+    # (it's the same on every tearsheet by design — one breadth-derived regime for the whole universe).
+    reg_map    = {"BULL": ("🟢 Bull Market", COLORS["green"]), "BEAR": ("🔴 Bear Market", COLORS["red"])}
+    reg_txt, reg_clr = reg_map.get(regime, ("🟡 Sideways Market", COLORS["gold"]))
 
     # Score ring color — matches tier
     ring_clr = tc["text"]
