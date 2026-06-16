@@ -14,6 +14,16 @@ import streamlit as st
 from config import COLORS
 
 
+def clear_all_filters() -> None:
+    """Delete every `sb_*` filter selection so the cascade resets to its show-all defaults, then
+    rerun. SINGLE SOURCE — called by the sidebar 'Clear all' button AND the Discovery empty-state
+    button, so the two can never diverge. Only `sb_*` keys are removed, so any other widget key
+    (e.g. the Discovery tab's `disc_clear` button) is untouched."""
+    for _k in [k for k in st.session_state if k.startswith("sb_") and k != "sb_clear"]:
+        del st.session_state[_k]
+    st.rerun()
+
+
 def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     """Build the cascade sidebar + the two Refine toggles, fill the live funnel, and return the
     fully-filtered frame `filt`. Self-contained: the funnel placeholder is created and filled
@@ -27,9 +37,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # in real time as filters narrow the universe.
         _funnel = st.empty()
         if st.button("🧹 Clear all filters", key="sb_clear", use_container_width=True):
-            for _k in [k for k in st.session_state if k.startswith("sb_") and k != "sb_clear"]:
-                del st.session_state[_k]
-            st.rerun()
+            clear_all_filters()
 
         def _active_n(*keys):
             """Count filters in a group that ACTUALLY narrow. Every filter now defaults to its
@@ -100,7 +108,10 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _sector_opts = ["All"] + sorted(_cf["sector"].dropna().unique().tolist())
             if st.session_state.get("sb_sector", "All") not in _sector_opts:
                 st.session_state["sb_sector"] = "All"
-            sel_sector = st.selectbox("Sector", _sector_opts, key="sb_sector")
+            sel_sector = st.selectbox(
+                "Sector", _sector_opts, key="sb_sector",
+                help="Filter to one sector. 'All' = every sector; also narrows the Industry list below.",
+            )
             if sel_sector != "All":
                 _cf = _cf[_cf["sector"] == sel_sector]
 
@@ -279,7 +290,9 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # 6. Moat-Growth quadrant — only quadrants present in the remaining stocks
             _MOAT_ORDER = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
             _moat_opts = _ordered_present(_cf, "moat_growth_quad", _MOAT_ORDER)
-            sel_moat = _ms_cascade("Moat", _moat_opts, "sb_moat", default=[])
+            sel_moat = _ms_cascade("Moat", _moat_opts, "sb_moat", default=[],
+                                   help="Moat-growth quadrant: Wealth Creator / Quality Trap / "
+                                        "Growth Trap / Wealth Destroyer. Empty = all stocks.")
             if sel_moat:
                 _cf = _cf[_cf["moat_growth_quad"].isin(sel_moat)]
 

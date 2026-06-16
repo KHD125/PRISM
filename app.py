@@ -37,7 +37,7 @@ from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_mo
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points)
-from ui.ui_discovery import render_discovery_sidebar
+from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
@@ -462,36 +462,55 @@ with tabs[0]:
     _disc_df  = filt.sort_values(_sc, ascending=_sa) if _sc in filt.columns else filt.copy()
     _shown_n  = int(_disc_n or 20)
 
-    st.markdown(
-        f'<div class="sec-head">🏆 Top Picks — {len(_disc_df)} stocks'
-        f'{"" if _disc_sort == "🏆 Score" else f" &nbsp;·&nbsp; sorted by {_disc_sort}"}</div>',
-        unsafe_allow_html=True,
-    )
-
-    # ── Stock cards with tearsheet shortcut ────────────────────────
-    _disc_slice = _disc_df.head(_shown_n)
-    for _di in range(len(_disc_slice)):
-        _drow = _disc_slice.iloc[_di]
-        render_stock_card(_drow, show_scores=True)
-        _, _btn_c = st.columns([8, 2])
-        with _btn_c:
-            if st.button(
-                "🔬 Open Analysis →",
-                key=f"disc_ts_{_di}",
-                use_container_width=True,
-                type="secondary",
-                help=f"View full tearsheet for {_drow.get('name', '')}",
-            ):
-                st.session_state["xray_stock"] = _drow.get("name", "")
-                st.toast(f"🔬 {_drow.get('name', '')} ready — click The Tear-Sheet tab")
-
-    if len(_disc_df) > _shown_n:
+    # ── No-match dead-end → actionable empty-state (filters can narrow to zero; the engine and
+    # the non-empty path below are untouched — this only ADDS the empty branch) ──
+    if _disc_df.empty:
         st.markdown(
-            f'<div style="text-align:center;padding:12px 0 4px;font-size:0.73rem;'
-            f'color:{COLORS["text_muted"]};">'
-            f'{len(_disc_df) - _shown_n} more stocks — increase "Show" above</div>',
+            f'<div style="text-align:center;background:{COLORS["bg_secondary"]};'
+            f'border:1px dashed {COLORS["border"]};border-radius:12px;padding:28px 18px;margin-top:6px;">'
+            f'<div style="font-size:1.4rem;margin-bottom:6px;">🔍</div>'
+            f'<div style="font-size:0.95rem;font-weight:800;color:{COLORS["text_primary"]};">'
+            f'No stocks match these filters</div>'
+            f'<div style="font-size:0.72rem;color:{COLORS["text_muted"]};margin-top:4px;">'
+            f'Your active filters narrowed all {len(df):,} stocks out. Loosen one — or clear everything '
+            f'and start fresh.</div></div>',
             unsafe_allow_html=True,
         )
+        _, _ec, _ = st.columns([3, 2, 3])
+        with _ec:
+            if st.button("🧹 Clear all filters", key="disc_clear", use_container_width=True):
+                clear_all_filters()
+    else:
+        st.markdown(
+            f'<div class="sec-head">🏆 Top Picks — {len(_disc_df)} stocks'
+            f'{"" if _disc_sort == "🏆 Score" else f" &nbsp;·&nbsp; sorted by {_disc_sort}"}</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Stock cards with tearsheet shortcut ────────────────────────
+        _disc_slice = _disc_df.head(_shown_n)
+        for _di in range(len(_disc_slice)):
+            _drow = _disc_slice.iloc[_di]
+            render_stock_card(_drow, show_scores=True)
+            _, _btn_c = st.columns([8, 2])
+            with _btn_c:
+                if st.button(
+                    "🔬 Open Analysis →",
+                    key=f"disc_ts_{_di}",
+                    use_container_width=True,
+                    type="secondary",
+                    help=f"View full tearsheet for {_drow.get('name', '')}",
+                ):
+                    st.session_state["xray_stock"] = _drow.get("name", "")
+                    st.toast(f"🔬 {_drow.get('name', '')} ready — click The Tear-Sheet tab")
+
+        if len(_disc_df) > _shown_n:
+            st.markdown(
+                f'<div style="text-align:center;padding:12px 0 4px;font-size:0.73rem;'
+                f'color:{COLORS["text_muted"]};">'
+                f'{len(_disc_df) - _shown_n} more stocks — increase "Show" above</div>',
+                unsafe_allow_html=True,
+            )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
