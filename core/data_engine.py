@@ -1184,6 +1184,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # VSTOP scale guard: nullify implausible VSTOP values (>50× or <2% of close price).
     # Upstream data sources sometimes publish VSTOP in paise for certain stocks (e.g. MOTHERSON: VSTOP=7684 vs price=130).
     if "vstop_value" in df.columns and "close_price" in df.columns:
+        # Denominator guard: .replace(0, np.nan) maps a zero close to NaN, so the ratio propagates
+        # NaN instead of dividing by zero/∞ (§5 satisfied via replace; close is never negative).
         vstop_ratio = df["vstop_value"] / df["close_price"].replace(0, np.nan)
         # Only a PRESENT vstop can be a scale mismatch — a genuinely missing (NaN) vstop must
         # not be fillna(0)'d into a phantom "0× ratio" and counted/announced as nullified.
@@ -3077,7 +3079,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ══════════════════════════════════════════════════════════════
 
     # ── Identity A: Capital Return Spread ──
-    df["capital_return_spread"] = df["roce"].fillna(0) - COST_OF_EQUITY
+    # Identical formula to economic_profit_spread (computed earlier in this function) — alias it as
+    # the single source of truth so the two cannot silently diverge under a future edit (finding B2).
+    df["capital_return_spread"] = df["economic_profit_spread"]
 
     # ── Identity A: FCF Generation Velocity (FCF/OCF ratio) ──
     df["fcf_to_ocf_velocity"] = np.where(

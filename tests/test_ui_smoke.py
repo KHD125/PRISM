@@ -108,8 +108,13 @@ def test_tearsheet_renders_loss_maker_without_exception(scored_df):
     """NaN-PE stock exercises every loss-maker fallback in the cockpit."""
     loss_makers = scored_df[scored_df["pe"].isna()]
     if loss_makers.empty:
-        pytest.skip("No loss-maker in the 400-stock sample")
-    at = _run_tearsheet_for(loss_makers.iloc[0])
+        # Don't silently skip the loss-maker render path when the sample happens to have none —
+        # fabricate one (NaN PE) from the top stock so the fallback is always exercised.
+        stock = scored_df.iloc[0].copy()
+        stock["pe"] = np.nan
+    else:
+        stock = loss_makers.iloc[0]
+    at = _run_tearsheet_for(stock)
     assert not at.exception, f"Tearsheet raised: {[str(e.value) for e in at.exception]}"
 
 

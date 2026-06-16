@@ -1219,6 +1219,8 @@ def compute_composite_score(
         (_fair_pe_m5.fillna(1.0) / _pe_m5.clip(lower=1.0)).clip(1.0, 4.0).fillna(1.5),
         1.5
     )
+    # Safe division: payoff_ratio_proxy is built as .clip(1.0, 4.0).fillna(1.5) above, so it is
+    # provably in [1.0, 4.0] — never 0 or NaN. Denominator guard satisfied by construction (§5).
     _raw_kelly = df["win_rate_proxy"] - ((1.0 - df["win_rate_proxy"]) / df["payoff_ratio_proxy"])
     _kelly_f_weight = (_raw_kelly * 0.25).clip(lower=0.0)
 
