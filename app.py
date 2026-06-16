@@ -34,7 +34,7 @@ from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_mo
                 render_lynch_radar, render_mauboussin_radar, render_mosl_wealth_matrix,
                 render_sector_peer_strip,
                 render_valuation_inversion_and_sizing_cockpit,
-                inject_css, render_hero_banner, render_metric_strip, render_stock_card,
+                inject_css, render_hero_banner, render_metric_strip, render_stock_card, help_chip,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
@@ -487,6 +487,17 @@ with tabs[0]:
             unsafe_allow_html=True,
         )
 
+        # One-time legend for the cards' sub-score bars — explained ONCE here (the scan-friendly
+        # alternative to repeating ~100 identical "?" chips, one on every card). Reuses the shared
+        # glossary via help_chip, so these definitions never drift from the tearsheet's.
+        _SS_LABELS = ("Moat", "Growth", "Cash", "Momentum", "Governance")
+        _ss_legend = " &nbsp;·&nbsp; ".join(_l + help_chip(_l + " Score") for _l in _SS_LABELS)
+        st.markdown(
+            f'<div style="font-size:0.62rem;color:{COLORS["text_muted"]};margin:0 0 10px 2px;">'
+            f'Card score bars &nbsp;—&nbsp; {_ss_legend}</div>',
+            unsafe_allow_html=True,
+        )
+
         # ── Stock cards with tearsheet shortcut ────────────────────────
         _disc_slice = _disc_df.head(_shown_n)
         for _di in range(len(_disc_slice)):
@@ -644,46 +655,66 @@ with tabs[1]:
         if _nc in _display_df.columns:
             _CC[_nc] = st.column_config.NumberColumn(_nl, format=_nf)
 
-    # ── Render table ───────────────────────────────────────────────
-    _sel = st.dataframe(
-        _display_df,
-        column_config=_CC,
-        use_container_width=True,
-        height=580,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-    )
+    # ── Render table — or a smart, cause-specific empty-state ──────
+    if filt.empty:
+        # Sidebar filters narrowed everything out → the fix is Clear all filters.
+        st.markdown(
+            f'<div style="text-align:center;background:{COLORS["bg_secondary"]};'
+            f'border:1px dashed {COLORS["border"]};border-radius:12px;padding:26px 18px;margin-top:6px;">'
+            f'<div style="font-size:1.3rem;margin-bottom:6px;">🔍</div>'
+            f'<div style="font-size:0.95rem;font-weight:800;color:{COLORS["text_primary"]};">'
+            f'No stocks match your filters</div>'
+            f'<div style="font-size:0.72rem;color:{COLORS["text_muted"]};margin-top:4px;">'
+            f'Your sidebar filters narrowed all {len(df):,} stocks out — loosen them or clear everything.'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+        _, _ec, _ = st.columns([3, 2, 3])
+        with _ec:
+            if st.button("🧹 Clear all filters", key="ds_clear", use_container_width=True):
+                clear_all_filters()
+    elif ds_df.empty:
+        # Filters DO match stocks; the search box killed them → clear the search, not the filters.
+        st.info(f"🔍 No stock matches “{ds_search}” among the {len(filt):,} filtered stocks — "
+                f"clear the search box above to see them all.")
+    else:
+        _sel = st.dataframe(
+            _display_df,
+            column_config=_CC,
+            use_container_width=True,
+            height=580,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+        )
 
-    # ── Tearsheet shortcut on row select ──────────────────────────
-    _sel_rows = _sel.selection.rows if _sel and hasattr(_sel, "selection") else []
-    if _sel_rows:
-        _picked = ds_df.iloc[_sel_rows[0]]["name"]
-        st.session_state["xray_stock"] = _picked
-        st.markdown(f"""
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;
-             background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.25);
-             border-radius:8px;margin-top:8px;">
-          <span style="font-size:1rem;">🔬</span>
-          <span style="font-size:0.8rem;color:{COLORS['text_secondary']};">
-            <strong style="color:{COLORS['text_primary']};">{_picked}</strong>
-            set as active stock —
-            <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> to view full analysis.
-          </span>
-        </div>
-        """, unsafe_allow_html=True)
+        # ── Tearsheet shortcut on row select ──────────────────────────
+        _sel_rows = _sel.selection.rows if _sel and hasattr(_sel, "selection") else []
+        if _sel_rows:
+            _picked = ds_df.iloc[_sel_rows[0]]["name"]
+            st.session_state["xray_stock"] = _picked
+            st.markdown(f"""
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;
+                 background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.25);
+                 border-radius:8px;margin-top:8px;">
+              <span style="font-size:1rem;">🔬</span>
+              <span style="font-size:0.8rem;color:{COLORS['text_secondary']};">
+                <strong style="color:{COLORS['text_primary']};">{_picked}</strong>
+                set as active stock —
+                <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> to view full analysis.
+              </span>
+            </div>
+            """, unsafe_allow_html=True)
 
-    # ── Export ─────────────────────────────────────────────────────
-    st.markdown("<div style='margin-top:12px;'>", unsafe_allow_html=True)
-    _safe_mandate = _sel_mandate.replace(" ", "_").lower()
-    st.download_button(
-        f"📥 Export {len(ds_df)} stocks — {_sel_mandate} / {scoring_profile}",
-        data=filt.to_csv(index=False),
-        file_name=f"scan_{_safe_mandate}_{scoring_profile.lower()}.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+        # ── Export — matches the displayed rows (ds_df: search-filtered + sorted) ──
+        _safe_mandate = _sel_mandate.replace(" ", "_").lower()
+        st.download_button(
+            f"📥 Export {len(ds_df)} stocks — {_sel_mandate} / {scoring_profile}",
+            data=ds_df.to_csv(index=False),
+            file_name=f"scan_{_safe_mandate}_{scoring_profile.lower()}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
