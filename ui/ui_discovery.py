@@ -426,33 +426,34 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             st.caption(f"→ {len(_cf):,} remaining")
 
         with _grp("🌊 Refine", "sb_gate", "sb_minq", "sb_minscore", expanded=False):
-            # Final power-user knobs — READ here, APPLIED in the main body against the finalized
-            # cascade frame. All default to OFF so the panel opens on the full universe.
+            # Final power-user knobs — now applied to the cascade frame (_cf) IN-GROUP, exactly like
+            # every other group, so the funnel, this group's "·N" badge, and its "→ remaining"
+            # caption all agree (no more last-caption-vs-funnel drift). All default OFF.
             gate_only = st.checkbox("Gate-passed only", value=False, key="sb_gate",
                                     help="Show only stocks that clear the engine's quality gate.")
+            if gate_only and "gate_pass" in _cf.columns:
+                _cf = _cf[_cf["gate_pass"] == 1]
             min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq",
                                     help="Min fundamental quality score (PRE-forensic-penalty — moat + "
                                          "growth + cash + governance, before red-flag cuts).")
+            if min_quality > 0 and "quality_score" in _cf.columns:
+                _cf = _cf[_cf["quality_score"] >= min_quality]
             min_score = st.slider("Min Composite Score", 0, 100, 0, key="sb_minscore",
                                   help="Min headline composite_score (post-forensic-penalty — the score "
                                        "your tiers are built on; stronger than Min Quality, which is pre-penalty).")
+            if min_score > 0 and "composite_score" in _cf.columns:
+                _cf = _cf[_cf["composite_score"] >= min_score]
+            st.caption(f"→ {len(_cf):,} remaining")
 
-    # Apply filters — the cascade frame (_cf) already encodes every option-based filter
-    # (Market Category → Sector → Industry → Tier → Verdict → Corporate Class → Framework → Moat →
-    #  PEG Zone → Buy Zone → Weinstein → Lynch → Moat Endurance → CF Triangle → Smart-Money → Catalyst → Sell Alerts),
-    # so the dropdown options and the result set are guaranteed identical. Only the two Refine
-    # toggles remain to apply.
+    # The cascade frame (_cf) now encodes EVERY filter — the categorical groups AND the Refine
+    # thresholds — so the dropdown options and the final result are genuinely identical and `filt`
+    # is just `_cf`. The .copy() is REQUIRED: _cf is `df` itself when nothing is filtered, so the
+    # copy guarantees the caller can never mutate the source frame.
     filt = _cf.copy()
-    if gate_only:
-        filt = filt[filt["gate_pass"] == 1]
-    if min_quality > 0:
-        filt = filt[filt["quality_score"] >= min_quality]
-    if min_score > 0:
-        filt = filt[filt["composite_score"] >= min_score]
 
     # Fill the live results funnel (placeholder created at the TOP of the sidebar filter panel).
-    # Only now is `filt` final, so the count reflects the WHOLE cascade incl. the alpha-vector toggles
-    # — the headline number sits above every filter while measuring all of them. The funnel is what
+    # `filt` == `_cf` now, so the count reflects the WHOLE cascade — every group, Refine included.
+    # The headline number sits above every filter while measuring all of them; the funnel is what
     # makes the panel feel like one interconnected system: change any filter, watch this number move.
     _uni_n, _fin_n = len(df), len(filt)
     _pct = (_fin_n / _uni_n) if _uni_n else 0.0
