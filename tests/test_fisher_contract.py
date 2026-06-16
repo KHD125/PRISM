@@ -21,6 +21,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT       = Path(__file__).parent.parent
 SPEC_PATH  = ROOT / "docs" / "fisher_quality_specs.json"
 SE_PATH    = ROOT / "core" / "scoring_engine.py"
@@ -864,6 +866,10 @@ def _get_production_df():
     return run_full_scoring(df_raw)
 
 
+@pytest.mark.skipif(
+    not _CSV_DATA_DIR.is_dir(),
+    reason="Local CSV data not present (code-only checkout) — Fisher integration tests need real data",
+)
 class TestFisherLifecycleDataIntegration:
     """
     End-to-end integration tests validating Fisher Lifecycle Quadrant logic

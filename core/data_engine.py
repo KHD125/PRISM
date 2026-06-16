@@ -1175,8 +1175,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # VSTOP scale guard: nullify implausible VSTOP values (>50× or <2% of close price).
     # Upstream data sources sometimes publish VSTOP in paise for certain stocks (e.g. MOTHERSON: VSTOP=7684 vs price=130).
     if "vstop_value" in df.columns and "close_price" in df.columns:
-        vstop_ratio = df["vstop_value"].fillna(0) / df["close_price"].replace(0, np.nan)
-        implausible_vstop = (vstop_ratio > 50) | (vstop_ratio < 0.02)
+        vstop_ratio = df["vstop_value"] / df["close_price"].replace(0, np.nan)
+        # Only a PRESENT vstop can be a scale mismatch — a genuinely missing (NaN) vstop must
+        # not be fillna(0)'d into a phantom "0× ratio" and counted/announced as nullified.
+        implausible_vstop = df["vstop_value"].notna() & ((vstop_ratio > 50) | (vstop_ratio < 0.02))
         df.loc[implausible_vstop, "vstop_value"] = np.nan
         implausible_count = int(implausible_vstop.sum())
         if implausible_count > 0:

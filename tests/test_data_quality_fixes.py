@@ -22,6 +22,7 @@ Run with: pytest tests/test_data_quality_fixes.py -v
 
 import sys
 import os
+import re
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core"))
@@ -69,6 +70,33 @@ def _frame(n: int = 25, **overrides) -> pd.DataFrame:
     for col in _ALL_MAPPED_COLS - set(df.columns):
         df[col] = np.nan
     return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VSTOP scale-guard diagnostic (Phase-1 audit finding A1)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_vstop_scale_guard_excludes_missing_from_mismatch_count(capsys):
+    """The VSTOP scale guard nullifies implausible (paise-scale) VSTOP values. A stock with
+    a GENUINELY MISSING vstop must not be (a) counted or (b) announced as a 'scale mismatch'.
+    Three stocks: missing / paise-scale (7684 vs 130 ≈ 59×) / normal (90 vs 100 = 0.9×)."""
+    df = _frame(
+        n=3,
+        vstop_value=[np.nan, 7684.0, 90.0],
+        close_price=[100.0, 130.0, 100.0],
+    )
+    out = compute_derived_signals(df)
+    msg = capsys.readouterr().out
+
+    assert pd.isna(out["vstop_value"].iloc[1]), "paise-scale VSTOP should be nullified"
+    assert out["vstop_value"].iloc[2] == 90.0, "normal VSTOP should be kept"
+    assert pd.isna(out["vstop_value"].iloc[0]), "missing VSTOP stays missing"
+
+    m = re.search(r"nullified for (\d+) stocks", msg)
+    assert m is not None, f"expected a VSTOP nullification message, got: {msg!r}"
+    assert int(m.group(1)) == 1, (
+        f"diagnostic must count ONLY the true scale mismatch (1), not the missing row; got {m.group(1)}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
