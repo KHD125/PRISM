@@ -123,18 +123,58 @@ def test_scanner_tips_reuse_the_shared_glossary():
 
 
 # ── Priority 4: every sidebar "Refine" filter explains itself (Streamlit native help=) ──
-_APP_SRC = Path(__file__).resolve().parent.parent / "app.py"
+# The discovery filter cascade lives in ui/ui_discovery.py (stateful counterpart to ui_tearsheet).
+_DISCOVERY_SRC = Path(__file__).resolve().parent.parent / "ui" / "ui_discovery.py"
 
 
 @pytest.mark.parametrize("label", ["Gate-passed only", "Min Quality Score", "Min Composite Score"])
 def test_refine_filter_has_help_text(label):
     """Each power-user Refine-group filter must carry a help= tooltip (the native '?' beside the
     widget) — Min Quality and Min Composite are a pre-/post-penalty pair and must both be explained."""
-    src = _APP_SRC.read_text(encoding="utf-8")
+    src = _DISCOVERY_SRC.read_text(encoding="utf-8")
     i = src.find(f'"{label}"')
-    assert i != -1, f"{label!r} filter not found in app.py"
+    assert i != -1, f"{label!r} filter not found in ui_discovery.py"
     rest = src[i:]
     # Bound the scan to THIS widget's call: stop at the start of the next st.* widget.
     m = re.search(r"st\.(slider|checkbox|selectbox|multiselect)\(", rest[1:])
     window = rest[: (m.start() + 1) if m else 400]
     assert "help=" in window, f"the {label!r} sidebar filter must have a help= tooltip"
+
+
+# ── Framework cards: every card explains the framework's IDEA (handbook-sourced), not just its gate ──
+def test_every_framework_card_has_an_idea_tooltip():
+    """Coverage contract: every framework name in _FW_META must have a plain-language _FW_IDEA
+    one-liner — so a future new framework can't ship a card without its beginner explainer
+    (ties into CLAUDE.md §7 'ships complete')."""
+    from ui.ui_tearsheet import _FW_IDEA
+
+    block = _fn_block("render_guru_frameworks")
+    names = set(re.findall(r'"([^"]+)":\s*\(COLORS', block))
+    assert len(names) >= 35, f"expected ~37 framework names in _FW_META, found {len(names)}"
+    missing = sorted(n for n in names if n not in _FW_IDEA)
+    assert not missing, f"these framework cards have no plain-language idea tooltip: {missing}"
+    for n in names:
+        assert len(_FW_IDEA[n].strip()) >= 20, f"{n!r} idea tooltip too short to be real"
+
+
+def test_framework_cards_wire_help_chip():
+    """The framework card must render the '?' idea tooltip (the gate spec stays visible beneath)."""
+    block = _fn_block("render_guru_frameworks")
+    assert "help_chip(" in block, "framework cards must wire the help_chip '?' idea tooltip"
+    assert "_FW_IDEA" in block, "framework cards must source the tooltip from _FW_IDEA"
+
+
+# ── Score strip: each of the 5 sub-scores explains itself (distinct from the 6 verdict axes) ──
+@pytest.mark.parametrize(
+    "term", ["Moat Score", "Growth Score", "Cash Score", "Momentum Score", "Governance Score"]
+)
+def test_score_strip_subscore_has_glossary(term):
+    from ui.ui_tearsheet import _RAW_GLOSSARY
+
+    assert term in _RAW_GLOSSARY, f"score-strip sub-score {term!r} must have a _RAW_GLOSSARY entry"
+    assert len(_RAW_GLOSSARY[term].strip()) >= 20, f"{term!r} tooltip too short to be real"
+
+
+def test_score_strip_wires_help_chip():
+    block = _fn_block("render_score_strip")
+    assert "help_chip(" in block, "the 5-cell score strip must wire the '?' help chip"
