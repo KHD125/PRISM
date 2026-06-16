@@ -67,8 +67,12 @@ def _frame(n: int = 25, **overrides) -> pd.DataFrame:
     for k, v in overrides.items():
         base[k] = [v] * n if not isinstance(v, (list, np.ndarray)) else v
     df = pd.DataFrame(base)
-    for col in _ALL_MAPPED_COLS - set(df.columns):
-        df[col] = np.nan
+    # sorted() pins column order: _ALL_MAPPED_COLS is a set, so unsorted iteration varies with
+    # PYTHONHASHSEED → column order varies → under Copy-on-Write the block layout (and whether the
+    # fragmentation test trips pandas' 100-block threshold) became seed-dependent and flaky.
+    missing = sorted(c for c in _ALL_MAPPED_COLS if c not in df.columns)
+    if missing:   # one-shot concat (not column-by-column) so the fixture itself doesn't fragment
+        df = pd.concat([df, pd.DataFrame(np.nan, index=df.index, columns=missing)], axis=1)
     return df
 
 
@@ -97,6 +101,25 @@ def test_vstop_scale_guard_excludes_missing_from_mismatch_count(capsys):
     assert int(m.group(1)) == 1, (
         f"diagnostic must count ONLY the true scale mismatch (1), not the missing row; got {m.group(1)}"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Frame-fragmentation hygiene (Phase-1 audit finding C1)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_compute_derived_signals_emits_no_fragmentation_warning():
+    """compute_derived_signals does 313 single-column inserts; once the block manager passes
+    ~100 blocks pandas emits a `DataFrame is highly fragmented` PerformanceWarning on EVERY
+    subsequent insert (~33k across the suite, and slow ingest). Periodic df.copy() defrag keeps
+    it consolidated. Behavior is unchanged — guarded separately by the byte-identical census —
+    so this test pins ONLY the fragmentation regression."""
+    frame = _frame()   # build OUTSIDE the capture — fixture construction is not under test
+    import warnings as _w
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        compute_derived_signals(frame)
+    frag = [x for x in caught if "fragmented" in str(x.message).lower()]
+    assert not frag, f"{len(frag)} DataFrame-fragmentation PerformanceWarning(s) still emitted"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -585,6 +585,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         )
         df["eps_gr_yoy"] = df["eps_gr_yoy"].fillna(pd.Series(_eps_gr_raw, index=df.index))
 
+    # Defragment the block manager before the 300+ derived-column inserts below (repeated at
+    # ~70-insert intervals through this function). Without it, once the frame passes ~100 blocks
+    # pandas emits a "DataFrame is highly fragmented" PerformanceWarning on EVERY subsequent
+    # insert (~33k across the test suite) and ingest slows. Pure layout consolidation — values
+    # and dtypes are unchanged, so the scored output stays byte-identical (verified by census).
+    df = df.copy()
+
     # ── D3 FIX: Winsorize YoY growth at p01-p99 before any ranking ──
     # Extreme outliers (IOC +528%, COFORGE +1068%) compress percentile ranks for all 2,108 stocks.
     # Winsorizing at p01/p99 preserves relative ordering while preventing outlier-driven compression.
@@ -1008,6 +1015,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
     
+    df = df.copy()   # defrag — keep block manager consolidated (see top of function)
+
     # ── ALPHA VECTOR: ACCRUAL ANOMALY (Cash Machine Rank) ──
     # Academic research proves companies where Cash > Profit beat the market.
     # We rank stocks based on their CFO/PAT conversion and FCF Yield.
@@ -1535,6 +1544,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _dfr = df.get("days_from_result", pd.Series(np.nan, index=df.index))
     df["result_age_days"]   = -_dfr
     df["result_stale_flag"] = (df["result_age_days"] > 120).astype(int)
+
+    df = df.copy()   # defrag — keep block manager consolidated (see top of function)
 
     # ── P/Sales and P/B Ratios (Studies 9, 13 multi-bagger formulas) ──
     # Study 13: "PE < 10x, P/B < 1x, P/Sales ≤ 1x, Payback ≤ 1x" = four explicit multi-bagger formulas.
@@ -2169,6 +2180,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["ret_vs_industry_1y"].fillna(0)
     ) / 3.0
 
+    df = df.copy()   # defrag — keep block manager consolidated (see top of function)
+
     # ── D51: QMOM Quality Score — 3-factor fundamental quality composite ──
     # Implements the Gray & Vogel Quality Overlay for momentum strategies (India Edition).
     # The handbook (Ch. 4) specifies 4 factors: GP/Assets, ROIC, D/E, CFO/PAT.
@@ -2798,6 +2811,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (df["cap_extended_flag"] & df["gap_extended_flag"]).astype(int) +
         (df["roe"].fillna(0) >= 15).astype(int)
     )
+
+    df = df.copy()   # defrag — keep block manager consolidated (see top of function)
 
     # ── Study 23 (2018): Valuation Insights — ROE vs India CoE (15%) ──
     # Study 23 explicitly defines India Cost of Equity = 15% (not 10% as in Graham/US frameworks).
