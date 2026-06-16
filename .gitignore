@@ -37,3 +37,19 @@ __pycache__/
 baseline-*.png
 page-*.png
 phase*.png
+
+# ── Local-only working artifacts — repo is CODE-ONLY (no images/exports ever) ──
+# Root-scoped (/*) on purpose: ignores the loose screenshots/exports that pile up at the
+# repo root WITHOUT reaching into subdirs (e.g. audit/) that other tooling may own. The only
+# intentional image is the base64-inline logo, so "no committed root images" is the invariant.
+/*.png
+/*.docx
+Strategies (Trading View)/
+
+# Audit/review artifacts (baseline, ledger, surfacing + source-data specs, logs) — local-only
+audit/
+
+# Local-only tool test: imports the gitignored tools/snapshot.py, so committing it would
+# break every public clone. Ignored IN PLACE — pytest still collects it locally (count stays
+# 1693); it just can never leak into the code-only public repo. (paired with tools/ above)
+tests/test_snapshot_tool.py
