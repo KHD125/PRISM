@@ -965,6 +965,12 @@ def compute_cascading_forensic_filter(df: pd.DataFrame) -> pd.DataFrame:
             {t["tier"]: t["emoji"] for t in CONVICTION_TIERS}
         )
 
+        # rank is a function of the FINAL post-penalty composite_score — recompute it here (it was
+        # assigned PRE-penalty in run_full_scoring) so the displayed rank can never contradict the
+        # score shown. In-place (no re-sort → blast radius is this one column); composite_score is
+        # clipped 0-100 and never NaN, so .astype(int) is safe.
+        df["rank"] = df["composite_score"].rank(ascending=False, method="first").astype(int)
+
     return df
 
 

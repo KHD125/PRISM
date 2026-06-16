@@ -146,3 +146,26 @@ def test_live_distribution_is_not_degenerate():
     # no single bucket may swallow the whole universe (the 99% AVOID calibration bug guard)
     assert counts.max() < 0.97, f"degenerate verdict distribution: {dict(counts)}"
     assert (df["verdict_direction"] == "BUY").sum() >= 5
+
+
+@pytest.mark.slow
+def test_rank_tracks_post_penalty_composite():
+    """`rank` must reflect the FINAL post-forensic-penalty composite_score, not the pre-penalty
+    order it was first assigned in run_full_scoring. Regression guard for the bug where the top
+    stock (composite 100) showed rank 2 while a composite-90 stock showed rank 1 (2,098/2,107
+    misranked). Tie-safe: assert rank is a 1..N permutation and sorting by rank yields a
+    non-increasing composite (ties get adjacent ranks)."""
+    import io, contextlib
+    from core.data_engine import fetch_and_clean_data
+    from core.scoring_engine import run_full_scoring
+    from core.forensic_engine import compute_forensic_signals, apply_forensic_penalty
+    with contextlib.redirect_stdout(io.StringIO()):
+        df = fetch_and_clean_data("local")
+        df = compute_forensic_signals(df)
+        df = run_full_scoring(df)
+        df = apply_forensic_penalty(df)      # <-- the step that finalizes composite_score
+    assert sorted(df["rank"].tolist()) == list(range(1, len(df) + 1)), "rank must be a 1..N permutation"
+    assert df["rank"].isna().sum() == 0
+    assert df.sort_values("rank")["composite_score"].is_monotonic_decreasing, \
+        "sorting by rank must yield non-increasing composite_score (rank must track the penalized score)"
+    assert int(df.loc[df["composite_score"].idxmax(), "rank"]) == 1, "the top composite stock must be rank 1"

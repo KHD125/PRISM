@@ -535,11 +535,11 @@ with tabs[1]:
                          "conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
         "📊 Quality":   ["name","quality_score","moat_score","growth_score","cash_score",
                          "governance_bonus","piotroski_fscore","roce","opm","cfo_to_pat"],
-        "💰 Valuation": ["name","composite_score","pe_ratio","pb_ratio","peg",
+        "💰 Valuation": ["name","composite_score","pe","pb_ratio","peg",
                          "earnings_yield","fcf_yield","market_cap","buy_zone_label"],
         "🔬 Forensic":  ["name","piotroski_fscore","forensic_score","cfo_to_pat",
                          "debt_to_equity","promoter_holdings","pledged_percentage"],
-        "📈 Technical": ["name","momentum_score","rsi","from_high_pct",
+        "📈 Technical": ["name","momentum_score","rsi_14d","dist_52wh",
                          "breakout_score","smart_money_flow","tsunami_signal","vstop_green"],
     }
     _DS_SORTS = {
@@ -557,7 +557,7 @@ with tabs[1]:
         f'🔍 Deep Scanner &nbsp;·&nbsp; {profile_cfg.get("icon","⚖️")} {scoring_profile}</div>',
         unsafe_allow_html=True,
     )
-    _ds_c1, _ds_c2, _ds_c3 = st.columns([2, 5, 2])
+    _ds_c1, _ds_c2, _ds_c3 = st.columns([1.5, 5.5, 2])
     with _ds_c1:
         ds_search = st.text_input(
             "Search", placeholder="Search stock name…",
@@ -636,7 +636,7 @@ with tabs[1]:
         "conviction_tier": ("Tier",     "T%.0f"),
         "piotroski_fscore":("F-Score",  "%.0f/9"),
         "peg":             ("PEG",      "%.2f×"),
-        "pe_ratio":        ("P/E",      "%.1f×"),
+        "pe":              ("P/E",      "%.1f×"),
         "pb_ratio":        ("P/B",      "%.1f×"),
         "cfo_to_pat":      ("CFO/PAT",  "%.0f%%"),
         "opm":             ("OPM",      "%.1f%%"),
@@ -644,8 +644,8 @@ with tabs[1]:
         "debt_to_equity":  ("D/E",      "%.2f"),
         "promoter_holdings":("Promoter","%.1f%%"),
         "pledged_percentage":("Pledged","%.1f%%"),
-        "rsi":             ("RSI",      "%.0f"),
-        "from_high_pct":   ("52WH Δ",  "%.1f%%"),
+        "rsi_14d":         ("RSI",      "%.0f"),
+        "dist_52wh":       ("52WH Δ",  "%.1f%%"),
         "earnings_yield":  ("E.Yield",  "%.1f%%"),
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),
