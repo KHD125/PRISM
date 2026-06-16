@@ -438,14 +438,14 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 
-def render_hero_banner(total_stocks: int, gate_passed: int, tier1_count: int):
+def render_hero_banner():
     """Render the main hero banner."""
     st.markdown(f"""
     <div class="hero-banner">
         <div class="hero-icon">{prism_mark(60)}</div>
         <h1 class="hero-title">{UI['app_title']}</h1>
         <p class="hero-sub">{UI['app_subtitle']}</p>
-        <div class="hero-badge">v{UI['version']} · {total_stocks} STOCKS SCANNED · {gate_passed} QUALIFIED · {tier1_count} CROWN JEWELS</div>
+        <div class="hero-badge">v{UI['version']} · QUANTAMENTAL INTELLIGENCE</div>
     </div>
     """, unsafe_allow_html=True)
 
