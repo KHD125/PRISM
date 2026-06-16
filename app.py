@@ -348,6 +348,8 @@ with st.sidebar:
             v = st.session_state.get(k)
             if k in ("sb_sector", "sb_industry"):
                 n += 1 if (v and v != "All") else 0
+            elif k == "sb_maxrf":
+                n += 1 if (v is not None and v < _RF_MAX) else 0   # show-all value is the max
             else:
                 n += 1 if v else 0          # blank multiselect / unticked / slider-0 = inactive
         return n
@@ -389,6 +391,9 @@ with st.sidebar:
         return opts
 
     _cf = df   # progressively-narrowed cascade frame — drives every option list below
+    # Fixed slider ceiling for the 🛡️ Safety "Max red flags" dial (computed on the FULL df so the
+    # slider range is stable across the cascade); _active_n treats this value as the show-all state.
+    _RF_MAX = int(df["red_flag_count"].max()) if "red_flag_count" in df.columns else 28
 
     with _grp("🏢 Universe", "sb_mcap", "sb_sector", "sb_industry", expanded=False):
         # 1. Market Category — cascade root (only categories present in the data)
@@ -440,6 +445,41 @@ with st.sidebar:
                                help="Capital-allocation quality. 'Only Great', or exclude Gruesome.")
         if sel_corp and "corporate_class" in _cf.columns:
             _cf = _cf[_cf["corporate_class"].isin(sel_corp)]
+        st.caption(f"→ {len(_cf):,} remaining")
+
+    with _grp("🛡️ Safety", "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale", expanded=False):
+        # Risk-control screen — the system's most defensible, validation-INDEPENDENT edge: avoiding
+        # the zeros (Gensol et al.). Deliberately NOT here: a forensic_label dropdown (98.6% one value
+        # → degenerate; red_flag_count is its live form) and an "exclude risk-flags" group
+        # (pledge_rising / dilution_vampire / debt_restatement are 84–99% subsumed by red_flag_count≥3
+        # — redundant per the orthogonality census).
+        # 4d. Max red flags — cap forensic severity (0 = pristine; _RF_MAX = show all)
+        sel_maxrf = st.slider("Max red flags", 0, _RF_MAX, _RF_MAX, key="sb_maxrf",
+                              help="Cap how many of the 28 forensic red flags a stock may carry. Max = all.")
+        if sel_maxrf < _RF_MAX and "red_flag_count" in _cf.columns:
+            _cf = _cf[_cf["red_flag_count"] <= sel_maxrf]
+
+        # 4e. Piotroski Strength — financial-strength tier from the F-Score (derived inline, vectorized)
+        _pf = _cf["piotroski_fscore"]
+        _pio_tier = np.where(_pf >= 7, "💪 Strong (≥7)",
+                             np.where(_pf >= 4, "➖ Moderate (4–6)", "⚠️ Weak (≤3)"))
+        _pio_opts = [t for t in ["💪 Strong (≥7)", "➖ Moderate (4–6)", "⚠️ Weak (≤3)"]
+                     if t in set(_pio_tier)]
+        sel_pio = _ms_cascade("Piotroski Strength", _pio_opts, "sb_piotier", default=[],
+                              help="Financial-strength tier (Piotroski F-Score). Empty = all.")
+        if sel_pio:
+            _cf = _cf[pd.Series(_pio_tier, index=_cf.index).isin(sel_pio)]
+
+        # 4f. Min data coverage % — don't trust a high score built on thin data
+        sel_mincov = st.slider("Min data coverage %", 0, 100, 0, key="sb_mincov",
+                               help="Hide stocks whose score rests on below-this-% evidence coverage.")
+        if sel_mincov > 0 and "data_coverage_pct" in _cf.columns:
+            _cf = _cf[_cf["data_coverage_pct"] >= sel_mincov]
+
+        # 4g. Hide stale results — drop frozen filers (>120 days; catches Gensol-style filing freezes)
+        if st.checkbox("Hide stale results (>120d)", value=False, key="sb_hidestale") \
+                and "result_stale_flag" in _cf.columns:
+            _cf = _cf[_cf["result_stale_flag"] == 0]
         st.caption(f"→ {len(_cf):,} remaining")
 
     # ── 3-TIER FRAMEWORK FILTER ENGINE ───────────────────────────────────────
@@ -680,12 +720,15 @@ with st.sidebar:
             )
         st.caption(f"→ {len(_cf):,} remaining")
 
-    with _grp("🌊 Refine", "sb_gate", "sb_minq", expanded=False):
+    with _grp("🌊 Refine", "sb_gate", "sb_minq", "sb_minscore", expanded=False):
         # Final power-user knobs — READ here, APPLIED in the main body against the finalized
-        # cascade frame. Both default to OFF so the panel opens on the full universe.
+        # cascade frame. All default to OFF so the panel opens on the full universe.
         gate_only = st.checkbox("Gate-passed only", value=False, key="sb_gate",
                                 help="Show only stocks that clear the engine's quality gate.")
         min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
+        min_score = st.slider("Min Composite Score", 0, 100, 0, key="sb_minscore",
+                              help="Min headline composite_score (post-forensic-penalty — the score "
+                                   "your tiers are built on; stronger than Min Quality, which is pre-penalty).")
 
 # Apply filters — the cascade frame (_cf) already encodes every option-based filter
 # (Market Category → Sector → Industry → Tier → Verdict → Corporate Class → Framework → Moat →
@@ -697,6 +740,8 @@ if gate_only:
     filt = filt[filt["gate_pass"] == 1]
 if min_quality > 0:
     filt = filt[filt["quality_score"] >= min_quality]
+if min_score > 0:
+    filt = filt[filt["composite_score"] >= min_score]
 
 # Fill the live results funnel (placeholder created at the TOP of the sidebar filter panel).
 # Only now is `filt` final, so the count reflects the WHOLE cascade incl. the alpha-vector toggles
@@ -706,9 +751,10 @@ _uni_n, _fin_n = len(df), len(filt)
 _pct = (_fin_n / _uni_n) if _uni_n else 0.0
 _active_total = _active_n(
     "sb_mcap", "sb_sector", "sb_industry", "sb_tier", "sb_verdict", "sb_corpclass",
+    "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale",
     "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
     "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
-    "sb_catalyst", "sb_sellalert", "sb_gate", "sb_minq",
+    "sb_catalyst", "sb_sellalert", "sb_gate", "sb_minq", "sb_minscore",
 )
 # Every filter now defaults to its show-all state, so zero active filters == the full universe.
 _flabel = (f"🎯 {_active_total} filter{'s' if _active_total != 1 else ''} active"
