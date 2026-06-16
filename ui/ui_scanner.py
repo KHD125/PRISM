@@ -9,6 +9,26 @@ try:
 except ImportError:
     AGGRID_AVAILABLE = False
 
+# Plain-language header tooltips for the scanner's machine-named columns. Reuse the SAME glossary
+# the tearsheet "?" chip uses (single source of truth — a term can never drift between the grid
+# header and the tearsheet); bespoke sentences only for scanner-only columns with no tearsheet cell.
+from ui.ui_tearsheet import _RAW_GLOSSARY as _GLOSSARY
+
+_SCANNER_HEADER_TIPS = {
+    "rank":             "The stock's overall rank in the current screen (1 = highest conviction).",
+    "verdict_direction":"The engine's one-word call (e.g. BUY / WATCH / AVOID) synthesised from all 6 axes after the forensic penalty.",
+    "corporate_class":  _GLOSSARY["Corporate Class"],
+    "composite_score":  _GLOSSARY["Composite Score"],
+    "conviction_tier":  _GLOSSARY["Conviction Tier"],
+    "moat_growth_quad": "Where the stock sits on the moat-versus-growth map (e.g. Wealth Creator, Quality Trap, Growth Trap).",
+    "fisher_lifecycle_quadrant": "Phil Fisher's growth-versus-quality lifecycle quadrant for the business (e.g. Catalyst Play, Laggard).",
+    "cash_score":       "A 0-100 score for how strongly the business converts reported profit into real operating cash.",
+    "buy_zone_label":   _GLOSSARY["Buy Zone"],
+    "forensic_score":   _GLOSSARY["Forensic Scr"],
+    "red_flag_count":   _GLOSSARY["Red Flags"],
+    "momentum_score":   _GLOSSARY["Momentum Scr"],
+}
+
 def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
     """
     Renders the data grid. Uses AgGrid if available for institutional filtering,
@@ -66,9 +86,16 @@ def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
     )
     
     # Pin important columns
-    gb.configure_column("rank", pinned="left", width=80)
+    gb.configure_column("rank", pinned="left", width=80, headerTooltip=_SCANNER_HEADER_TIPS["rank"])
     gb.configure_column("name", pinned="left", width=250)
-    
+
+    # Plain-language header tooltips (hover any header) — same glossary as the tearsheet "?" chip.
+    for _col, _tip in _SCANNER_HEADER_TIPS.items():
+        if _col in ("rank", "name"):
+            continue
+        if _col in display_df.columns:
+            gb.configure_column(_col, headerTooltip=_tip)
+
     grid_options = gb.build()
     
     st.markdown(f"""

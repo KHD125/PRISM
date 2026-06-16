@@ -68,10 +68,16 @@ def test_glossary_entries_are_nonempty_plain_language():
 
 
 def test_cell_helper_wires_the_tooltip():
-    """The _cell helper must render the CSS '?' affordance from the glossary (no widget/state)."""
+    """The _cell helper must render the CSS '?' affordance via the shared help_chip() (no
+    widget/state). The chip markup + glossary lookup now live in ONE place (help_chip), reused by
+    the Layer-1 hero and Layer-2 scorecard too — see test_tooltip_coverage.py."""
     block = _raw_signals_block()
-    assert 'class="ts-help"' in block, "_cell must render the .ts-help '?' affordance"
-    assert "_RAW_GLOSSARY.get(label" in block, "_cell must auto-look-up the glossary by label"
+    assert "help_chip(" in block, "_cell must wire the tooltip through the shared help_chip()"
+    # Single source of the .ts-help markup + glossary lookup now lives in help_chip itself.
+    src = _UI_SRC.read_text(encoding="utf-8")
+    chip = src[src.find("def help_chip"):src.find("def render_raw_signals")]
+    assert 'class="ts-help"' in chip, "help_chip must render the .ts-help '?' affordance"
+    assert "_RAW_GLOSSARY.get(label" in chip, "help_chip must auto-look-up the glossary by label"
 
 
 @pytest.mark.parametrize("label", _PASS2_LABELS)

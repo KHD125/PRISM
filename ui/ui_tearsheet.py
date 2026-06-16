@@ -1287,29 +1287,30 @@ def render_verdict_scorecard(stock: pd.Series):
     _snoa  = "⚠ bloating" if _v("rf_snoa", 0) == 1 else "✓ clean"
     _netcash = "✓ net cash" if _v("net_debt_negative", 0) == 1 else "net debt"
     # 6 ORTHOGONAL axes (no double-counting): Moat·Growth·Valuation·Balance·Governance·Forensics.
+    # (axis-concept key for the "?" tooltip, the engine's axis pill, supporting metrics)
     axes = [
-        (_pill("verdict_axis_moat"),
+        ("Moat Axis", _pill("verdict_axis_moat"),
          f"ROCE {_n('roce_med_10y', suf='%')} · ROE {_n('roe_med_10y', suf='%')} · IBAS {_n('ibas_moat_score')}"),
-        (_pill("verdict_axis_growth"),
+        ("Growth Axis", _pill("verdict_axis_growth"),
          f"EPS·5y {_n('eps_gr_5y', suf='%')} · Rev·5y {_n('rev_gr_5y', suf='%')} · {_emerg}"),
-        (_pill("verdict_axis_valuation"),
+        ("Valuation Axis", _pill("verdict_axis_valuation"),
          f"PE {_n('pe', '{:.1f}')} vs Fair {_n('fair_pe_qglp', '{:.1f}')} · Magic-Yld {_n('magic_formula_earnings_yield', '{:.1f}', suf='%')} · Payback {_n('payback_ratio', '{:.1f}', suf='x')}"),
-        (_pill("verdict_axis_balance"),
+        ("Balance Axis", _pill("verdict_axis_balance"),
          f"D/E {_n('debt_to_equity', '{:.2f}')} · Int-Cov {_n('interest_coverage', '{:.1f}', suf='x')} · {_netcash}"),
-        (_pill("verdict_axis_governance"),
+        ("Governance Axis", _pill("verdict_axis_governance"),
          f"Promoter {_n('promoter_holdings', suf='%')} · Pledge {_n('pledged_percentage', suf='%')} · Dilution {_n('dilution_pct', '{:.1f}', suf='%')}"),
-        (_pill("verdict_axis_forensics"),
+        ("Forensics Axis", _pill("verdict_axis_forensics"),
          f"Piotroski {_n('piotroski_fscore')}/9 · Red flags {_n('red_flag_count')} · SNOA {_snoa}"),
     ]
     cells = "".join(
         f'<div style="flex:1 1 30%;min-width:185px;background:{COLORS["bg_secondary"]};'
         f'border:1px solid {COLORS["border"]};border-radius:8px;padding:8px 11px;">'
         f'<div style="font-size:0.73rem;font-weight:800;color:{COLORS["text_primary"]};'
-        f'white-space:nowrap;">{_esc(hdr)}</div>'
+        f'white-space:nowrap;">{_esc(hdr)}{help_chip(axis_key)}</div>'
         f'<div style="font-size:0.65rem;color:{COLORS["text_secondary"]};margin-top:3px;'
         f'line-height:1.5;">{metrics}</div>'
         f'</div>'
-        for hdr, metrics in axes
+        for axis_key, hdr, metrics in axes
     )
     st.markdown(
         f'<div style="display:flex;flex-wrap:wrap;gap:7px;margin:0 0 7px 0;">{cells}</div>',
@@ -1324,7 +1325,7 @@ def render_verdict_scorecard(stock: pd.Series):
                COLORS["red"] if good is False else COLORS["text_secondary"])
         return (f'<span style="font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:10px;'
                 f'background:{COLORS["bg_tertiary"]};border:1px solid {COLORS["border"]};'
-                f'color:{clr};white-space:nowrap;">{label}&nbsp;{val_str}</span>')
+                f'color:{clr};white-space:nowrap;">{label}{help_chip(label)}&nbsp;{val_str}</span>')
 
     _wcs, _ep = _v("wcs_score"), _v("economic_profit")
     _vcr, _tot, _cash = _v("value_creation_ratio"), _v("terms_of_trade_spread"), _v("cash_machine_score")
@@ -1337,9 +1338,37 @@ def render_verdict_scorecard(stock: pd.Series):
         _ds("Cash-Machine",   (f"{_cash:.0f}"   if _cash == _cash else "—"), (_cash >= 50)  if _cash == _cash else None),
     ])
     st.markdown(
-        f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 12px 0;">'
+        f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 6px 0;">'
         f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
         f'letter-spacing:0.5px;">🔬 DEEP SIGNALS</span>{deep}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── ⏱️ Entry Timing: momentum reads — the WHEN, NOT part of the WHAT verdict above ──
+    # The 6 axes weigh SELECTION and are blind to momentum (fundamentals select, technicals time).
+    # 4 orphans verified alive + orthogonal on live data (max pairwise corr 0.17): relative
+    # strength, price trajectory, earnings acceleration, volume confirmation. Thresholds are
+    # quartile-grounded. Reuses the _ds() chip so it reads as auxiliary, not a 7th verdict axis.
+    def _good(green: bool, red: bool):
+        return True if green else (False if red else None)
+
+    _rs, _traj   = _v("rs_score"), _v("trajectory_score")
+    _accel, _vsc = _v("eps_acceleration"), _v("volume_score")
+    _rs_ok    = None if _rs    != _rs    else _good(_rs   >= 70,  _rs   <= 30)
+    _traj_ok  = None if _traj  != _traj  else _good(_traj >= 0.5, _traj <  0)
+    _accel_ok = None if _accel != _accel else _good(_accel >= 10, _accel <  0)
+    _vol_ok   = None if _vsc   != _vsc   else _good(_vsc  >= 60,  _vsc  <= 20)
+    timing = "".join([
+        _ds("RS",        (f"{_rs:.0f}"    if _rs   == _rs   else "—"), _rs_ok),
+        _ds("Traj",      (f"{_traj:+.2f}" if _traj == _traj else "—"), _traj_ok),
+        _ds("EPS-Accel", ("▲" if _accel_ok is True else "▼" if _accel_ok is False
+                          else "·" if _accel == _accel else "—"),       _accel_ok),
+        _ds("Vol",       (f"{_vsc:.0f}"   if _vsc  == _vsc  else "—"),  _vol_ok),
+    ])
+    st.markdown(
+        f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 12px 0;">'
+        f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
+        f'letter-spacing:0.5px;">⏱️ ENTRY TIMING</span>{timing}</div>',
         unsafe_allow_html=True,
     )
 
@@ -1449,7 +1478,8 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         _cov_lbl = str(stock.get("data_coverage_label", "") or "")
         _cov_badge = _badge(
             f"🔍 Evidence {float(_cov_raw):.0f}%"
-            + (f" · {_esc(_cov_lbl)}" if _cov_lbl else ""),
+            + (f" · {_esc(_cov_lbl)}" if _cov_lbl else "")
+            + help_chip("Evidence Coverage"),
             COLORS["blue"],
         )
 
@@ -1464,7 +1494,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
             _stale_badge = _badge(f"⏳ Stale {int(_age)}d", COLORS["orange"])
 
     badges_html = (
-        _badge(f"{tcfg['emoji']} {tcfg['label']}", ring_clr) +
+        _badge(f"{tcfg['emoji']} {tcfg['label']}{help_chip('Conviction Tier')}", ring_clr) +
         _mg_badge +
         _badge(f_txt, f_clr) +
         _badge(reg_txt, reg_clr) +
@@ -1493,7 +1523,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         <div class="ts-score-ring" style="border-color:{ring_bdr};
              box-shadow:0 0 28px {ring_bdr},inset 0 0 20px rgba(0,0,0,0.4);">
           <div class="ts-score-val" style="color:{ring_clr};">{comp:.0f}</div>
-          <div class="ts-score-lbl" style="color:{ring_clr};">/ 100</div>
+          <div class="ts-score-lbl" style="color:{ring_clr};">/ 100{help_chip("Composite Score")}</div>
         </div>
       </div>
       <!-- Pills row -->
@@ -1768,7 +1798,43 @@ _RAW_GLOSSARY = {
     "Cyclical Peak Trap":"Warns of a commodity/cyclical stock that looks cheap at peak-cycle profits but is actually expensive.",
     "Atoms/Bits":    "Whether the business is physical-goods ('Atoms') or asset-light/digital ('Bits'), which changes how to value it.",
     "PSG":           "Price-to-Sales-to-Growth — a sales-based valuation lens useful for fast growers whose PE/PEG can mislead.",
+    # ── Layer-1 hero + Layer-2 scorecard jargon (the terms the casual reader meets FIRST) ──
+    # The 6 verdict axes (verdict_axis_*) — explain what each axis WEIGHS, never the value.
+    "Moat Axis":       "The verdict's competitive-advantage axis — how durable and wide the company's moat is (returns on capital + IBAS moat sources). One of the 6 axes the verdict weighs.",
+    "Growth Axis":     "The verdict's growth axis — how fast and how durably sales and earnings are compounding. One of the 6 axes the verdict weighs.",
+    "Valuation Axis":  "The verdict's valuation axis — how the price compares to the quality and earnings you get (PE vs fair PE, earnings yield, payback). One of the 6 axes.",
+    "Balance Axis":    "The verdict's balance-sheet axis — financial strength and debt safety (debt-to-equity, interest cover, net cash). One of the 6 axes.",
+    "Governance Axis": "The verdict's governance axis — ownership quality and management trust (promoter skin-in-the-game, pledging, dilution). One of the 6 axes.",
+    "Forensics Axis":  "The verdict's forensics axis — accounting cleanliness and warning-sign count (Piotroski, red flags, balance-sheet bloat). One of the 6 axes.",
+    # Deep Signals strip — cross-cutting synthesis metrics.
+    "WCS":            "Wealth-Creation Score — a 0-to-9 composite of the Motilal Oswal wealth-creation tests (quality, growth and longevity together). Higher means more of those traits are present.",
+    "Econ-Profit":    "Economic profit — the profit left after charging for the cost of ALL the capital the business uses, shown here in ₹ crore. Positive means it earns more than its capital costs.",
+    "VCR":            "Value-Creation Ratio — how many rupees of market value the company created per rupee of capital it retained. Around 1x is break-even on reinvestment.",
+    "Terms-of-Trade": "Working-capital terms-of-trade — the gap in days between how fast the company collects from customers and pays its suppliers. Positive means suppliers fund its working capital.",
+    "Cash-Machine":   "Cash-Machine score (0-100) — how reliably the business turns reported profit into actual operating cash. Higher means profits are well backed by cash.",
+    # Entry Timing strip — momentum reads (the WHEN, not the WHAT).
+    "RS":             "Relative Strength — how the stock's price has performed against the whole market (0-100). Higher means it is leading the market.",
+    "Traj":           "Price trajectory — the slope/shape of the recent price trend; a positive value means the trend is pointing up.",
+    "EPS-Accel":      "Earnings acceleration — whether profit growth is speeding up (▲) or slowing down (▼) versus the prior period, not merely growing.",
+    "Vol":            "Volume score (0-100) — whether recent trading volume is confirming the price move; higher means heavier, conviction-backed activity.",
+    # Hero headline numbers.
+    "Composite Score":   "The engine's headline 0-100 score — quality, momentum and the forensic penalty blended into one number. It sets the conviction tier shown beside it.",
+    "Evidence Coverage": "How much real data the score rests on — the % of the core ranked inputs that were actually present (not estimated). A high score on low coverage is less reliable.",
 }
+
+
+def help_chip(label: str = "", tip: str = "") -> str:
+    """Pure-CSS "?" hover affordance — the SINGLE source of the ``.ts-help`` chip markup.
+
+    Looks up the plain-language explanation in ``_RAW_GLOSSARY`` by ``label`` unless an explicit
+    ``tip`` is given (explicit wins, mirroring ``_cell``'s ``help=`` override). Returns ``""`` when
+    there is nothing to explain — so a term with no glossary entry gets no chip rather than a bare
+    "?". No widget, no JS, no state: safe anywhere in the stateless UI layer (CLAUDE.md §5).
+    """
+    text = tip or _RAW_GLOSSARY.get(label, "")
+    if not text:
+        return ""
+    return f'<span class="ts-help" data-tip="{_esc(text)}">?</span>'
 
 
 def render_raw_signals(stock: pd.Series):
@@ -1787,9 +1853,8 @@ def render_raw_signals(stock: pd.Series):
                 disp = str(val)
         else:
             disp = str(val) if val is not None else "N/A"
-        # Plain-language "?" tooltip: explicit help= overrides, else auto-lookup by label.
-        tip = help or _RAW_GLOSSARY.get(label, "")
-        help_html = f'<span class="ts-help" data-tip="{_esc(tip)}">?</span>' if tip else ""
+        # Plain-language "?" tooltip via the shared help_chip() (explicit help= overrides the glossary).
+        help_html = help_chip(label, help)
         return (
             f'<div class="ts-raw-cell">'
             f'<div class="ts-raw-lbl">{_esc(label)}{help_html}</div>'
@@ -2920,8 +2985,9 @@ def render_mauboussin_radar(stock: pd.Series):
 
 # ═══════════════════════════════════════════════════════════════
 # LEVEL × TRAJECTORY × MISPRICING COCKPIT — Pass 3 integration
-# Reads exclusively from pre-materialized engine columns via _g().
-# Zero inline threshold re-computation; display-only, 100% stateless.
+# Reads exclusively from pre-materialized engine columns via _g(); no engine scoring is
+# re-derived here. The only inline conditionals are display colour/label choices. Renders
+# 100% stateless via inline flex/grid — no st.columns/st.metric (CLAUDE.md §5).
 # ═══════════════════════════════════════════════════════════════
 
 def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
@@ -2935,26 +3001,45 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     sepa_scr = int(_g(stock, "sepa_score", 0))
     sepa_pss = int(_g(stock, "sepa_pass", 0))
 
-    # Row 1 — Intrinsic Value Return Identity
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric(
-            label="👑 Expected CAGR Identity",
-            value=f"{exp_cagr:.2f}% / yr",
-            delta="Intrinsic Overperformance" if exp_cagr > 15.0 else "Sub-Hurdle Engine",
+    # Compact inline flex card — mirrors the EP-strip idiom (no st.columns/st.metric padding,
+    # CLAUDE.md §5). The sub-line is dropped when empty so single-value cards stay clean.
+    def _cockpit_card(label: str, value: str, sub: str, val_clr: str, sub_clr: str) -> str:
+        sub_html = (
+            f'<div style="font-size:0.62rem;font-weight:600;color:{sub_clr};'
+            f'margin-top:2px;white-space:nowrap;">{_esc(sub)}</div>'
+        ) if sub else ""
+        return (
+            f'<div style="flex:1;min-width:150px;background:{COLORS["bg_secondary"]};'
+            f'border:1px solid {COLORS["border"]};border-radius:10px;padding:12px 16px;">'
+            f'<div style="font-size:0.56rem;font-weight:700;color:{COLORS["text_muted"]};'
+            f'text-transform:uppercase;letter-spacing:0.7px;">{_esc(label)}</div>'
+            f'<div style="font-size:1.35rem;font-weight:900;color:{val_clr};'
+            f'line-height:1.15;margin-top:3px;white-space:nowrap;">{_esc(value)}</div>'
+            f'{sub_html}</div>'
         )
-    with c2:
-        st.metric(
-            label="⏳ Decade Moat Trajectory (Tau)",
-            value=f"{moat_tau:+.2f}",
-            delta="Expanding Advantage Moat" if moat_tau > 0.25 else "Decaying Operational Moat",
-        )
-    with c3:
-        st.metric(
-            label="📊 OLS Valuation Residual",
-            value=f"{val_res:+.4f}",
-            delta="Market Underpriced (Alpha)" if val_res < 0 else "Premium Structural Pricing",
-        )
+
+    # Row 1 — Intrinsic Value Return Identity (display label/colour are the only conditionals)
+    cagr_good = exp_cagr > 15.0
+    tau_good  = moat_tau > 0.25
+    val_good  = val_res < 0          # negative OLS residual ⇒ market underpriced ⇒ alpha
+    row1 = (
+        _cockpit_card("👑 Expected CAGR Identity", f"{exp_cagr:.2f}% / yr",
+                      "Intrinsic Overperformance" if cagr_good else "Sub-Hurdle Engine",
+                      COLORS["green"] if cagr_good else COLORS["red"],
+                      COLORS["green"] if cagr_good else COLORS["red"]) +
+        _cockpit_card("⏳ Decade Moat Trajectory (Tau)", f"{moat_tau:+.2f}",
+                      "Expanding Advantage Moat" if tau_good else "Decaying Operational Moat",
+                      COLORS["green"] if tau_good else COLORS["orange"],
+                      COLORS["green"] if tau_good else COLORS["orange"]) +
+        _cockpit_card("📊 OLS Valuation Residual", f"{val_res:+.4f}",
+                      "Market Underpriced (Alpha)" if val_good else "Premium Structural Pricing",
+                      COLORS["green"] if val_good else COLORS["orange"],
+                      COLORS["green"] if val_good else COLORS["orange"])
+    )
+    st.markdown(
+        f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{row1}</div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown("---")
     st.markdown("### ⚡ Mark Minervini SEPA® Risk & Allocation Matrix")
@@ -2968,16 +3053,19 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     allocation = _g(stock, "rupee_capital_allocation", 0.0)
     stop_loss  = _g(stock, "vstop_value", 0.0)
 
-    # Row 2 — Fractional Kelly Capital Allocation Matrix
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("🎯 Recommended Capital Weight", f"{weight_pct:.2f}%",
-                  delta="Quarter-Kelly Risk Managed")
-    with col2:
-        st.metric("💰 Capital Deployment (10L Base)", f"₹ {allocation:,.2f}")
-    with col3:
-        st.metric("🚨 Hard Volatility Stop-Loss Level", f"₹ {stop_loss:,.2f}",
-                  delta="-7-8% Active Perimeter Shield")
+    # Row 2 — Fractional Kelly Capital Allocation Matrix (inline flex; no st.columns/st.metric)
+    row2 = (
+        _cockpit_card("🎯 Recommended Capital Weight", f"{weight_pct:.2f}%",
+                      "Quarter-Kelly Risk Managed", COLORS["blue"], COLORS["text_muted"]) +
+        _cockpit_card("💰 Capital Deployment (10L Base)", f"₹ {allocation:,.2f}",
+                      "", COLORS["gold"], COLORS["text_muted"]) +
+        _cockpit_card("🚨 Hard Volatility Stop-Loss Level", f"₹ {stop_loss:,.2f}",
+                      "-7-8% Active Perimeter Shield", COLORS["red"], COLORS["red"])
+    )
+    st.markdown(
+        f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{row2}</div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown("---")
 

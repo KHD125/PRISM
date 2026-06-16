@@ -1,0 +1,140 @@
+"""Contract: the plain-language "?" help affordance is no longer trapped in the All Data tab.
+
+The inverted-pyramid tearsheet leads with the verdict (Layer 1 hero) and the 6-axis scorecard
+(Layer 2) — the surfaces EVERY user sees first and that carry the most cryptic jargon (WCS, VCR,
+Terms-of-Trade, EPS-Accel ...). This contract guards that those Layer-1/2 surfaces wire the SAME
+pure-CSS `.ts-help` chip (no widget, no state — CLAUDE.md §5) from the SAME single-source glossary,
+so the help reaches the casual reader, not only the expert who drills to the deepest tab.
+
+Same testing style as test_all_data_surfacing.py: static source-block inspection + glossary import.
+"""
+import re
+from pathlib import Path
+
+import pytest
+
+_UI_SRC = Path(__file__).resolve().parent.parent / "ui" / "ui_tearsheet.py"
+
+
+def _fn_block(name: str) -> str:
+    """Return the source of a top-level function `def name(` up to the next top-level def."""
+    src = _UI_SRC.read_text(encoding="utf-8")
+    start = src.find(f"def {name}")
+    assert start != -1, f"{name} not found in ui_tearsheet.py"
+    end = src.find("\ndef ", start + 1)
+    return src[start:end if end != -1 else len(src)]
+
+
+# ── The shared chip helper (single source of the `.ts-help` markup) ──
+def test_help_chip_renders_glossary_tooltip():
+    """help_chip(label) renders the pure-CSS `.ts-help` chip from the glossary by label."""
+    from ui.ui_tearsheet import help_chip
+
+    out = help_chip("WCS")
+    assert 'class="ts-help"' in out, "help_chip must render the .ts-help affordance"
+    assert "data-tip=" in out, "help_chip must carry the tooltip text in data-tip"
+
+
+def test_help_chip_explicit_tip_overrides_lookup():
+    """An explicit tip wins over the glossary lookup (mirrors _cell's help= override)."""
+    from ui.ui_tearsheet import help_chip
+
+    out = help_chip("WCS", "a bespoke explanation that is plenty long")
+    assert "a bespoke explanation that is plenty long" in out
+
+
+def test_help_chip_returns_empty_when_no_explanation():
+    """No glossary entry and no explicit tip → no chip (the completeness net, never a bare '?')."""
+    from ui.ui_tearsheet import help_chip
+
+    assert help_chip("__definitely_not_a_real_label__") == ""
+
+
+def test_help_chip_escapes_quotes_in_tooltip():
+    """The tooltip text lands in an HTML attribute — quotes must be escaped, not break markup."""
+    from ui.ui_tearsheet import help_chip
+
+    out = help_chip("", 'has a " double quote inside it for safety')
+    assert '"' not in out.split("data-tip=")[1].split(">")[0].replace('data-tip="', "", 1)[:-1] \
+        or "&quot;" in out or "&#34;" in out, "double quotes in the tip must be HTML-escaped"
+
+
+# ── Layer-1 / Layer-2 surfaces must wire the chip ──
+def test_scorecard_wires_help_chip():
+    """render_verdict_scorecard (Layer 2) must render the `?` chip — its axes + Deep Signals +
+    Entry Timing strips were previously bare jargon."""
+    block = _fn_block("render_verdict_scorecard")
+    assert "help_chip(" in block, "the 6-axis scorecard must wire help_chip for its cryptic terms"
+
+
+def test_hero_wires_help_chip():
+    """render_stock_hero (Layer 1) must explain its headline numbers (composite ring, tier, Evidence)."""
+    block = _fn_block("render_stock_hero")
+    assert "help_chip(" in block, "the hero band must wire help_chip for the composite/tier/Evidence"
+
+
+# ── Every newly-surfaced cryptic term needs a real plain-language definition ──
+_LAYER2_TERMS = [
+    # Deep Signals strip
+    "WCS", "Econ-Profit", "VCR", "Terms-of-Trade", "Cash-Machine",
+    # Entry Timing strip
+    "RS", "Traj", "EPS-Accel", "Vol",
+    # 6 verdict axes
+    "Moat Axis", "Growth Axis", "Valuation Axis", "Balance Axis",
+    "Governance Axis", "Forensics Axis",
+    # Hero headline numbers
+    "Composite Score", "Evidence Coverage",
+]
+
+
+@pytest.mark.parametrize("term", _LAYER2_TERMS)
+def test_layer2_term_has_plain_language_glossary(term):
+    """Each Layer-1/2 chip term must map to a real, non-empty plain-language explanation that
+    explains the TERM and never judges the value (CLAUDE.md: thresholds in UI = engine drift)."""
+    from ui.ui_tearsheet import _RAW_GLOSSARY
+
+    assert term in _RAW_GLOSSARY, f"Layer-2 term {term!r} must have a _RAW_GLOSSARY entry"
+    assert len(_RAW_GLOSSARY[term].strip()) >= 20, f"{term!r} tooltip too short to be real"
+
+
+# ── Priority 3: the scanner grid's machine-named headers get plain-language tooltips ──
+_SCANNER_SRC = Path(__file__).resolve().parent.parent / "ui" / "ui_scanner.py"
+
+
+def test_scanner_configures_header_tooltips():
+    """render_scanner_grid must set AgGrid's native headerTooltip so a raw column name like
+    `composite_score` explains itself on hover (the scanner's first quantitative surface)."""
+    src = _SCANNER_SRC.read_text(encoding="utf-8")
+    assert "headerTooltip" in src, "scanner must set AgGrid headerTooltip for key columns"
+
+
+def test_scanner_tips_reuse_the_shared_glossary():
+    """The scanner must pull its tips from the SAME glossary as the tearsheet — one definition,
+    no drift between the grid header and the tearsheet '?' chip."""
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    from ui.ui_tearsheet import _RAW_GLOSSARY
+
+    assert _SCANNER_HEADER_TIPS, "scanner header-tip map must be populated"
+    assert _SCANNER_HEADER_TIPS["composite_score"] == _RAW_GLOSSARY["Composite Score"], (
+        "scanner composite_score tip must be the exact glossary sentence (single source of truth)"
+    )
+    for col, tip in _SCANNER_HEADER_TIPS.items():
+        assert isinstance(tip, str) and len(tip.strip()) >= 20, f"{col!r} header tip too short"
+
+
+# ── Priority 4: every sidebar "Refine" filter explains itself (Streamlit native help=) ──
+_APP_SRC = Path(__file__).resolve().parent.parent / "app.py"
+
+
+@pytest.mark.parametrize("label", ["Gate-passed only", "Min Quality Score", "Min Composite Score"])
+def test_refine_filter_has_help_text(label):
+    """Each power-user Refine-group filter must carry a help= tooltip (the native '?' beside the
+    widget) — Min Quality and Min Composite are a pre-/post-penalty pair and must both be explained."""
+    src = _APP_SRC.read_text(encoding="utf-8")
+    i = src.find(f'"{label}"')
+    assert i != -1, f"{label!r} filter not found in app.py"
+    rest = src[i:]
+    # Bound the scan to THIS widget's call: stop at the start of the next st.* widget.
+    m = re.search(r"st\.(slider|checkbox|selectbox|multiselect)\(", rest[1:])
+    window = rest[: (m.start() + 1) if m else 400]
+    assert "help=" in window, f"the {label!r} sidebar filter must have a help= tooltip"

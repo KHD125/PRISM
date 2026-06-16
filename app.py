@@ -725,7 +725,9 @@ with st.sidebar:
         # cascade frame. All default to OFF so the panel opens on the full universe.
         gate_only = st.checkbox("Gate-passed only", value=False, key="sb_gate",
                                 help="Show only stocks that clear the engine's quality gate.")
-        min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
+        min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq",
+                                help="Min fundamental quality score (PRE-forensic-penalty — moat + "
+                                     "growth + cash + governance, before red-flag cuts).")
         min_score = st.slider("Min Composite Score", 0, 100, 0, key="sb_minscore",
                               help="Min headline composite_score (post-forensic-penalty — the score "
                                    "your tiers are built on; stronger than Min Quality, which is pre-penalty).")
