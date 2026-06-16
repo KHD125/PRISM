@@ -22,7 +22,8 @@ warnings.filterwarnings('ignore')
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core import fetch_and_clean_data, run_full_scoring, compute_forensic_signals, apply_forensic_penalty, compute_verdict
+from core import (fetch_and_clean_data, run_full_scoring, compute_forensic_signals,
+                  apply_forensic_penalty, compute_verdict, run_scoring_pipeline)
 from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
@@ -79,11 +80,7 @@ def get_scored_data(clean_df: pd.DataFrame, analysis_mode: str, scoring_profile:
                                     the 6 axes → verdict_direction / strength / narrative / risk.
                                     Adds ZERO scoring; only verdict_* label columns.
     """
-    df = compute_forensic_signals(clean_df)
-    df = run_full_scoring(df, analysis_mode, scoring_profile)
-    df = apply_forensic_penalty(df)
-    df = compute_verdict(df)
-    return df
+    return run_scoring_pipeline(clean_df, analysis_mode, scoring_profile)
 
 inject_css()
 
@@ -343,18 +340,16 @@ with st.sidebar:
         st.rerun()
 
     def _active_n(*keys):
-        """Count filters in a group that ACTUALLY narrow — ignore the select-all / 'All' defaults."""
+        """Count filters in a group that ACTUALLY narrow. Every filter now defaults to its
+        'show all' state — blank for multiselects, 'All' for the sector/industry selectboxes,
+        unticked/0 for the toggles — so a filter is active iff it holds a non-default value."""
         n = 0
         for k in keys:
             v = st.session_state.get(k)
-            if k == "sb_mcap":
-                n += 1 if (v and len(v) < 6) else 0          # default = all 6 mcap tiers
-            elif k == "sb_tier":
-                n += 1 if (v and sorted(v) != [1, 2, 3]) else 0
-            elif k in ("sb_sector", "sb_industry"):
+            if k in ("sb_sector", "sb_industry"):
                 n += 1 if (v and v != "All") else 0
             else:
-                n += 1 if v else 0
+                n += 1 if v else 0          # blank multiselect / unticked / slider-0 = inactive
         return n
 
     def _grp(title, *keys, expanded=False):
@@ -399,7 +394,8 @@ with st.sidebar:
         # 1. Market Category — cascade root (only categories present in the data)
         _ALL_MCAPS = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
         _mcap_opts = _ordered_present(_cf, "market_category", _ALL_MCAPS)
-        sel_mcap = _ms_cascade("Market Category", _mcap_opts, "sb_mcap", default=_mcap_opts)
+        sel_mcap = _ms_cascade("Market Category", _mcap_opts, "sb_mcap", default=[],
+                               help="Blank = all market-cap tiers. Pick one or more to narrow.")
         if sel_mcap:
             _cf = _cf[_cf["market_category"].isin(sel_mcap)]
 
@@ -426,8 +422,8 @@ with st.sidebar:
     with _grp("🎯 Decision & Class", "sb_tier", "sb_verdict", "sb_corpclass", expanded=True):
         # 4. Conviction Tier — only tiers present in the remaining stocks
         _tier_opts = sorted(int(t) for t in _cf["conviction_tier"].dropna().unique())
-        sel_tier = _ms_cascade("Conviction Tier", _tier_opts, "sb_tier",
-                               default=[t for t in (1, 2, 3) if t in _tier_opts])
+        sel_tier = _ms_cascade("Conviction Tier", _tier_opts, "sb_tier", default=[],
+                               help="Blank = all tiers. 1 = Crown Jewels, 2 = Strong … pick to narrow.")
         if sel_tier:
             _cf = _cf[_cf["conviction_tier"].isin(sel_tier)]
 
@@ -684,23 +680,19 @@ with st.sidebar:
             )
         st.caption(f"→ {len(_cf):,} remaining")
 
-    with _grp("🌊 Refine", "sb_sweep", "sb_gate", "sb_minq", expanded=False):
-        # Alpha Vectors — these toggles are READ here but APPLIED in the main body (they gate on
-        # engine columns, after the cascade frame is finalized). Rendering them in their own group
-        # keeps the sidebar's widget order identical to before.
-        smart_sweep = st.checkbox("🎯 Smart Money Sweep (FII+DII + Breakout)", value=False, key="sb_sweep")
-        gate_only = st.checkbox("Gate-passed only", value=True, key="sb_gate")
+    with _grp("🌊 Refine", "sb_gate", "sb_minq", expanded=False):
+        # Final power-user knobs — READ here, APPLIED in the main body against the finalized
+        # cascade frame. Both default to OFF so the panel opens on the full universe.
+        gate_only = st.checkbox("Gate-passed only", value=False, key="sb_gate",
+                                help="Show only stocks that clear the engine's quality gate.")
         min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq")
 
 # Apply filters — the cascade frame (_cf) already encodes every option-based filter
 # (Market Category → Sector → Industry → Tier → Verdict → Corporate Class → Framework → Moat →
 #  PEG Zone → Buy Zone → Weinstein → Lynch → Moat Endurance → CF Triangle → Smart-Money → Catalyst → Sell Alerts),
-# so the dropdown options and the result set are guaranteed identical. Only the bottom
-# Alpha-Vector toggles remain to apply.
+# so the dropdown options and the result set are guaranteed identical. Only the two Refine
+# toggles remain to apply.
 filt = _cf.copy()
-if smart_sweep:
-    # Requires simultaneous FII + DII buying AND a Tsunami signal
-    filt = filt[(filt["inst_convergence"] == 1) & (filt["tsunami_signal"] == 1)]
 if gate_only:
     filt = filt[filt["gate_pass"] == 1]
 if min_quality > 0:
@@ -716,13 +708,11 @@ _active_total = _active_n(
     "sb_mcap", "sb_sector", "sb_industry", "sb_tier", "sb_verdict", "sb_corpclass",
     "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
     "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
-    "sb_catalyst", "sb_sellalert", "sb_sweep", "sb_gate", "sb_minq",
+    "sb_catalyst", "sb_sellalert", "sb_gate", "sb_minq",
 )
-_flabel = (
-    f"🎯 {_active_total} filter{'s' if _active_total != 1 else ''} active" if _active_total
-    else "○ No filters — full universe" if _fin_n == _uni_n
-    else "○ Default conviction view"   # tier default [1,2,3] still narrows → never claim "full"
-)
+# Every filter now defaults to its show-all state, so zero active filters == the full universe.
+_flabel = (f"🎯 {_active_total} filter{'s' if _active_total != 1 else ''} active"
+           if _active_total else "○ No filters — full universe")
 _funnel.markdown(
     f'''<div style="background:linear-gradient(135deg,{COLORS['bg_secondary']},{COLORS['bg_tertiary']});
          border:1px solid {COLORS['border']};border-radius:10px;padding:10px 12px;margin:2px 0 10px 0;">
