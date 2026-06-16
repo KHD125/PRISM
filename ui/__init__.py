@@ -77,6 +77,7 @@ from .ui_components import (
     render_sidebar_brand,
     render_bruised_blue_chips,
     render_multi_trillion_tipping_points,
+    help_chip,
 )
 
 __all__ = [
@@ -116,4 +117,5 @@ __all__ = [
     "render_sidebar_brand",
     "render_bruised_blue_chips",
     "render_multi_trillion_tipping_points",
+    "help_chip",
 ]

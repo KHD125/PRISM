@@ -170,3 +170,58 @@ def test_payoff_framework_tiles_present_and_per_stock(scored_df):
         assert upside_a != upside_b, (
             "EV tiles identical for two different stocks — static-matrix regression"
         )
+
+
+# ─── Discovery tab smoke — the first-touch render path (stock card + one-time sub-score legend) ───
+# This path was previously UNCOVERED in-process: the smoke above only renders the tearsheet, so a
+# crash in render_stock_card or the Discovery legend was invisible to pytest. Importing from the `ui`
+# package facade (`from ui import ...`) also exercises that facade the way app.py does.
+def _render_discovery_app():
+    """Mini-app: the one-time sub-score legend (mirrors app.py's inline build) + a stock card."""
+    import streamlit as st
+    from ui import render_stock_card, help_chip
+    stock = st.session_state["stock_row"]
+    _legend = " · ".join(_l + help_chip(_l + " Score")
+                         for _l in ("Moat", "Growth", "Cash", "Momentum", "Governance"))
+    st.markdown(f'<div>Card score bars — {_legend}</div>', unsafe_allow_html=True)
+    render_stock_card(stock, show_scores=True)
+
+
+def _run_discovery_for(stock: pd.Series):
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_render_discovery_app)
+    at.session_state["stock_row"] = stock
+    at.run(timeout=60)
+    return at
+
+
+def test_discovery_card_renders_top_stock_without_exception(scored_df):
+    at = _run_discovery_for(scored_df.iloc[0])
+    assert not at.exception, f"Discovery card raised: {[str(e.value) for e in at.exception]}"
+
+
+def test_discovery_card_renders_worst_stock_without_exception(scored_df):
+    """Bottom-ranked stock: maximum missing data / fired flags — the hostile path."""
+    at = _run_discovery_for(scored_df.iloc[-1])
+    assert not at.exception, f"Discovery card raised: {[str(e.value) for e in at.exception]}"
+
+
+def test_discovery_card_renders_loss_maker_without_exception(scored_df):
+    """NaN-PE stock exercises the loss-maker fallbacks in the card."""
+    loss_makers = scored_df[scored_df["pe"].isna()]
+    if loss_makers.empty:
+        stock = scored_df.iloc[0].copy()
+        stock["pe"] = np.nan
+    else:
+        stock = loss_makers.iloc[0]
+    at = _run_discovery_for(stock)
+    assert not at.exception, f"Discovery card raised: {[str(e.value) for e in at.exception]}"
+
+
+def test_discovery_card_no_nan_leak(scored_df):
+    """No '+nan%'-class leak in the Discovery card / legend render."""
+    import re
+    at = _run_discovery_for(scored_df.iloc[0])
+    text = _all_rendered_text(at).lower()
+    leaks = re.findall(r"[+\-₹ >]nan[%< ]", text)
+    assert not leaks, f"NaN leaked into Discovery render: {leaks[:5]}"

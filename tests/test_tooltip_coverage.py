@@ -178,3 +178,81 @@ def test_score_strip_subscore_has_glossary(term):
 def test_score_strip_wires_help_chip():
     block = _fn_block("render_score_strip")
     assert "help_chip(" in block, "the 5-cell score strip must wire the '?' help chip"
+
+
+# ── Round 5: ui_components is the SINGLE home of the chip; discovery-card parity + sidebar gaps ──
+_COMPONENTS_SRC = Path(__file__).resolve().parent.parent / "ui" / "ui_components.py"
+
+
+def test_chip_home_is_ui_components():
+    """help_chip + _RAW_GLOSSARY now live in ui_components (which already owns the .ts-help CSS).
+    The move must preserve every glossary entry (142) — a dropped key would silently un-explain a term."""
+    from ui.ui_components import help_chip, _RAW_GLOSSARY
+
+    assert 'class="ts-help"' in help_chip("WCS"), "help_chip must render the .ts-help affordance"
+    assert len(_RAW_GLOSSARY) == 142, "the move must neither add nor drop any glossary entry"
+
+
+def test_help_chip_exported_from_ui_package_facade():
+    """app.py imports names from the `ui` package (`from ui import ...`), so help_chip must be
+    re-exported by ui/__init__.py too — otherwise the Discovery legend crashes the tab at runtime
+    (a gap a static source check misses; caught here so the suite guards it, not just visual-check)."""
+    from ui import help_chip as facade_help_chip
+    import ui.ui_components as comp
+
+    assert facade_help_chip is comp.help_chip, "ui package must re-export the SAME help_chip object"
+
+
+def test_tearsheet_reexports_the_same_objects():
+    """Backward-compat + single source of truth: ui_tearsheet must re-export the SAME objects
+    (identity, not copies) so existing `from ui.ui_tearsheet import ...` keeps working and the two
+    surfaces can never drift."""
+    import ui.ui_components as comp
+    import ui.ui_tearsheet as ts
+
+    assert ts._RAW_GLOSSARY is comp._RAW_GLOSSARY, "glossary must be the SAME object (single source)"
+    assert ts.help_chip is comp.help_chip, "help_chip must be the SAME object, re-exported"
+
+
+def test_scanner_sources_glossary_from_components():
+    """The scanner must import the glossary from its single home (ui_components), not the tearsheet."""
+    src = _SCANNER_SRC.read_text(encoding="utf-8")
+    assert "from ui.ui_components import" in src, "scanner must import from ui_components"
+    assert "from ui.ui_tearsheet import" not in src, "scanner must no longer import from ui_tearsheet"
+
+
+def test_stock_card_does_not_repeat_subscore_chip():
+    """ANTI-CLUTTER contract: the per-card sub-score bars must NOT each carry a '?' — that repeated
+    the same 5 identical tooltips on every card down the scan list (~100 chips). The sub-scores are
+    explained ONCE by a legend above the ranked list instead (test_discovery_list_has_*_legend)."""
+    src = _COMPONENTS_SRC.read_text(encoding="utf-8")
+    start = src.find("def render_stock_card")
+    assert start != -1, "render_stock_card not found"
+    end = src.find("\ndef ", start + 1)
+    block = src[start : end if end != -1 else len(src)]
+    assert "help_chip(" not in block, "render_stock_card must NOT repeat the '?' chip on every card"
+
+
+def test_discovery_list_has_one_time_subscore_legend():
+    """The Discovery ranked list (app.py) explains the 5 sub-scores ONCE via a help_chip legend
+    above the cards — not per card. app.py must both import help_chip and use it near 'Top Picks'."""
+    app_src = (Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8")
+    assert app_src.count("help_chip") >= 2, "app.py must import help_chip AND use it in the legend"
+    i = app_src.find("Top Picks")
+    assert i != -1, "Top Picks list header not found in app.py"
+    assert "help_chip(" in app_src[i : i + 1200], "discovery list must wire a one-time help_chip legend"
+
+
+@pytest.mark.parametrize("label", ["Sector", "Moat"])
+def test_discovery_filter_has_help_text(label):
+    """The Sector + Moat discovery filters must carry native help= (parity with every sibling filter).
+    Stateful sidebar → native Streamlit help=, NOT the .ts-help chip."""
+    src = _DISCOVERY_SRC.read_text(encoding="utf-8")
+    i = src.find(f'"{label}"')
+    assert i != -1, f"{label!r} filter not found in ui_discovery.py"
+    rest = src[i:]
+    # Bound to THIS widget's call: stop at the next widget (incl. the _ms_cascade helper, so a
+    # following sibling's help= can't leak into this window and produce a false pass).
+    nxt = re.search(r"(st\.selectbox|st\.slider|st\.checkbox|st\.multiselect|_ms_cascade)\(", rest[1:])
+    window = rest[: (nxt.start() + 1) if nxt else 500]
+    assert "help=" in window, f"the {label!r} discovery filter must have a help= tooltip"

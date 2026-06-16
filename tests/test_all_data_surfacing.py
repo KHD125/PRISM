@@ -73,9 +73,10 @@ def test_cell_helper_wires_the_tooltip():
     the Layer-1 hero and Layer-2 scorecard too — see test_tooltip_coverage.py."""
     block = _raw_signals_block()
     assert "help_chip(" in block, "_cell must wire the tooltip through the shared help_chip()"
-    # Single source of the .ts-help markup + glossary lookup now lives in help_chip itself.
-    src = _UI_SRC.read_text(encoding="utf-8")
-    chip = src[src.find("def help_chip"):src.find("def render_raw_signals")]
+    # Single source of the .ts-help markup + glossary lookup now lives in help_chip, which was moved
+    # to ui/ui_components.py (the module that owns the .ts-help CSS) and is re-imported by ui_tearsheet.
+    comp_src = (_UI_SRC.parent / "ui_components.py").read_text(encoding="utf-8")
+    chip = comp_src[comp_src.find("def help_chip"):comp_src.find("def render_stock_card")]
     assert 'class="ts-help"' in chip, "help_chip must render the .ts-help '?' affordance"
     assert "_RAW_GLOSSARY.get(label" in chip, "help_chip must auto-look-up the glossary by label"
 

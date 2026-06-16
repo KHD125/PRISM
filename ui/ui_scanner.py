@@ -12,7 +12,7 @@ except ImportError:
 # Plain-language header tooltips for the scanner's machine-named columns. Reuse the SAME glossary
 # the tearsheet "?" chip uses (single source of truth — a term can never drift between the grid
 # header and the tearsheet); bespoke sentences only for scanner-only columns with no tearsheet cell.
-from ui.ui_tearsheet import _RAW_GLOSSARY as _GLOSSARY
+from ui.ui_components import _RAW_GLOSSARY as _GLOSSARY
 
 _SCANNER_HEADER_TIPS = {
     "rank":             "The stock's overall rank in the current screen (1 = highest conviction).",

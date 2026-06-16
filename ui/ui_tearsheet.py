@@ -14,6 +14,10 @@ import pandas as pd
 import numpy as np
 import html as _html
 from config import COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS, FRAMEWORK_CATEGORIES
+# Single source of truth for the "?" help chip lives in ui_components (which owns the .ts-help CSS).
+# Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
+# (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
+from ui.ui_components import help_chip, _RAW_GLOSSARY
 
 
 # ─── Display Utilities ──────────────────────────────────────────────────────
@@ -770,6 +774,56 @@ def render_forensic_perimeter(stock: pd.Series):
 # GURU FRAMEWORK CHECKLIST — Coffee Can / QGLP / WCS 28-30
 # ═══════════════════════════════════════════════════════════════
 
+# Plain-language "the idea" one-liner per framework — distilled from docs/handbook/08-the-frameworks.md
+# ("*The idea:*" lines). The card already shows the terse GATE SPEC (_FW_META desc); this explains the
+# INSIGHT a beginner needs (what it's for / why a pass matters), surfaced via the "?" idea tooltip.
+# Every name in _FW_META must appear here — enforced by test_every_framework_card_has_an_idea_tooltip.
+_FW_IDEA = {
+    # 🏛️ Motilal Oswal wealth-creation family
+    "QGLP":                   "Buy Quality + Growth + Longevity at a reasonable Price — Motilal Oswal's flagship long-horizon compounder screen.",
+    "MOSL Wealth Creator":    "The profile of a proven long-run wealth creator — profit growth consistent across all horizons with a wide economic-profit spread.",
+    "SQGLP Century Stock":    "The strictest bar — QGLP plus a small Size base that can still multiply many times. Passes are very rare by design.",
+    "100x Candidate":         "An early-stage, small-base business with the structural setup to compound roughly 100× over a long runway (high ceiling, high uncertainty).",
+    "Fallen Quality":         "A genuinely high-quality business temporarily beaten down — quality on sale, not a permanent decliner.",
+    "CAP-GAP Compounder":     "A competitive-advantage runway the market appears to be under-pricing — the moat likely outlasts what the valuation assumes.",
+    "Economic Moat":          "A wide, durable moat — returns on capital sustained well above the cost of capital over time, not a one-cycle wonder.",
+    "Blue Chip Quality":      "An established, high-quality large-cap — a proven, lower-risk compounder.",
+    "Consistent in Volatile": "A steady performer that holds up through volatile markets — low earnings/return volatility alongside solid quality.",
+    "EP Hockey Stick":        "Economic profit inflecting sharply upward — value creation is bending up at an early inflection.",
+    "Bruised Blue Chip 29":   "A blue chip fallen hard and cheap versus its own history — a quality name the market has temporarily punished.",
+    "Multi-Trillion Cap":     "The very largest, most-proven compounders — mega-cap size with elite, durable quality.",
+    # 📚 Fundamental & cash-quality moats
+    "Coffee Can":             "Own clean, consistent compounders and forget them — Mukherjea's buy-and-hold quality filter.",
+    "Diamond":                "Forensic-verified high-quality compounders — quality that has also survived an accounting screen.",
+    "Peaceful Investing":     "Vijay Malik's systematic forensic-quality filter — fundamentally sound, sleep-at-night businesses.",
+    "Unusual Billionaires":   "Mukherjea's 'Greatness Formula' — sustained high returns AND consistent growth reinvested over years.",
+    "Long Game Quality":      "Fort-like businesses built to compound for years — the strictest balance-sheet bar plus strong free cash flow.",
+    "Baid Compounder":        "Gautam Baid's steady, sensible compounding — solid quality with balance-sheet strength and consistent growth.",
+    "Basant 30% Club":        "A fast grower bought at a reasonable price — high sustained growth where the price hasn't yet caught up.",
+    "Quality Compounder":     "The asset-light, cash-generative quality business — low capital intensity, strong free cash flow, high returns.",
+    # ⚡ Technical momentum & growth sieves
+    "CAN SLIM":               "O'Neil's screen for an elite grower breaking out with institutional backing — all seven criteria, very rare to pass.",
+    "SEPA Momentum":          "Minervini's Specific Entry Point Analysis — buy strength at a low-risk pivot after a volatility contraction.",
+    "Quality Momentum":       "Gray's strongest, smoothest uptrends among quality names — top-20% relative strength with a governance guard.",
+    "Lynch Dream":            "Peter Lynch's fast grower at a fair price — growth-at-a-reasonable-price the big funds haven't crowded yet.",
+    "EP Improver":            "Economic profit on an improving trajectory — value creation that is accelerating.",
+    "SMILE":                  "Vijay Kedia's small-cap with Integrity, large aspiration and extra-large potential — an under-the-radar scaler.",
+    # 🛡️ Valuation, capital allocation & defense shields
+    "Magic Formula":          "Greenblatt's cheap-and-good — a high-return business (ROCE) at a genuinely cheap enterprise price (EBIT/EV).",
+    "Dhandho Asymmetry":      "Pabrai's heads-I-win, tails-I-don't-lose-much — a low-downside, real-upside bet where fear has outrun the facts.",
+    "Parikh Contrarian":      "Parag Parikh's out-of-favour but fundamentally sound — a sensible contrarian value the crowd has overlooked.",
+    "Wide Moat":              "Dorsey's structural, durable moats — high returns on capital with a moat that is wide and still holding.",
+    "Outsider CEO":           "Thorndike's elite capital allocators — buybacks without dilution, strong cash generation, debt discipline.",
+    "Expectations Matrix":    "Mauboussin's expectations gap — the market is implying less than the business can likely deliver.",
+    "Financial Shenanigans":  "Schilit's manipulation screen — the accounts clear the cooked-books checkers.",
+    "Marks Cycle Shield":     "Howard Marks' cycle posture — risk/reward is favourable, not late-cycle euphoric.",
+    # 🎣 Fisher & Mayer
+    "Fisher Quality":         "Fisher's 15 qualitative points on a truly excellent business, run as automated quantitative proxies.",
+    "Fisher Scalability":     "Does the business still have room to grow? — revenue runway, operating leverage, pricing power, no dilution.",
+    "100-Bagger":             "Phelps/Mayer's long-compounding small-base setup that can multiply 100× — consistent growth, low payback, low pledge.",
+}
+
+
 def render_guru_frameworks(stock: pd.Series):
     """
     Displays which institutional Guru frameworks the stock passes.
@@ -847,6 +901,7 @@ def render_guru_frameworks(stock: pd.Series):
             f'<div class="ts-fw-card-head">'
             f'<span style="font-size:1.1rem;">{icon}</span>'
             f'<span class="ts-fw-card-name" style="color:{color};">{_esc(fw)}</span>'
+            f'{help_chip(tip=_FW_IDEA.get(fw, ""))}'
             f'</div>'
             f'<div class="ts-fw-card-desc">{_esc(desc)}</div>'
             f'</div>'
@@ -1560,7 +1615,7 @@ def render_score_strip(stock: pd.Series):
                     COLORS["gold"]  if val >= 40 else COLORS["red"])
         return (
             f'<div class="ts-score-cell" style="border-top:3px solid {color};">'
-            f'<div class="ts-score-cell-lbl">{icon} {label}</div>'
+            f'<div class="ts-score-cell-lbl">{icon} {label}{help_chip(f"{label} Score")}</div>'
             f'<div class="ts-score-cell-val" style="color:{color};">{disp}</div>'
             f'<div class="ts-score-bar-bg"><div class="ts-score-bar-fill" '
             f'style="width:{w:.1f}%;background:{color};"></div></div>'
@@ -1665,176 +1720,10 @@ def render_sell_alerts_panel(stock: pd.Series):
 # RAW SIGNALS PANEL — Structured metric grid (replaces expander)
 # ═══════════════════════════════════════════════════════════════
 
-# Plain-language glossary for the All Data tab — keyed by the exact _cell() label. Explains the
-# TERM for a beginner; NEVER judges the value (no good/bad — that needs thresholds = engine drift).
-# Single source of truth: _cell() auto-renders a "?" tooltip for any label found here. A label with
-# no entry simply gets no "?", which is the completeness net — every term should be explainable.
-_RAW_GLOSSARY = {
-    # ── Business Quality ──
-    "ROCE Current":  "Return on Capital Employed — out of every ₹100 the business puts to work (its own money + debt), how much yearly profit it earns. Higher means a better money-making machine.",
-    "ROCE 10Y Med":  "The middle (median) ROCE over the last 10 years — shows whether high returns are durable, not a one-year fluke.",
-    "ROCE 5Y Med":   "The middle (median) ROCE over the last 5 years — a more recent read on return quality.",
-    "ROE Current":   "Return on Equity — yearly profit earned on the shareholders' own money only (excludes debt). How hard your equity is working.",
-    "ROE 10Y Med":   "The middle (median) ROE over 10 years — shows if equity returns have stayed strong over a full cycle.",
-    "NPM":           "Net Profit Margin — of every ₹100 of sales, how much is left as final profit after all costs and taxes.",
-    "NPM 5Y Med":    "The middle (median) net profit margin over 5 years — shows if margins are stable, not a one-off.",
-    "OPM":           "Operating Profit Margin — profit from the core business (before interest and tax) per ₹100 of sales.",
-    "Malik Score":   "Sanjay Bakshi / Malik quality checklist — how many of 5 financial-strength tests the company passes.",
-    "Malik Pass":    "Whether the company clears the full Malik quality checklist.",
-    "Malik Label":   "A one-word verdict (Strong / Average / Weak) summarising the Malik quality checklist result.",
-    "Piotroski":     "Piotroski F-Score — a 0-to-9 financial-health checklist covering profitability, debt and efficiency. 8-9 is very healthy books; under 5 is weak.",
-    "Fisher Scal. Score": "Phil Fisher scalability score (0-4) — can this business keep growing without its economics breaking down.",
-    "Fisher Quadrant":    "Where the company sits on Fisher's growth-vs-quality map (e.g. Catalyst Play, Laggard).",
-    "IBAS Architecture":  "One of Mukherjea's 4 moat sources — durable advantage from how the business is built/organised (its 'architecture').",
-    "IBAS Innovation":    "One of Mukherjea's 4 moat sources — advantage from genuine, hard-to-copy innovation.",
-    "IBAS Reputation":    "One of Mukherjea's 4 moat sources — advantage from brand trust and reputation customers pay up for.",
-    "IBAS Strategic":     "One of Mukherjea's 4 moat sources — advantage from strategic assets (licences, networks, locations). The four IBAS scores average into the overall moat number.",
-    "Moat Endurance":     "Whether the company's competitive advantage (moat) is widening, holding, eroding or degrading over time — durability, not just how big the moat is today.",
-    # ── Growth ──
-    "PAT 5Y CAGR":   "Net profit's smoothed yearly growth rate over 5 years (CAGR = compound annual growth rate).",
-    "PAT 3Y CAGR":   "Net profit's smoothed yearly growth rate over the last 3 years.",
-    "PAT YoY":       "Net profit growth this year versus last year (year-on-year). Can be spiky for a single year.",
-    "Rev 10Y CAGR":  "Sales' smoothed yearly growth rate over 10 years — the long-run top-line trend.",
-    "Rev 5Y CAGR":   "Sales' smoothed yearly growth rate over 5 years.",
-    "Rev YoY":       "Sales growth this year versus last year.",
-    "EPS 5Y CAGR":   "Earnings-per-share smoothed yearly growth over 5 years — profit growth on a per-share basis (accounts for dilution).",
-    "EPS YoY":       "Earnings-per-share growth this year versus last year.",
-    "Q PAT YoY":     "Latest quarter's net profit versus the same quarter last year — the most recent profit trend.",
-    "Op Leverage":   "Operating leverage — whether profit is growing faster than sales (a sign fixed costs are being spread over more revenue).",
-    "Op Lev (3Y)":   "Operating leverage over 3 years — how much faster (or slower) profit grew than sales. Positive means profits are scaling faster than revenue.",
-    "Lynch Category":"Peter Lynch's stock type — Fast Grower, Stalwart, Slow Grower or Turnaround — which sets how to judge it.",
-    # ── Cash & Debt ──
-    "CFO/PAT":       "Cash from operations divided by reported profit. Near or above 100% means profits are backed by real cash; well below is a warning.",
-    "FCF Yield":     "Free cash flow (cash left after running and maintaining the business) as a % of the company's market value.",
-    "FCF/CFO":       "How much of the operating cash survives as free cash after capital spending.",
-    "FCF/PAT":       "Free cash flow versus reported profit — another check that profit becomes spendable cash.",
-    "FCF Imputed":   "'Yes' means free cash flow wasn't reported directly and we estimated it from operating cash — treat it as approximate.",
-    "FCF Reconstructed":"'Yes' means free cash flow was rebuilt from its parts rather than taken raw — so the FCF figure here is not a direct report.",
-    "SSGR":          "Self-Sustainable Growth Rate — the fastest the company can grow using only its own profits, with no new debt or share sales.",
-    "SSGR Cushion":  "How much head-room there is between what the company can self-fund (SSGR) and how fast it's actually growing. Negative means it must borrow or dilute to grow.",
-    "D/E Ratio":     "Debt-to-Equity — total borrowings versus shareholders' money. Higher means more financial risk.",
-    "Int Coverage":  "Interest coverage — how many times operating profit covers the interest bill. Higher is safer.",
-    "Current Ratio": "Short-term assets divided by short-term dues — above 1 means it can cover near-term bills.",
-    "Tax Rate Est":  "An estimate of the tax the company effectively pays on its profit.",
-    "Asset Growth":  "How fast the balance sheet (total assets) is expanding. Very fast asset growth can signal over-investment.",
-    "CFROIC":        "Cash Return on Invested Capital — like ROCE but counts only real cash profit, a check that returns are backed by actual cash.",
-    "Ext Financing": "External financing to assets — how much the company is raising from outside (debt + equity). Negative means it's returning cash to investors.",
-    "Capital Alloc": "A label for how management deploys cash (e.g. returning capital, reinvesting, raising).",
-    "Sector Capital":"Whether the company's sector is flooded with new capital (often bad for future returns) or starved of it (often good).",
-    # ── Valuation ──
-    "PE":            "Price-to-Earnings — the share price divided by yearly profit per share; roughly how many years of current profit you pay for the stock.",
-    "Fair PE (QGLP)":"An estimated 'fair' PE for this company based on its quality and growth — compare it to the actual PE.",
-    "Industry PE":   "The typical PE of this company's industry — context for whether it's cheap or dear versus peers.",
-    "P/B":           "Price-to-Book — share price versus the company's net asset (book) value per share.",
-    "P/S":           "Price-to-Sales — the share price versus the company's yearly sales per share. Useful when profits are thin, lumpy or negative and PE becomes meaningless.",
-    "FGV":           "Future Growth Value — the slice of today's share price that rests on FUTURE growth rather than the profits the company already makes. High means a lot of growth is already priced in.",
-    "PEG":           "PE divided by growth — a way to judge if the PE is justified by growth. Around 1 is often considered fair.",
-    "PEG Zone":      "A simple band (cheap / fair / stretched) based on the PEG ratio.",
-    "Earnings Yield":"Profit per share divided by price — the flip side of PE, shown as a % (like an interest rate the earnings 'pay').",
-    "PE vs 10Y Med": "Today's PE versus the stock's own 10-year average PE — is it expensive or cheap against its own history.",
-    "EV/EBITDA Dir": "Enterprise value to EBITDA — a debt-aware valuation multiple ('Dir' = taken directly, not proxied).",
-    "Payback Ratio": "Roughly how many years of current free cash flow it would take to earn back the price you pay.",
-    "P/E vs ROE MoS":"Margin of safety from comparing the PE you pay against the quality (ROE) you get.",
-    "Valuation Scr": "The engine's overall valuation score (0-100). Higher = cheaper for the quality.",
-    "O'Shaughnessy VC":"O'Shaughnessy Value Composite — a combined cheapness rank across several value measures (PE, PB, PS, EV/EBITDA, cash flow).",
-    "Trending Value":"O'Shaughnessy's signal: statistically cheap AND already showing price momentum.",
-    "Buy Zone":      "A timing label for whether the current price sits in a sensible entry area.",
-    # ── Ownership & Governance ──
-    "Promoter %":    "How much of the company the founders/controlling owners (promoters) hold. High skin-in-the-game is usually reassuring.",
-    "Pledge %":      "How much of the promoters' shares are pledged as loan collateral. High pledging is a governance risk.",
-    "FII %":         "Stake held by Foreign Institutional Investors.",
-    "DII %":         "Stake held by Domestic Institutional Investors (Indian mutual funds, insurers).",
-    "Promoter Chg":  "Change in promoter holding in the latest quarter. Buying is a positive sign; selling can be a warning.",
-    "Promoter 3Y Δ": "Change in promoter holding over 3 years — the longer-term ownership trend.",
-    "FII Chg":       "Change in foreign-institution holding in the latest quarter.",
-    "DII Chg":       "Change in domestic-institution holding in the latest quarter.",
-    "Smart Money":   "A read on whether informed institutional money is flowing in.",
-    "Gov Bonus":     "Governance bonus — a score rewarding clean ownership signals (high promoter skin, no pledging, no dilution).",
-    "Mgmt Integrity":"A 0-3 read on management trustworthiness from accounting and ownership behaviour.",
-    "Dilution Flag": "Flags whether the company has been issuing lots of new shares (diluting existing holders).",
-    # ── Technical & Momentum ──
-    "CRS 50D":       "Comparative Relative Strength over ~50 days — how the stock's price is doing versus the market, recently.",
-    "CRS 26W":       "Relative strength versus the market over ~26 weeks (about 6 months).",
-    "CRS 52W":       "Relative strength versus the market over ~52 weeks (about a year).",
-    "RS Composite":  "A blended relative-strength rank — leadership versus the whole market (higher = stronger leader).",
-    "RSI 14D":       "Relative Strength Index (14-day) — a 0-100 momentum gauge; very high can mean overbought, very low oversold.",
-    "Vol Ratio":     "Recent trading volume versus its own average — above 1 means unusually heavy activity.",
-    "Dist 52WH":     "How far below its 52-week high the price is. Near the high (small number) shows strength.",
-    "VSTOP Green":   "Whether the price is above its volatility-stop trend line (a simple 'trend is up' check).",
-    "Breakout Scr":  "A score for how close the stock is to breaking out of a price base to new highs.",
-    "Momentum Scr":  "The engine's overall price-momentum score (0-100).",
-    "Weinstein Stage":"Stan Weinstein's stage of the price cycle — Stage 2 (advancing) is the buy zone, Stage 4 (declining) is avoid.",
-    # ── Forensic Summary ──
-    "Red Flags":     "How many accounting/governance warning signs fired, out of all the forensic checks. Fewer is better.",
-    "Forensic Scr":  "An overall accounting-cleanliness score (0-100). Higher means fewer warning signs.",
-    "Forensic Mult": "The penalty multiplier the forensic flags apply to the final score — 100% means no penalty, lower means the score was cut for risk.",
-    "Accruals Ratio":"The gap between reported profit and real cash. A big positive gap warns profit isn't turning into cash; negative (like -0.10) is healthy/conservative.",
-    "Econ Profit":   "Economic profit — profit left after charging for the cost of all the capital used. Positive means genuine value creation.",
-    "EP Spread":     "Economic-profit spread — the return on capital minus the cost of capital (ROIC − WACC). Positive means it earns more than its capital costs.",
-    "Earnings Power":"Heiserman's earnings-power box — whether profits are backed by both strong economics and real cash.",
-    "QGLP Score":    "Motilal Oswal's QGLP score — Quality, Growth, Longevity, Price combined into one number.",
-    "QGLP Pass":     "Whether the stock clears the full QGLP quality-growth-price screen.",
-    "Composite Scr": "The final blended score (0-100) after quality, momentum and the forensic penalty — the engine's headline number.",
-    "Conviction Tier":"The final conviction bucket (Tier 1 = highest conviction, Tier 5 = lowest), set by the composite score after penalties.",
-    # ── MOSL Wealth Creation Signals ──
-    "Corporate Class":"Motilal Oswal's Great / Good / Gruesome label for capital-allocation quality (Great creates value, Gruesome destroys it).",
-    "EMC Sector-Beat":"Economic-moat check — in how many of 5 timeframes the company's returns beat its sector.",
-    "EMC Flag":      "Whether the company shows a durable economic moat versus its sector.",
-    "CAP Years":     "Competitive Advantage Period — for how many years (of 5 checked) returns stayed above the cost of capital.",
-    "GAP Years":     "Growth Advantage Period — for how many years (of 3 checked) growth stayed above a high bar.",
-    "CAP-GAP Score": "A combined score for how long the company has sustained both high returns and high growth.",
-    "Consistency Champ":"Whether profits have grown steadily (a 'consistent' compounder) rather than lumpily.",
-    "PAT Falls >10%":"In how many of the last 5 years profit fell more than 10% — a volatility/consistency check.",
-    "Volatile Flag": "Flags an earnings profile that swings a lot year to year.",
-    "EP Quintile":   "Which fifth (1 = best) the company falls into on economic-profit power versus the universe.",
-    "EP Top Q1/Q2":  "Whether the company is in the top two-fifths for economic-profit creation.",
-    "Winner Category":"Whether it sits in a sector enjoying a structural tailwind.",
-    "Sector Leader":  "How strong a leader the company is inside its own sector (0-100), judged against sector peers rather than the whole market.",
-    "Winning Invest.":"Whether it's a category leader inside a winning sector.",
-    "100x Candidate":"Passes Motilal Oswal's tough small-cap screen for stocks that could compound enormously over the long run.",
-    "Mid→Mega":      "A mid-cap candidate with the profile to grow into a mega-cap.",
-    "Bruised Blue Chip":"A high-quality company trading unusually cheap (below 2x book) after a setback.",
-    "Growth-Value Trap":"Warns of a company that grows but earns less than its cost of equity — growth that destroys value.",
-    "Cyclical Peak Trap":"Warns of a commodity/cyclical stock that looks cheap at peak-cycle profits but is actually expensive.",
-    "Atoms/Bits":    "Whether the business is physical-goods ('Atoms') or asset-light/digital ('Bits'), which changes how to value it.",
-    "PSG":           "Price-to-Sales-to-Growth — a sales-based valuation lens useful for fast growers whose PE/PEG can mislead.",
-    # ── Layer-1 hero + Layer-2 scorecard jargon (the terms the casual reader meets FIRST) ──
-    # The 6 verdict axes (verdict_axis_*) — explain what each axis WEIGHS, never the value.
-    "Moat Axis":       "The verdict's competitive-advantage axis — how durable and wide the company's moat is (returns on capital + IBAS moat sources). One of the 6 axes the verdict weighs.",
-    "Growth Axis":     "The verdict's growth axis — how fast and how durably sales and earnings are compounding. One of the 6 axes the verdict weighs.",
-    "Valuation Axis":  "The verdict's valuation axis — how the price compares to the quality and earnings you get (PE vs fair PE, earnings yield, payback). One of the 6 axes.",
-    "Balance Axis":    "The verdict's balance-sheet axis — financial strength and debt safety (debt-to-equity, interest cover, net cash). One of the 6 axes.",
-    "Governance Axis": "The verdict's governance axis — ownership quality and management trust (promoter skin-in-the-game, pledging, dilution). One of the 6 axes.",
-    "Forensics Axis":  "The verdict's forensics axis — accounting cleanliness and warning-sign count (Piotroski, red flags, balance-sheet bloat). One of the 6 axes.",
-    # Deep Signals strip — cross-cutting synthesis metrics.
-    "WCS":            "Wealth-Creation Score — a 0-to-9 composite of the Motilal Oswal wealth-creation tests (quality, growth and longevity together). Higher means more of those traits are present.",
-    "Econ-Profit":    "Economic profit — the profit left after charging for the cost of ALL the capital the business uses, shown here in ₹ crore. Positive means it earns more than its capital costs.",
-    "VCR":            "Value-Creation Ratio — how many rupees of market value the company created per rupee of capital it retained. Around 1x is break-even on reinvestment.",
-    "Terms-of-Trade": "Working-capital terms-of-trade — the gap in days between how fast the company collects from customers and pays its suppliers. Positive means suppliers fund its working capital.",
-    "Cash-Machine":   "Cash-Machine score (0-100) — how reliably the business turns reported profit into actual operating cash. Higher means profits are well backed by cash.",
-    # Entry Timing strip — momentum reads (the WHEN, not the WHAT).
-    "RS":             "Relative Strength — how the stock's price has performed against the whole market (0-100). Higher means it is leading the market.",
-    "Traj":           "Price trajectory — the slope/shape of the recent price trend; a positive value means the trend is pointing up.",
-    "EPS-Accel":      "Earnings acceleration — whether profit growth is speeding up (▲) or slowing down (▼) versus the prior period, not merely growing.",
-    "Vol":            "Volume score (0-100) — whether recent trading volume is confirming the price move; higher means heavier, conviction-backed activity.",
-    # Hero headline numbers.
-    "Composite Score":   "The engine's headline 0-100 score — quality, momentum and the forensic penalty blended into one number. It sets the conviction tier shown beside it.",
-    "Evidence Coverage": "How much real data the score rests on — the % of the core ranked inputs that were actually present (not estimated). A high score on low coverage is less reliable.",
-}
-
-
-def help_chip(label: str = "", tip: str = "") -> str:
-    """Pure-CSS "?" hover affordance — the SINGLE source of the ``.ts-help`` chip markup.
-
-    Looks up the plain-language explanation in ``_RAW_GLOSSARY`` by ``label`` unless an explicit
-    ``tip`` is given (explicit wins, mirroring ``_cell``'s ``help=`` override). Returns ``""`` when
-    there is nothing to explain — so a term with no glossary entry gets no chip rather than a bare
-    "?". No widget, no JS, no state: safe anywhere in the stateless UI layer (CLAUDE.md §5).
-    """
-    text = tip or _RAW_GLOSSARY.get(label, "")
-    if not text:
-        return ""
-    return f'<span class="ts-help" data-tip="{_esc(text)}">?</span>'
+# Plain-language "?" help: the chip renderer (help_chip) and the _RAW_GLOSSARY single source of truth
+# now live in ui/ui_components.py (which owns the .ts-help CSS). They are re-imported at the top of
+# this module, so existing `from ui.ui_tearsheet import help_chip / _RAW_GLOSSARY` callers (incl. the
+# scanner and the tests) keep resolving against the SAME objects — one definition, zero drift.
 
 
 def render_raw_signals(stock: pd.Series):
