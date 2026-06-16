@@ -19,6 +19,10 @@ run_schilit_analysis.py
 *.txt
 !requirements.txt
 
+# Serena MCP machine-local config + symbol cache
+.serena/
+.mcp.json
+
 # ── Python caches & virtual env ──
 __pycache__/
 *.pyc
