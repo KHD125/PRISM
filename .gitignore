@@ -15,6 +15,9 @@ parse_book.py
 compile_ub_codex.py
 run_schilit_analysis.py
 
+# Handover docs — local-only/private (docs/ is ignored above; this guards the root README front door)
+/README.md
+
 # Personal working notes
 *.txt
 !requirements.txt
