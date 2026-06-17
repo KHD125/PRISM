@@ -169,3 +169,22 @@ def test_rank_tracks_post_penalty_composite():
     assert df.sort_values("rank")["composite_score"].is_monotonic_decreasing, \
         "sorting by rank must yield non-increasing composite_score (rank must track the penalized score)"
     assert int(df.loc[df["composite_score"].idxmax(), "rank"]) == 1, "the top composite stock must be rank 1"
+
+
+@pytest.mark.slow
+def test_smart_money_flow_never_mislabels_distribution():
+    """Wyckoff invariant: a stock with BOTH institutions selling AND the price underperforming
+    (change_fii_lq<0 & change_dii_lq<0 & crs_50d<0) is being distributed — it must NEVER read as
+    accumulation/interest, even on high volume. Regression guard for the np.select ordering bug
+    where the volume-driven 'Moderate Interest' tier pre-empted 'Distribution' (8 stocks incl.
+    Matrimony.com mislabelled). Distribution is now evaluated first + Moderate requires crs_50d>=0."""
+    import io, contextlib
+    from core.data_engine import fetch_and_clean_data
+    with contextlib.redirect_stdout(io.StringIO()):
+        df = fetch_and_clean_data("local")
+    fii, dii, crs = df["change_fii_lq"].fillna(0), df["change_dii_lq"].fillna(0), df["crs_50d"].fillna(0)
+    distrib = (fii < 0) & (dii < 0) & (crs < 0)
+    assert distrib.sum() > 0, "expected some distributing stocks in the live universe"
+    bad = df.loc[distrib, "smart_money_flow"].isin(
+        ["✅ Moderate Interest", "🎯 Strong Accumulation", "🌊💎 Elite Accumulation"])
+    assert not bad.any(), "a distributing stock (FII<0 & DII<0 & CRS<0) must never read as accumulation/interest"
