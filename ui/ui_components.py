@@ -576,7 +576,7 @@ _RAW_GLOSSARY = {
     "Earnings Yield":"Profit per share divided by price — the flip side of PE, shown as a % (like an interest rate the earnings 'pay').",
     "PE vs 10Y Med": "Today's PE versus the stock's own 10-year average PE — is it expensive or cheap against its own history.",
     "EV/EBITDA Dir": "Enterprise value to EBITDA — a debt-aware valuation multiple ('Dir' = taken directly, not proxied).",
-    "Payback Ratio": "Roughly how many years of current free cash flow it would take to earn back the price you pay.",
+    "Payback Ratio": "MOSL payback — the price you pay (market cap) divided by the company's expected cumulative profit over the next 5 years. Below 1× means under ~5 years of earnings covers the price; lower is a faster payback.",
     "P/E vs ROE MoS":"Margin of safety from comparing the PE you pay against the quality (ROE) you get.",
     "Valuation Scr": "The engine's overall valuation score (0-100). Higher = cheaper for the quality.",
     "O'Shaughnessy VC":"O'Shaughnessy Value Composite — a combined cheapness rank across several value measures (PE, PB, PS, EV/EBITDA, cash flow).",
@@ -650,11 +650,11 @@ _RAW_GLOSSARY = {
     "Governance Axis": "The verdict's governance axis — ownership quality and management trust (promoter skin-in-the-game, pledging, dilution). One of the 6 axes.",
     "Forensics Axis":  "The verdict's forensics axis — accounting cleanliness and warning-sign count (Piotroski, red flags, balance-sheet bloat). One of the 6 axes.",
     # Deep Signals strip — cross-cutting synthesis metrics.
-    "WCS":            "Wealth-Creation Score — a 0-to-9 composite of the Motilal Oswal wealth-creation tests (quality, growth and longevity together). Higher means more of those traits are present.",
+    "WCS":            "Wealth-Creation Score — a 0-to-10 composite of the Motilal Oswal wealth-creation tests (quality, growth and longevity together). Higher means more of those traits are present.",
     "Econ-Profit":    "Economic profit — the profit left after charging for the cost of ALL the capital the business uses, shown here in ₹ crore. Positive means it earns more than its capital costs.",
-    "VCR":            "Value-Creation Ratio — how many rupees of market value the company created per rupee of capital it retained. Around 1x is break-even on reinvestment.",
+    "VCR":            "Value-Creation Ratio — the company's return on capital divided by its ~12% cost of equity. Above 1× means it earns more than its capital costs (genuine value creation); around 1× is break-even.",
     "Terms-of-Trade": "Working-capital terms-of-trade — the gap in days between how fast the company collects from customers and pays its suppliers. Positive means suppliers fund its working capital.",
-    "Cash-Machine":   "Cash-Machine score (0-100) — how reliably the business turns reported profit into actual operating cash. Higher means profits are well backed by cash.",
+    "Cash-Machine":   "Cash-Machine score (0, 50 or 100) — how reliably the business turns reported profit into operating cash: 100 = all profit converts to cash with surplus free cash, 50 = solid conversion, 0 = paper profits.",
     # Entry Timing strip — momentum reads (the WHEN, not the WHAT).
     "RS":             "Relative Strength — how the stock's price has performed against the whole market (0-100). Higher means it is leading the market.",
     "Traj":           "Price trajectory — the slope/shape of the recent price trend; a positive value means the trend is pointing up.",

@@ -1388,7 +1388,7 @@ def render_verdict_scorecard(stock: pd.Series):
 
     # ── Deep Signals: cross-cutting synthesis metrics that were computed-but-invisible ──
     # (WCS wealth-creation composite, economic profit, Buffett VCR, terms-of-trade, cash machine).
-    # Scales verified 2026-06-14: wcs 0-9, EP ₹Cr, VCR ~1x, ToT days, cash 0-100.
+    # Scales verified 2026-06-14: wcs 0-10, EP ₹Cr, VCR ~1x, ToT days, cash 0/50/100.
     def _ds(label, val_str, good):
         clr = (COLORS["green"] if good is True else
                COLORS["red"] if good is False else COLORS["text_secondary"])
@@ -1400,7 +1400,7 @@ def render_verdict_scorecard(stock: pd.Series):
     _vcr, _tot, _cash = _v("value_creation_ratio"), _v("terms_of_trade_spread"), _v("cash_machine_score")
     _ep_str = (f"₹{_ep:,.0f}cr" if _ep == _ep else "—")
     deep = "".join([
-        _ds("WCS",            (f"{_wcs:.0f}/9"  if _wcs  == _wcs  else "—"), (_wcs  >= 5)   if _wcs  == _wcs  else None),
+        _ds("WCS",            (f"{_wcs:.0f}/10" if _wcs  == _wcs  else "—"), (_wcs  >= 5)   if _wcs  == _wcs  else None),
         _ds("Econ-Profit",    _ep_str,                                       (_ep   > 0)    if _ep   == _ep   else None),
         _ds("VCR",            (f"{_vcr:.1f}x"   if _vcr  == _vcr  else "—"), (_vcr  >= 1.0) if _vcr  == _vcr  else None),
         _ds("Terms-of-Trade", (f"{_tot:+.0f}d"  if _tot  == _tot  else "—"), (_tot  > 0)    if _tot  == _tot  else None),
