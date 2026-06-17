@@ -715,11 +715,16 @@ with tabs[1]:
             </div>
             """, unsafe_allow_html=True)
 
-        # ── Export — matches the displayed rows (ds_df: search-filtered + sorted) ──
+        # ── Export — the CURATED columns (the deduped union of all 5 view presets, ~40 meaningful
+        # cols) instead of the ~500 raw internal columns (rf_/cat_/vqs_/proxies). Rows are the
+        # searched/sorted ds_df; the column set is auto-derived from _DS_VIEWS so it never drifts,
+        # and it's ~10x smaller to serialize on every rerun. ──
+        _export_cols = [c for c in dict.fromkeys(_c for _v in _DS_VIEWS.values() for _c in _v)
+                        if c in ds_df.columns]
         _safe_mandate = _sel_mandate.replace(" ", "_").lower()
         st.download_button(
-            f"📥 Export {len(ds_df)} stocks — {_sel_mandate} / {scoring_profile}",
-            data=ds_df.to_csv(index=False),
+            f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {_sel_mandate} / {scoring_profile}",
+            data=ds_df[_export_cols].to_csv(index=False),
             file_name=f"scan_{_safe_mandate}_{scoring_profile.lower()}.csv",
             mime="text/csv",
             use_container_width=True,
