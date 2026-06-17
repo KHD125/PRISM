@@ -8,6 +8,7 @@ so the help reaches the casual reader, not only the expert who drills to the dee
 
 Same testing style as test_all_data_surfacing.py: static source-block inspection + glossary import.
 """
+import ast
 import re
 from pathlib import Path
 
@@ -256,3 +257,51 @@ def test_discovery_filter_has_help_text(label):
     nxt = re.search(r"(st\.selectbox|st\.slider|st\.checkbox|st\.multiselect|_ms_cascade)\(", rest[1:])
     window = rest[: (nxt.start() + 1) if nxt else 500]
     assert "help=" in window, f"the {label!r} discovery filter must have a help= tooltip"
+
+
+# ── Deep Scanner: every column a view-preset surfaces must explain itself on hover ──
+# The 5 column-view presets (app.py `_DS_VIEWS`) are what a user deliberately switches between, so
+# every column they expose should carry an AgGrid headerTooltip. This pins the scanner tip map to the
+# preset definition — a future preset column can't ship as a bare machine-name header.
+_DS_IDENTITY_COLS = {"name", "sector", "market_category"}
+
+
+def _ds_view_columns() -> set:
+    """Every column string across app.py's inline `_DS_VIEWS` preset dict (AST — no execution)."""
+    app_src = (Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8")
+    tree = ast.parse(app_src, filename="app.py")
+    cols: set = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "_DS_VIEWS" for t in node.targets)
+            and isinstance(node.value, ast.Dict)
+        ):
+            for value in node.value.values:
+                if isinstance(value, ast.List):
+                    for el in value.elts:
+                        if isinstance(el, ast.Constant) and isinstance(el.value, str):
+                            cols.add(el.value)
+    return cols
+
+
+_DS_VIEW_COLS = _ds_view_columns()
+
+
+def test_ds_views_parsed_nonempty():
+    """Guard against a vacuous pass if the AST parse / _DS_VIEWS location ever changes."""
+    assert len(_DS_VIEW_COLS) >= 20, (
+        f"expected ~33 preset columns parsed from app.py _DS_VIEWS, got {len(_DS_VIEW_COLS)}"
+    )
+
+
+def test_every_scanner_preset_column_has_header_tip():
+    """Every non-identity column the Deep Scanner's view presets surface must have a header tooltip —
+    so switching to Quality / Valuation / Forensic / Technical never shows bare machine-name headers."""
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+
+    missing = sorted(
+        c for c in _DS_VIEW_COLS
+        if c not in _DS_IDENTITY_COLS and c not in _SCANNER_HEADER_TIPS
+    )
+    assert not missing, f"Deep Scanner preset columns with no header tooltip: {missing}"

@@ -27,6 +27,39 @@ _SCANNER_HEADER_TIPS = {
     "forensic_score":   _GLOSSARY["Forensic Scr"],
     "red_flag_count":   _GLOSSARY["Red Flags"],
     "momentum_score":   _GLOSSARY["Momentum Scr"],
+    # ── Deep Scanner view-preset columns (Quality / Valuation / Forensic / Technical) ──
+    # Reuse the SAME glossary the tearsheet "?" chip uses (single source of truth); bespoke text only
+    # where a column has no tearsheet-cell glossary entry. Coverage is pinned by
+    # tests/test_tooltip_coverage.py::test_every_scanner_preset_column_has_header_tip.
+    "smart_money_flow":       _GLOSSARY["Smart Money"],
+    "quality_score":          "Overall fundamental quality sub-score (0-100): moat + growth + cash + governance, before the forensic penalty.",
+    "moat_score":             _GLOSSARY["Moat Score"],
+    "growth_score":           _GLOSSARY["Growth Score"],
+    "governance_bonus":       _GLOSSARY["Governance Score"],
+    "piotroski_fscore":       _GLOSSARY["Piotroski"],
+    "roce":                   _GLOSSARY["ROCE Current"],
+    "opm":                    _GLOSSARY["OPM"],
+    "cfo_to_pat":             _GLOSSARY["CFO/PAT"],
+    "valuation_score":        _GLOSSARY["Valuation Scr"],
+    "expected_excess_return": "Mauboussin expected-value excess return (%): the probability-weighted upside-versus-downside payoff over the base case.",
+    "pe":                     _GLOSSARY["PE"],
+    "pb_ratio":               _GLOSSARY["P/B"],
+    "peg":                    _GLOSSARY["PEG"],
+    "earnings_yield":         _GLOSSARY["Earnings Yield"],
+    "fcf_yield":              _GLOSSARY["FCF Yield"],
+    "market_cap":             "Total market value of the company's equity (price × shares), in ₹ crore.",
+    "accruals_ratio":         _GLOSSARY["Accruals Ratio"],
+    "debt_to_equity":         _GLOSSARY["D/E Ratio"],
+    "promoter_holdings":      _GLOSSARY["Promoter %"],
+    "pledged_percentage":     _GLOSSARY["Pledge %"],
+    "rsi_14d":                _GLOSSARY["RSI 14D"],
+    "dist_52wh":              _GLOSSARY["Dist 52WH"],
+    "crs_52w":                _GLOSSARY["CRS 52W"],
+    "weinstein_stage":        _GLOSSARY["Weinstein Stage"],
+    "breakout_score":         _GLOSSARY["Breakout Scr"],
+    "vstop_green":            _GLOSSARY["VSTOP Green"],
+    "gate_pass":              "Whether the stock clears ALL the engine's hard quality gates (e.g. ROCE, growth, positive-PAT floors).",
+    "tsunami_signal":         "A rare confluence flag — a quality breakout meeting institutional accumulation; fires for only a handful of stocks by design.",
 }
 
 def render_scanner_grid(df: pd.DataFrame, priority_cols: list = None):
