@@ -1089,9 +1089,9 @@ with tabs[2]:
                 "Value":  df[df["name"] == selected].iloc[0].values,
             })
             st.download_button(
-                f"📥 Export {selected} — All Signals",
+                f"📥 Export {selected} — Full Data Row (all columns)",
                 data=_stock_export.to_csv(index=False),
-                file_name=f"{selected.replace(' ','_').replace(':','').lower()}_signals.csv",
+                file_name=f"{re.sub(r'[^A-Za-z0-9._-]+', '_', selected).lower()}_signals.csv",
                 mime="text/csv",
                 use_container_width=True,
             )
