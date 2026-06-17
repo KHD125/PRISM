@@ -676,23 +676,23 @@ def render_forensic_perimeter(stock: pd.Series):
     <div class="ts-kpi-strip">
       <div class="ts-kpi-cell" style="border-top:3px solid {flag_color};">
         <div class="ts-kpi-val" style="color:{flag_color};">{flag_count}</div>
-        <div class="ts-kpi-lbl">Red Flags / {FORENSIC_MAX_FLAGS}</div>
+        <div class="ts-kpi-lbl">Red Flags / {FORENSIC_MAX_FLAGS}{help_chip('Red Flags')}</div>
       </div>
       <div class="ts-kpi-cell" style="border-top:3px solid {fsc_clr};">
         <div class="ts-kpi-val" style="color:{fsc_clr};">{forensic_score:.0f}</div>
-        <div class="ts-kpi-lbl">Forensic Score</div>
+        <div class="ts-kpi-lbl">Forensic Score{help_chip('Forensic Scr')}</div>
       </div>
       <div class="ts-kpi-cell" style="border-top:3px solid {mult_color};">
         <div class="ts-kpi-val" style="color:{mult_color};">{f_mult:.0%}</div>
-        <div class="ts-kpi-lbl">Score Multiplier</div>
+        <div class="ts-kpi-lbl">Score Multiplier{help_chip('Forensic Mult')}</div>
       </div>
       <div class="ts-kpi-cell" style="border-top:3px solid {pio_clr};">
         <div class="ts-kpi-val" style="color:{pio_clr};">{piotroski}/9</div>
-        <div class="ts-kpi-lbl">Piotroski F-Score</div>
+        <div class="ts-kpi-lbl">Piotroski F-Score{help_chip('Piotroski')}</div>
       </div>
       <div class="ts-kpi-cell" style="border-top:3px solid {COLORS['purple']};">
         <div class="ts-kpi-val" style="color:{COLORS['purple']};">{mgmt_int}/3</div>
-        <div class="ts-kpi-lbl">Mgmt Integrity</div>
+        <div class="ts-kpi-lbl">Mgmt Integrity{help_chip('Mgmt Integrity')}</div>
       </div>
     </div>
     <div style="font-size:0.72rem;color:{COLORS['text_muted']};margin-bottom:12px;">

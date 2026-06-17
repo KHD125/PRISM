@@ -305,3 +305,28 @@ def test_every_scanner_preset_column_has_header_tip():
         if c not in _DS_IDENTITY_COLS and c not in _SCANNER_HEADER_TIPS
     )
     assert not missing, f"Deep Scanner preset columns with no header tooltip: {missing}"
+
+
+# ── Forensics tab: the 5 Forensic-Perimeter KPIs explain themselves (the headline forensic numbers) ──
+# The Score Multiplier especially — it IS the penalty that cuts the composite, so a bare "75%" is
+# meaningless without the chip. The red-flag rows / Schilit / Fisher already self-document inline.
+_FORENSIC_KPI_KEYS = ["Red Flags", "Forensic Scr", "Forensic Mult", "Piotroski", "Mgmt Integrity"]
+
+
+@pytest.mark.parametrize("key", _FORENSIC_KPI_KEYS)
+def test_forensic_kpi_terms_have_glossary(key):
+    from ui.ui_components import _RAW_GLOSSARY
+
+    assert key in _RAW_GLOSSARY, f"forensic KPI term {key!r} must have a glossary entry"
+    assert len(_RAW_GLOSSARY[key].strip()) >= 20, f"{key!r} tooltip too short to be real"
+
+
+def test_forensic_perimeter_wires_kpi_help_chips():
+    """The Forensic Perimeter's 5 headline KPIs (Red Flags / Forensic Score / Score Multiplier /
+    Piotroski / Mgmt Integrity) must each carry a '?' sourced from the shared glossary."""
+    block = _fn_block("render_forensic_perimeter")
+    assert "help_chip(" in block, "the forensic KPI strip must wire help_chip"
+    for k in _FORENSIC_KPI_KEYS:
+        assert (f"help_chip('{k}')" in block) or (f'help_chip("{k}")' in block), (
+            f"forensic KPI {k!r} is not wired with help_chip"
+        )
