@@ -562,7 +562,7 @@ _RAW_GLOSSARY = {
     "Promoter 3Y Δ": "Change in promoter holding over 3 years — the longer-term ownership trend.",
     "FII Chg":       "Change in foreign-institution holding in the latest quarter.",
     "DII Chg":       "Change in domestic-institution holding in the latest quarter.",
-    "Smart Money":   "A read on whether informed institutional money is flowing in.",
+    "Smart Money":   "An accumulation read that blends recent trading volume, institutional (FII/DII) flow, and price strength. Volume is the heaviest input, so it reflects buying interest broadly — not purely institutional money.",
     "Gov Bonus":     "Governance bonus — a score rewarding clean ownership signals (high promoter skin, no pledging, no dilution).",
     "Mgmt Integrity":"A 0-3 read on management trustworthiness from accounting and ownership behaviour.",
     "Dilution Flag": "Flags whether the company has been issuing lots of new shares (diluting existing holders).",
