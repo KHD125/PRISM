@@ -819,12 +819,17 @@ def _compute_trend_score(df: pd.DataFrame) -> pd.Series:
     if "vstop_fresh" in df.columns:
         score += df["vstop_fresh"].fillna(0) * 100 * TREND_SIGNALS["vstop_fresh"]
 
-    # ADX strength (> 25 is strong trend)
+    # ADX strength (> 25 is strong trend). NaN guard FIRST: a missing ADX is unknown trend strength,
+    # so it scores neutral 50 (consistent with rs/rsi/volume) — NOT weak 10. Without the isna() branch
+    # np.where collapses NaN to the final 10 and the trailing .fillna(50) is dead. Semantic-truth:
+    # missing != weak.
     if "adx_14w" in df.columns:
-        adx_score = np.where(df["adx_14w"] >= 25, 100,
-                   np.where(df["adx_14w"] >= 20, 70,
-                   np.where(df["adx_14w"] >= 15, 40, 10)))
-        score += pd.Series(adx_score, index=df.index).fillna(50) * TREND_SIGNALS["adx_strong"]
+        _adx = df["adx_14w"]
+        adx_score = np.where(_adx.isna(), 50,
+                   np.where(_adx >= 25, 100,
+                   np.where(_adx >= 20, 70,
+                   np.where(_adx >= 15, 40, 10))))
+        score += pd.Series(adx_score, index=df.index) * TREND_SIGNALS["adx_strong"]
 
     # RSI zone scoring
     if "rsi_14d" in df.columns:
