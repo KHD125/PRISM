@@ -1511,7 +1511,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     pledge_cc     = df.get("pledged_percentage", _cc_nan)
     # Individual year revenue growth checks (years 2-5 back).
     # Book: "revenue growth of 10% every year for ten consecutive years" (Ch.2, p.48).
-    # StockScan provides Revenue 2-5YB → we verify years 2-5 individually; years 6-10 via CAGR.
+    # Prism provides Revenue 2-5YB → we verify years 2-5 individually; years 6-10 via CAGR.
     # fillna(5): missing year data doesn't penalize — treated as meeting the threshold.
     # Floor relaxed from 10% → 5% to absorb the COVID-19 pandemic anomaly year.
     _cc_y2 = df.get("rev_gr_y2", _cc_nan).fillna(5)

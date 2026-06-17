@@ -116,10 +116,11 @@ with st.sidebar:
     data_ready = False
 
     if st.session_state.data_source == "sheet":
-        # DEV CONVENIENCE: STOCKSCAN_SHEET_ID env var pre-fills the box so a local dev server boots
+        # DEV CONVENIENCE: PRISM_SHEET_ID env var pre-fills the box so a local dev server boots
         # WITH data (no manual sidebar entry) → fast Playwright/visual-check loop. Unset in prod
-        # (Streamlit Cloud never sets it) → identical behaviour to before.
-        _default_sheet = os.environ.get("STOCKSCAN_SHEET_ID", "")
+        # (Streamlit Cloud never sets it) → identical behaviour to before. The legacy
+        # STOCKSCAN_SHEET_ID is still honored (backward-compat) so existing dev/deploy envs keep working.
+        _default_sheet = os.environ.get("PRISM_SHEET_ID") or os.environ.get("STOCKSCAN_SHEET_ID", "")
         sheet_id = st.text_input("Google Sheets URL or ID", value=_default_sheet,
                                  placeholder="Enter Google Sheet ID...")
         if sheet_id:

@@ -1779,7 +1779,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # earnings yield is EBIT/EV, NOT net-income/price (= 100/PE = the `earnings_yield` above).
     # Greenblatt insists on EBIT/EV precisely to neutralize the capital-structure and tax-rate
     # differences that distort net-income/price.
-    # EV SOURCE (2026-06-13): use the DIRECT `enterprise_value` column (real Stockscan figure,
+    # EV SOURCE (2026-06-13): use the DIRECT `enterprise_value` column (real Prism figure,
     # 2106/2107 coverage) — replaces the prior `ev_ebitda × ebitda` reconstruction (proxy). The
     # reconstruction is kept ONLY as a per-row fallback where the direct EV is missing/non-positive.
     # Separate column so the shared earnings_yield (Parikh, valuation scoring) is untouched.
