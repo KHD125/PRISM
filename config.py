@@ -45,12 +45,12 @@ COST_OF_EQUITY = 12.0
 INDIA_GSEC_YIELD = 7.0   # India 10-year G-Sec proxy (update when RBI policy shifts)
 
 CSV_FILES = {
-    "ratio":         _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Ratio.csv"),
-    "income":        _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Income Statement.csv"),
-    "balance":       _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Balance Sheet.csv"),
-    "cashflow":      _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Cashflow.csv"),
-    "shareholding":  _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Shareholdings.csv"),
-    "technical":     _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Stockscan - Technicals.csv"),
+    "ratio":         _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Prism - Ratio.csv"),
+    "income":        _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Prism - Income Statement.csv"),
+    "balance":       _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Prism - Balance Sheet.csv"),
+    "cashflow":      _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Prism - Cashflow.csv"),
+    "shareholding":  _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Prism - Shareholdings.csv"),
+    "technical":     _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Prism - Technicals.csv"),
 }
 
 # Google Sheets Configuration

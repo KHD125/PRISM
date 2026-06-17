@@ -25,12 +25,13 @@ np.seterr(all='ignore')
 
 # Common columns present in every CSV (joined on companyId)
 COMMON_COLS = {
+    # Genuinely common, stable identity/context columns (present in every tab, rarely change).
+    # Market data (close_price / market_cap / market_category) was REMOVED from here and now lives
+    # ONLY in TECHNICAL_COLS — the single source of truth. Keeping them here made the merge source
+    # them from whichever tab had them first (ratio→…→technical), which silently used stale prices.
     "companyId": "company_id",
     "Name": "name",
-    "Market Capitalization": "market_cap",
-    "Market Category": "market_category",
     "Eligibity": "eligibility",
-    "Close Price": "close_price",
     "Industry": "industry",
     "Sector": "sector",
 }
@@ -231,8 +232,9 @@ SHAREHOLDING_COLS = {
 }
 
 TECHNICAL_COLS = {
-    # FOUNDATION
+    # FOUNDATION — market data lives here ONLY (single source of truth; see COMMON_COLS note)
     "Market Capitalization": "market_cap",
+    "Market Category": "market_category",
     "Close Price": "close_price",
     # PRIMARY TRIGGER (VSTOP 14W 2.5 — optimal timeframe + sensitivity)
     "VSTOP 14W 2.5": "vstop_value",
@@ -539,8 +541,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         "operating_cash_flow", "ocf_1yb",
         "investing_cash_flow", "financing_cash_flow",
         "net_cash_flow", "ncf_1yb",
-        # ── Technicals ──
-        "close_price",
+        # ── Technicals ── (close_price/market_cap/market_category are Technicals-only now → backstop all 3)
+        "close_price", "market_cap", "market_category",
         "sma_200d", "sma_50d",
         "vol_sma_5d", "vol_sma_10d", "vol_sma_20d", "vol_sma_50d",
         "volume",
@@ -1219,16 +1221,21 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     df["smart_money_flow"] = np.select(
         [
+            # Distribution FIRST — Wyckoff: heavy volume on a FALLING price is distribution, not
+            # "interest". Evaluating it before the volume-driven Moderate tier stops high-volume
+            # selling (both institutions exiting + price weak) from being mislabelled accumulation.
+            (_ch_fii_lq.fillna(0) < 0) & (_ch_dii_lq.fillna(0) < 0) & (_crs50d.fillna(0) < 0),
             (df["vqs_score"] >= 80) & (df["inst_convergence"] == 1),
             (df["vqs_score"] >= 60) & ((_ch_fii_lq.fillna(0) > 0) | (_ch_dii_lq.fillna(0) > 0)),
-            (df["vqs_score"] >= 40),
-            (_ch_fii_lq.fillna(0) < 0) & (_ch_dii_lq.fillna(0) < 0) & (_crs50d.fillna(0) < 0)
+            # Moderate now requires price CONFIRMATION (not underperforming the market over 50d) —
+            # volume alone, while the price is falling, is not buying interest.
+            (df["vqs_score"] >= 40) & (_crs50d.fillna(0) >= 0),
         ],
         [
+            "❌ Distribution",
             "🌊💎 Elite Accumulation",
             "🎯 Strong Accumulation",
             "✅ Moderate Interest",
-            "❌ Distribution"
         ],
         default="⚪ Neutral"
     )

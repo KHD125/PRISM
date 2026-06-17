@@ -838,12 +838,12 @@ class TestLifecycleMappingRulesFixture:
 # data_source="upload" and passing the real paths explicitly.
 _CSV_DATA_DIR = ROOT / "Other Resources" / "CSV Data"
 _UPLOADED_FILES = {
-    "ratio":        str(_CSV_DATA_DIR / "Stockscan - Ratio.csv"),
-    "income":       str(_CSV_DATA_DIR / "Stockscan - Income Statement.csv"),
-    "balance":      str(_CSV_DATA_DIR / "Stockscan - Balance Sheet.csv"),
-    "cashflow":     str(_CSV_DATA_DIR / "Stockscan - Cashflow.csv"),
-    "shareholding": str(_CSV_DATA_DIR / "Stockscan - Shareholdings.csv"),
-    "technical":    str(_CSV_DATA_DIR / "Stockscan - Technicals.csv"),
+    "ratio":        str(_CSV_DATA_DIR / "Prism - Ratio.csv"),
+    "income":       str(_CSV_DATA_DIR / "Prism - Income Statement.csv"),
+    "balance":      str(_CSV_DATA_DIR / "Prism - Balance Sheet.csv"),
+    "cashflow":     str(_CSV_DATA_DIR / "Prism - Cashflow.csv"),
+    "shareholding": str(_CSV_DATA_DIR / "Prism - Shareholdings.csv"),
+    "technical":    str(_CSV_DATA_DIR / "Prism - Technicals.csv"),
 }
 
 
