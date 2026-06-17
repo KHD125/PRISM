@@ -4,7 +4,6 @@ UI Rendering Components
 Exposes all frontend visualization and layout rendering modules.
 """
 
-from .ui_scanner import render_scanner_grid
 try:
     from .ui_tearsheet import (
         render_moat_growth_matrix,
@@ -81,7 +80,6 @@ from .ui_components import (
 )
 
 __all__ = [
-    "render_scanner_grid",
     "render_moat_growth_matrix",
     "render_fisher_module",
     "render_ep_power_curve_module",

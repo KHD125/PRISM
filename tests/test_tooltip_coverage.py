@@ -102,11 +102,17 @@ def test_layer2_term_has_plain_language_glossary(term):
 _SCANNER_SRC = Path(__file__).resolve().parent.parent / "ui" / "ui_scanner.py"
 
 
-def test_scanner_configures_header_tooltips():
-    """render_scanner_grid must set AgGrid's native headerTooltip so a raw column name like
-    `composite_score` explains itself on hover (the scanner's first quantitative surface)."""
-    src = _SCANNER_SRC.read_text(encoding="utf-8")
-    assert "headerTooltip" in src, "scanner must set AgGrid headerTooltip for key columns"
+def test_deep_scanner_wires_header_help_tooltips():
+    """The LIVE Deep Scanner (app.py st.dataframe) must wire help= into its column_config from
+    _SCANNER_HEADER_TIPS, so every machine-named header self-explains on hover. Replaces the dead
+    AgGrid headerTooltip contract — render_scanner_grid was retired (it was never rendered)."""
+    app_src = (Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8")
+    assert "from ui.ui_scanner import _SCANNER_HEADER_TIPS" in app_src, (
+        "Deep Scanner must import the shared tooltip map"
+    )
+    assert "help=_SCANNER_HEADER_TIPS.get(" in app_src, (
+        "Deep Scanner column_config must pass help= from _SCANNER_HEADER_TIPS"
+    )
 
 
 def test_scanner_tips_reuse_the_shared_glossary():

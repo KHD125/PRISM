@@ -91,25 +91,32 @@ _FLAG_DISPLAY = {
 # MOAT-GROWTH MATRIX (22nd WCS)
 # ═══════════════════════════════════════════════════════════════
 
+def _moat_growth_plot_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Build the Moat-Growth scatter frame. Moat_Y = ROCE (5y-median → current fallback),
+    Growth_X = PAT CAGR (5y → 3y fallback). REAL-value fallback ONLY — no sentinel fill, so a stock
+    missing BOTH sources for an axis stays NaN and is EXCLUDED (CLAUDE.md §5 semantic-truth; Plotly
+    cannot plot NaN, and 0 would be a false 'destroyer' coordinate). Pure + vectorized — unit-tested
+    by tests/test_moat_growth_matrix.py."""
+    out = df.copy()
+    out["Moat_Y"]   = out["roce_med_5y"].fillna(out["roce"])
+    out["Growth_X"] = out["pat_gr_5y"].fillna(out["pat_gr_3y"])
+    return out[out["Moat_Y"].notna() & out["Growth_X"].notna()]
+
+
 def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
     """
     2D scatter — ROCE (Moat) vs PAT CAGR (Growth) for the entire filtered universe.
 
     Data integrity notes:
-    - Stocks with NaN in BOTH axes are excluded — this is a Plotly rendering requirement,
-      NOT a data deletion bug. Scatter traces cannot plot undefined coordinates.
+    - A stock missing EITHER axis (no ROCE after the 5y→current fallback, OR no growth after the
+      5y→3y fallback) is EXCLUDED — Plotly cannot plot NaN, and 0 would be a false "destroyer"
+      coordinate (CLAUDE.md §5 semantic-truth). The frame is built by _moat_growth_plot_frame().
     - Stocks with Growth_X > viewport are fully RETAINED in the dataset; the axis range
       parameter clips the visual canvas only (G9 FIX). No rows are dropped for outliers.
     """
     st.markdown("<div class='sec-head'>🧭 Moat-Growth Matrix (22nd WCS)</div>", unsafe_allow_html=True)
 
-    plot_df = df.copy()
-    plot_df["Moat_Y"]   = plot_df["roce_med_5y"].fillna(plot_df["roce"]).fillna(0)
-    plot_df["Growth_X"] = plot_df["pat_gr_5y"].fillna(plot_df["pat_gr_3y"]).fillna(0)
-
-    # Plotly requirement: rows where EITHER axis is NaN cannot appear on a scatter trace.
-    # Rows are NOT dropped for being outliers — only for being literally unplottable (both NaN).
-    plot_df = plot_df[plot_df["Moat_Y"].notna() & plot_df["Growth_X"].notna()]
+    plot_df = _moat_growth_plot_frame(df)
 
     if len(plot_df) == 0:
         st.warning("Not enough valid data to plot the matrix.")

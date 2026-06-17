@@ -24,7 +24,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core import (fetch_and_clean_data, run_full_scoring, compute_forensic_signals,
                   apply_forensic_penalty, compute_verdict, run_scoring_pipeline)
-from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_module,
+from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
                 render_financial_insights, render_stock_hero, render_verdict_scorecard, render_score_strip,

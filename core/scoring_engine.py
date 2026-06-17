@@ -2797,6 +2797,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #    Pillar P (Price vs Value): buy_zone_label == "🟢 Perfect Entry (Low Risk)"
     #      dist_to_vstop <= 5% = maximum asymmetric risk/reward entry zone.
     #      Marks: "The ONLY time to act decisively is when price is below intrinsic value."
+    #      (NB: technical vstop proxy, not Marks's fundamental intrinsic-value read — that lives on the QGLP price axis.)
     #      fillna('') = missing label → fails (cannot confirm in buy zone).
     #
     #    Pillar L (Leverage Discipline): debt_to_equity < 0.5

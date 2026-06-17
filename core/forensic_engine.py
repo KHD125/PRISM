@@ -525,8 +525,10 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # all three → ~75% is PAR for a clean 25%-tax company (universe median 68.8%).
     # The 90% line is Coffee Can's ELITE-QUALITY gate (still enforced in fw_coffee_can);
     # as a red flag it fired for 54% of the universe, polluting red_flag_count and the
-    # cascading multiplier. Schilit's own cash detections are CFFO vs Net Income
-    # (rf_low_cfo_pat) and FCF/EBITDA < 0.3 (rf_low_fcf_ebitda) — both implemented.
+    # cascading multiplier. Schilit's own cash detections are qualitative: CFFO
+    # vs Net Income (rf_low_cfo_pat) and the principle that EBITDA misleads as a
+    # cash proxy (rf_low_fcf_ebitda). The FCF/EBITDA < 0.3 cutoff is Malik's
+    # (Vol 3 Shenanigan #5), NOT a Schilit number — the 4th ed. states no ratio.
     # cfo_to_ebitda stored as percentage in CSV (e.g. 92.4 = 92.4%). Threshold = 50.0.
     df["rf_low_cfo_ebitda"] = np.where(
         df.get("cfo_to_ebitda", pd.Series(np.nan, index=df.index)).notna(),
