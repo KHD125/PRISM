@@ -180,6 +180,13 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
                      zeroline=True, zerolinewidth=2, zerolinecolor=COLORS["border"],
                      range=[-25, 105])
     st.plotly_chart(fig, use_container_width=True)
+    st.markdown(
+        f"<div style='font-size:0.6rem;color:{COLORS['text_muted']};margin-top:-6px;margin-bottom:10px;'>"
+        f"Moat (5Y-median ROCE) × Growth (5Y PAT CAGR), split at MOSL's 15% cost-of-equity line — "
+        f"22nd WCS, Exhibit 5. Quadrant = position <b>today</b>; longevity (CAP/GAP duration) is a "
+        f"separate measure this snapshot does not capture.</div>",
+        unsafe_allow_html=True,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════

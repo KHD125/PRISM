@@ -1711,7 +1711,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # MOTILAL OSWAL WEALTH CREATION SIGNALS (30 Annual Studies)
     # ══════════════════════════════════════════════════════════════
 
-    # ── Moat-Growth Matrix (22nd WCS) ──
+    # ── Moat-Growth Matrix (22nd WCS, Exhibit 5 p.7 — "Power of Longevity in Wealth Creation") ──
+    # MOSL's verbatim 2×2: Strong-Moat+High-Growth = "True Wealth Creators" (enduring multi-baggers);
+    # Weak-Moat+High-Growth = "Growth Traps" (transitory multi-baggers); Strong-Moat+Low-Growth =
+    # "Quality Traps" (underperformers); Weak-Moat+Low-Growth = "Wealth Destroyers" (permanent loss).
+    # DEVIATION (§5 book-vs-math): the book's moat axis is RoE > 15% (RoE as WACC proxy, cost of
+    # equity = 15%); we use ROCE ≥ 15 (roce_med_5y) — leverage-clean and consistent with this module.
+    # The 15% growth line matches the book exactly. This quad is a snapshot of position TODAY; the
+    # study's headline longevity dimension (CAP/GAP duration) is a separate measure, not this matrix.
     has_moat = df["roce_med_5y"].fillna(df["roce"]).fillna(0) >= 15
     has_growth = df["pat_gr_5y"].fillna(df["pat_gr_3y"]).fillna(0) >= 15
     df["moat_growth_quad"] = np.select(
