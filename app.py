@@ -38,6 +38,7 @@ from ui import (render_scanner_grid, render_moat_growth_matrix, render_fisher_mo
                 render_radar_chart, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
+from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
@@ -628,11 +629,12 @@ with tabs[1]:
         "breakout_score": "Breakout", "valuation_score": "Valuation",
     }.items():
         if _sc in _display_df.columns:
-            _CC[_sc] = st.column_config.ProgressColumn(_sl, min_value=0, max_value=100, format="%.0f")
+            _CC[_sc] = st.column_config.ProgressColumn(
+                _sl, help=_SCANNER_HEADER_TIPS.get(_sc), min_value=0, max_value=100, format="%.0f")
     for _bc in ("gate_pass", "tsunami_signal", "vstop_green"):
         if _bc in _display_df.columns:
             _lbl = {"gate_pass": "✅ Gate", "tsunami_signal": "🌊", "vstop_green": "VSTOP"}[_bc]
-            _CC[_bc] = st.column_config.CheckboxColumn(_lbl)
+            _CC[_bc] = st.column_config.CheckboxColumn(_lbl, help=_SCANNER_HEADER_TIPS.get(_bc))
     _num_fmt = {
         "conviction_tier": ("Tier",     "T%.0f"),
         "piotroski_fscore":("F-Score",  "%.0f/9"),
@@ -658,11 +660,21 @@ with tabs[1]:
     }
     for _nc, (_nl, _nf) in _num_fmt.items():
         if _nc in _display_df.columns:
-            _CC[_nc] = st.column_config.NumberColumn(_nl, format=_nf)
+            _CC[_nc] = st.column_config.NumberColumn(_nl, help=_SCANNER_HEADER_TIPS.get(_nc), format=_nf)
     # String decision-signal columns get clean headers (else they show raw snake_case).
-    for _tc, _tl in {"verdict_direction": "Verdict", "weinstein_stage": "Trend"}.items():
+    for _tc, _tl in {
+        "verdict_direction": "Verdict", "weinstein_stage": "Trend",
+        "moat_growth_quad": "Moat·Growth", "smart_money_flow": "Smart Money",
+        "buy_zone_label": "Buy Zone",
+    }.items():
         if _tc in _display_df.columns:
-            _CC[_tc] = st.column_config.TextColumn(_tl)
+            _CC[_tc] = st.column_config.TextColumn(_tl, help=_SCANNER_HEADER_TIPS.get(_tc))
+    # Safety net: a future _DS_VIEWS column with a tip but no typed config above still gets its
+    # hover tooltip (raw header). NOTE: Streamlit issue #10841 — header tooltips don't render in
+    # the dataframe's FULL-SCREEN mode; they work in the normal embedded view.
+    for _col in _display_df.columns:
+        if _col not in _CC and _SCANNER_HEADER_TIPS.get(_col):
+            _CC[_col] = st.column_config.Column(help=_SCANNER_HEADER_TIPS[_col])
 
     # ── Render table — or a smart, cause-specific empty-state ──────
     if filt.empty:
