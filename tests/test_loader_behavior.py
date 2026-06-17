@@ -53,6 +53,39 @@ def test_renames_to_snake_case_and_drops_unmapped_columns():
     assert "ROCE Median 10 Years" not in out.columns
 
 
+def test_drops_phantom_nan_and_blank_company_id_rows():
+    """A bloated source export (a tab whose used-range declares ~50k rows when only ~2.1k hold
+    data) emits thousands of empty rows with a NaN/blank company_id. The left-join in
+    merge_datasets matches NaN==NaN, so those phantoms cartesian-explode → millions of rows →
+    OOM. openpyxl happens to trim trailing empties; calamine/others do NOT — so the loader must
+    drop every row without a usable company_id ITSELF, engine-agnostically. A blank ("" / "  ")
+    id is just as unusable as NaN and must go too (na_values runs at read time, upstream of this
+    function, so a row can still arrive here with a literal empty-string id)."""
+    raw = pd.DataFrame(
+        {
+            "companyId": ["NSE:A", np.nan, "NSE:B", "", "  "],
+            "ROCE Median 10 Years": [25.0, np.nan, 30.0, np.nan, np.nan],
+        }
+    )
+    out = _apply_column_mapping(raw, {"ROCE Median 10 Years": "roce_med_10y"}, "ratio")
+    assert list(out["company_id"]) == ["NSE:A", "NSE:B"]   # NaN / "" / "  " phantoms dropped
+    assert len(out) == 2
+
+
+def test_keeps_all_rows_when_company_id_clean():
+    """No-op on clean sources: when every company_id is present, no valid row is ever dropped
+    (this is why the guard is behavior-preserving on local CSV / upload / openpyxl-trimmed sheets)."""
+    raw = pd.DataFrame(
+        {
+            "companyId": ["NSE:A", "NSE:B", "NSE:C"],
+            "ROCE Median 10 Years": [25.0, 30.0, 35.0],
+        }
+    )
+    out = _apply_column_mapping(raw, {"ROCE Median 10 Years": "roce_med_10y"}, "ratio")
+    assert len(out) == 3
+    assert list(out["company_id"]) == ["NSE:A", "NSE:B", "NSE:C"]
+
+
 # ── merge_datasets ───────────────────────────────────────────────────────────
 
 def _datasets():

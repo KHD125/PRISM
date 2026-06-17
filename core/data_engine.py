@@ -373,6 +373,17 @@ def _apply_column_mapping(df: pd.DataFrame, col_map: Dict[str, str], sheet_name:
     # Select and rename
     df = df[list(available.keys())].rename(columns=available)
 
+    # Drop phantom rows: a bloated source export (a tab whose used-range declares ~50k rows when
+    # only ~2.1k hold data) emits thousands of empty rows with a NaN/blank company_id. The
+    # left-join in merge_datasets matches NaN==NaN, so those phantoms cartesian-explode → millions
+    # of rows → OOM. openpyxl trims trailing empties; calamine/others do NOT — so drop them here,
+    # engine-agnostically (and without depending on the reader's na_values: a blank "" / "  " id
+    # can still arrive). A row without a usable company_id is unusable anyway. No-op on clean
+    # sources (local CSV / upload / openpyxl-trimmed sheet all have zero blank company_ids).
+    if "company_id" in df.columns:
+        cid = df["company_id"]
+        df = df[cid.notna() & (cid.astype(str).str.strip() != "")].copy()
+
     return df
 
 
