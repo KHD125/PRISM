@@ -193,11 +193,12 @@ _COMPONENTS_SRC = Path(__file__).resolve().parent.parent / "ui" / "ui_components
 
 def test_chip_home_is_ui_components():
     """help_chip + _RAW_GLOSSARY now live in ui_components (which already owns the .ts-help CSS).
-    The move must preserve every glossary entry (142) — a dropped key would silently un-explain a term."""
+    Every glossary key must resolve (a dropped key would silently un-explain a term). The count grows
+    only as new cells are surfaced with their tooltips (158 after the 2026-06-17 All-Data pass-3)."""
     from ui.ui_components import help_chip, _RAW_GLOSSARY
 
     assert 'class="ts-help"' in help_chip("WCS"), "help_chip must render the .ts-help affordance"
-    assert len(_RAW_GLOSSARY) == 142, "the move must neither add nor drop any glossary entry"
+    assert len(_RAW_GLOSSARY) >= 158, "glossary must not lose entries (158 after the pass-3 surfacing)"
 
 
 def test_help_chip_exported_from_ui_package_facade():

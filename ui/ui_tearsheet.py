@@ -1800,7 +1800,10 @@ def render_raw_signals(stock: pd.Series):
         _cell("IBAS Innovation",     g("ibas_innovation_score"),       "{:.0f}") +
         _cell("IBAS Reputation",     g("ibas_reputation_score"),       "{:.0f}") +
         _cell("IBAS Strategic",      g("ibas_strategic_assets_score"), "{:.0f}") +
-        _cell("Moat Endurance",      stock.get("mef_label", "") or "", "")  # widening / intact / eroding / degrading
+        _cell("Moat Endurance",      stock.get("mef_label", "") or "", "") +  # widening / intact / eroding / degrading
+        _cell("Moat Endur ×",        g("moat_endurance_factor"), "{:.2f}×") +  # current ÷ 10y-median ROCE
+        _cell("Elite ROE",           "Yes ✅" if g("roe_elite_flag") == 1 else "No", "") +
+        _cell("ROE Rising",          "Yes ✅" if g("roe_trend_rising_flag") == 1 else "No", "")
     )
 
     # Growth
@@ -1816,7 +1819,9 @@ def render_raw_signals(stock: pd.Series):
         _cell("Q PAT YoY",     g("q_pat_yoy"),      "{:.1f}%") +
         _cell("Op Leverage",   "Yes" if g("operating_leverage") == 1 else "No", "") +
         _cell("Lynch Category", stock.get("lynch_category", "") or "", "") +  # Fast Grower / Stalwart / Slow Grower / Turnaround
-        _cell("Op Lev (3Y)",    g("ebit_vs_rev_spread_3y"), "{:.1f}%")  # 3Y EBIT-minus-revenue growth spread; + = operating leverage
+        _cell("Op Lev (3Y)",    g("ebit_vs_rev_spread_3y"), "{:.1f}%") +  # 3Y EBIT-minus-revenue growth spread; + = operating leverage
+        _cell("PAT 1Y Δ %",     g("pat_decline_1y_pct"), "{:+.1f}%") +
+        _cell("Value Migration", "Yes ✅" if g("value_migration_flag") == 1 else "No", "")
     )
 
     # Cash & Debt
@@ -1838,7 +1843,11 @@ def render_raw_signals(stock: pd.Series):
         _cell("CFROIC",        g("cfroic"),           "{:.1f}%") +  # Tortoriello: cash return on invested capital
         _cell("Ext Financing", g("external_financing_to_assets"), "{:.1f}%") +  # Tortoriello: neg = returning capital
         _cell("Capital Alloc", stock.get("capital_allocation_signal","") or "", "") +
-        _cell("Sector Capital", stock.get("sector_capital_phase","") or "", "")  # Chancellor sectoral cycle
+        _cell("Sector Capital", stock.get("sector_capital_phase","") or "", "") +  # Chancellor sectoral cycle
+        _cell("CWIP/FA %",      g("cwip_ratio"),             "{:.1f}%") +  # capital-work-in-progress ÷ fixed assets
+        _cell("EBITDA→PAT Gap", g("ebitda_to_pat_gap_pct"),  "{:.1f}%") +  # (Dep+Int+Tax)/EBITDA — NOT a tax rate
+        _cell("Supplier Float", g("supplier_float_score"),   "{:.0f}/100") +  # negative-CCC float moat
+        _cell("Negative WC",    "Yes ✅" if g("negative_wc_flag") == 1 else "No", "")
     )
 
     # Valuation
@@ -1859,7 +1868,9 @@ def render_raw_signals(stock: pd.Series):
         _cell("Valuation Scr", g("valuation_score"), "{:.0f}/100") +
         _cell("O'Shaughnessy VC", g("oshaughnessy_value_composite"), "{:.0f}/100") +  # 5-factor value composite
         _cell("Trending Value", "Yes ✅" if g("trending_value_flag") == 1 else "No", "") +  # cheap + 6M momentum
-        _cell("Buy Zone",      stock.get("buy_zone_label","") or "", "")
+        _cell("Buy Zone",      stock.get("buy_zone_label","") or "", "") +
+        _cell("Payoff Ratio",  g("payoff_ratio_proxy"),    "{:.2f}×") +  # Mauboussin upside/downside payoff
+        _cell("Exp Gap Rank",  g("expectations_gap_rank"), "{:.0f}/100")  # market-implied expectations gap rank
     )
 
     # Ownership — 3Y promoter change shown because the governance engine itself
@@ -1891,7 +1902,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("VSTOP Green",   "Yes ✅" if g("vstop_green") == 1 else "No","") +
         _cell("Breakout Scr",  g("breakout_score"),  "{:.0f}") +
         _cell("Momentum Scr",  g("momentum_score"),  "{:.0f}/100") +
-        _cell("Weinstein Stage", stock.get("weinstein_stage","") or "", "")  # 30W-MA stage analysis
+        _cell("Weinstein Stage", stock.get("weinstein_stage","") or "", "") +  # 30W-MA stage analysis
+        _cell("Trend Score",   g("trend_score"),  "{:.0f}/100")  # SMA200 dir + VSTOP + ADX + RSI zone + golden cross
     )
 
     # Forensic flags summary
@@ -1908,7 +1920,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("QGLP Score",    g("qglp_score"),          "{:.0f}/100") +
         _cell("QGLP Pass",     "Yes ✅" if g("qglp_pass") == 1 else "No","") +
         _cell("Composite Scr", g("composite_score"),     "{:.0f}/100") +
-        _cell("Conviction Tier",g("conviction_tier"),    "Tier {:.0f}")
+        _cell("Conviction Tier",g("conviction_tier"),    "Tier {:.0f}") +
+        _cell("Diamond Flags",  g("dm_forensic_flag_count"), "{:.0f}")  # Mukherjea 'Diamonds' forensic checks fired
     )
 
     # MOSL Wealth Creation signals (9 Annual Wealth Creation Studies extracted into the engine)
@@ -1948,7 +1961,10 @@ def render_raw_signals(stock: pd.Series):
         # Study uses PSG peer-relative ("compared with suitable peers") — NO absolute cutoff,
         # so we show the raw value for cross-stock comparison, not a fabricated verdict.
         _cell("Atoms/Bits",       stock.get("atoms_to_bits_label","") or "N/A", "") +
-        _cell("PSG",              g("psg_ratio"),       "{:.2f}")
+        _cell("PSG",              g("psg_ratio"),       "{:.2f}") +
+        _cell("SQGLP Score",      g("sqglp_score"),     "{:.0f}/5") +    # Size+Quality+Growth+Longevity+Price
+        _cell("QV Score",         g("vqs_score"),       "{:.0f}") +      # Gray quantitative value-quality composite
+        _cell("Sector Type",      stock.get("sector_consistent_type","") or "", "")  # Consistent vs Volatile sector
     )
 
     # Framework PILLAR breakdowns (Dorsey / Outsider / Marks / Lynch / Mauboussin / CAN SLIM /

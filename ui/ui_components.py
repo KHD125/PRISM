@@ -641,6 +641,23 @@ _RAW_GLOSSARY = {
     "Cash Score":        "PRISM's 0-100 sub-score for how strongly the business turns profit into real cash (CFO/PAT, free cash flow). A building block of the composite.",
     "Momentum Score":    "PRISM's 0-100 sub-score for price strength and trend (relative strength, breakout proximity, volume). A building block of the composite.",
     "Governance Score":  "PRISM's governance bonus — points for clean ownership (high promoter skin-in-the-game, no pledging, no dilution). Added to the composite, not multiplied.",
+    # ── All Data tab — pass-3 surfaced orphans (verified-alive 2026-06-17) ──
+    "Moat Endur ×":      "Current ROCE divided by its own 10-year median — above 1.0× means returns on capital are running ABOVE the company's own history (moat widening); below 1.0× means eroding.",
+    "Elite ROE":         "Fires when Return on Equity is ≥ 35% — Motilal Oswal's 6th-study 'elite' bar, a rare tier of ultra-high-return franchises.",
+    "ROE Rising":        "Fires when current ROE is above BOTH its 5-year and 10-year medians — return on equity on an improving multi-year trajectory.",
+    "PAT 1Y Δ %":        "The one-year change in net profit, in % — positive means profit grew, negative means it fell year-on-year.",
+    "Value Migration":   "Fires when the company is in the top quartile of its sector by revenue growth — a sign that value (demand/share) is migrating toward this business within its sector.",
+    "CWIP/FA %":         "Capital-Work-in-Progress as a % of fixed assets — how much new capacity (plants/projects) is under construction versus assets already in place. Higher = more aggressive expansion.",
+    "EBITDA→PAT Gap":    "The drag between operating profit and net profit — depreciation + interest + tax as a % of EBITDA. It is NOT a tax rate; a high gap means a heavy depreciation/interest/tax load.",
+    "Supplier Float":    "A 0-100 score of how much suppliers and customers fund the company's growth — a negative cash-conversion cycle (collect before you pay) scores high (≈-120 days ≈ 100). Zero for financials.",
+    "Negative WC":       "Fires when the cash-conversion cycle is negative — the business collects from customers before paying suppliers, so growth is self-funded (a working-capital float advantage).",
+    "Payoff Ratio":      "Mauboussin payoff multiple (≈1-4×) — for undervalued names, fair PE ÷ current PE: the implied upside-to-downside reward. Around 1.5× is neutral; higher means more asymmetric upside.",
+    "Exp Gap Rank":      "The stock's 0-100 percentile rank on the market-implied expectations gap — how the growth already priced in compares, across the universe, to what the business is likely to deliver.",
+    "Trend Score":       "A 0-100 technical trend-quality score blending 200-day moving-average direction, volatility-stop, trend strength (ADX), RSI zone and golden-cross. Higher = a cleaner established uptrend.",
+    "Diamond Flags":     "How many of Mukherjea's 'Diamonds in the Dust' forensic checks fired — a second accounting-quality lens distinct from the main red-flag count. Fewer is cleaner.",
+    "SQGLP Score":       "Motilal Oswal's SQGLP score (0-5) — how many of the five pillars (Size, Quality, Growth, Longevity, Price) the stock clears. The strictest QGLP variant, adding a small-Size requirement.",
+    "QV Score":          "A quantitative value-and-quality composite (Wesley Gray style) blending liquidity, institutional smart-money flow, relative-strength consistency and efficiency. Higher = a stronger quant profile.",
+    "Sector Type":       "Whether the company's sector is structurally Consistent (steady compounders) or Volatile (cyclical) — context for how much to trust its earnings stability.",
 }
 
 

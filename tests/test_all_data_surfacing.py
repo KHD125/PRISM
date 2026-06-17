@@ -41,10 +41,34 @@ SURFACED_ORPHANS = [
     ("mef_label",                   "Moat Endurance verdict (widening / intact / eroding / degrading)"),
     ("sector_leader_score",         "leadership rank within the company's own sector"),
     ("ebit_vs_rev_spread_3y",       "numeric 3Y operating leverage (the Op-Leverage Yes/No was binary)"),
+    # ── pass 3: verified-alive orphans surfaced 2026-06-17 (ui_coverage + live liveness re-gate) ──
+    ("moat_endurance_factor",       "numeric moat-endurance (current ÷ 10y-median ROCE) behind the MEF label"),
+    ("roe_elite_flag",              "ROE ≥ 35% — MOSL 6th-study elite-return flag"),
+    ("roe_trend_rising_flag",       "ROE above its 5y AND 10y median — improving return trajectory"),
+    ("pat_decline_1y_pct",          "one-year PAT change % (consistency / downside)"),
+    ("value_migration_flag",        "top-quartile sector revenue growth — value migrating to the business"),
+    ("cwip_ratio",                  "CWIP ÷ fixed assets — capacity build-out intensity"),
+    ("ebitda_to_pat_gap_pct",       "(Dep+Interest+Tax) ÷ EBITDA — operating-to-net profit drag"),
+    ("supplier_float_score",        "negative-CCC supplier-float moat score (0-100)"),
+    ("negative_wc_flag",            "negative cash-conversion cycle — self-funded growth"),
+    ("payoff_ratio_proxy",          "Mauboussin payoff multiple (fair PE ÷ PE for undervalued names)"),
+    ("expectations_gap_rank",       "percentile rank of the market-implied expectations gap"),
+    ("trend_score",                 "0-100 technical trend-quality composite"),
+    ("dm_forensic_flag_count",      "count of Mukherjea 'Diamonds' forensic checks fired"),
+    ("sqglp_score",                 "MOSL SQGLP 5-pillar score (0-5) — strictest QGLP variant"),
+    ("vqs_score",                   "quantitative value-quality composite (Gray-style)"),
+    ("sector_consistent_type",      "sector structural type: Consistent vs Volatile"),
 ]
 
 # New cell label → its expected glossary key (the "?" tooltip must exist for each new term).
 _PASS2_LABELS = ["P/S", "FGV", "Moat Endurance", "Sector Leader", "Op Lev (3Y)"]
+
+# pass-3 cell labels (each must carry a "?" glossary tooltip).
+_PASS3_LABELS = [
+    "Moat Endur ×", "Elite ROE", "ROE Rising", "PAT 1Y Δ %", "Value Migration",
+    "CWIP/FA %", "EBITDA→PAT Gap", "Supplier Float", "Negative WC", "Payoff Ratio",
+    "Exp Gap Rank", "Trend Score", "Diamond Flags", "SQGLP Score", "QV Score", "Sector Type",
+]
 
 
 @pytest.mark.parametrize("col,reason", SURFACED_ORPHANS, ids=[c for c, _ in SURFACED_ORPHANS])
@@ -84,6 +108,14 @@ def test_cell_helper_wires_the_tooltip():
 @pytest.mark.parametrize("label", _PASS2_LABELS)
 def test_new_labels_have_glossary_tooltip(label):
     """Every newly-surfaced cell must carry a plain-language '?' tooltip (no bare jargon)."""
+    from ui.ui_tearsheet import _RAW_GLOSSARY
+    assert label in _RAW_GLOSSARY, f"new cell {label!r} must have a _RAW_GLOSSARY entry"
+    assert len(_RAW_GLOSSARY[label].strip()) >= 20, f"{label!r} tooltip too short"
+
+
+@pytest.mark.parametrize("label", _PASS3_LABELS)
+def test_pass3_labels_have_glossary_tooltip(label):
+    """Every pass-3 surfaced cell must carry a plain-language '?' tooltip (no bare jargon)."""
     from ui.ui_tearsheet import _RAW_GLOSSARY
     assert label in _RAW_GLOSSARY, f"new cell {label!r} must have a _RAW_GLOSSARY entry"
     assert len(_RAW_GLOSSARY[label].strip()) >= 20, f"{label!r} tooltip too short"
