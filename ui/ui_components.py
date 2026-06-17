@@ -484,6 +484,20 @@ def render_score_bar(score: float, color: str = "#3fb950", label: str = ""):
 # The glossary explains the TERM for a beginner; it NEVER judges the value (good/bad needs thresholds
 # = engine drift). A label with no entry simply gets no "?" — the completeness net.
 _RAW_GLOSSARY = {
+    # ── All-Data grid: curated residual orphans (coverage audit 2026-06-17) ──
+    "Mcap Tier":          "Market-cap tier: Mega (≥₹2L Cr) / Large (≥₹20k) / Mid (≥₹5k) / Small (≥₹500) / Micro (≥₹100) / Nano (<₹100 Cr).",
+    "ROE Turnaround":     "ROE is still below 15% but has turned up above its 5-year trend — an early-innings quality inflection (a turnaround bargain).",
+    "Category Winner":    "14th-WCS sector Category Winner: top-30% capital efficiency (ROCE) within its sector AND above-market 5-year revenue growth — the sector leader.",
+    "Enduring VC":        "18th-WCS Enduring Value Creator: positive economic profit + consistent earnings + a decade of ROE ≥ 15% (above cost of equity) — durable, proven compounding.",
+    "Compound Power":     "Sustained compounding power: profit growth clears 15% (3Y), 12% (5Y) and 10% (10Y) — earnings compounding across every horizon.",
+    "Steady in Volatile": "A consistent earner (no PAT crashes) operating inside a structurally volatile sector — a steady compounder where its peers are erratic.",
+    "QMOM Quality":       "Gray Quantitative-Momentum quality (0–1): the average percentile rank across ROCE, low debt/equity, operating cash flow and gross profitability.",
+    "EPS Accelerating":   "EPS growth is ACCELERATING — the rate of earnings growth is itself speeding up (the O'Neil / CAN SLIM earnings-acceleration core).",
+    "UU Setup":           "Unknown-&-Unknowable setup (15th WCS): a small/mid-cap (<₹20k Cr) at a payback ratio under 1 with ROE turning up — a rare high-conviction early-multibagger profile.",
+    "Fast Creator":       "Fastest-Wealth-Creator setup (MOSL): a small base (<₹4k Cr market cap) at a single-digit P/E with >35% PAT CAGR — the rare profile of the fastest historical multibaggers.",
+    "Cyclical Mirage":    "A recent revenue-growth surge masking weak 10-year ROCE — the growth is not backed by durable returns on capital (a low-quality / cyclical mirage).",
+    "Dilution Vampire":   "Fast revenue growth (≥30%) but sub-cost-of-capital ROE (<12%) funded by equity dilution — growth that erodes per-share value.",
+    "Pledge Re-rate":     "Promoter de-pledging catalyst: the stock was meaningfully pledged (>10% a year ago), has cut pledge by >30% and is now near-clean (<5%) — a classic re-rating trigger.",
     # ── Business Quality ──
     "ROCE Current":  "Return on Capital Employed — out of every ₹100 the business puts to work (its own money + debt), how much yearly profit it earns. Higher means a better money-making machine.",
     "ROCE 10Y Med":  "The middle (median) ROCE over the last 10 years — shows whether high returns are durable, not a one-year fluke.",

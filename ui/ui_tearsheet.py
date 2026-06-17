@@ -1803,7 +1803,14 @@ def render_raw_signals(stock: pd.Series):
         _cell("Moat Endurance",      stock.get("mef_label", "") or "", "") +  # widening / intact / eroding / degrading
         _cell("Moat Endur ×",        g("moat_endurance_factor"), "{:.2f}×") +  # current ÷ 10y-median ROCE
         _cell("Elite ROE",           "Yes ✅" if g("roe_elite_flag") == 1 else "No", "") +
-        _cell("ROE Rising",          "Yes ✅" if g("roe_trend_rising_flag") == 1 else "No", "")
+        _cell("ROE Rising",          "Yes ✅" if g("roe_trend_rising_flag") == 1 else "No", "") +
+        _cell("Mcap Tier",           stock.get("mcap_tier", "") or "", "") +
+        _cell("ROE Turnaround",      "Yes ✅" if g("roe_turnaround_flag") == 1 else "No", "") +
+        _cell("Category Winner",     "Yes ✅" if g("category_winner_flag") == 1 else "No", "") +
+        _cell("Enduring VC",         "Yes ✅" if g("enduring_vc_flag") == 1 else "No", "") +
+        _cell("Compound Power",      "Yes ✅" if g("compound_growth_power_flag") == 1 else "No", "") +
+        _cell("Steady in Volatile",  "Yes ✅" if g("consistent_in_volatile_flag") == 1 else "No", "") +
+        _cell("QMOM Quality",        g("d51_qmom_quality_score"), "{:.2f}")
     )
 
     # Growth
@@ -1821,7 +1828,10 @@ def render_raw_signals(stock: pd.Series):
         _cell("Lynch Category", stock.get("lynch_category", "") or "", "") +  # Fast Grower / Stalwart / Slow Grower / Turnaround
         _cell("Op Lev (3Y)",    g("ebit_vs_rev_spread_3y"), "{:.1f}%") +  # 3Y EBIT-minus-revenue growth spread; + = operating leverage
         _cell("PAT 1Y Δ %",     g("pat_decline_1y_pct"), "{:+.1f}%") +
-        _cell("Value Migration", "Yes ✅" if g("value_migration_flag") == 1 else "No", "")
+        _cell("Value Migration", "Yes ✅" if g("value_migration_flag") == 1 else "No", "") +
+        _cell("EPS Accelerating","Yes ✅" if g("eps_strong_acceleration") == 1 else "No", "") +
+        _cell("UU Setup",        "Yes ✅" if g("uu_setup_flag") == 1 else "No", "") +
+        _cell("Fast Creator",    "Yes ✅" if g("fast_creator_setup") == 1 else "No", "")
     )
 
     # Cash & Debt
@@ -1887,7 +1897,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("Smart Money",   stock.get("smart_money_flow","") or "","") +
         _cell("Gov Bonus",     g("governance_bonus"),     "{:.0f}") +
         _cell("Mgmt Integrity",g("management_integrity_score"),"{:.0f}/3") +
-        _cell("Dilution Flag", "Yes ⚠️" if g("dilution_flag") == 1 else "Clean ✅","")
+        _cell("Dilution Flag", "Yes ⚠️" if g("dilution_flag") == 1 else "Clean ✅","") +
+        _cell("Pledge Re-rate","Yes ✅" if g("pledge_rerate_catalyst") == 1 else "No","")
     )
 
     # Technical
@@ -1921,7 +1932,9 @@ def render_raw_signals(stock: pd.Series):
         _cell("QGLP Pass",     "Yes ✅" if g("qglp_pass") == 1 else "No","") +
         _cell("Composite Scr", g("composite_score"),     "{:.0f}/100") +
         _cell("Conviction Tier",g("conviction_tier"),    "Tier {:.0f}") +
-        _cell("Diamond Flags",  g("dm_forensic_flag_count"), "{:.0f}")  # Mukherjea 'Diamonds' forensic checks fired
+        _cell("Diamond Flags",  g("dm_forensic_flag_count"), "{:.0f}") +  # Mukherjea 'Diamonds' forensic checks fired
+        _cell("Cyclical Mirage", "Yes ⚠️" if g("cyclical_mirage_flag") == 1 else "No", "") +
+        _cell("Dilution Vampire","Yes ⚠️" if g("dilution_vampire_flag") == 1 else "Clean ✅", "")
     )
 
     # MOSL Wealth Creation signals (9 Annual Wealth Creation Studies extracted into the engine)

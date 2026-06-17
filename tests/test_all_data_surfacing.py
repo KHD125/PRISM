@@ -58,6 +58,20 @@ SURFACED_ORPHANS = [
     ("sqglp_score",                 "MOSL SQGLP 5-pillar score (0-5) — strictest QGLP variant"),
     ("vqs_score",                   "quantitative value-quality composite (Gray-style)"),
     ("sector_consistent_type",      "sector structural type: Consistent vs Volatile"),
+    # ── pass 4: curated residual orphans (coverage audit 2026-06-17, verified-alive + non-redundant) ──
+    ("mcap_tier",                   "market-cap tier label (Mega/Large/Mid/Small/Micro/Nano) - size context"),
+    ("roe_turnaround_flag",         "ROE<15 but rising above its 5y trend - early-innings turnaround bargain"),
+    ("category_winner_flag",        "14th-WCS sector leader: top-30% sector ROCE + above-market revenue growth"),
+    ("enduring_vc_flag",            "18th-WCS enduring value creator: EP+ AND consistent AND decade of ROE>=15"),
+    ("compound_growth_power_flag",  "growth >=15/12/10% across 3/5/10Y - compounding at every horizon"),
+    ("consistent_in_volatile_flag", "consistent earner inside a structurally volatile sector"),
+    ("d51_qmom_quality_score",      "Gray QMOM quality (0-1): ROCE/low-D-E/CFO/gross-profitability rank average"),
+    ("eps_strong_acceleration",     "EPS growth itself accelerating (O'Neil/CAN SLIM core)"),
+    ("uu_setup_flag",               "15th-WCS UU setup: small-cap + payback<1 + ROE turnaround"),
+    ("fast_creator_setup",          "fastest-creator setup: mcap<4kCr + PE<10 + PAT CAGR>=35%"),
+    ("cyclical_mirage_flag",        "revenue surge with weak 10Y ROCE - growth not backed by capital returns"),
+    ("dilution_vampire_flag",       "rev>=30% but ROE<12% funded by equity dilution - value-eroding growth"),
+    ("pledge_rerate_catalyst",      "promoter de-pledging (>10% -> -30% -> near-clean) - re-rating catalyst"),
 ]
 
 # New cell label → its expected glossary key (the "?" tooltip must exist for each new term).
@@ -116,6 +130,22 @@ def test_new_labels_have_glossary_tooltip(label):
 @pytest.mark.parametrize("label", _PASS3_LABELS)
 def test_pass3_labels_have_glossary_tooltip(label):
     """Every pass-3 surfaced cell must carry a plain-language '?' tooltip (no bare jargon)."""
+    from ui.ui_tearsheet import _RAW_GLOSSARY
+    assert label in _RAW_GLOSSARY, f"new cell {label!r} must have a _RAW_GLOSSARY entry"
+    assert len(_RAW_GLOSSARY[label].strip()) >= 20, f"{label!r} tooltip too short"
+
+
+# pass-4 cell labels (each must carry a "?" glossary tooltip).
+_PASS4_LABELS = [
+    "Mcap Tier", "ROE Turnaround", "Category Winner", "Enduring VC", "Compound Power",
+    "Steady in Volatile", "QMOM Quality", "EPS Accelerating", "UU Setup", "Fast Creator",
+    "Cyclical Mirage", "Dilution Vampire", "Pledge Re-rate",
+]
+
+
+@pytest.mark.parametrize("label", _PASS4_LABELS)
+def test_pass4_labels_have_glossary_tooltip(label):
+    """Every pass-4 surfaced cell must carry a plain-language '?' tooltip (no bare jargon)."""
     from ui.ui_tearsheet import _RAW_GLOSSARY
     assert label in _RAW_GLOSSARY, f"new cell {label!r} must have a _RAW_GLOSSARY entry"
     assert len(_RAW_GLOSSARY[label].strip()) >= 20, f"{label!r} tooltip too short"
