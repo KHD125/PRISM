@@ -531,15 +531,15 @@ with tabs[1]:
 
     # ── Column view presets ────────────────────────────────────────
     _DS_VIEWS = {
-        "🏆 Core":      ["rank","name","sector","market_category","composite_score",
+        "🏆 Core":      ["rank","name","verdict_direction","sector","market_category","composite_score",
                          "conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
         "📊 Quality":   ["name","quality_score","moat_score","growth_score","cash_score",
                          "governance_bonus","piotroski_fscore","roce","opm","cfo_to_pat"],
-        "💰 Valuation": ["name","composite_score","pe","pb_ratio","peg",
+        "💰 Valuation": ["name","valuation_score","expected_excess_return","pe","pb_ratio","peg",
                          "earnings_yield","fcf_yield","market_cap","buy_zone_label"],
-        "🔬 Forensic":  ["name","piotroski_fscore","forensic_score","cfo_to_pat",
-                         "debt_to_equity","promoter_holdings","pledged_percentage"],
-        "📈 Technical": ["name","momentum_score","rsi_14d","dist_52wh",
+        "🔬 Forensic":  ["name","red_flag_count","piotroski_fscore","forensic_score","cfo_to_pat",
+                         "accruals_ratio","debt_to_equity","promoter_holdings","pledged_percentage"],
+        "📈 Technical": ["name","momentum_score","rsi_14d","dist_52wh","crs_52w","weinstein_stage",
                          "breakout_score","smart_money_flow","tsunami_signal","vstop_green"],
     }
     _DS_SORTS = {
@@ -624,7 +624,7 @@ with tabs[1]:
         "moat_score": "Moat", "growth_score": "Growth",
         "cash_score": "Cash", "momentum_score": "Momentum",
         "forensic_score": "Forensic", "governance_bonus": "Governance",
-        "breakout_score": "Breakout",
+        "breakout_score": "Breakout", "valuation_score": "Valuation",
     }.items():
         if _sc in _display_df.columns:
             _CC[_sc] = st.column_config.ProgressColumn(_sl, min_value=0, max_value=100, format="%.0f")
@@ -650,10 +650,18 @@ with tabs[1]:
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),
         "rank":            ("Rank",     "%.0f"),
+        "red_flag_count":  ("Red Flags","%.0f"),
+        "accruals_ratio":  ("Accruals", "%.2f"),
+        "crs_52w":         ("RS 52W",   "%.0f"),
+        "expected_excess_return": ("Edge %", "%.1f%%"),
     }
     for _nc, (_nl, _nf) in _num_fmt.items():
         if _nc in _display_df.columns:
             _CC[_nc] = st.column_config.NumberColumn(_nl, format=_nf)
+    # String decision-signal columns get clean headers (else they show raw snake_case).
+    for _tc, _tl in {"verdict_direction": "Verdict", "weinstein_stage": "Trend"}.items():
+        if _tc in _display_df.columns:
+            _CC[_tc] = st.column_config.TextColumn(_tl)
 
     # ── Render table — or a smart, cause-specific empty-state ──────
     if filt.empty:
