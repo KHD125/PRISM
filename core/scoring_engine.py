@@ -3190,6 +3190,11 @@ def run_full_scoring(
     df = detect_catalysts_and_tsunami(df)
 
     # ── Final sort ──
+    # NOTE: this is the PRE-penalty sort/rank. apply_forensic_penalty (pipeline step 3) multiplies
+    # composite_score and RE-RANKS in place WITHOUT re-sorting the rows — so on the final frame the
+    # ROW ORDER reflects pre-penalty composite while `rank`/`composite_score` reflect post-penalty.
+    # They diverge for any flagged stock. Consumers MUST sort before slicing (e.g. df.head(N)); every
+    # display path does (app.py Discovery/Deep Scanner/Market Pulse). Never assume row 0 == rank 1.
     df = df.sort_values("composite_score", ascending=False).reset_index(drop=True)
     df["rank"] = range(1, len(df) + 1)
 

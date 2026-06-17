@@ -88,6 +88,19 @@ def test_conviction_tier_matches_composite_band(scored):
     assert mismatch == 0, f"{mismatch} stocks: conviction_tier disagrees with its composite band"
 
 
+def test_conviction_tiers_are_descending_by_min():
+    """np.select (in scoring_engine + forensic_engine) returns the FIRST matching band, so
+    CONVICTION_TIERS MUST be ordered by descending `min` (85,70,55,40,0). Reorder it and a score of
+    90 would match the first `>=0` band → mislabeled Tier 5 — and test_conviction_tier_matches_
+    composite_band would NOT catch it, because it replays the SAME np.select over config order
+    (engine and test would be wrong together). This pins the ordering ORDER-INDEPENDENTLY."""
+    mins = [t["min"] for t in CONVICTION_TIERS]
+    assert mins == sorted(mins, reverse=True), (
+        f"CONVICTION_TIERS must be ordered by descending 'min' for np.select first-match to be "
+        f"correct; got {mins}"
+    )
+
+
 def test_tier_label_and_emoji_match_tier(scored):
     label_map = {t["tier"]: f"{t['emoji']} {t['label']}" for t in CONVICTION_TIERS}
     emoji_map = {t["tier"]: t["emoji"] for t in CONVICTION_TIERS}
