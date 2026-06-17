@@ -3048,25 +3048,34 @@ def compute_ep_power_curve(df: pd.DataFrame) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════
 
 def detect_market_regime(df: pd.DataFrame) -> str:
-    """Auto-detect market regime from multi-signal breadth consensus (2/3 required).
-    Single CRS-50D can flip regime on one session's noise — consensus prevents whipsawing."""
+    """Auto-detect market regime from multi-signal breadth consensus (2-of-3 required).
+    A single signal can flip regime on one session's noise — consensus prevents whipsawing.
+    Breadth is measured over NON-NaN rows ONLY: counting NaN as not-bull (the old `.mean()`
+    over all rows) systematically biased every vote bearish (~10% of CRS is NaN). The 200D vote
+    is computed from raw close/SMA, NaN-excluded — NOT from the above_sma200 column, which bakes
+    missing-SMA as below-SMA (binary-flag convention) and would re-introduce the bearish bias."""
     bull_signals = 0
     bear_signals = 0
 
+    def _vote(is_bull: pd.Series, valid: pd.Series, bull_thr: float, bear_thr: float):
+        nonlocal bull_signals, bear_signals
+        if not bool(valid.any()):
+            return                       # no valid data -> abstain (neither bull nor bear)
+        breadth = is_bull[valid].mean()
+        if breadth > bull_thr:
+            bull_signals += 1
+        elif breadth < bear_thr:
+            bear_signals += 1
+
     if "crs_50d" in df.columns:
-        b50 = (df["crs_50d"] > 0).mean()
-        if b50 > 0.60: bull_signals += 1
-        elif b50 < 0.40: bear_signals += 1
-
+        s = df["crs_50d"]
+        _vote(s > 0, s.notna(), 0.60, 0.40)
     if "crs_26w" in df.columns:
-        b26 = (df["crs_26w"] > 0).mean()
-        if b26 > 0.55: bull_signals += 1
-        elif b26 < 0.45: bear_signals += 1
-
-    if "above_sma200" in df.columns:
-        b200 = df["above_sma200"].fillna(0).mean()
-        if b200 > 0.55: bull_signals += 1
-        elif b200 < 0.45: bear_signals += 1
+        s = df["crs_26w"]
+        _vote(s > 0, s.notna(), 0.55, 0.45)
+    if "close_price" in df.columns and "sma_200d" in df.columns:
+        c, m = df["close_price"], df["sma_200d"]
+        _vote(c > m, c.notna() & m.notna(), 0.55, 0.45)
 
     if bull_signals >= 2:
         return "BULL"
