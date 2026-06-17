@@ -438,8 +438,23 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 
-def render_hero_banner():
-    """Render the main hero banner."""
+def render_hero_banner(compact: bool = False):
+    """Render the main hero banner. compact=True renders a slim one-line brand strip for the
+    page top (the sidebar already carries the full PRISM identity, so a second tall hero is
+    redundant chrome the daily user scrolls past). Display-only — no widgets, no state."""
+    if compact:
+        st.markdown(f"""
+        <div style="display:flex; align-items:center; gap:10px; padding:6px 4px 10px 4px;
+                    border-bottom:1px solid {COLORS['border']}; margin-bottom:10px;">
+            <span style="display:flex; align-items:center;">{prism_mark(26)}</span>
+            <span style="font-size:1.05rem; font-weight:800; letter-spacing:0.5px;
+                         color:{COLORS['text_primary']};">{UI['app_title']}</span>
+            <span style="font-size:0.78rem; color:{COLORS['text_secondary']};">·&nbsp;{UI['app_subtitle']}</span>
+            <span style="margin-left:auto; font-size:0.68rem; color:{COLORS['text_muted']};
+                         text-transform:uppercase; letter-spacing:1px;">v{UI['version']} · QUANTAMENTAL INTELLIGENCE</span>
+        </div>
+        """, unsafe_allow_html=True)
+        return
     st.markdown(f"""
     <div class="hero-banner">
         <div class="hero-icon">{prism_mark(60)}</div>

@@ -185,6 +185,11 @@ with st.spinner("🔄 Loading data..."):
         st.stop()
 
 # ═══════════════════════════════════════════════════════════════
+# BRAND — compact strip at page top (identity → control → context)
+# ═══════════════════════════════════════════════════════════════
+render_hero_banner(compact=True)
+
+# ═══════════════════════════════════════════════════════════════
 # 🏛️ THE COMMAND CENTER — Mandate-Driven Investment Philosophy
 # ═══════════════════════════════════════════════════════════════
 _MANDATES = {
@@ -338,9 +343,8 @@ filt = render_discovery_sidebar(df)
 
 
 # ═══════════════════════════════════════════════════════════════
-# BANNER (above tabs — always visible)
+# STATS STRIP (above tabs — reflects the selected mandate)
 # ═══════════════════════════════════════════════════════════════
-render_hero_banner()
 render_metric_strip([
     (f"{total}", "Universe", "m-blue"),
     (f"{gate_passed}", "Gate Passed", "m-green"),
