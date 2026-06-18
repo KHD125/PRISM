@@ -80,10 +80,13 @@ def _universe():
     u |= _np_call_str_labels(disc, "where")                  # piotroski strength tiers
     u |= _dict_keys(disc, "_CATALYSTS") | _dict_keys(disc, "_SELL_ALERTS")
     u |= _fw_meta_keys()                                      # the 37 frameworks
-    from config import CONVICTION_TIERS
+    from config import CONVICTION_TIERS, MARKS_CYCLE
     u |= {t["label"] for t in CONVICTION_TIERS}
+    u |= {v["label"] for v in MARKS_CYCLE.values() if isinstance(v, dict) and "label" in v}  # Marks posture
     from core.cyclicality_map import TIER_LABELS
     u |= set(TIER_LABELS.values())
+    sc = (_ROOT / "core" / "scoring_engine.py").read_text(encoding="utf-8")
+    u |= set(re.findall(r'return "(BULL|BEAR|SIDEWAYS)"', sc))   # market regime tags (Market Pulse)
     # Genuine display LABELS only — drop: format/template strings; and NARRATIVE sentences (the verdict
     # synthesis produces full self-explanatory sentences via np.select — they end with '.' / run long /
     # contain mid-sentence '. '; those are explanations already, not labels to define).

@@ -272,4 +272,16 @@ CONCEPT_REFERENCE = {
         ("📶 Fisher Scalability", "Does the business still have room to grow — a revenue runway, operating leverage, pricing power, and no dilution. The growth story isn't finished."),
         ("💯 100-Bagger", "Phelps/Mayer '100 Baggers' — the long-compounding, small-base setup: growth consistent across horizons, a low payback ratio, a wide economic-profit spread, a small base, and low pledging."),
     ],
+    # ── Market regime (scoring_engine detect_market_regime) + Marks posture (config.MARKS_CYCLE) ──
+    # Market-wide readings shown on the Market Pulse tab + the banner — never traits of one stock.
+    "🌊 Market & Regime": [
+        ("🐂 BULL", "The whole market is in a healthy uptrend — strong breadth (most stocks above their long-term averages). PRISM trusts momentum signals more in a Bull regime."),
+        ("🐻 BEAR", "The whole market is weak — poor breadth. PRISM gets stricter and BLOCKS new momentum (CAN SLIM) entries, since most stocks fall in a falling market. Weight quality and caution."),
+        ("➡️ SIDEWAYS", "The market is range-bound — breadth is mixed, neither clearly rising nor falling. The default, in-between regime."),
+        ("🟢 Aggressive", "Howard Marks cycle posture — a cheap, fearful market: deploy capital into quality. Fat-pitch territory."),
+        ("🟡 Neutral", "Marks cycle posture — a balanced market: maintain the portfolio, make selective additions only."),
+        ("🔴 Defensive", "Marks cycle posture — an expensive, euphoric market: reduce equity, accumulate dry powder, and wait."),
+        ("🌊 Tsunami", "The rarest, highest-conviction setup — all SEVEN conviction conditions (quality + momentum + governance + technical) fire at once. Often only a handful exist, sometimes none."),
+        ("🚀 Tipping Points", "A Market Pulse watch-list of stocks at a potential inflection — where a change in the business may be about to accelerate. Context, not a verdict."),
+    ],
 }
