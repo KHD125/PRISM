@@ -95,7 +95,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # slider range is stable across the cascade); _active_n treats this value as the show-all state.
         _RF_MAX = int(df["red_flag_count"].max()) if "red_flag_count" in df.columns else 28
 
-        with _grp("🏢 Universe", "sb_mcap", "sb_sector", "sb_industry", expanded=False):
+        with _grp("🏢 Universe", "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", expanded=False):
             # 1. Market Category — cascade root (only categories present in the data)
             _ALL_MCAPS = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
             _mcap_opts = _ordered_present(_cf, "market_category", _ALL_MCAPS)
@@ -125,6 +125,27 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             )
             if sel_industry != "All":
                 _cf = _cf[_cf["industry"] == sel_industry]
+
+            # 3b. Cyclicality Tier — structural business-type roll-up of industry (hold-vs-trade
+            # "what": cyclicals are timing trades; defensives/structural-growers hold through cycle)
+            _CYC_ORDER = ["Deep Cyclical / Commodity", "Cyclical", "Defensive",
+                          "Sensitive / Structural-Growth", "Financials", "Catch-all"]
+            _cyc_opts = _ordered_present(_cf, "cyclicality_tier", _CYC_ORDER)
+            sel_cyc = _ms_cascade("Cyclicality Tier", _cyc_opts, "sb_cyc", default=[],
+                                  help="Business-type by industry. Deep-Cyclical/Cyclical = timing "
+                                       "trades; Defensive/Structural-Growth = hold through the cycle. Empty = all.")
+            if sel_cyc and "cyclicality_tier" in _cf.columns:
+                _cf = _cf[_cf["cyclicality_tier"].isin(sel_cyc)]
+
+            # 3c. Sector Capital Phase — Chancellor capital cycle ("when": Starved = under-invested
+            # supply opportunity; Hot = over-investing, mean-reversion risk)
+            _CAPPHASE_ORDER = ["❄️ Capital Starved (opportunity)", "⚖️ Neutral", "🔥 Hot Capital (caution)"]
+            _cap_opts = _ordered_present(_cf, "sector_capital_phase", _CAPPHASE_ORDER)
+            sel_cap = _ms_cascade("Sector Capital Phase", _cap_opts, "sb_capphase", default=[],
+                                  help="The sector's capital cycle. Starved = under-invested (supply "
+                                       "opportunity); Hot = over-investing (mean-reversion risk). Empty = all.")
+            if sel_cap and "sector_capital_phase" in _cf.columns:
+                _cf = _cf[_cf["sector_capital_phase"].isin(sel_cap)]
             st.caption(f"→ {len(_cf):,} remaining")
 
         with _grp("🎯 Decision & Class", "sb_tier", "sb_verdict", "sb_corpclass", expanded=True):
@@ -458,7 +479,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     _uni_n, _fin_n = len(df), len(filt)
     _pct = (_fin_n / _uni_n) if _uni_n else 0.0
     _active_total = _active_n(
-        "sb_mcap", "sb_sector", "sb_industry", "sb_tier", "sb_verdict", "sb_corpclass",
+        "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict", "sb_corpclass",
         "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale",
         "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
         "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
