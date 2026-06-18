@@ -295,6 +295,11 @@ adaptive_w = df.attrs.get("adaptive_weights", {})
 # Key metrics
 total = len(df)
 gate_passed = int(df["gate_pass"].sum())
+# Mandate Fit = clears the universal safety floor (gate_pass) AND fits the selected mandate's
+# per-profile thesis screen (qglp_pass: ROCE/Growth/PEG) — the mandate-responsive qualified count
+# (gate_pass is profile-invariant; qglp_pass alone can exceed it by including unsafe names).
+mandate_fit = int(((df["gate_pass"] == 1) &
+                   (df.get("qglp_pass", pd.Series(0, index=df.index)) == 1)).sum())
 tier1 = int((df["conviction_tier"] == 1).sum())
 tier2 = int((df["conviction_tier"] == 2).sum())
 tsunami_count = int(df["tsunami_signal"].sum())
@@ -401,9 +406,11 @@ if adaptive_w:
       </div>
       <div style="display:flex;gap:12px;margin-bottom:8px;">{_bars_html}</div>
       <div style="font-size:0.62rem;color:{COLORS['text_muted']};">
-        Hard Gates — ROCE≥{adaptive_w.get('roce_gate', 15):.0f}% ·
+        🎯 Mandate Screen — ROCE≥{adaptive_w.get('roce_gate', 15):.0f}% ·
         Growth≥{adaptive_w.get('growth_gate', 15):.0f}% ·
         PEG≤{adaptive_w.get('peg_gate', 1.5):.1f}
+        &nbsp;→&nbsp;<span style="color:{COLORS['gold']};font-weight:700;">{mandate_fit} fit</span>
+        <span style="color:{COLORS['text_muted']};">(of {gate_passed} gate-passed)</span>
       </div>
     </div>
     """, unsafe_allow_html=True)
