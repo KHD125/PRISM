@@ -14,6 +14,7 @@ from config import (CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR,
                     FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES, UTILITY_SECTOR_NAMES,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS)
+from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
 
 warnings.filterwarnings('ignore')
 np.seterr(all='ignore')
@@ -2005,6 +2006,41 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         ["🔥 Hot Capital (caution)", "❄️ Capital Starved (opportunity)"],
         default="⚖️ Neutral",
     )
+
+    # ── Cyclicality: realized drawdown + a-priori tier (DISPLAY-ONLY — never scored) ──────────
+    # max_earnings_drawdown_5y: the deepest peak-to-trough fall in annual PAT over the 6 available
+    #   years (current + 5 back). TIME-ORDERED (oldest→newest) cummax so the running peak precedes
+    #   the trough — a monotone compounder scores ~0, a commodity that collapsed at the trough scores
+    #   high, and >1.0 means the trough went negative. NaN when <4 of 6 PAT years are present.
+    #   Way-1 validated: median ladders A 0.59 > B 0.43 > C 0.36 > D 0.31 across the expert tiers.
+    # cyclicality_tier(_code): the a-priori business TYPE from the committed industry map (sector
+    #   fallback, then "F"). This is the FINER, industry-level DISPLAY sibling of the SECTOR-level
+    #   cyclical_peak_trap (above, ~L1760) which DOES feed scoring (×0.70 valuation clawback,
+    #   scoring_engine ~L476). This column is INERT — it never touches a score (pinned by the
+    #   display-only byte-identical test). Unifying the coarse scoring signal with this finer view is
+    #   a deliberate FUTURE, /census-gated change, not done here.
+    # The PRIOR (tier) vs REALIZED (drawdown) disagreement is itself the signal: a Defensive-tier
+    #   name carrying a high realized drawdown is a mislabel / behaving-cyclically flag.
+    _pat_cols = [c for c in ["pat", "pat_1yb", "pat_2yb", "pat_3yb", "pat_4yb", "pat_5yb"]
+                 if c in df.columns]
+    if len(_pat_cols) >= 4:
+        _pat_ord = df[_pat_cols[::-1]]   # already numeric (coerce_numeric_columns at load); oldest→newest
+        _pat_peak = _pat_ord.cummax(axis=1)
+        _pat_dd   = ((_pat_peak - _pat_ord) / _pat_peak).where(_pat_peak > 0.0)
+        df["max_earnings_drawdown_5y"] = _pat_dd.max(axis=1).where(
+            _pat_ord.notna().sum(axis=1) >= 4, np.nan)
+    else:
+        df["max_earnings_drawdown_5y"] = np.nan
+
+    # .get-safe Series so synthetic frames lacking industry/sector don't KeyError (the §6 pattern)
+    _cyc_ind = df["industry"] if "industry" in df.columns else pd.Series(index=df.index, dtype=object)
+    _cyc_sec = df["sector"]   if "sector"   in df.columns else pd.Series(index=df.index, dtype=object)
+    df["cyclicality_tier_code"] = (
+        _cyc_ind.map(INDUSTRY_TIER)
+                .fillna(_cyc_sec.map(SECTOR_TIER_FALLBACK))
+                .fillna("F")
+    )
+    df["cyclicality_tier"] = df["cyclicality_tier_code"].map(TIER_LABELS)
 
     # ── D24: OCF/PAT Delta (CFO/PAT − 100) ──
     # D24 ≥ 0: OCF ≥ PAT = earnings are cash-backed (Clean Accounts signal)
