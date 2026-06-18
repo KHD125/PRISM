@@ -1579,8 +1579,29 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
             _cyc_txt += f" · earn-DD {float(_cyc_dd) * 100:.0f}%"
         _cyc_badge = _badge(_cyc_txt + help_chip("Cyclicality Tier"), COLORS["text_secondary"])
 
+    # Per-stock TREND badge — the actionable per-stock counterpart to the market-wide regime badge
+    # (which is identical on every tearsheet). Composes weinstein_stage DIRECTION + d45_trend_structure
+    # STRENGTH (x/5) + the trend_modifier path chip (↩️ Pullback / 🚀 Breakout / ⚠️ Bounce / ⚠️ Extended).
+    # Color tracks the stage (Stage 2 green / Stage 4 red / else gold). Hidden on legacy cached frames
+    # lacking the column (mirrors the Cyclicality / Evidence badges).
+    _trend_badge = ""
+    _tr_stage = stock.get("weinstein_stage")
+    if _tr_stage is not None and pd.notna(_tr_stage) and str(_tr_stage) != "❔ Unknown":
+        _tr_txt = _esc(str(_tr_stage))
+        _tr_str = stock.get("d45_trend_structure")
+        if _tr_str is not None and pd.notna(_tr_str):
+            _tr_txt += f" · {int(_tr_str)}/5"
+        _tr_mod = str(stock.get("trend_modifier", "") or "")
+        if _tr_mod:
+            _tr_txt += f" · {_esc(_tr_mod)}"
+        _tr_clr = (COLORS["green"] if "Stage 2" in str(_tr_stage)
+                   else COLORS["red"] if "Stage 4" in str(_tr_stage)
+                   else COLORS["gold"])
+        _trend_badge = _badge(_tr_txt + help_chip("Weinstein Stage"), _tr_clr)
+
     badges_html = (
         _badge(f"{tcfg['emoji']} {tcfg['label']}{help_chip('Conviction Tier')}", ring_clr) +
+        _trend_badge +
         _mg_badge +
         _badge(f_txt, f_clr) +
         _badge(reg_txt, reg_clr) +

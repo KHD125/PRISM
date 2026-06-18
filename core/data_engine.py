@@ -2211,6 +2211,58 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         default="❔ Unknown",
     )
 
+    # ── Per-stock trend modifiers (DISPLAY-ONLY) — Weinstein stage × book-faithful path chips ──
+    # Enriches weinstein_stage (DIRECTION) + d45_trend_structure (STRENGTH 0-5) with the actionable
+    # intra-stage events from Weinstein (Secrets…) and Grimes (Art & Science of TA), each graded by
+    # Grimes' statistical confidence (continuation = edge; termination = low-edge caution):
+    #   ↩️ Pullback  HIGH edge (trend continuation): Stage-2 dip below 50D, still above 30W MA, on
+    #               VOLUME DRY-UP (vol_sma_10d < vol_sma_50d — the CLEAN ladder). Grimes' verified edge.
+    #   🚀 Breakout with-trend edge: Stage-2 within 3% of the 52W high, NOT extended (≤1.35× 30W), on
+    #               VOLUME EXPANSION (raw Volume ≥ 1.5× 50D avg — book-faithful). NOTE: raw Volume is
+    #               ~8× source-deflated today, so this UNDER-fires until the source column is fixed; it
+    #               self-heals at source (deliberately NO vol_sma workaround — fix data, not code).
+    #   ⚠️ Bounce   LOW-confidence caution (countertrend): Stage-4 rally back up to the declining 30W
+    #               MA (Weinstein's "don't chase" short entry).
+    #   ⚠️ Extended LOW-confidence caution (termination): >1.40× the 30W MA AND RSI>70 (overbought,
+    #               topping risk). Grimes: trend termination is rare/low-edge → caution, not a state.
+    # Pullback/Bounce/Extended are SNAPSHOT PROXIES (Grimes: "quasi-discretionary") → surfaced as
+    # hints, never scored. NaN-safe: numeric comparisons against NaN yield False (no flag fires).
+    _t_stage = df["weinstein_stage"]
+    _t_close = df["close_price"]
+    _t_30  = df.get("sma_30w",     pd.Series(np.nan, index=df.index))
+    _t_50  = df.get("sma_50d",     pd.Series(np.nan, index=df.index))
+    _t_d52 = df.get("dist_52wh",   pd.Series(np.nan, index=df.index))
+    _t_vol = df.get("volume",      pd.Series(np.nan, index=df.index))
+    _t_v50 = df.get("vol_sma_50d", pd.Series(np.nan, index=df.index))
+    _t_v10 = df.get("vol_sma_10d", pd.Series(np.nan, index=df.index))
+    _t_rsi = df.get("rsi_14d",     pd.Series(np.nan, index=df.index))
+    _t_r3m = df.get("ret_vs_n500_3m", pd.Series(np.nan, index=df.index))
+    _t_up  = _t_stage == "📈 Stage 2 Advancing"
+    _t_dn  = _t_stage == "📉 Stage 4 Declining"
+    df["trend_pullback"] = (
+        _t_up & (_t_close < _t_50) & (_t_close > _t_30) & (_t_v10 < _t_v50)
+    ).astype(int)
+    df["trend_breakout"] = (
+        _t_up & (_t_d52 <= 3.0) & (_t_close <= _t_30 * 1.35) & (_t_vol >= 1.5 * _t_v50)
+    ).astype(int)
+    # Bounce = Stage-4 stock that RALLIED UP (ret_vs_n500_3m>0) to within 5% below the declining 30W
+    # MA. The recent-rally gate is essential: without it, "close near a falling MA" catches every
+    # Stage-4 drifter (censused at 21%) — the snapshot can't see the path, so we require the 3M move
+    # to confirm it's an actual countertrend rally into resistance, not a slow bleed toward the MA.
+    df["trend_bounce"] = (
+        _t_dn & (_t_close >= _t_30 * 0.95) & (_t_close <= _t_30) & (_t_r3m > 0.0)
+    ).astype(int)
+    df["trend_extended"] = (
+        (_t_close > _t_30 * 1.40) & (_t_rsi > 70.0)
+    ).astype(int)
+    # Single priority-ordered display string (caution-first: never invite chasing an extended name).
+    df["trend_modifier"] = np.select(
+        [df["trend_extended"] == 1, df["trend_breakout"] == 1,
+         df["trend_pullback"] == 1, df["trend_bounce"] == 1],
+        ["⚠️ Extended", "🚀 Breakout", "↩️ Pullback", "⚠️ Bounce"],
+        default="",
+    )
+
     # ── D47: RS Composite — IBD-weighted (40% recent / 30% mid / 30% long) ──
     # IBD RS Rating formula: most recent quarter receives double weight vs prior periods.
     # Mapping: crs_50d (~10W) ≈ recent quarter → 40%; crs_26w (6M) → 30%; crs_52w (12M) → 30%.
