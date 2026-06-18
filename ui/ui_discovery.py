@@ -14,6 +14,57 @@ import streamlit as st
 from config import COLORS
 
 
+# ── Active-filter chips: registry + pure detector (unit-tested) ───────────────
+# (sb_key, chip label, kind). kind drives BOTH the active-check and the label. MUST cover every key
+# in the funnel's _active_n total (pinned by test) so no filter is ever active-but-chipless.
+_CHIP_META = [
+    ("sb_mcap", "Market Cap", "ms"), ("sb_sector", "Sector", "sel"), ("sb_industry", "Industry", "sel"),
+    ("sb_cyc", "Cyclicality", "ms"), ("sb_capphase", "Capital Phase", "ms"), ("sb_tier", "Tier", "ms"),
+    ("sb_verdict", "Verdict", "ms"), ("sb_corpclass", "Corp Class", "ms"), ("sb_maxrf", "Max Red Flags", "max"),
+    ("sb_piotier", "Piotroski", "ms"), ("sb_mincov", "Min Coverage", "min"), ("sb_hidestale", "Hide Stale", "bool"),
+    ("sb_fw_exclude", "Exclude FW", "ms"), ("sb_fw_include", "Include FW", "ms"), ("sb_fw_combine", "Combine FW", "ms"),
+    ("sb_moat", "Moat", "ms"), ("sb_peg_zone", "PEG Zone", "ms"), ("sb_buy_zone", "Buy Zone", "ms"),
+    ("sb_weinstein", "Weinstein", "ms"), ("sb_lynchcat", "Lynch", "ms"), ("sb_mef", "Moat Endurance", "ms"),
+    ("sb_cftri", "Cash-Flow Tri", "ms"), ("sb_smartflow", "Smart Money", "ms"),
+    ("sb_catalyst", "Catalyst", "ms_count"), ("sb_sellalert", "Sell Alert", "ms_count"),
+    ("sb_gate", "Gate-passed", "bool"), ("sb_minq", "Min Quality", "min"), ("sb_minscore", "Min Score", "min"),
+]
+
+
+def _compute_active_chips(state, rf_max):
+    """Pure: (session_state mapping, red-flag ceiling) -> ordered [(key, label)] for each ACTIVE
+    filter. Per-kind active-logic mirrors the funnel's _active_n so chips and badges always agree."""
+    out = []
+    for key, human, kind in _CHIP_META:
+        v = state.get(key)
+        if kind == "sel":
+            if v not in (None, "All"):
+                out.append((key, f"{human}: {v}"))
+        elif kind == "max":
+            if v is not None and v < rf_max:
+                out.append((key, f"{human}: ≤{v}"))
+        elif kind == "min":
+            if v and v > 0:
+                out.append((key, f"{human}: ≥{v}"))
+        elif kind == "bool":
+            if v:
+                out.append((key, human))
+        elif kind == "ms_count":
+            if v:
+                out.append((key, f"{human}: {len(v)} selected"))
+        else:  # "ms" — human-readable values
+            if v:
+                out.append((key, f"{human}: {v[0]}" + (f" +{len(v) - 1}" if len(v) > 1 else "")))
+    return out
+
+
+def _remove_one_filter(key) -> None:
+    """Chip ✕ callback — drop one filter (re-inits to its show-all default on the auto-rerun the
+    button fires). Runs BEFORE any widget instantiates, so popping a widget-key is safe (no
+    'cannot modify state after widget instantiated' error). Same delete-key mechanism as clear_all."""
+    st.session_state.pop(key, None)
+
+
 def clear_all_filters() -> None:
     """Delete every `sb_*` filter selection so the cascade resets to its show-all defaults, then
     rerun. SINGLE SOURCE — called by the sidebar 'Clear all' button AND the Discovery empty-state
@@ -36,6 +87,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # one-click reset. The funnel is the heart of the "interconnected" feel — the count drops
         # in real time as filters narrow the universe.
         _funnel = st.empty()
+        _chips_ph = st.empty()   # applied-filter chips; filled at END (post-prune, like _funnel)
         if st.button("🧹 Clear all filters", key="sb_clear", use_container_width=True):
             clear_all_filters()
 
@@ -480,6 +532,16 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     # is just `_cf`. The .copy() is REQUIRED: _cf is `df` itself when nothing is filtered, so the
     # copy guarantees the caller can never mutate the source frame.
     filt = _cf.copy()
+
+    # Applied-filter chips — computed AFTER the cascade so a value pruned by an upper filter can't
+    # linger as a stale chip (same end-fill rationale as the funnel). Click ✕ to drop one filter.
+    _chips = _compute_active_chips(st.session_state, _RF_MAX)
+    with _chips_ph.container():
+        if _chips:
+            st.caption(f"🎯 {len(_chips)} active · click to remove")
+            for _ck, _clabel in _chips:
+                st.button(f"✕  {_clabel}", key=f"chip_{_ck}", on_click=_remove_one_filter,
+                          args=(_ck,), use_container_width=True)
 
     # Fill the live results funnel (placeholder created at the TOP of the sidebar filter panel).
     # `filt` == `_cf` now, so the count reflects the WHOLE cascade — every group, Refine included.

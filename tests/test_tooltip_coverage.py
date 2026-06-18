@@ -256,8 +256,13 @@ def test_discovery_filter_has_help_text(label):
     """The Sector + Moat discovery filters must carry native help= (parity with every sibling filter).
     Stateful sidebar → native Streamlit help=, NOT the .ts-help chip."""
     src = _DISCOVERY_SRC.read_text(encoding="utf-8")
-    i = src.find(f'"{label}"')
-    assert i != -1, f"{label!r} filter not found in ui_discovery.py"
+    # Anchor to the WIDGET call whose first arg is the label — not any string. (The _CHIP_META
+    # registry also lists "Sector"/"Moat" as chip labels, so a bare src.find would match that tuple
+    # first and miss the real widget.) The assertion below is unchanged: the widget must carry help=.
+    wm = re.search(r'(?:st\.selectbox|st\.multiselect|st\.slider|st\.checkbox|_ms_cascade)\(\s*"'
+                   + re.escape(label) + r'"', src)
+    assert wm is not None, f"{label!r} filter widget not found in ui_discovery.py"
+    i = wm.start()
     rest = src[i:]
     # Bound to THIS widget's call: stop at the next widget (incl. the _ms_cascade helper, so a
     # following sibling's help= can't leak into this window and produce a false pass).

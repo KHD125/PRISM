@@ -18,6 +18,7 @@ test_cyclicality.py and sector_capital_phase by test_capital_cycle_sector.py (re
 from pathlib import Path
 
 from core.cyclicality_map import TIER_LABELS
+from ui.ui_discovery import _CHIP_META, _compute_active_chips
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DISC = (_ROOT / "ui" / "ui_discovery.py").read_text(encoding="utf-8")
@@ -58,3 +59,39 @@ def test_filter_labels_match_the_engine_verbatim():
     for p in _CAP_PHASES:
         assert p in _DISC, f"capital-phase label missing from ui_discovery: {p!r}"
         assert p in _DENG, f"capital-phase label drifted in data_engine (emitter): {p!r}"
+
+
+# ── applied-filter chip strip ─────────────────────────────────────────────────
+def test_compute_active_chips_per_kind():
+    """The pure chip detector handles every filter shape: ms (first value +N), ms_count (count, no
+    raw cat_* leak), sel ('All'=off), slider-max (active when < ceiling), slider-min (active when >0),
+    bool. Mirrors the funnel's active-logic so chips and badges agree."""
+    state = {"sb_cyc": ["Defensive", "Financials"], "sb_sector": "Steel", "sb_industry": "All",
+             "sb_maxrf": 3, "sb_mincov": 0, "sb_minscore": 70, "sb_gate": True,
+             "sb_catalyst": ["cat_capacity", "cat_oplev"]}
+    chips = dict(_compute_active_chips(state, rf_max=28))
+    assert chips["sb_cyc"] == "Cyclicality: Defensive +1"   # ms: first value + N
+    assert chips["sb_sector"] == "Sector: Steel"            # sel active
+    assert "sb_industry" not in chips                       # "All" = off
+    assert chips["sb_maxrf"] == "Max Red Flags: ≤3"         # slider-max active (3 < 28)
+    assert "sb_mincov" not in chips                         # 0 = off
+    assert chips["sb_minscore"] == "Min Score: ≥70"         # slider-min active
+    assert chips["sb_gate"] == "Gate-passed"               # bool active
+    assert chips["sb_catalyst"] == "Catalyst: 2 selected"  # ms_count — no raw cat_* leak
+
+
+def test_no_active_filters_yields_no_chips():
+    """All-default state → empty chip list (so the strip renders nothing)."""
+    assert _compute_active_chips({}, rf_max=28) == []
+    assert _compute_active_chips({"sb_cyc": [], "sb_sector": "All", "sb_maxrf": 28, "sb_minq": 0,
+                                  "sb_gate": False}, rf_max=28) == []
+
+
+def test_every_funnel_key_has_a_chip_entry():
+    """Every sb_* key counted in the funnel total MUST have a _CHIP_META entry — else a filter can be
+    active yet produce no removable chip (the registration-drift guard, like the _grp/_active_n pair)."""
+    import re
+    i = _DISC.rindex("_active_n(")
+    total_keys = set(re.findall(r'"(sb_\w+)"', _DISC[i:_DISC.index(")", i)]))
+    missing = total_keys - {k for k, _, _ in _CHIP_META}
+    assert not missing, f"filters counted in the funnel total but with no chip entry: {missing}"
