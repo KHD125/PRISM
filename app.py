@@ -34,9 +34,9 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_lynch_radar, render_mauboussin_radar, render_mosl_wealth_matrix,
                 render_sector_peer_strip,
                 render_valuation_inversion_and_sizing_cockpit,
-                inject_css, render_hero_banner, render_metric_strip, render_stock_card, help_chip,
+                inject_css, render_hero_banner, render_metric_strip, render_pulse_band,
+                render_stock_card, help_chip,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
-                render_bruised_blue_chips, render_multi_trillion_tipping_points,
                 render_reference, render_concepts, render_flags)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
@@ -1140,25 +1140,15 @@ with tabs[3]:
                 if "qglp_pass" in df.columns else df.iloc[:0])   # market-wide, like the other 4 sections
     _mp_qual = df[df["gate_pass"] == 1] if "gate_pass" in df.columns else df
 
-    _bbc_mask = df.get("bruised_blue_chip_29", pd.Series(0, index=df.index)).fillna(0) == 1
-    _bbc_cnt  = int(_bbc_mask.sum())
-
-    # ── Top summary strip ──────────────────────────────────────────
-    render_metric_strip([
-        (str(len(_mp_ts)),   "🌊 Tsunami",     "m-purple"),
-        (str(len(_mp_qglp)), "🏛️ QGLP",        "m-gold"),
-        (str(_mp_qual["sector"].nunique() if "sector" in _mp_qual.columns else 0), "📈 Sectors", "m-blue"),
-        (str(_bbc_cnt),      "💙 Blue Chips",  "m-green"),
-    ])
+    # ── Market-state Pulse band (breadth-led market vitals — what the tab's name promises) ──────
+    render_pulse_band(df)
 
     # ── Inner navigation tabs ──────────────────────────────────────
     _mp_tabs = st.tabs([
         "🌊 Tsunami",
         "🏛️ QGLP",
         "📈 Sectors",
-        "💙 Blue Chips",
-        "🚀 Tipping Points",
-    ])
+    ])   # Stage 3: dropped dead "💙 Blue Chips" (0% fires) + brittle "🚀 Tipping Points" (folded into Sectors)
 
     # ══ Tsunami ════════════════════════════════════════════════════
     with _mp_tabs[0]:
@@ -1228,11 +1218,11 @@ with tabs[3]:
     with _mp_tabs[1]:
         st.markdown(
             "<div class='sec-cap'>Raamdeo Agrawal's framework: ROCE>15%, PAT growth>15%, "
-            "Promoter>50%, reasonable valuation. Strict gates. Filtered by sidebar.</div>",
+            "Promoter>50%, reasonable valuation. Strict gates. Market-wide (ignores sidebar filters).</div>",
             unsafe_allow_html=True,
         )
         if len(_mp_qglp) == 0:
-            st.info("No stocks pass the strict QGLP gates with current sidebar filters.")
+            st.info("No stocks currently pass the strict QGLP gates.")
         else:
             _q_avg = float(_mp_qglp["qglp_score"].mean()) if "qglp_score" in _mp_qglp.columns else 0
             st.markdown(f"""
@@ -1285,6 +1275,12 @@ with tabs[3]:
 
     # ══ Sectors ════════════════════════════════════════════════════
     with _mp_tabs[2]:
+        st.markdown(
+            "<div class='sec-cap'>Sector rotation across gate-qualified stocks — average quality, "
+            "momentum and conviction, plus each sector's 🌱 structural tailwind and capital phase "
+            "(🔥 hot · ❄️ starved). Absorbs the former Tipping-Points view.</div>",
+            unsafe_allow_html=True,
+        )
         if len(_mp_qual) == 0:
             st.info("No gate-qualified stocks to analyse.")
         else:
@@ -1298,16 +1294,38 @@ with tabs[3]:
                 ).sort_values("avg_composite", ascending=False).head(15)
             )
 
+            # Sector context (absorbs the old Tipping-Points thesis): structural tailwind + capital
+            # phase — sector-level signals computed on the FULL universe, guarded for column absence
+            # and re-aligned to the top-15 sectors (missing → blank, never nan/None).
+            if "sector_capital_phase" in df.columns:
+                _ph = (df.groupby("sector")["sector_capital_phase"].first()
+                         .reindex(_sec_stats.index).fillna(""))
+                _emoji = pd.Series("", index=_sec_stats.index)
+                _emoji[_ph.str.contains("Hot", na=False)]     = "🔥"
+                _emoji[_ph.str.contains("Starved", na=False)] = "❄️"
+                _emoji[_ph.str.contains("Neutral", na=False)] = "⚖️"
+                _sec_stats["phase"] = _emoji
+            if "sector_tailwind" in df.columns:
+                _sec_stats["tailwind"] = (df.groupby("sector")["sector_tailwind"].max()
+                                            .reindex(_sec_stats.index).fillna(0).astype(bool))
+
+            # Surface the folded-in context (🌱 tailwind, capital phase) FIRST — next to the sector
+            # name — so it's visible without scrolling the narrow table (that's the point of the fold).
+            _sec_order = [c for c in ["phase", "tailwind", "stocks", "avg_quality",
+                                      "avg_momentum", "avg_composite", "crown_jewels"]
+                          if c in _sec_stats.columns]
             _sc1, _sc2 = st.columns([2, 3])
             with _sc1:
                 st.dataframe(
-                    _sec_stats.reset_index(),
+                    _sec_stats[_sec_order].reset_index(),
                     column_config={
                         "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
                         "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
                         "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
                         "crown_jewels":  st.column_config.NumberColumn("👑 T1",      format="%.0f"),
                         "stocks":        st.column_config.NumberColumn("Count",      format="%.0f"),
+                        "phase":         st.column_config.TextColumn("Phase"),
+                        "tailwind":      st.column_config.CheckboxColumn("🌱 Tailwind"),
                     },
                     use_container_width=True,
                     height=470,
@@ -1337,14 +1355,6 @@ with tabs[3]:
                     showlegend=False,
                 )
                 st.plotly_chart(_fig_sec, use_container_width=True)
-
-    # ══ Bruised Blue Chips ═════════════════════════════════════════
-    with _mp_tabs[3]:
-        render_bruised_blue_chips(df)
-
-    # ══ Tipping Points ═════════════════════════════════════════════
-    with _mp_tabs[4]:
-        render_multi_trillion_tipping_points(df)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

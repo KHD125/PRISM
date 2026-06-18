@@ -473,6 +473,164 @@ def render_metric_strip(metrics: list):
     st.markdown(f'<div class="m-strip">{chips}</div>', unsafe_allow_html=True)
 
 
+# ═══════════════════════════════════════════════════════════════
+# MARKET-STATE "PULSE BAND" — the Market Pulse tab's headline
+# ═══════════════════════════════════════════════════════════════
+# The tab is named Market Pulse but historically showed only screen counts; the market's actual
+# state (breadth / regime / conviction distribution / capital rotation) lived only in the page-top
+# banner. This band surfaces it here — breadth-led (the honest, always-moving signal), regime as a
+# small derived chip (complementary to the page-top banner, not a duplicate headline). Display-only.
+
+def _pulse_stats(df) -> dict:
+    """Pure, vectorized market-state aggregates for the Pulse band. Every field degrades gracefully
+    (None / empty) when its column is absent or all-NaN — NEVER raises. No row iteration / no apply."""
+    n = int(len(df))
+
+    # ── Breadth: Weinstein stage distribution. Match the unambiguous 'Stage N' substring (robust to
+    #    emoji drift); Unknown is the RESIDUAL so the five buckets always sum to n (bar fills 100%). ──
+    breadth = None
+    if n > 0 and "weinstein_stage" in df.columns:
+        s = df["weinstein_stage"].astype("string").fillna("")
+        adv  = int(s.str.contains("Stage 2", na=False).sum())
+        base = int(s.str.contains("Stage 1", na=False).sum())
+        top  = int(s.str.contains("Stage 3", na=False).sum())
+        decl = int(s.str.contains("Stage 4", na=False).sum())
+        if adv + base + top + decl > 0:                       # present-but-unclassified → unavailable
+            breadth = {"Advancing": adv, "Basing": base, "Topping": top,
+                       "Declining": decl, "Unknown": max(0, n - (adv + base + top + decl))}
+
+    # ── Regime: same source as the page-top banner; rendered as a small DERIVED chip, not a headline ──
+    regime = str(df.attrs.get("detected_market_regime", "SIDEWAYS"))
+
+    # ── Median distance off the 52-week high (the robust, always-moving headline) ──
+    off_high = None
+    if "dist_52wh" in df.columns:
+        _m = df["dist_52wh"].median()                          # skipna by default
+        off_high = None if pd.isna(_m) else float(_m)
+
+    # ── Conviction ladder: counts per tier, keyed off the config ladder (DRY, never hardcoded) ──
+    ladder = None
+    if "conviction_tier" in df.columns:
+        _vc = pd.to_numeric(df["conviction_tier"], errors="coerce").value_counts()
+        _counts = {int(k): int(v) for k, v in _vc.items() if pd.notna(k)}
+        ladder = [(t["tier"], t["emoji"], t["label"], _counts.get(t["tier"], 0))
+                  for t in CONVICTION_TIERS]
+
+    # ── Capital rotation: Hot vs Starved sectors ──
+    capital = None
+    if "sector_capital_phase" in df.columns:
+        s = df["sector_capital_phase"].astype("string").fillna("")
+        capital = {"hot":     int(s.str.contains("Hot", na=False).sum()),
+                   "starved": int(s.str.contains("Starved", na=False).sum())}
+
+    # ── Valuation temperature ──
+    med_composite = None
+    if "composite_score" in df.columns:
+        _m = df["composite_score"].median()
+        med_composite = None if pd.isna(_m) else float(_m)
+    tailwind_pct = None
+    if n > 0 and "sector_tailwind" in df.columns:
+        tailwind_pct = float(100.0 * df["sector_tailwind"].fillna(0).astype(float).mean())
+
+    return {"n": n, "breadth": breadth, "regime": regime, "off_high": off_high,
+            "ladder": ladder, "capital": capital,
+            "med_composite": med_composite, "tailwind_pct": tailwind_pct}
+
+
+def _pulse_card(title: str, badge_html: str, body_html: str, C: dict, flex: str = "1") -> str:
+    return (
+        f'<div style="flex:{flex};min-width:150px;background:{C["bg_secondary"]};'
+        f'border:1px solid {C["border"]};border-radius:10px;padding:10px 13px;">'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">'
+        f'<span style="font-size:0.62rem;font-weight:800;letter-spacing:0.05em;'
+        f'color:{C["text_muted"]};">{title}</span>{badge_html}</div>'
+        f'{body_html}</div>')
+
+
+def _pulse_band_html(stats: dict) -> str:
+    """Pure → compact inline-HTML Pulse band. NEVER emits a literal nan/None (missing → '—')."""
+    C = COLORS
+
+    def _fmt(v, suf=""):
+        return "—" if v is None or pd.isna(v) else f"{v:.0f}{suf}"
+
+    # ── Card 1 · Breadth (headline) + regime chip + off-high caption ──
+    regime = _html.escape(str(stats.get("regime", "SIDEWAYS")))
+    _r_clr = C["green"] if regime == "BULL" else C["red"] if regime == "BEAR" else C["gold"]
+    _r_emo = "🟢" if regime == "BULL" else "🔴" if regime == "BEAR" else "🟡"
+    b = stats.get("breadth")
+    if b:
+        total = sum(b.values()) or 1
+        _segs = [("Advancing", C["green"]), ("Basing", C["text_muted"]),
+                 ("Topping", C["gold"]), ("Declining", C["red"]), ("Unknown", C["border"])]
+        bar = "".join(
+            f'<div style="width:{100.0 * b[name] / total:.2f}%;background:{clr};height:100%;"></div>'
+            for name, clr in _segs)
+        _p = lambda c: f"{100.0 * c / total:.0f}%"
+        breadth_inner = (
+            f'<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;'
+            f'background:{C["bg_tertiary"]};margin:7px 0 5px 0;">{bar}</div>'
+            f'<div style="font-size:0.72rem;color:{C["text_secondary"]};">'
+            f'{_p(b["Advancing"])} Adv · {_p(b["Declining"])} Decl · {_p(b["Topping"])} Top</div>'
+            f'<div style="font-size:0.7rem;color:{C["text_muted"]};margin-top:2px;">'
+            f'median stock {_fmt(stats.get("off_high"))}% off 52w-high</div>')
+    else:
+        breadth_inner = (f'<div style="font-size:0.74rem;color:{C["text_muted"]};margin-top:8px;">'
+                         f'Breadth unavailable</div>')
+    card_breadth = _pulse_card(
+        "MARKET BREADTH",
+        f'<span style="font-size:0.72rem;font-weight:800;color:{_r_clr};white-space:nowrap;">'
+        f'{_r_emo} {regime}</span>',
+        breadth_inner, C, flex="1.7")
+
+    # ── Card 2 · Conviction ladder (tiers 1–4; tier 5 'Not Ready' is the noisy majority, omitted) ──
+    ladder = stats.get("ladder")
+    if ladder:
+        chips = " ".join(
+            f'<span style="font-size:0.82rem;font-weight:700;color:{C["text_primary"]};">'
+            f'{_html.escape(emo)}{cnt}</span>'
+            for tier, emo, lbl, cnt in ladder if tier <= 4)
+        invest = sum(cnt for tier, emo, lbl, cnt in ladder if tier <= 3)
+        ladder_inner = (
+            f'<div style="margin:7px 0 4px 0;display:flex;gap:10px;flex-wrap:wrap;">{chips}</div>'
+            f'<div style="font-size:0.7rem;color:{C["text_muted"]};">T1–T3 investable: '
+            f'<strong style="color:{C["text_secondary"]};">{invest}</strong></div>')
+    else:
+        ladder_inner = f'<div style="font-size:0.74rem;color:{C["text_muted"]};margin-top:8px;">—</div>'
+    card_conv = _pulse_card("CONVICTION", "", ladder_inner, C)
+
+    # ── Card 3 · Capital rotation ──
+    cap = stats.get("capital")
+    if cap:
+        cap_inner = (
+            f'<div style="margin-top:7px;font-size:0.78rem;">'
+            f'<div style="color:{C["blue"]};">❄️ <strong>{cap["starved"]}</strong> Starved</div>'
+            f'<div style="color:{C["orange"]};margin-top:3px;">🔥 <strong>{cap["hot"]}</strong> Hot</div>'
+            f'</div>'
+            f'<div style="font-size:0.66rem;color:{C["text_muted"]};margin-top:3px;">'
+            f'opportunity / caution</div>')
+    else:
+        cap_inner = f'<div style="font-size:0.74rem;color:{C["text_muted"]};margin-top:8px;">—</div>'
+    card_cap = _pulse_card("CAPITAL ROTATION", "", cap_inner, C)
+
+    # ── Card 4 · Valuation temperature ──
+    val_inner = (
+        f'<div style="margin-top:7px;font-size:1.3rem;font-weight:800;color:{C["text_primary"]};">'
+        f'{_fmt(stats.get("med_composite"))}</div>'
+        f'<div style="font-size:0.66rem;color:{C["text_muted"]};">median composite</div>'
+        f'<div style="font-size:0.7rem;color:{C["text_secondary"]};margin-top:4px;">'
+        f'{_fmt(stats.get("tailwind_pct"))}% in tailwind sectors</div>')
+    card_val = _pulse_card("VALUATION", "", val_inner, C)
+
+    return (f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">'
+            f'{card_breadth}{card_conv}{card_cap}{card_val}</div>')
+
+
+def render_pulse_band(df) -> None:
+    """Market-state Pulse band for the Market Pulse tab — breadth-led, display-only. Only st.* call."""
+    st.markdown(_pulse_band_html(_pulse_stats(df)), unsafe_allow_html=True)
+
+
 def render_score_bar(score: float, color: str = "#3fb950", label: str = ""):
     """Render a horizontal score bar. Clamps width to [0, 100] so bars never overflow.
     Negative values (e.g. governance_bonus < 0) show a red penalty badge instead of invisible bar."""
@@ -949,113 +1107,3 @@ def render_sidebar_brand():
         <div class="sb-brand-ver">v{UI['version']} · QUANTAMENTAL INTELLIGENCE</div>
     </div>
     """, unsafe_allow_html=True)
-
-
-def render_bruised_blue_chips(df: pd.DataFrame):
-    """
-    Bruised Blue Chips tracker (29th WCS).
-    Large-cap quality compounders (ROCE ≥ 20% 10Y, Market Cap ≥ ₹20,000 Cr)
-    trading at a ≥ 20% discount to their 10Y mean P/E — temporary bruising, not structural damage.
-    """
-    st.markdown("<div class='sec-head'>💙 Bruised Blue Chips (29th WCS)</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='sec-cap'>Established quality compounders with ROCE ≥ 20% over 10Y, Market Cap ≥ ₹20,000 Cr, "
-        "currently trading ≥ 20% below their 10Y mean P/E. Temporary bruising — not structural damage.</div>",
-        unsafe_allow_html=True,
-    )
-
-    bbc = df[
-        df.get("bruised_blue_chip_29", pd.Series(0, index=df.index)).fillna(0) == 1
-    ].sort_values("pe_discount", ascending=False)
-
-    if bbc.empty:
-        st.info("💙 No Bruised Blue Chips detected. Quality large-caps are either fairly valued or not yet discounted enough.")
-        return
-
-    st.success(f"💙 **{len(bbc)} Bruised Blue Chips** — quality at a discount.")
-    _disp_cols = [c for c in ["rank", "name", "sector", "market_cap", "roce_med_10y", "pe_discount",
-                               "pb_ratio", "composite_score", "conviction_tier"] if c in bbc.columns]
-    st.dataframe(
-        bbc[_disp_cols].reset_index(drop=True),
-        use_container_width=True,
-        height=min(400, 80 + len(bbc) * 35),
-        column_config={
-            "pe_discount":   st.column_config.ProgressColumn("PE Discount %", min_value=0, max_value=60, format="%.1f"),
-            "roce_med_10y":  st.column_config.NumberColumn("ROCE 10Y %", format="%.1f"),
-            "market_cap":    st.column_config.NumberColumn("MCap (Cr)", format="₹%.0f"),
-            "composite_score": st.column_config.ProgressColumn("Composite", min_value=0, max_value=100, format="%.0f"),
-        },
-    )
-
-
-def render_multi_trillion_tipping_points(df: pd.DataFrame):
-    """
-    Multi-Trillion Macro Tipping Points (30th WCS).
-    Sectors with structural tailwinds to become next multi-trillion market cap clusters.
-    Filters for momentum-ready stocks in selected sunrise sectors.
-    """
-    st.markdown("<div class='sec-head'>🚀 Multi-Trillion Tipping Points (30th WCS)</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='sec-cap'>Sunrise sectors with structural tailwinds to reach multi-trillion INR market cap. "
-        "Shows stocks with institutional momentum, earnings acceleration, and technical readiness.</div>",
-        unsafe_allow_html=True,
-    )
-
-    _SECTOR_GROUPS = {
-        "Financial Services": ["Financial", "Bank", "NBFC", "Insurance", "Fintech"],
-        "Consumer Discretionary": ["Consumer", "Retail", "Automobile", "Durables", "Hotel", "Tourism"],
-        "Healthcare & Pharma": ["Pharma", "Health", "Hospital", "Diagnostic"],
-        "Infrastructure & Capital Goods": ["Infrastructure", "Capital Goods", "Construction", "Defence", "Engineering"],
-    }
-
-    selected_group = st.radio(
-        "Select Sunrise Sector",
-        options=list(_SECTOR_GROUPS.keys()),
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-    keywords = _SECTOR_GROUPS[selected_group]
-    _sector_pat = "|".join(keywords)
-
-    if "sector" in df.columns:
-        _sector_mask = df["sector"].str.contains(_sector_pat, case=False, na=False)
-    else:
-        st.warning("Sector column not available.")
-        return
-
-    _pat_gr   = df["pat_gr_yoy"].fillna(0)  if "pat_gr_yoy"      in df.columns else pd.Series(0,  index=df.index)
-    _vstop    = df["vstop_green"].fillna(0)  if "vstop_green"     in df.columns else pd.Series(0,  index=df.index)
-    _inst     = df["inst_convergence"].fillna(0) if "inst_convergence" in df.columns else pd.Series(0, index=df.index)
-    _brk      = df["breakout_score"].fillna(0)   if "breakout_score"   in df.columns else pd.Series(0, index=df.index)
-
-    # Core trigger: in sector AND (earning acceleration > 15%) AND (technical OR institutional signal)
-    _earnings_acc = _pat_gr > 15
-    _tech_or_inst = (_vstop == 1) | (_inst == 1) | (_brk >= 70)
-
-    mttp = df[_sector_mask & _earnings_acc & _tech_or_inst].sort_values("composite_score", ascending=False)
-
-    if mttp.empty:
-        st.info(f"No {selected_group} stocks currently meet the multi-trillion tipping point criteria (earnings acceleration + technical/institutional signal).")
-        return
-
-    render_metric_strip([
-        (str(len(mttp)),                                    f"{selected_group} triggers",  "m-purple"),
-        (f"{mttp['composite_score'].mean():.0f}",           "Avg Composite",               "m-blue"),
-        (str(int((_vstop[mttp.index] == 1).sum())),         "VSTOP Green",                 "m-green"),
-        (str(int((_inst[mttp.index] == 1).sum())),          "Inst Convergence",            "m-gold"),
-    ])
-
-    _disp = [c for c in ["rank", "name", "sector", "market_cap", "pat_gr_yoy",
-                          "vstop_green", "inst_convergence", "breakout_score",
-                          "composite_score", "conviction_tier"] if c in mttp.columns]
-    st.dataframe(
-        mttp[_disp].reset_index(drop=True),
-        use_container_width=True,
-        height=min(500, 80 + len(mttp) * 35),
-        column_config={
-            "pat_gr_yoy":     st.column_config.NumberColumn("PAT Gr YoY %", format="%.1f"),
-            "composite_score": st.column_config.ProgressColumn("Composite", min_value=0, max_value=100, format="%.0f"),
-            "breakout_score": st.column_config.ProgressColumn("Breakout", min_value=0, max_value=100, format="%.0f"),
-            "market_cap":     st.column_config.NumberColumn("MCap (Cr)", format="₹%.0f"),
-        },
-    )
