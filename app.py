@@ -36,9 +36,10 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card, help_chip,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
-                render_bruised_blue_chips, render_multi_trillion_tipping_points)
+                render_bruised_blue_chips, render_multi_trillion_tipping_points, render_reference)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
+from ui.ui_components import _RAW_GLOSSARY
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
@@ -432,7 +433,7 @@ if adaptive_w:
 # ═══════════════════════════════════════════════════════════════
 # TABS
 # ═══════════════════════════════════════════════════════════════
-tabs = st.tabs(["🏠 Discovery", "🔍 Deep Scanner", "🔬 The Tear-Sheet", "🌊 Market Pulse", "⚙️ Config"])
+tabs = st.tabs(["🏠 Discovery", "🔍 Deep Scanner", "🔬 The Tear-Sheet", "🌊 Market Pulse", "⚙️ Config", "📖 Reference"])
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 1: DISCOVERY DASHBOARD
@@ -1539,3 +1540,21 @@ with tabs[4]:
         <strong>Marks Cycle Posture: {posture['label']}</strong>
     </div>
     """, unsafe_allow_html=True)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 6: REFERENCE — searchable glossary (renders the 173-term _RAW_GLOSSARY single source)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tabs[5]:
+    st.markdown(
+        f'<div style="font-size:0.7rem;font-weight:700;color:{COLORS["text_muted"]};'
+        f'text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">'
+        f'📖 Reference — Glossary</div>',
+        unsafe_allow_html=True,
+    )
+    _ref_q = st.text_input(
+        "Search the glossary", key="ref_search",
+        placeholder="Search any term (e.g. PEG, ROCE, Tsunami)…",
+        label_visibility="collapsed",
+    )
+    st.markdown(render_reference(_RAW_GLOSSARY, _ref_q), unsafe_allow_html=True)
