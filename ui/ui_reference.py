@@ -78,3 +78,23 @@ def render_concepts(concept_ref: dict, query: str = "") -> str:
         )
         blocks.append(head + body)
     return "".join(blocks)
+
+
+def render_flags(flag_display: dict, query: str = "") -> str:
+    """Inline dark-theme HTML for the forensic RED FLAGS — each shown as the engine's OWN display
+    description + severity dot, severity-sorted (🔴→🟠→🟡). Pure: no Streamlit. Single source =
+    `_FLAG_DISPLAY` in ui_tearsheet (rf_col → (description, severity)); rendered, never duplicated."""
+    q = (query or "").strip().lower()
+    _sev = {"🔴": 0, "🟠": 1, "🟡": 2}
+    rows = [(desc, sev) for rf, (desc, sev) in flag_display.items()
+            if q in desc.lower() or q in rf.lower()]
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: (_sev.get(r[1], 9), r[0].lower()))
+    return "".join(
+        f'<div style="padding:7px 0;border-bottom:1px solid {COLORS["border"]};">'
+        f'<span style="font-size:0.8rem;">{html.escape(sev)} </span>'
+        f'<span style="font-size:0.78rem;color:{COLORS["text_secondary"]};line-height:1.45;">'
+        f'{html.escape(desc)}</span></div>'
+        for desc, sev in rows
+    )

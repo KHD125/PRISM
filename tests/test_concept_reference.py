@@ -127,3 +127,17 @@ def test_reference_data_is_pure():
     src = (_ROOT / "ui" / "ui_reference_data.py").read_text(encoding="utf-8")
     assert "import streamlit" not in src and "\nimport " not in src, \
         "ui_reference_data.py must be pure data — no imports / no Streamlit"
+
+
+def test_every_forensic_flag_has_a_display_description():
+    """Every forensic rf_ flag the engine computes MUST have a _FLAG_DISPLAY description — else it
+    fires on a Tear-Sheet with no explanation AND is absent from the Reference tab (which renders
+    _FLAG_DISPLAY directly). This is the forensic-flag completeness guarantee, drift-proof."""
+    from ui.ui_tearsheet import _FLAG_DISPLAY
+    from config import FORENSIC_MAX_FLAGS
+    src = (_ROOT / "core" / "forensic_engine.py").read_text(encoding="utf-8")
+    rf_cols = set(re.findall(r'df\["(rf_[^"]+)"\]\s*=', src))
+    missing = sorted(rf_cols - set(_FLAG_DISPLAY))
+    assert not missing, f"forensic rf_ flags with NO _FLAG_DISPLAY description: {missing}"
+    assert len(_FLAG_DISPLAY) == FORENSIC_MAX_FLAGS, \
+        f"_FLAG_DISPLAY has {len(_FLAG_DISPLAY)} entries; FORENSIC_MAX_FLAGS = {FORENSIC_MAX_FLAGS}"

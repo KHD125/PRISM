@@ -37,11 +37,12 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card, help_chip,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
                 render_bruised_blue_chips, render_multi_trillion_tipping_points,
-                render_reference, render_concepts)
+                render_reference, render_concepts, render_flags)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
 from ui.ui_reference_data import CONCEPT_REFERENCE
+from ui.ui_tearsheet import _FLAG_DISPLAY
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
@@ -1576,3 +1577,13 @@ with tabs[5]:
             unsafe_allow_html=True,
         )
     st.markdown(render_reference(_RAW_GLOSSARY, _ref_q), unsafe_allow_html=True)
+    # Forensic red flags — rendered straight from the engine's single-source _FLAG_DISPLAY (no copy).
+    _flags_html = render_flags(_FLAG_DISPLAY, _ref_q)
+    if _flags_html:
+        st.markdown(
+            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["red"]};'
+            f'text-transform:uppercase;letter-spacing:1px;margin:20px 0 2px 0;">'
+            f'Forensic Red Flags — what each warning means</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(_flags_html, unsafe_allow_html=True)
