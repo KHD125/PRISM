@@ -16,11 +16,12 @@ from config import COLORS
 def render_reference(glossary: dict, query: str = "") -> str:
     """Inline dark-theme HTML for the Reference tab: a short stable intro + the glossary
     as definition rows, filtered case-insensitively by `query` over term AND definition.
-    Pure: no Streamlit, no I/O, no global state. Terms sorted alphabetically (deterministic)."""
+    Pure: no Streamlit, no I/O, no global state. Terms sorted case-insensitively (deterministic),
+    so acronyms (CFO, CRS) interleave naturally with words (Capital, Cash) instead of ASCII-clumping."""
     q = (query or "").strip().lower()
     # Plain substring match — NOT regex — so query chars like '(' can never raise.
     items = [
-        (term, defn) for term, defn in sorted(glossary.items())
+        (term, defn) for term, defn in sorted(glossary.items(), key=lambda kv: kv[0].lower())
         if q in term.lower() or q in str(defn).lower()
     ]
 
