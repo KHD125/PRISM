@@ -501,6 +501,8 @@ def render_score_bar(score: float, color: str = "#3fb950", label: str = ""):
 _RAW_GLOSSARY = {
     # ── All-Data grid: curated residual orphans (coverage audit 2026-06-17) ──
     "Mcap Tier":          "Market-cap tier: Mega (≥₹2L Cr) / Large (≥₹20k) / Mid (≥₹5k) / Small (≥₹500) / Micro (≥₹100) / Nano (<₹100 Cr).",
+    "Cyclicality Tier":   "The kind of business by industry — A Deep-Cyclical/Commodity, B Cyclical, C Defensive, D Sensitive/Structural-Growth, E Financials, F Catch-all. A holding-regime hint: cyclicals (A/B) tend to be timing/overlay trades while defensives and structural growers (C/D) are steadier to hold through the cycle. Display-only context, never scored.",
+    "Earn Drawdown 5Y":   "The deepest peak-to-trough fall in the company's annual net profit over the last 6 years (current plus 5 prior). Near 0 means earnings only ever rose (a steady compounder); a large value means profits collapsed at some point (a cyclical signature); above 100% means the trough year went into a loss. Display-only context, never scored.",
     "ROE Turnaround":     "ROE is still below 15% but has turned up above its 5-year trend — an early-innings quality inflection (a turnaround bargain).",
     "Category Winner":    "14th-WCS sector Category Winner: top-30% capital efficiency (ROCE) within its sector AND above-market 5-year revenue growth — the sector leader.",
     "Enduring VC":        "18th-WCS Enduring Value Creator: positive economic profit + consistent earnings + a decade of ROE ≥ 15% (above cost of equity) — durable, proven compounding.",

@@ -1562,6 +1562,23 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         if _age is not None and pd.notna(_age):
             _stale_badge = _badge(f"⏳ Stale {int(_age)}d", COLORS["orange"])
 
+    # Cyclicality context — a-priori business type (industry tier) + realized 5Y earnings drawdown.
+    # NEUTRAL by design: cyclical ≠ bad, it's a holding-regime hint (timing-overlay vs hold-through-
+    # cycle). NaN-safe: earn-DD appended only when ≥4 of 6 PAT years exist. No threshold, no coloring
+    # — the "Defensive-but-cyclical" flag idea was vetoed by census (fired 40% of C/D = noise).
+    # Hidden on legacy cached frames lacking the engine column (mirrors the Evidence badge).
+    _cyc_badge = ""
+    _cyc_tier = stock.get("cyclicality_tier")
+    if _cyc_tier is not None and pd.notna(_cyc_tier):
+        _cyc_txt = f"🔄 {_esc(str(_cyc_tier))}"
+        _cyc_code = str(stock.get("cyclicality_tier_code", "") or "")
+        if _cyc_code:
+            _cyc_txt += f" ({_esc(_cyc_code)})"
+        _cyc_dd = stock.get("max_earnings_drawdown_5y")
+        if _cyc_dd is not None and pd.notna(_cyc_dd):
+            _cyc_txt += f" · earn-DD {float(_cyc_dd) * 100:.0f}%"
+        _cyc_badge = _badge(_cyc_txt + help_chip("Cyclicality Tier"), COLORS["text_secondary"])
+
     badges_html = (
         _badge(f"{tcfg['emoji']} {tcfg['label']}{help_chip('Conviction Tier')}", ring_clr) +
         _mg_badge +
@@ -1569,7 +1586,8 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         _badge(reg_txt, reg_clr) +
         _gov_badge +
         _cov_badge +
-        _stale_badge
+        _stale_badge +
+        _cyc_badge
     )
 
     st.markdown(f"""
@@ -1805,6 +1823,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("Elite ROE",           "Yes ✅" if g("roe_elite_flag") == 1 else "No", "") +
         _cell("ROE Rising",          "Yes ✅" if g("roe_trend_rising_flag") == 1 else "No", "") +
         _cell("Mcap Tier",           stock.get("mcap_tier", "") or "", "") +
+        _cell("Cyclicality Tier",    stock.get("cyclicality_tier", "") or "", "") +        # a-priori industry type (display-only)
+        _cell("Earn Drawdown 5Y",    g("max_earnings_drawdown_5y", np.nan), "{:.0%}") +    # realized worst PAT peak-to-trough; N/A if <4y
         _cell("ROE Turnaround",      "Yes ✅" if g("roe_turnaround_flag") == 1 else "No", "") +
         _cell("Category Winner",     "Yes ✅" if g("category_winner_flag") == 1 else "No", "") +
         _cell("Enduring VC",         "Yes ✅" if g("enduring_vc_flag") == 1 else "No", "") +
