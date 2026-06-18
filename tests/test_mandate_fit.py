@@ -10,13 +10,20 @@ moves per mandate. These tests pin that semantic + that app.py surfaces it and n
 per-profile gate as "Hard Gates" (which collides with the global HARD_GATES the config tab owns).
 """
 import io
+import os
 import contextlib
 from pathlib import Path
 
 import pytest
 
+# Real CSV data is gitignored (code-only repo); guard the slow real-data test PER-TEST so the static
+# source-check test below still runs in a code-only CI clone. Mirrors test_ui_smoke.py.
+_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "Other Resources", "CSV Data")
+
 
 @pytest.mark.slow
+@pytest.mark.skipif(not os.path.isdir(_DATA_DIR),
+                    reason="local CSV data absent (code-only checkout) — needs real data")
 def test_mandate_fit_is_subset_of_floor_and_responsive():
     """Mandate Fit (gate_pass & qglp_pass) must be a SUBSET of the safety floor for every mandate
     (the anti-qglp-overstatement guard) AND differ across mandates (the whole point — it moves)."""

@@ -2011,8 +2011,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # max_earnings_drawdown_5y: the deepest peak-to-trough fall in annual PAT over the 6 available
     #   years (current + 5 back). TIME-ORDERED (oldest→newest) cummax so the running peak precedes
     #   the trough — a monotone compounder scores ~0, a commodity that collapsed at the trough scores
-    #   high, and >1.0 means the trough went negative. NaN when <4 of 6 PAT years are present.
-    #   Way-1 validated: median ladders A 0.59 > B 0.43 > C 0.36 > D 0.31 across the expert tiers.
+    #   high, and >1.0 means the trough went negative. CAPPED at 3.0 (300%): a small EARLY running
+    #   peak before a later large loss makes the raw ratio explode on a near-zero denominator (e.g. a
+    #   ₹2 Cr early peak vs a −₹11 Cr trough → 551×); past ~3× the magnitude is denominator noise, so
+    #   the cap keeps the column display-/mean-safe (95th pct ≈ 2.84, so the legitimate ≤3 band — real
+    #   loss-makers — is untouched; only the ~4% artifact tail is clipped). NaN when <4 of 6 present.
+    #   Way-1 validated on MEDIANS (cap-immune): A 0.59 > B 0.43 > C 0.36 > D 0.31 across expert tiers.
     # cyclicality_tier(_code): the a-priori business TYPE from the committed industry map (sector
     #   fallback, then "F"). This is the FINER, industry-level DISPLAY sibling of the SECTOR-level
     #   cyclical_peak_trap (above, ~L1760) which DOES feed scoring (×0.70 valuation clawback,
@@ -2027,8 +2031,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         _pat_ord = df[_pat_cols[::-1]]   # already numeric (coerce_numeric_columns at load); oldest→newest
         _pat_peak = _pat_ord.cummax(axis=1)
         _pat_dd   = ((_pat_peak - _pat_ord) / _pat_peak).where(_pat_peak > 0.0)
-        df["max_earnings_drawdown_5y"] = _pat_dd.max(axis=1).where(
-            _pat_ord.notna().sum(axis=1) >= 4, np.nan)
+        df["max_earnings_drawdown_5y"] = (
+            _pat_dd.max(axis=1)
+                   .where(_pat_ord.notna().sum(axis=1) >= 4, np.nan)
+                   .clip(upper=3.0)   # cap small-running-peak blowup tail (≈4% of rows); see header
+        )
     else:
         df["max_earnings_drawdown_5y"] = np.nan
 

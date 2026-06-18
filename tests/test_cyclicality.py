@@ -37,6 +37,11 @@ for _m in (COMMON_COLS, RATIO_COLS, INCOME_COLS, BALANCE_COLS,
            CASHFLOW_COLS, SHAREHOLDING_COLS, TECHNICAL_COLS):
     _ALL_MAPPED_COLS.update(_m.values())
 
+# Real CSV data is gitignored (code-only repo). The slow display-only test reads it — guard it
+# PER-TEST (not module-level) so the 5 synthetic tests still run in a code-only CI clone (the
+# committed half of the coverage split). Mirrors test_ui_smoke.py / test_output_consistency.py.
+_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "Other Resources", "CSV Data")
+
 
 def _frame(n: int = 2, **overrides) -> pd.DataFrame:
     """Full-NaN mapped frame (the §6 synthetic pattern) with per-row overrides. sorted() pins the
@@ -117,8 +122,20 @@ def test_drawdown_negative_trough_exceeds_one():
     assert out["max_earnings_drawdown_5y"].iloc[0] > 1.0
 
 
+def test_drawdown_caps_tiny_running_peak_blowup():
+    """A small EARLY running peak before a later large loss makes the raw ratio explode on a near-zero
+    denominator; the column caps at 3.0 so the data — and any UI/mean — never sees the 55100% tail."""
+    out = compute_derived_signals(_frame(
+        n=1, pat=[6.0], pat_1yb=[5.0], pat_2yb=[4.0], pat_3yb=[3.0], pat_4yb=[-11.0], pat_5yb=[2.0],
+    ))
+    # oldest→newest 2,-11,3,4,5,6: running peak before -11 is 2 → raw (2-(-11))/2 = 6.5, capped to 3.0
+    assert out["max_earnings_drawdown_5y"].iloc[0] == 3.0
+
+
 # ── the KEY invariant: display-only, zero scoring leakage ─────────────────────
 @pytest.mark.slow
+@pytest.mark.skipif(not os.path.isdir(_DATA_DIR),
+                    reason="local CSV data absent (code-only checkout) — needs real data")
 def test_display_only_composite_byte_identical():
     """Corrupting the two cyclicality columns must NOT change composite_score — proving they feed no
     score (mirrors the verdict-engine display-only contract). compute_derived_signals runs in the
