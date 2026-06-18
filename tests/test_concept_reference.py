@@ -58,6 +58,19 @@ def _dict_keys(src, var):
     return set()
 
 
+def _fw_meta_keys():
+    """The 37 framework names — AST-parsed from the function-local _FW_META in ui_tearsheet.py (no
+    import / no refactor of that 3k-line, parallel-owned module; same AST approach as the emoji test)."""
+    src = (_ROOT / "ui" / "ui_tearsheet.py").read_text(encoding="utf-8")
+    for n in ast.walk(ast.parse(src)):
+        if (isinstance(n, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "_FW_META" for t in n.targets)
+                and isinstance(n.value, ast.Dict)):
+            return {k.value for k in n.value.keys
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+    return set()
+
+
 def _universe():
     """The full categorical-label universe, extracted FROM THE CODE that produces it."""
     u = set()
@@ -66,6 +79,7 @@ def _universe():
     disc = (_ROOT / "ui" / "ui_discovery.py").read_text(encoding="utf-8")
     u |= _np_call_str_labels(disc, "where")                  # piotroski strength tiers
     u |= _dict_keys(disc, "_CATALYSTS") | _dict_keys(disc, "_SELL_ALERTS")
+    u |= _fw_meta_keys()                                      # the 37 frameworks
     from config import CONVICTION_TIERS
     u |= {t["label"] for t in CONVICTION_TIERS}
     from core.cyclicality_map import TIER_LABELS
