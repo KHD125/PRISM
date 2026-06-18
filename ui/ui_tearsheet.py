@@ -3077,6 +3077,22 @@ def _sector_peer_strip_html(stock: pd.Series) -> str:
 
     sector = _esc(_g(stock, "sector", "—") or "—")
 
+    # ── Lead tile: rank within the sector cohort (the named-cohort position) ────
+    # Reads the engine's sector_composite_rank / sector_peer_count (#X of N by post-penalty
+    # composite). _g → None on NaN/missing; a sole-listed peer (count < 2) has no cohort.
+    # Sub avoids the sector name (the header already shows it) — _tile re-escapes sub, so a
+    # name with '&' would double-escape; keeping it name-free sidesteps that entirely.
+    s_rank = _g(stock, "sector_composite_rank", None)
+    s_cnt  = _g(stock, "sector_peer_count", None)
+    if s_rank is None or s_cnt is None or int(s_cnt) < 2:
+        sr_clr, sr_val, sr_sub = MUTE, "—", "No sector cohort"
+    else:
+        s_rank, s_cnt = int(s_rank), int(s_cnt)
+        pos = s_rank / s_cnt                       # 0 = top of sector
+        sr_clr = GREEN if pos <= 0.25 else GOLD if pos <= 0.50 else MUTE
+        sr_val = f"#{s_rank} of {s_cnt}"
+        sr_sub = f"Top {max(1, round(pos * 100))}% by composite"
+
     def _tile(color, value, label, sub):
         return (
             f"<div style='flex:1;flex-shrink:0;min-width:150px;"
@@ -3094,6 +3110,7 @@ def _sector_peer_strip_html(stock: pd.Series) -> str:
         f"letter-spacing:0.8px;margin:16px 0 6px 0;'>📊 vs Sector Peers · {sector}</div>"
     )
     tiles = (
+        _tile(sr_clr,  sr_val,  "🏅 Rank in Sector",            sr_sub) +
         _tile(rk_clr,  rk_val,  "🛡️ ROCE Percentile in Sector", rk_sub) +
         _tile(emc_clr, emc_val, "📈 Sector ROE Moat",           emc_sub) +
         _tile(cap_clr, cap_val, "🔄 Sector Capital Cycle",       cap_sub)

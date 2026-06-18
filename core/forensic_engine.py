@@ -973,6 +973,17 @@ def compute_cascading_forensic_filter(df: pd.DataFrame) -> pd.DataFrame:
         # clipped 0-100 and never NaN, so .astype(int) is safe.
         df["rank"] = df["composite_score"].rank(ascending=False, method="first").astype(int)
 
+        # Sector-cohort position: rank within the stock's OWN sector by the SAME post-penalty
+        # composite (so "#X of N in sector" can never contradict the headline rank). Fully
+        # vectorized groupby (no apply); float + NaN-safe — a NaN/absent sector propagates NaN
+        # (semantic-truth), and the UI tile guards it. method="min" so tied composites share a
+        # rank. Guarded on the column so minimal forensic-only frames (no sector) are unaffected.
+        if "sector" in df.columns:
+            _sec = df["sector"]
+            df["sector_peer_count"]     = df.groupby(_sec)["composite_score"].transform("size")
+            df["sector_composite_rank"] = df.groupby(_sec)["composite_score"].rank(
+                ascending=False, method="min")
+
     return df
 
 

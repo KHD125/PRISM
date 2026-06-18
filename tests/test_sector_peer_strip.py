@@ -108,3 +108,53 @@ def test_html_is_escaped_against_injection():
     html = _sector_peer_strip_html(_stock(sector="Foo <script>&"))
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+# ── 🏅 Rank in Sector tile (named-cohort position) ──────────────────────────
+def test_sector_rank_tile_shows_position():
+    html = _sector_peer_strip_html(_stock(sector_composite_rank=3, sector_peer_count=47))
+    assert "#3 of 47" in html
+    assert "rank in sector" in html.lower()
+
+
+def test_sector_rank_top_quartile_is_green():
+    # rank 2 of 20 = pos 0.10 (<=0.25). ROCE tile forced RED (0.30) so green is the rank tile's.
+    html = _sector_peer_strip_html(
+        _stock(sector_roce_pct_rank=0.30, sector_composite_rank=2, sector_peer_count=20)
+    )
+    assert "#2 of 20" in html
+    assert "Top 10% by composite" in html
+    assert COLORS["green"] in html
+
+
+def test_sector_rank_mid_is_gold():
+    # rank 10 of 20 = pos 0.50 (<=0.50). ROCE forced RED so the only gold is the rank tile.
+    html = _sector_peer_strip_html(
+        _stock(sector_roce_pct_rank=0.30, sector_composite_rank=10, sector_peer_count=20)
+    )
+    assert "#10 of 20" in html
+    assert "Top 50% by composite" in html
+    assert COLORS["gold"] in html
+
+
+def test_sector_rank_bottom_is_muted():
+    # rank 18 of 20 = pos 0.90 -> muted. ROCE forced RED, EMC/capital default muted -> no
+    # green/gold anywhere proves the rank tile is muted.
+    html = _sector_peer_strip_html(
+        _stock(sector_roce_pct_rank=0.30, sector_composite_rank=18, sector_peer_count=20)
+    )
+    assert "#18 of 20" in html
+    assert COLORS["green"] not in html
+    assert COLORS["gold"] not in html
+
+
+def test_sole_peer_has_no_cohort():
+    html = _sector_peer_strip_html(_stock(sector_composite_rank=1, sector_peer_count=1))
+    assert "no sector cohort" in html.lower()
+
+
+def test_rank_tile_no_nan_leak_when_missing():
+    # default _stock() has no rank columns -> graceful dash, never "nan"
+    html = _sector_peer_strip_html(_stock()).lower()
+    assert "rank in sector" in html
+    assert "nan" not in html
