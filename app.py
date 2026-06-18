@@ -53,10 +53,11 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
 # Tier 3: run_forensic_analysis— NOT cached. Instant.
 # ═══════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
-def get_clean_data(data_source, _file_signature: str, sheet_id, _uploaded_dict=None):
+def get_clean_data(data_source, file_signature: str, sheet_id, _uploaded_dict=None):
     """Tier-1: Expensive data fetch + clean. Heavily cached.
-    _uploaded_dict is prefixed with _ so Streamlit skips hashing the raw stream objects.
-    _file_signature (stable string: name+size per file) is the actual cache key for uploads.
+    file_signature (stable string: name+size per file) is NOT underscored, so Streamlit HASHES it —
+    it is the real cache key that busts the cache when a different file is uploaded.
+    _uploaded_dict IS underscored so Streamlit skips hashing the raw, unhashable stream objects.
     """
     t0 = time.time()
     df = fetch_and_clean_data(data_source, _uploaded_dict, sheet_id)
