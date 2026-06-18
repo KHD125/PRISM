@@ -222,10 +222,25 @@ _MANDATES = {
 _MANDATE_KEYS = list(_MANDATES.keys())
 
 # ── Mandate Selector — button row ─────────────────────────────
-if "sel_mandate" not in st.session_state:
-    st.session_state["sel_mandate"] = _MANDATE_KEYS[0]
-
-_sel_mandate = st.session_state["sel_mandate"]
+# Single source of truth = (adv_mode, adv_profile). sel_mandate is DERIVED: the mandate whose
+# (mode, profile) matches the active combo, or None = a "⚙️ Custom" override combo (e.g. Growth/
+# Defensive, or any pair no mandate uses). Streamlit writes a changed widget's value into
+# session_state BEFORE the script reruns, so deriving here (at the top) reflects the user's latest
+# override and keeps the button highlight + the card consistent in a single pass.
+_MANDATE_BY_COMBO = {(v["mode"], v["profile"]): k for k, v in _MANDATES.items()}
+if "adv_mode" not in st.session_state:                  # first load → default mandate (QGLP Balanced)
+    _d = _MANDATE_KEYS[0]
+    st.session_state["adv_mode"]    = _MANDATES[_d]["mode"]
+    st.session_state["adv_profile"] = _MANDATES[_d]["profile"]
+# Guard FIRST: snap the active profile into the active mode's allowed set (so a mode change that
+# orphans the profile resolves cleanly AND the Scoring-Profile selectbox value stays valid below).
+_allowed_now = ANALYSIS_MODES[st.session_state["adv_mode"]]["allowed_profiles"]
+if st.session_state.get("adv_profile") not in _allowed_now:
+    st.session_state["adv_profile"] = _allowed_now[0]
+st.session_state["sel_mandate"] = _MANDATE_BY_COMBO.get(
+    (st.session_state["adv_mode"], st.session_state["adv_profile"]))
+_sel_mandate   = st.session_state["sel_mandate"]        # None = ⚙️ Custom
+_mandate_label = _sel_mandate or "Custom"   # _m_icon supplies the ⚙️ for the card; spinner/export read fine bare
 _mb_cols = st.columns(len(_MANDATES))
 for _mi, (_mk, _mv) in enumerate(_MANDATES.items()):
     with _mb_cols[_mi]:
@@ -236,18 +251,17 @@ for _mi, (_mk, _mv) in enumerate(_MANDATES.items()):
             type="primary" if _is_active else "secondary",
             use_container_width=True,
         ):
-            st.session_state["sel_mandate"] = _mk
             st.session_state["adv_mode"]    = _mv["mode"]
             st.session_state["adv_profile"] = _mv["profile"]
             st.rerun()
 
-_sel_mandate = st.session_state["sel_mandate"]
-
-# Mandate description strip
+# Mandate description strip — None-safe (a Custom override shows the active profile's description)
+_desc = (_MANDATES[_sel_mandate]["desc"] if _sel_mandate
+         else f"⚙️ Custom override — {MASTER_PROFILES[st.session_state['adv_profile']]['description']}")
 st.markdown(
     f'<div style="font-size:0.75rem;color:{COLORS["text_secondary"]};'
     f'padding:4px 2px 10px 2px;border-bottom:1px solid {COLORS["border"]};margin-bottom:6px;">'
-    f'{_MANDATES[_sel_mandate]["desc"]}</div>',
+    f'{_desc}</div>',
     unsafe_allow_html=True,
 )
 
@@ -262,8 +276,7 @@ with st.expander("⚙️ Advanced: Override Mandate Defaults", expanded=False):
     st.caption(ANALYSIS_MODES[analysis_mode]["description"])
 
     _ov_allowed = ANALYSIS_MODES[analysis_mode]["allowed_profiles"]
-    if st.session_state.get("adv_profile") not in _ov_allowed:
-        st.session_state["adv_profile"] = _ov_allowed[0]
+    # (the top guard already snapped adv_profile into _ov_allowed, so the value below is always valid)
     scoring_profile = st.selectbox(
         "Scoring Profile",
         options=_ov_allowed,
@@ -278,7 +291,7 @@ profile_cfg = MASTER_PROFILES[scoring_profile]
 _score_key = f"{file_sig}::{analysis_mode}::{scoring_profile}"
 if st.session_state.get("_score_key") != _score_key or "_scored_df" not in st.session_state:
     _spin_icon = _MANDATES.get(_sel_mandate, {}).get("icon", "🧭")
-    with st.spinner(f"{_spin_icon} Running {_sel_mandate} mandate — {scoring_profile}..."):
+    with st.spinner(f"{_spin_icon} Running {_mandate_label} mandate — {scoring_profile}..."):
         try:
             _df_scored = get_scored_data(clean_df, analysis_mode, scoring_profile)
             st.session_state["_scored_df"] = _df_scored
@@ -369,7 +382,7 @@ if adaptive_w:
     _det_regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
     _reg_clr    = COLORS["green"] if _det_regime == "BULL" else COLORS["red"] if _det_regime == "BEAR" else COLORS["gold"]
     _reg_emoji  = "🟢" if _det_regime == "BULL" else "🔴" if _det_regime == "BEAR" else "🟡"
-    _m_icon     = _MANDATES.get(_sel_mandate, {}).get("icon", "⚖️")
+    _m_icon     = _MANDATES.get(_sel_mandate, {}).get("icon", "⚙️")
     _prof_icon  = profile_cfg.get("icon", "⚖️")
     _wbars = [
         ("⚡ Quality",     _qw, COLORS["purple"]),
@@ -394,7 +407,7 @@ if adaptive_w:
       <div style="display:flex;align-items:center;justify-content:space-between;
            margin-bottom:10px;flex-wrap:wrap;gap:6px;">
         <span style="font-size:0.8rem;font-weight:700;color:{COLORS['text_primary']};">
-          {_m_icon} {_sel_mandate}
+          {_m_icon} {_mandate_label}
           <span style="color:{COLORS['text_muted']};font-weight:400;"> · </span>
           <span style="color:{COLORS['text_secondary']};font-weight:400;font-size:0.74rem;">
             {_prof_icon} {scoring_profile}
@@ -747,7 +760,7 @@ with tabs[1]:
                         if c in ds_df.columns]
         _safe_mandate = _sel_mandate.replace(" ", "_").lower()
         st.download_button(
-            f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {_sel_mandate} / {scoring_profile}",
+            f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {_mandate_label} / {scoring_profile}",
             data=ds_df[_export_cols].to_csv(index=False),
             file_name=f"scan_{_safe_mandate}_{scoring_profile.lower()}.csv",
             mime="text/csv",

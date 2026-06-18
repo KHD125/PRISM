@@ -13,7 +13,9 @@ _APP = Path(__file__).resolve().parent.parent / "app.py"
 def test_banner_renders_above_mandate_selector():
     src = _APP.read_text(encoding="utf-8")
     banner = src.find("render_hero_banner(compact=True)")
-    selector = src.find('if "sel_mandate" not in st.session_state')
+    # Stable anchor = the mandate-selector section header (the old `if "sel_mandate" not in
+    # st.session_state` anchor was removed when sel_mandate became derived from the active combo).
+    selector = src.find("# ── Mandate Selector — button row")
     assert banner != -1, "compact PRISM brand strip call is missing from app.py"
     assert selector != -1, "mandate selector anchor not found in app.py"
     assert banner < selector, "compact banner must render above the mandate selector"
