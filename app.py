@@ -791,6 +791,12 @@ with tabs[2]:
         _names = [n for n in all_stock_names if _term in n.upper()] if _term else all_stock_names
         if not _names:
             _names = all_stock_names
+        # Cross-tab handoff: tabs that render AFTER this one (Market Pulse) cannot assign the
+        # xray_stock widget key directly — Streamlit raises StreamlitAPIException (set-after-
+        # instantiation). They stage a transient _pending_xray + st.rerun() instead; consume it
+        # HERE, before the selectbox below is instantiated, so its index reflects the jumped stock.
+        if "_pending_xray" in st.session_state:
+            st.session_state["xray_stock"] = st.session_state.pop("_pending_xray")
         _prev_sel = st.session_state.get("xray_stock")
         _ts_idx   = _names.index(_prev_sel) if _prev_sel in _names else 0
         with _ts_c2:
@@ -1130,8 +1136,8 @@ with tabs[3]:
     # ── Pre-compute section datasets ───────────────────────────────
     _mp_ts   = (df[df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
                 if "tsunami_signal" in df.columns else df.iloc[:0])
-    _mp_qglp = (filt[filt["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
-                if "qglp_pass" in filt.columns else filt.iloc[:0])
+    _mp_qglp = (df[df["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
+                if "qglp_pass" in df.columns else df.iloc[:0])   # market-wide, like the other 4 sections
     _mp_qual = df[df["gate_pass"] == 1] if "gate_pass" in df.columns else df
 
     _bbc_mask = df.get("bruised_blue_chip_29", pd.Series(0, index=df.index)).fillna(0) == 1
@@ -1204,7 +1210,12 @@ with tabs[3]:
             _ts_rows = _ts_sel.selection.rows if _ts_sel and hasattr(_ts_sel, "selection") else []
             if _ts_rows:
                 _ts_pick = _mp_ts.iloc[_ts_rows[0]]["name"]
-                st.session_state["xray_stock"] = _ts_pick
+                # Stage a transient key + rerun (NOT a direct widget-key set — this tab renders
+                # after the Tear-Sheet selectbox). The change-guard is essential: st.dataframe's
+                # selection persists across reruns, so an unguarded set+rerun would loop forever.
+                if _ts_pick != st.session_state.get("xray_stock"):
+                    st.session_state["_pending_xray"] = _ts_pick
+                    st.rerun()
                 st.markdown(f"""
                 <div style="padding:9px 14px;margin-top:8px;background:rgba(139,92,246,0.07);
                      border:1px solid rgba(139,92,246,0.3);border-radius:8px;font-size:0.8rem;">
@@ -1260,7 +1271,10 @@ with tabs[3]:
             _q_rows = _q_sel.selection.rows if _q_sel and hasattr(_q_sel, "selection") else []
             if _q_rows:
                 _q_pick = _mp_qglp.iloc[_q_rows[0]]["name"]
-                st.session_state["xray_stock"] = _q_pick
+                # Transient key + rerun + change-guard (see Tsunami above — same set-after-widget rule).
+                if _q_pick != st.session_state.get("xray_stock"):
+                    st.session_state["_pending_xray"] = _q_pick
+                    st.rerun()
                 st.markdown(f"""
                 <div style="padding:9px 14px;margin-top:8px;background:rgba(228,179,65,0.07);
                      border:1px solid rgba(228,179,65,0.3);border-radius:8px;font-size:0.8rem;">
