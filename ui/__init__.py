@@ -79,7 +79,7 @@ from .ui_components import (
     help_chip,
 )
 
-from .ui_reference import render_reference
+from .ui_reference import render_reference, render_concepts
 
 __all__ = [
     "render_moat_growth_matrix",
@@ -119,4 +119,5 @@ __all__ = [
     "render_multi_trillion_tipping_points",
     "help_chip",
     "render_reference",
+    "render_concepts",
 ]

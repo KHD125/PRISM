@@ -36,10 +36,12 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_stock_card, help_chip,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
-                render_bruised_blue_chips, render_multi_trillion_tipping_points, render_reference)
+                render_bruised_blue_chips, render_multi_trillion_tipping_points,
+                render_reference, render_concepts)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
+from ui.ui_reference_data import CONCEPT_REFERENCE
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
@@ -1554,7 +1556,23 @@ with tabs[5]:
     )
     _ref_q = st.text_input(
         "Search the glossary", key="ref_search",
-        placeholder="Search any term (e.g. PEG, ROCE, Tsunami)…",
+        placeholder="Search any term or label (e.g. PEG, Wealth Creator, Stage 2)…",
         label_visibility="collapsed",
     )
+    # Two corpora, one search: the term glossary (column NAMES) + the concept reference (the VALUE
+    # labels you see on a cell — Wealth Creator, Deep Value, Stage 2…). The query filters both.
+    _concepts_html = render_concepts(CONCEPT_REFERENCE, _ref_q)
+    if _concepts_html:
+        st.markdown(
+            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["text_secondary"]};'
+            f'text-transform:uppercase;letter-spacing:1px;margin:6px 0 2px 0;">'
+            f'Labels &amp; Verdicts — what each value means</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(_concepts_html, unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["text_secondary"]};'
+            f'text-transform:uppercase;letter-spacing:1px;margin:20px 0 2px 0;">Glossary — terms</div>',
+            unsafe_allow_html=True,
+        )
     st.markdown(render_reference(_RAW_GLOSSARY, _ref_q), unsafe_allow_html=True)

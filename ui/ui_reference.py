@@ -53,3 +53,28 @@ def render_reference(glossary: dict, query: str = "") -> str:
         for term, defn in items
     )
     return intro + count + rows
+
+
+def render_concepts(concept_ref: dict, query: str = "") -> str:
+    """Inline dark-theme HTML for the categorical VALUE-labels (Wealth Creator, Deep Value, Stage 2…),
+    grouped by category, filtered case-insensitively by `query` over label AND explanation. Pure: no
+    Streamlit, no I/O. Returns "" when nothing matches (the glossary section shows its own state)."""
+    q = (query or "").strip().lower()
+    blocks = []
+    for category, entries in concept_ref.items():
+        rows = [(lbl, exp) for lbl, exp in entries
+                if q in lbl.lower() or q in str(exp).lower()]
+        if not rows:
+            continue
+        head = (f'<div style="font-size:0.7rem;font-weight:800;color:{COLORS["purple"]};'
+                f'text-transform:uppercase;letter-spacing:0.8px;margin:16px 0 6px 0;">'
+                f'{html.escape(category)}</div>')
+        body = "".join(
+            f'<div style="padding:7px 0;border-bottom:1px solid {COLORS["border"]};">'
+            f'<div style="font-size:0.8rem;font-weight:700;color:{COLORS["text_primary"]};">{html.escape(lbl)}</div>'
+            f'<div style="font-size:0.74rem;color:{COLORS["text_secondary"]};line-height:1.45;margin-top:2px;">'
+            f'{html.escape(str(exp))}</div></div>'
+            for lbl, exp in rows
+        )
+        blocks.append(head + body)
+    return "".join(blocks)
