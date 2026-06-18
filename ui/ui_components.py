@@ -607,7 +607,7 @@ _RAW_GLOSSARY = {
     "Dist 52WH":     "How far below its 52-week high the price is. Near the high (small number) shows strength.",
     "VSTOP Green":   "Whether the price is above its volatility-stop trend line (a simple 'trend is up' check).",
     "Breakout Scr":  "A score for how close the stock is to breaking out of a price base to new highs.",
-    "Momentum Scr":  "The engine's overall price-momentum score (0-100).",
+    "Momentum Scr":  "The engine's overall price-momentum score (0-100), blending relative strength, trend quality, breakout proximity, volume confirmation and sector leadership.",
     "Weinstein Stage":"Stan Weinstein's stage of the price cycle — Stage 2 (advancing) is the buy zone, Stage 4 (declining) is avoid.",
     # ── Forensic Summary ──
     "Red Flags":     "How many accounting/governance warning signs fired, out of all the forensic checks. Fewer is better.",

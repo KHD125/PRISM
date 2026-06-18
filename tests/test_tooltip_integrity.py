@@ -89,7 +89,9 @@ def _used_keys():
 # ── 1. quality net ──
 def test_every_glossary_value_is_plain_language():
     for k, v in _RAW_GLOSSARY.items():
-        assert isinstance(v, str) and len(v.strip()) >= 20, f"glossary {k!r} too short/empty"
+        # 40-char floor (raised from 20, 2026-06-18): catches SHALLOW, not just empty — and matches
+        # the concept-reference quality floor. All 173 entries already clear it (audited; min = 40).
+        assert isinstance(v, str) and len(v.strip()) >= 40, f"glossary {k!r} too short/shallow"
 
 
 def test_every_scanner_tip_is_plain_language():
