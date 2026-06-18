@@ -55,9 +55,18 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             return n
 
         def _grp(title, *keys, expanded=False):
-            """An expander whose header carries a live active-filter count for the group."""
+            """An expander whose header carries a live active-filter count — and that stays OPEN
+            whenever the group holds an active filter (expanded or a > 0).
+
+            WHY: st.expander has no persistent open-state (no `key` in Streamlit 1.54), so it
+            re-renders at its STATIC `expanded=` default on every rerun. Without this, selecting a
+            filter (a rerun) or clicking Clear-all (st.rerun) snapped every expanded=False box shut —
+            the box you were working in collapsed under you. Reading `_active_n` here (which sees the
+            PRIOR run's persisted sb_* selections, before the widgets re-render) keeps any group you're
+            actively using open across reruns. The body always renders either way (collapse is CSS),
+            so filters keep applying regardless — this only governs the visual open/closed default."""
             a = _active_n(*keys)
-            return st.expander(title + (f"  ·  {a}" if a else ""), expanded=expanded)
+            return st.expander(title + (f"  ·  {a}" if a else ""), expanded=(expanded or a > 0))
 
         # ── SMART INTERCONNECTED FILTER CASCADE ──────────────────────────────────
         # Every option-based filter narrows the OPTIONS of every filter BELOW it. A single

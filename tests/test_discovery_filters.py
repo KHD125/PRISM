@@ -36,6 +36,20 @@ def test_new_keys_registered_in_both_spots():
         assert k in active_block, f"{k} missing from _active_n() — the funnel total will undercount"
 
 
+def test_active_groups_stay_open_across_reruns():
+    """st.expander has no persistent open-state (no key in Streamlit 1.54) → it re-renders at its
+    static `expanded=` default every rerun, so selecting a filter / clicking Clear-all would snap
+    the box shut. _grp must keep a group OPEN when it holds an active filter (expanded or a > 0).
+    Pin it so the fix can't silently revert to a static `expanded=expanded`."""
+    # Assert the actual st.expander KWARG (`expanded=(...)`) — unique to the call. The docstring's
+    # prose says "(expanded or a > 0)" WITHOUT the `expanded=` prefix, so this can't be satisfied by
+    # the comment alone: a revert to a static `expanded=expanded` genuinely RED-fails.
+    assert "expanded=(expanded or a > 0)" in _DISC, (
+        "_grp's st.expander() must pass expanded=(expanded or a > 0) — otherwise every rerun "
+        "(filter select / Clear-all) collapses the box the user is working in"
+    )
+
+
 def test_filter_labels_match_the_engine_verbatim():
     # cyclicality: import-pinned to the engine's source of truth
     for v in TIER_LABELS.values():
