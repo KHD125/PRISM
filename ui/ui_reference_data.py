@@ -107,4 +107,120 @@ CONCEPT_REFERENCE = {
         ("WATCH", "A qualified call — promising but with a caveat (mid conviction, or a soft forensic/timing flag). Monitor, don't act yet."),
         ("AVOID", "A negative call — low conviction, OR a hard veto from severe forensic red flags / governance risk. Stay away."),
     ],
+    # ── conviction_tier / tier_label — config.CONVICTION_TIERS (composite-score bands)
+    "🏆 Conviction Tier": [
+        ("Crown Jewels", "Tier 1 (composite ≥85) — the highest-conviction compounders; deep-dive and build a position."),
+        ("Strong Compounders", "Tier 2 (composite ≥70) — quality with momentum confirmation; watchlist priority."),
+        ("Emerging Quality", "Tier 3 (composite ≥55) — quality building and momentum developing; monitor for an upgrade."),
+        ("On Radar", "Tier 4 (composite ≥40) — on the radar but not yet qualified; keep watching."),
+        ("Not Ready", "Tier 5 (composite below 40) — does not yet clear the bar; pass for now."),
+    ],
+    # ── mcap_tier / market_category — config.MCAP_TIERS (market-cap bands, ₹ Cr)
+    "🏢 Market Cap Tier": [
+        ("Mega Cap", "Market capitalisation of ₹2,00,000 Cr or more — the very largest, most-liquid companies."),
+        ("Large Cap", "Market capitalisation of ₹20,000–2,00,000 Cr — large, well-established companies."),
+        ("Mid Cap", "Market capitalisation of ₹5,000–20,000 Cr — mid-sized companies."),
+        ("Small Cap", "Market capitalisation of ₹500–5,000 Cr — smaller companies, more volatile."),
+        ("Micro Cap", "Market capitalisation of ₹100–500 Cr — very small companies, often thinly traded."),
+        ("Nano Cap", "Market capitalisation below ₹100 Cr — the smallest and least-liquid companies."),
+    ],
+    # ── cash_machine_label — core/data_engine.py:1046 (cash_machine_score from CFO/PAT)
+    "💵 Cash Machine": [
+        ("💰 Cash Machine", "Profits are fully cash-backed — operating cash flow comfortably exceeds reported profit. The strongest cash-quality signal."),
+        ("✅ Solid", "Operating cash flow is above 80% of reported profit — acceptable cash conversion."),
+        ("📄 Paper Profits", "Operating cash flow lags reported profit — earnings aren't turning into cash. A quality warning."),
+    ],
+    # ── ep_power_curve — core/data_engine.py:1506 (economic profit level × its velocity)
+    "📊 Economic-Profit Power Curve": [
+        ("🚀 Hockey Stick", "Positive economic profit AND accelerating — earns above its cost of capital and the spread is widening. The best state."),
+        ("✅ EP Positive", "Positive economic profit but not accelerating — earns above its cost of capital, holding steady."),
+        ("📈 Improving", "Economic profit still negative but improving — below its cost of capital, yet the trend is turning up."),
+        ("📉 Value Trap", "Negative economic profit and not improving — earns below its cost of capital with no upturn."),
+    ],
+    # ── earnings_power_box — core/data_engine.py:1547 (Heiserman defensive × enterprising)
+    "📦 Earnings Power Box": [
+        ("📦 Earnings Power", "Strong on BOTH Heiserman tests — defensive (stable, profitable) and enterprising (reinvesting for growth). The top box."),
+        ("💰 Cash Cow", "Defensive but not enterprising — stable and profitable, but reinvesting little for growth."),
+        ("🚀 Cash-Hungry Grower", "Enterprising but not defensive — reinvesting hard for growth, but the base economics aren't yet stable."),
+        ("⚠️ Weakest", "Weak on both Heiserman tests — neither stable economics nor productive reinvestment."),
+    ],
+    # ── fisher_lifecycle_quadrant — core/scoring_engine.py:2787 (Fisher quality_pass × scalability pass)
+    "🧬 Fisher Lifecycle Quadrant": [
+        ("👑 Apex Winner", "Elite quality business at its operating-leverage peak — passes both the Fisher quality and scalability screens. Prime entry."),
+        ("🐢 Steady Compounder", "Proven quality with no current inflection — a durable steady-state hold past its fastest phase."),
+        ("⚡ Catalyst Play", "A scalability inflection firing but structural quality not yet proven — an earlier, trading-style candidate."),
+        ("⚪ Laggard", "Neither the Fisher quality nor the scalability screen passes — no current edge on this map."),
+    ],
+    # ── malik_label / forensic_label — data_engine.py:1705 / forensic_engine.py:166 (checklist strength)
+    "📋 Quality / Forensic Strength": [
+        ("🟢 Strong", "A strong rating on the relevant checklist (Malik quality or forensic accounting-quality) — passes most or all of its tests."),
+        ("🟡 Moderate", "A middling rating — passes some of the checklist's tests but not most."),
+        ("🟠 Weak", "A weak rating — fails most of the Malik quality checklist's tests."),
+        ("🔴 Poor", "The lowest Malik-quality rating — fails nearly all of the financial-strength tests."),
+        ("🔴 Weak", "A weak forensic rating — the accounting-quality checks raise concern."),
+    ],
+    # ── Piotroski Strength — ui/ui_discovery.py np.where (F-Score band)
+    "🛡️ Piotroski Strength": [
+        ("💪 Strong (≥7)", "Piotroski F-Score of 7–9 — very healthy books across profitability, leverage and efficiency."),
+        ("➖ Moderate (4–6)", "Piotroski F-Score of 4–6 — middling financial health on the nine-point checklist."),
+        ("⚠️ Weak (≤3)", "Piotroski F-Score of 3 or below — weak financial health; treat with caution."),
+    ],
+    # ── trend_modifier — core/data_engine.py:2230 (Weinstein stage × Grimes path event)
+    "↩️ Trend Modifier": [
+        ("↩️ Pullback", "High-edge continuation: a Stage-2 dip below the 50-day line, still above the 30-week MA, on volume dry-up — a buy-the-dip setup."),
+        ("🚀 Breakout", "With-trend edge: a Stage-2 stock within 3% of its 52-week high, not extended, on volume expansion — a breakout setup."),
+        ("⚠️ Bounce", "Low-confidence counter-trend: a Stage-4 rally back up to the falling 30-week MA — Weinstein's 'don't chase' zone."),
+        ("⚠️ Extended", "Low-confidence caution: stretched far above the 30-week MA and overbought (RSI > 70) — termination risk."),
+    ],
+    # ── d48_breakout_readiness — core/data_engine.py:2280 (distance to 52w/13w high)
+    "🎯 Breakout Readiness": [
+        ("IMMINENT", "Within 10% of the 52-week high AND within 5% of the 13-week high — a breakout looks imminent."),
+        ("NEAR", "Within 20% of the 52-week high — approaching breakout territory."),
+        ("FAR", "More than 20% below the 52-week high — not near a breakout."),
+    ],
+    # ── d49_momentum_quality — core/data_engine.py:2289 (RSI + ADX)
+    "⚡ Momentum Quality": [
+        ("OVERHEATED", "RSI above 70 — momentum is strong but overbought; pullback risk is elevated."),
+        ("HIGH", "RSI in the healthy 50–70 zone with a strong trend (ADX > 20) — high-quality momentum."),
+        ("WEAK", "Momentum is weak — neither overbought nor in a confirmed strong trend."),
+    ],
+    # ── verdict coverage confidence — core/verdict_engine.py:92 (evidence coverage %)
+    "🔍 Verdict — Evidence Confidence": [
+        ("High", "The verdict rests on 80%+ evidence coverage — most ranked inputs reported; trust it more."),
+        ("Medium", "60–80% evidence coverage — a fair amount of the inputs reported."),
+        ("Low", "40–60% evidence coverage — a meaningful share of inputs are missing; treat with care."),
+        ("Very Low", "Under 40% evidence coverage — the verdict rests on thin data; tentative."),
+    ],
+    # ── verdict_axis_governance — core/verdict_engine.py:116 (governance multiplier)
+    "🛡️ Verdict — Governance Axis": [
+        ("Govern 🟢 Safe", "No governance penalty — promoter pledge, dilution and related-party signals are clean."),
+        ("Govern 🟡 Caution", "A mild governance penalty — one or more governance signals warrant caution."),
+        ("Govern 🔴 Risk", "A heavy governance penalty — serious pledge/dilution/related-party risk drags the score."),
+    ],
+    # ── verdict_top_risk — core/verdict_engine.py:121 (the single most important risk)
+    "⚠️ Verdict — Top Risk": [
+        ("🚨 Severe forensic / accounting-quality flags", "The dominant risk: severe forensic red flags veto the thesis — verify the accounts before anything."),
+        ("💀 Value-destroying capital allocation", "The dominant risk: a Gruesome capital allocator earning below its cost of capital — destroys value."),
+        ("🕵️ Schilit forensic checker flags", "The dominant risk: Schilit accounting-quality checkers fire — the reported numbers may be aggressive."),
+        ("⚠️ Governance risk (pledge/dilution)", "The dominant risk: governance — meaningful promoter pledging or dilution."),
+        ("⏳ Poor entry timing — wait for a base", "The dominant risk is timing, not quality — the chart is poorly placed; wait for a base."),
+        ("🔍 Thin data — verdict tentative", "The dominant caveat: evidence coverage is thin, so the verdict is tentative until more inputs report."),
+    ],
+    # ── Catalysts — ui/ui_discovery.py _CATALYSTS (fast-moving change triggers)
+    "🔥 Catalysts": [
+        ("🔥 Capacity Explosion", "A capacity-expansion catalyst — fixed assets/CWIP converting to a step-up in productive capacity."),
+        ("🔥 OpLev Inflection", "An operating-leverage inflection — profit growth pulling decisively ahead of revenue growth."),
+        ("🔥 Deleveraging", "A deleveraging catalyst — debt being repaid materially, easing the balance sheet and interest drag."),
+        ("🔥 Lynch Dream", "A Lynch GARP setup — fast growth available at a reasonable PEG; the classic Peter Lynch profile."),
+        ("🔥 Inst Discovery", "Early institutional discovery — accumulation signs while the stock is still under-owned."),
+    ],
+    # ── Sell Alerts — ui/ui_discovery.py _SELL_ALERTS (Baid sell triggers)
+    "🚨 Sell Alerts": [
+        ("🚨 Cash Collapse", "Operating cash flow has collapsed relative to profit — the cash engine is breaking down."),
+        ("🚨 Overvalued", "The valuation has run far ahead of the fundamentals — priced for perfection."),
+        ("🚨 Thesis Broken", "A core pillar of the bull thesis (growth/returns) has broken — re-underwrite or exit."),
+        ("🚨 Treadmill", "Running to stand still — heavy reinvestment producing little incremental return."),
+        ("🚨 Sequential Decline", "Sequential (quarter-on-quarter) deterioration — the recent trend is turning down."),
+        ("🚨 Mgmt Deteriorated", "Management-quality / governance signals have deteriorated — a red flag for owners."),
+    ],
 }
