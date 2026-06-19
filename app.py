@@ -1231,13 +1231,14 @@ with tabs[3]:
             </div>
             """, unsafe_allow_html=True)
 
-            _ts_cols = [c for c in ["rank","name","sector","market_category","market_cap",
+            _ts_cols = [c for c in ["rank","name","verdict_direction","sector","market_category","market_cap",
                                     "composite_score","quality_score","momentum_score",
                                     "piotroski_fscore","smart_money_flow","buy_zone_label"]
                         if c in _mp_ts.columns]
             _ts_sel = st.dataframe(
                 _mp_ts[_ts_cols].reset_index(drop=True),
                 column_config={
+                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall BUY / WATCH / AVOID call — a Tsunami setup can still be WATCH/AVOID on valuation or entry timing."),
                     "composite_score": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
                     "quality_score":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
                     "momentum_score":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
@@ -1291,18 +1292,20 @@ with tabs[3]:
             </div>
             """, unsafe_allow_html=True)
 
-            _q_cols = [c for c in ["rank","name","sector","market_cap","qglp_score",
-                                   "qglp_quality","qglp_growth","qglp_longevity","qglp_price",
+            _q_cols = [c for c in ["rank","name","verdict_direction","red_flag_count","sector","market_cap",
+                                   "qglp_score","qglp_quality","qglp_growth","qglp_longevity","qglp_price",
                                    "smart_money_flow","buy_zone_label"]
                        if c in _mp_qglp.columns]
             _q_sel = st.dataframe(
                 _mp_qglp[_q_cols].reset_index(drop=True),
                 column_config={
+                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall BUY / WATCH / AVOID call — most QGLP passers are WATCH/AVOID on valuation, so this surfaces the few that are buyable now."),
                     "qglp_score":     st.column_config.ProgressColumn("QGLP",      min_value=0, max_value=100, format="%.0f"),
                     "qglp_quality":   st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
                     "qglp_growth":    st.column_config.ProgressColumn("Growth",    min_value=0, max_value=100, format="%.0f"),
                     "qglp_longevity": st.column_config.ProgressColumn("Longevity", min_value=0, max_value=100, format="%.0f"),
                     "qglp_price":     st.column_config.ProgressColumn("Price/PEG", min_value=0, max_value=100, format="%.0f"),
+                    "red_flag_count": st.column_config.NumberColumn("🚩 Flags",    format="%.0f", help="Forensic red flags raised (0 = clean). QGLP gates on quality/growth, NOT forensics — so this is the risk check the screen itself doesn't do."),
                     "market_cap":     st.column_config.NumberColumn("MCap ₹Cr",    format="%.0f"),
                     "rank":           st.column_config.NumberColumn("Rank",         format="%.0f"),
                 },
@@ -1330,16 +1333,38 @@ with tabs[3]:
     # ══ Sectors ════════════════════════════════════════════════════
     with _mp_tabs[2]:
         st.markdown(
-            "<div class='sec-cap'>Sector rotation across gate-qualified stocks — average quality, "
-            "momentum and conviction, plus each sector's 🌱 structural tailwind and capital phase "
-            "(🔥 hot · ❄️ starved). Absorbs the former Tipping-Points view.</div>",
+            "<div class='sec-cap'>Sector rotation across the top-15 gate-qualified sectors by score — "
+            "average quality, momentum and conviction. Filter by market-cap tier to read sector "
+            "leadership within a size band. Each sector's capital-cycle phase is named below: "
+            "🔥 hot (over-investing — caution) · ❄️ starved (under-invested — opportunity).</div>",
             unsafe_allow_html=True,
         )
         if len(_mp_qual) == 0:
             st.info("No gate-qualified stocks to analyse.")
         else:
+            # Cap-tier filter — the one sector view Discovery can't give: Market Pulse is market-wide
+            # by design (ignores the sidebar filter), so this slices the sector aggregation by size.
+            # A selectbox (not pills) is cleaner for the 7 options and always returns a value (no None
+            # guard); format_func adds the tier emoji while the option value stays the exact
+            # market_category string, so the filter matches with zero mapping. Guarded if the column
+            # is absent. The Count column keeps sample sizes honest for the sparse tiers.
+            _sec_src = _mp_qual
+            if "market_category" in _mp_qual.columns:
+                from config import MCAP_TIERS
+                _cap_opts = ["All"] + [t for t in MCAP_TIERS if (_mp_qual["market_category"] == t).any()]
+                _cf1, _ = st.columns([2, 6])
+                with _cf1:
+                    _cap = st.selectbox(
+                        "Market-cap tier", _cap_opts,
+                        format_func=lambda t: t if t == "All" else f"{MCAP_TIERS[t]['emoji']} {t}",
+                        key="mp_sec_cap",
+                    )
+                if _cap != "All":
+                    _sec_src = _mp_qual[_mp_qual["market_category"] == _cap]
+                    st.caption(f"📊 {len(_sec_src):,} {_cap} stocks · top 15 sectors by score.")
+
             _sec_stats = (
-                _mp_qual.groupby("sector").agg(
+                _sec_src.groupby("sector").agg(
                     stocks=("name", "count"),
                     avg_quality=("quality_score",   "mean"),
                     avg_momentum=("momentum_score",  "mean"),
@@ -1348,27 +1373,9 @@ with tabs[3]:
                 ).sort_values("avg_composite", ascending=False).head(15)
             )
 
-            # Sector context (absorbs the old Tipping-Points thesis): structural tailwind + capital
-            # phase — sector-level signals computed on the FULL universe, guarded for column absence
-            # and re-aligned to the top-15 sectors (missing → blank, never nan/None).
-            if "sector_capital_phase" in df.columns:
-                _ph = (df.groupby("sector")["sector_capital_phase"].first()
-                         .reindex(_sec_stats.index).fillna(""))
-                _emoji = pd.Series("", index=_sec_stats.index)
-                _emoji[_ph.str.contains("Hot", na=False)]     = "🔥"
-                _emoji[_ph.str.contains("Starved", na=False)] = "❄️"
-                _emoji[_ph.str.contains("Neutral", na=False)] = "⚖️"
-                _sec_stats["phase"] = _emoji
-            if "sector_tailwind" in df.columns:
-                _sec_stats["tailwind"] = (df.groupby("sector")["sector_tailwind"].max()
-                                            .reindex(_sec_stats.index).fillna(0).astype(bool))
-
-            # Full-width table so ALL columns show at a glance (the whole point of a rotation table).
-            # Primary metrics first; the folded-in context (Phase, 🌱 Tailwind) trails — width is no
-            # longer the constraint, so no need to squeeze it to the front as before.
+            # Clean full-width rotation table — quality / momentum / conviction at a glance.
             _sec_order = [c for c in ["stocks", "avg_quality", "avg_momentum", "avg_composite",
-                                      "crown_jewels", "phase", "tailwind"]
-                          if c in _sec_stats.columns]
+                                      "crown_jewels"] if c in _sec_stats.columns]
             st.dataframe(
                 _sec_stats[_sec_order].reset_index(),
                 column_config={
@@ -1377,38 +1384,35 @@ with tabs[3]:
                     "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
                     "crown_jewels":  st.column_config.NumberColumn("👑 T1",      format="%.0f"),
                     "stocks":        st.column_config.NumberColumn("Count",      format="%.0f"),
-                    "phase":         st.column_config.TextColumn("Phase"),
-                    "tailwind":      st.column_config.CheckboxColumn("🌱 Tailwind"),
                 },
                 use_container_width=True,
                 height=min(600, 80 + len(_sec_stats) * 35),
                 hide_index=True,
             )
-            # Sector-score ranking, stacked BELOW the table at full width (the angled labels finally
-            # have room). It re-plots the Score column, so it's a secondary visual — keep it compact.
-            _bar_clrs = [
-                COLORS["green"] if v >= 65 else COLORS["gold"] if v >= 50 else COLORS["red"]
-                for v in _sec_stats["avg_composite"]
-            ]
-            _fig_sec = go.Figure(go.Bar(
-                x=list(_sec_stats.index),
-                y=list(_sec_stats["avg_composite"]),
-                marker_color=_bar_clrs,
-                text=[f"{v:.0f}" for v in _sec_stats["avg_composite"]],
-                textposition="outside",
-                textfont=dict(color=COLORS["text_primary"], size=11),
-            ))
-            _fig_sec.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color=COLORS["text_primary"], size=10),
-                height=380,
-                margin=dict(t=10, b=120, l=30, r=10),
-                xaxis=dict(tickangle=-35, gridcolor=COLORS["border"], tickfont=dict(size=10)),
-                yaxis=dict(gridcolor=COLORS["border"], range=[0, 105]),
-                showlegend=False,
-            )
-            st.plotly_chart(_fig_sec, use_container_width=True)
+
+            # Capital-cycle phase — NAMES the Hot/Starved sectors (the Pulse band only COUNTS them),
+            # computed universe-wide so the actionable sectors are listed even when they don't rank
+            # top-15 by score above. Replaces the old per-row Phase/🌱Tailwind columns, which read
+            # ~Neutral here (hot/starved sectors rarely top the score sort) and duplicated the band.
+            if "sector_capital_phase" in df.columns:
+                import html as _html
+                _phase_by_sec = df.groupby("sector")["sector_capital_phase"].first().fillna("")
+                _hot     = sorted(_phase_by_sec[_phase_by_sec.str.contains("Hot", na=False)].index)
+                _starved = sorted(_phase_by_sec[_phase_by_sec.str.contains("Starved", na=False)].index)
+                _join = lambda xs: " · ".join(_html.escape(str(s)) for s in xs) if xs else "—"
+                st.markdown(
+                    f'<div style="font-size:0.72rem;line-height:1.7;margin-top:12px;'
+                    f'border-top:1px solid {COLORS["border"]};padding-top:10px;">'
+                    f'<span style="color:{COLORS["orange"]};font-weight:700;">🔥 Hot capital '
+                    f'({len(_hot)})</span>'
+                    f'<span style="color:{COLORS["text_muted"]};"> — over-investing, caution: </span>'
+                    f'<span style="color:{COLORS["text_secondary"]};">{_join(_hot)}</span><br>'
+                    f'<span style="color:{COLORS["blue"]};font-weight:700;">❄️ Capital-starved '
+                    f'({len(_starved)})</span>'
+                    f'<span style="color:{COLORS["text_muted"]};"> — under-invested, opportunity: </span>'
+                    f'<span style="color:{COLORS["text_secondary"]};">{_join(_starved)}</span></div>',
+                    unsafe_allow_html=True,
+                )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
