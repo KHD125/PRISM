@@ -272,6 +272,13 @@ _MANDATE_KEYS = list(_MANDATES.keys())
 # session_state BEFORE the script reruns, so deriving here (at the top) reflects the user's latest
 # override and keeps the button highlight + the card consistent in a single pass.
 _MANDATE_BY_COMBO = {(v["mode"], v["profile"]): k for k, v in _MANDATES.items()}
+
+# Mandate state lives in CANONICAL keys adv_mode / adv_profile — which are deliberately NOT widget
+# keys. Streamlit forbids sharing one key between a widget and your own programmatic writes: the
+# selectbox then reverts / needs two clicks, version-dependently (streamlit#7649 + the widget-behavior
+# docs). So: buttons mutate canonical state in on_click CALLBACKS; the Override selectboxes own their
+# OWN keys (_w_mode/_w_profile) and write back via on_change; and we MIRROR canonical → those widget
+# keys each run. Callbacks run BEFORE the rerun — the only safe moment to set state a widget reads.
 if "adv_mode" not in st.session_state:                  # first load → default mandate (QGLP Balanced)
     _d = _MANDATE_KEYS[0]
     st.session_state["adv_mode"]    = _MANDATES[_d]["mode"]
@@ -279,25 +286,30 @@ if "adv_mode" not in st.session_state:                  # first load → default
 # Guard FIRST: snap the active profile into the active mode's allowed set (so a mode change that
 # orphans the profile resolves cleanly AND the Scoring-Profile selectbox value stays valid below).
 _allowed_now = ANALYSIS_MODES[st.session_state["adv_mode"]]["allowed_profiles"]
-if st.session_state.get("adv_profile") not in _allowed_now:
+if st.session_state["adv_profile"] not in _allowed_now:
     st.session_state["adv_profile"] = _allowed_now[0]
-st.session_state["sel_mandate"] = _MANDATE_BY_COMBO.get(
-    (st.session_state["adv_mode"], st.session_state["adv_profile"]))
-_sel_mandate   = st.session_state["sel_mandate"]        # None = ⚙️ Custom
-_mandate_label = _sel_mandate or "Custom"   # _m_icon supplies the ⚙️ for the card; spinner/export read fine bare
+_sel_mandate = _MANDATE_BY_COMBO.get((st.session_state["adv_mode"], st.session_state["adv_profile"]))
+st.session_state["sel_mandate"] = _sel_mandate          # None = ⚙️ Custom
+_mandate_label = _sel_mandate or "Custom"
+# Mirror canonical → the selectbox widget keys BEFORE those widgets render below, so a button-driven
+# change is reflected in the Override selectboxes too (safe: writing a widget key before its widget).
+st.session_state["_w_mode"]    = st.session_state["adv_mode"]
+st.session_state["_w_profile"] = st.session_state["adv_profile"]
+
+def _pick_mandate(_mode, _profile):                     # button on_click — runs before the rerun
+    st.session_state["adv_mode"]    = _mode
+    st.session_state["adv_profile"] = _profile
+
 _mb_cols = st.columns(len(_MANDATES))
 for _mi, (_mk, _mv) in enumerate(_MANDATES.items()):
     with _mb_cols[_mi]:
-        _is_active = (_sel_mandate == _mk)
-        if st.button(
+        st.button(
             f"{_mv['icon']} {_mk}",
             key=f"_mb_{_mk}",
-            type="primary" if _is_active else "secondary",
+            type="primary" if _sel_mandate == _mk else "secondary",
             use_container_width=True,
-        ):
-            st.session_state["adv_mode"]    = _mv["mode"]
-            st.session_state["adv_profile"] = _mv["profile"]
-            st.rerun()
+            on_click=_pick_mandate, args=(_mv["mode"], _mv["profile"]),
+        )
 
 # Mandate description strip — None-safe (a Custom override shows the active profile's description)
 _desc = (_MANDATES[_sel_mandate]["desc"] if _sel_mandate
@@ -310,25 +322,36 @@ st.markdown(
 )
 
 # ── Advanced Override (collapsed — power users only) ───────────
+# The selectboxes own SEPARATE keys (_w_mode/_w_profile, mirrored from canonical above) and push the
+# user's pick back into canonical via on_change — never sharing a key with the buttons' writes.
+def _sync_mode():
+    st.session_state["adv_mode"] = st.session_state["_w_mode"]
+
+def _sync_profile():
+    st.session_state["adv_profile"] = st.session_state["_w_profile"]
+
 with st.expander("⚙️ Advanced: Override Mandate Defaults", expanded=False):
-    analysis_mode = st.selectbox(
+    st.selectbox(
         "Analysis Mode",
         options=list(ANALYSIS_MODES.keys()),
         format_func=lambda k: ANALYSIS_MODES[k]["label"],
-        key="adv_mode",
+        key="_w_mode", on_change=_sync_mode,
     )
-    st.caption(ANALYSIS_MODES[analysis_mode]["description"])
+    st.caption(ANALYSIS_MODES[st.session_state["adv_mode"]]["description"])
 
-    _ov_allowed = ANALYSIS_MODES[analysis_mode]["allowed_profiles"]
+    _ov_allowed = ANALYSIS_MODES[st.session_state["adv_mode"]]["allowed_profiles"]
     # (the top guard already snapped adv_profile into _ov_allowed, so the value below is always valid)
-    scoring_profile = st.selectbox(
+    st.selectbox(
         "Scoring Profile",
         options=_ov_allowed,
         format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
-        key="adv_profile",
+        key="_w_profile", on_change=_sync_profile,
     )
-    st.caption(MASTER_PROFILES[scoring_profile]["description"])
+    st.caption(MASTER_PROFILES[st.session_state["adv_profile"]]["description"])
 
+# Canonical state drives scoring + display (the selectbox returns can lag a rerun behind canonical).
+analysis_mode   = st.session_state["adv_mode"]
+scoring_profile = st.session_state["adv_profile"]
 profile_cfg = MASTER_PROFILES[scoring_profile]
 
 # ── Scoring ────────────────────────────────────────────────────
