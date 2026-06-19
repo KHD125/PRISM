@@ -537,13 +537,14 @@ def _pulse_stats(df) -> dict:
             "med_composite": med_composite, "tailwind_pct": tailwind_pct}
 
 
-def _pulse_card(title: str, badge_html: str, body_html: str, C: dict, flex: str = "1") -> str:
+def _pulse_card(title: str, badge_html: str, body_html: str, C: dict, flex: str = "1",
+                help_html: str = "") -> str:
     return (
         f'<div style="flex:{flex};min-width:150px;background:{C["bg_secondary"]};'
         f'border:1px solid {C["border"]};border-radius:10px;padding:10px 13px;">'
         f'<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">'
         f'<span style="font-size:0.62rem;font-weight:800;letter-spacing:0.05em;'
-        f'color:{C["text_muted"]};">{title}</span>{badge_html}</div>'
+        f'color:{C["text_muted"]};">{title}{help_html}</span>{badge_html}</div>'
         f'{body_html}</div>')
 
 
@@ -581,7 +582,7 @@ def _pulse_band_html(stats: dict) -> str:
         "MARKET BREADTH",
         f'<span style="font-size:0.72rem;font-weight:800;color:{_r_clr};white-space:nowrap;">'
         f'{_r_emo} {regime}</span>',
-        breadth_inner, C, flex="1.7")
+        breadth_inner, C, flex="1.7", help_html=help_chip("Market Breadth"))
 
     # ── Card 2 · Conviction ladder (tiers 1–4; tier 5 'Not Ready' is the noisy majority, omitted) ──
     ladder = stats.get("ladder")
@@ -597,7 +598,7 @@ def _pulse_band_html(stats: dict) -> str:
             f'<strong style="color:{C["text_secondary"]};">{invest}</strong></div>')
     else:
         ladder_inner = f'<div style="font-size:0.74rem;color:{C["text_muted"]};margin-top:8px;">—</div>'
-    card_conv = _pulse_card("CONVICTION", "", ladder_inner, C)
+    card_conv = _pulse_card("CONVICTION", "", ladder_inner, C, help_html=help_chip("Conviction"))
 
     # ── Card 3 · Capital rotation ──
     cap = stats.get("capital")
@@ -611,7 +612,7 @@ def _pulse_band_html(stats: dict) -> str:
             f'opportunity / caution</div>')
     else:
         cap_inner = f'<div style="font-size:0.74rem;color:{C["text_muted"]};margin-top:8px;">—</div>'
-    card_cap = _pulse_card("CAPITAL ROTATION", "", cap_inner, C)
+    card_cap = _pulse_card("CAPITAL ROTATION", "", cap_inner, C, help_html=help_chip("Capital Rotation"))
 
     # ── Card 4 · Valuation temperature ──
     val_inner = (
@@ -620,7 +621,7 @@ def _pulse_band_html(stats: dict) -> str:
         f'<div style="font-size:0.66rem;color:{C["text_muted"]};">median composite</div>'
         f'<div style="font-size:0.7rem;color:{C["text_secondary"]};margin-top:4px;">'
         f'{_fmt(stats.get("tailwind_pct"))}% in tailwind sectors</div>')
-    card_val = _pulse_card("VALUATION", "", val_inner, C)
+    card_val = _pulse_card("VALUATION", "", val_inner, C, help_html=help_chip("Valuation"))
 
     return (f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">'
             f'{card_breadth}{card_conv}{card_cap}{card_val}</div>')
@@ -673,6 +674,11 @@ _RAW_GLOSSARY = {
     "Cyclical Mirage":    "A recent revenue-growth surge masking weak 10-year ROCE — the growth is not backed by durable returns on capital (a low-quality / cyclical mirage).",
     "Dilution Vampire":   "Fast revenue growth (≥30%) but sub-cost-of-capital ROE (<12%) funded by equity dilution — growth that erodes per-share value.",
     "Pledge Re-rate":     "Promoter de-pledging catalyst: the stock was meaningfully pledged (>10% a year ago), has cut pledge by >30% and is now near-clean (<5%) — a classic re-rating trigger.",
+    # ── Market Pulse band (the four market-state cards) ──
+    "Market Breadth":     "How widely the market is rising or falling — the share of stocks in each Weinstein stage (advancing, basing, topping, declining), plus how far the median stock sits below its 52-week high. Broad advancing is healthy; broad declining is a weak, risk-off tape.",
+    "Conviction":         "How the whole universe splits across the conviction tiers right now — 🏆 Crown Jewels, 🥇 Strong Compounders, 🥈 Emerging Quality, 🥉 On Radar. 'T1–T3 investable' sums the top three tiers: the names worth deep work today.",
+    "Capital Rotation":   "Where capital is flooding in versus draining out, by sector. 🔥 Hot = sectors whose asset base is growing fastest (heavy investment tends to pressure future returns); ❄️ Starved = low or negative asset growth (classic recovery set-ups).",
+    "Valuation":          "A quick read on how richly the market is priced — the median composite score across all stocks, plus the share of stocks sitting in structurally-tailwind sectors. A lower median points to a cheaper or weaker overall tape.",
     # ── Business Quality ──
     "ROCE Current":  "Return on Capital Employed — out of every ₹100 the business puts to work (its own money + debt), how much yearly profit it earns. Higher means a better money-making machine.",
     "ROCE 10Y Med":  "The middle (median) ROCE over the last 10 years — shows whether high returns are durable, not a one-year fluke.",
