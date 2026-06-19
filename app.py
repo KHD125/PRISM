@@ -1192,7 +1192,6 @@ with tabs[3]:
                 if "tsunami_signal" in df.columns else df.iloc[:0])
     _mp_qglp = (df[df["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
                 if "qglp_pass" in df.columns else df.iloc[:0])   # market-wide, like the other 4 sections
-    _mp_qual = df[df["gate_pass"] == 1] if "gate_pass" in df.columns else df
 
     # ── Market-state Pulse band (breadth-led market vitals — what the tab's name promises) ──────
     render_pulse_band(df)
@@ -1333,86 +1332,95 @@ with tabs[3]:
     # ══ Sectors ════════════════════════════════════════════════════
     with _mp_tabs[2]:
         st.markdown(
-            "<div class='sec-cap'>Sector rotation across the top-15 gate-qualified sectors by score — "
-            "average quality, momentum and conviction. Filter by market-cap tier to read sector "
-            "leadership within a size band. Each sector's capital-cycle phase is named below: "
-            "🔥 hot (over-investing — caution) · ❄️ starved (under-invested — opportunity).</div>",
+            "<div class='sec-cap'>Every sector with ≥5 stocks — Quality / Momentum / Valuation / Score "
+            "averaged across <strong>all</strong> its stocks (sample-robust, not just the gate-passers). "
+            "<strong>% Qualify</strong> = the share clearing the hard gates (the sector's quality breadth). "
+            "Ranked by % Qualify (most-investable first). Capital-cycle phase is named below: 🔥 hot (over-investing — caution) · "
+            "❄️ starved (under-invested — opportunity).</div>",
             unsafe_allow_html=True,
         )
-        if len(_mp_qual) == 0:
-            st.info("No gate-qualified stocks to analyse.")
+        # Cap-tier filter — Market Pulse is market-wide by design (ignores the sidebar filter), so this
+        # slices the WHOLE-sector aggregation by size. selectbox (not pills): cleaner for 7 options +
+        # always returns a value; format_func adds the tier emoji while the option value stays the exact
+        # market_category string (zero-mapping filter). Guarded if the column is absent.
+        _sec_src = df
+        if "market_category" in df.columns:
+            from config import MCAP_TIERS
+            _cap_opts = ["All"] + [t for t in MCAP_TIERS if (df["market_category"] == t).any()]
+            _cf1, _ = st.columns([2, 6])
+            with _cf1:
+                _cap = st.selectbox(
+                    "Market-cap tier", _cap_opts,
+                    format_func=lambda t: t if t == "All" else f"{MCAP_TIERS[t]['emoji']} {t}",
+                    key="mp_sec_cap",
+                )
+            if _cap != "All":
+                _sec_src = df[df["market_category"] == _cap]
+                st.caption(f"📊 {len(_sec_src):,} {_cap} stocks across {_sec_src['sector'].nunique()} sectors.")
+
+        # WHOLE-sector aggregation over ALL stocks — bigger samples = robust averages (the fix for
+        # comparing a 3-stock sector to a 50-stock one). % Qualify = gate-pass rate, the sample-size-
+        # immune breadth signal. The >=5-stock floor reuses the engine's own sector_capital_phase guard
+        # ("median unstable below 5"). No top-N cap — every reliable sector is shown, sorted by Score.
+        _sec_stats = _sec_src.groupby("sector").agg(
+            stocks=("name", "count"),
+            pct_qualify=("gate_pass", lambda s: 100.0 * s.mean()),
+            avg_quality=("quality_score",    "mean"),
+            avg_momentum=("momentum_score",  "mean"),
+            avg_valuation=("valuation_score","mean"),
+            avg_composite=("composite_score","mean"),
+            crown_jewels=("conviction_tier", lambda x: (x == 1).sum()),
+        )
+        # Sort by % Qualify (breadth), then Score — so the most-INVESTABLE sectors lead. Sorting by
+        # Score alone would rank a 0%-qualify sector #1 (e.g. Financial Services scores high on
+        # fundamentals but every stock fails a hard gate), which misleads at a glance.
+        _sec_stats = (_sec_stats[_sec_stats["stocks"] >= 5]
+                      .sort_values(["pct_qualify", "avg_composite"], ascending=False))
+
+        if _sec_stats.empty:
+            st.info("No sector has ≥5 stocks in this view — sample too small for a reliable average.")
         else:
-            # Cap-tier filter — the one sector view Discovery can't give: Market Pulse is market-wide
-            # by design (ignores the sidebar filter), so this slices the sector aggregation by size.
-            # A selectbox (not pills) is cleaner for the 7 options and always returns a value (no None
-            # guard); format_func adds the tier emoji while the option value stays the exact
-            # market_category string, so the filter matches with zero mapping. Guarded if the column
-            # is absent. The Count column keeps sample sizes honest for the sparse tiers.
-            _sec_src = _mp_qual
-            if "market_category" in _mp_qual.columns:
-                from config import MCAP_TIERS
-                _cap_opts = ["All"] + [t for t in MCAP_TIERS if (_mp_qual["market_category"] == t).any()]
-                _cf1, _ = st.columns([2, 6])
-                with _cf1:
-                    _cap = st.selectbox(
-                        "Market-cap tier", _cap_opts,
-                        format_func=lambda t: t if t == "All" else f"{MCAP_TIERS[t]['emoji']} {t}",
-                        key="mp_sec_cap",
-                    )
-                if _cap != "All":
-                    _sec_src = _mp_qual[_mp_qual["market_category"] == _cap]
-                    st.caption(f"📊 {len(_sec_src):,} {_cap} stocks · top 15 sectors by score.")
-
-            _sec_stats = (
-                _sec_src.groupby("sector").agg(
-                    stocks=("name", "count"),
-                    avg_quality=("quality_score",   "mean"),
-                    avg_momentum=("momentum_score",  "mean"),
-                    avg_composite=("composite_score","mean"),
-                    crown_jewels=("conviction_tier", lambda x: (x == 1).sum()),
-                ).sort_values("avg_composite", ascending=False).head(15)
-            )
-
-            # Clean full-width rotation table — quality / momentum / conviction at a glance.
-            _sec_order = [c for c in ["stocks", "avg_quality", "avg_momentum", "avg_composite",
-                                      "crown_jewels"] if c in _sec_stats.columns]
+            _sec_order = [c for c in ["stocks", "pct_qualify", "avg_quality", "avg_momentum",
+                                      "avg_valuation", "avg_composite", "crown_jewels"]
+                          if c in _sec_stats.columns]
             st.dataframe(
                 _sec_stats[_sec_order].reset_index(),
                 column_config={
+                    "stocks":        st.column_config.NumberColumn("Count", format="%.0f"),
+                    "pct_qualify":   st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%",
+                                       help="Share of the sector's stocks that clear all hard gates — its quality breadth. Robust to sector size."),
                     "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
                     "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
+                    "avg_valuation": st.column_config.ProgressColumn("Valuation",min_value=0, max_value=100, format="%.0f"),
                     "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
                     "crown_jewels":  st.column_config.NumberColumn("👑 T1",      format="%.0f"),
-                    "stocks":        st.column_config.NumberColumn("Count",      format="%.0f"),
                 },
                 use_container_width=True,
-                height=min(600, 80 + len(_sec_stats) * 35),
+                height=min(700, 80 + len(_sec_stats) * 35),
                 hide_index=True,
             )
 
-            # Capital-cycle phase — NAMES the Hot/Starved sectors (the Pulse band only COUNTS them),
-            # computed universe-wide so the actionable sectors are listed even when they don't rank
-            # top-15 by score above. Replaces the old per-row Phase/🌱Tailwind columns, which read
-            # ~Neutral here (hot/starved sectors rarely top the score sort) and duplicated the band.
-            if "sector_capital_phase" in df.columns:
-                import html as _html
-                _phase_by_sec = df.groupby("sector")["sector_capital_phase"].first().fillna("")
-                _hot     = sorted(_phase_by_sec[_phase_by_sec.str.contains("Hot", na=False)].index)
-                _starved = sorted(_phase_by_sec[_phase_by_sec.str.contains("Starved", na=False)].index)
-                _join = lambda xs: " · ".join(_html.escape(str(s)) for s in xs) if xs else "—"
-                st.markdown(
-                    f'<div style="font-size:0.72rem;line-height:1.7;margin-top:12px;'
-                    f'border-top:1px solid {COLORS["border"]};padding-top:10px;">'
-                    f'<span style="color:{COLORS["orange"]};font-weight:700;">🔥 Hot capital '
-                    f'({len(_hot)})</span>'
-                    f'<span style="color:{COLORS["text_muted"]};"> — over-investing, caution: </span>'
-                    f'<span style="color:{COLORS["text_secondary"]};">{_join(_hot)}</span><br>'
-                    f'<span style="color:{COLORS["blue"]};font-weight:700;">❄️ Capital-starved '
-                    f'({len(_starved)})</span>'
-                    f'<span style="color:{COLORS["text_muted"]};"> — under-invested, opportunity: </span>'
-                    f'<span style="color:{COLORS["text_secondary"]};">{_join(_starved)}</span></div>',
-                    unsafe_allow_html=True,
-                )
+        # Capital-cycle phase — NAMES the Hot/Starved sectors (the Pulse band only COUNTS them),
+        # computed universe-wide; always shown, independent of the cap filter / floor above.
+        if "sector_capital_phase" in df.columns:
+            import html as _html
+            _phase_by_sec = df.groupby("sector")["sector_capital_phase"].first().fillna("")
+            _hot     = sorted(_phase_by_sec[_phase_by_sec.str.contains("Hot", na=False)].index)
+            _starved = sorted(_phase_by_sec[_phase_by_sec.str.contains("Starved", na=False)].index)
+            _join = lambda xs: " · ".join(_html.escape(str(s)) for s in xs) if xs else "—"
+            st.markdown(
+                f'<div style="font-size:0.72rem;line-height:1.7;margin-top:12px;'
+                f'border-top:1px solid {COLORS["border"]};padding-top:10px;">'
+                f'<span style="color:{COLORS["orange"]};font-weight:700;">🔥 Hot capital '
+                f'({len(_hot)})</span>'
+                f'<span style="color:{COLORS["text_muted"]};"> — over-investing, caution: </span>'
+                f'<span style="color:{COLORS["text_secondary"]};">{_join(_hot)}</span><br>'
+                f'<span style="color:{COLORS["blue"]};font-weight:700;">❄️ Capital-starved '
+                f'({len(_starved)})</span>'
+                f'<span style="color:{COLORS["text_muted"]};"> — under-invested, opportunity: </span>'
+                f'<span style="color:{COLORS["text_secondary"]};">{_join(_starved)}</span></div>',
+                unsafe_allow_html=True,
+            )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
