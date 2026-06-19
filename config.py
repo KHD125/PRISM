@@ -362,6 +362,20 @@ GOVERNANCE_BONUS = {
     "dilution_tier1_minor":    -5,   # <3% ESOP dilution: minor deduction vs zero-dilution
 }
 
+# ── Forensic Red-Flag Cascade ──
+# The HARSHER of the two asymmetric penalty multipliers (the governance shield below is milder).
+# red_flag_count → multiplier on composite_score. Range-based UPPER bounds (max_flags); the tier
+# with max_flags=None is the open-ended top bucket (5+). Tiers MUST be ascending by max_flags —
+# the engine applies them as a first-match np.select cascade. This is the SINGLE source for the
+# schedule; forensic_engine.compute_cascading_forensic_filter reads it (no inline magic numbers).
+#   0 flags → 1.00 (clean) · 1–2 → 0.90 (watch) · 3–4 → 0.75 (caution) · 5+ → 0.50 (high risk)
+FORENSIC_PENALTY_TIERS = [
+    {"max_flags": 0,    "multiplier": 1.00, "label": "Clean"},
+    {"max_flags": 2,    "multiplier": 0.90, "label": "Watch"},
+    {"max_flags": 4,    "multiplier": 0.75, "label": "Caution"},
+    {"max_flags": None, "multiplier": 0.50, "label": "High Risk"},
+]
+
 # ── Asymmetric Governance Risk Shield ──
 # Negative ownership signals predict DISASTERS far better than positive signals predict
 # winners (Yes Bank, DHFL, Zee, Manpasand all showed promoter exit / pledge / dilution

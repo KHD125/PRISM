@@ -112,3 +112,44 @@ def test_forensic_max_flags_matches_actual_rf_columns():
         f"FORENSIC_MAX_FLAGS={C.FORENSIC_MAX_FLAGS} but found {len(rf_cols)} rf_ columns "
         f"in forensic_engine.py: {sorted(rf_cols)}"
     )
+
+
+# ── FORENSIC_PENALTY_TIERS: forensic cascade ladder well-formed + engine reads it (SSOT) ──
+def test_forensic_penalty_tiers_well_formed():
+    """The forensic cascade (the config SSOT the engine reads) must be an ascending-by-max_flags
+    ladder with exactly one open-ended (max_flags=None) bucket LAST, a full 1.0 pass-through at 0
+    flags, and multipliers in (0,1] that never rise — else the np.select first-match cascade
+    mis-tiers a stock (an isolated flag collapsing a great company, or 5 flags not biting)."""
+    tiers = C.FORENSIC_PENALTY_TIERS
+    finite = [t for t in tiers if t["max_flags"] is not None]
+    opens = [t for t in tiers if t["max_flags"] is None]
+    assert len(opens) == 1, f"need exactly one open-ended (max_flags=None) bucket, got {len(opens)}"
+    assert tiers[-1]["max_flags"] is None, "the open-ended bucket must be LAST (it is the np.select default)"
+    mxs = [t["max_flags"] for t in finite]
+    assert mxs == sorted(mxs) and len(set(mxs)) == len(mxs), f"max_flags must be strictly ascending: {mxs}"
+    assert finite[0]["max_flags"] == 0 and finite[0]["multiplier"] == 1.0, \
+        "0 flags must be a full 1.0 pass-through (clean company)"
+    mults = [t["multiplier"] for t in tiers]
+    assert all(0.0 < m <= 1.0 for m in mults), f"multipliers must be in (0,1]: {mults}"
+    assert all(a >= b for a, b in zip(mults, mults[1:])), f"multipliers must be non-increasing: {mults}"
+
+
+def test_forensic_cascade_engine_matches_config_schedule():
+    """SSOT faithfulness: forensic_engine reproduces EXACTLY the config.FORENSIC_PENALTY_TIERS ladder
+    for every red_flag_count 0..6 (synthetic frame — no market data). The expected multiplier is
+    DERIVED from the config tiers, not copied, so engine and config can never silently diverge."""
+    import pandas as pd
+    from core.forensic_engine import compute_cascading_forensic_filter
+
+    def _expected(n):
+        for t in C.FORENSIC_PENALTY_TIERS:
+            if t["max_flags"] is not None and n <= t["max_flags"]:
+                return t["multiplier"]
+        return next(t["multiplier"] for t in C.FORENSIC_PENALTY_TIERS if t["max_flags"] is None)
+
+    counts = list(range(7))
+    df = pd.DataFrame({"red_flag_count": counts, "composite_score": [100.0] * len(counts)})
+    out = compute_cascading_forensic_filter(df)
+    got = [round(float(v), 6) for v in out["forensic_multiplier"].tolist()]
+    exp = [round(float(_expected(n)), 6) for n in counts]
+    assert got == exp, f"engine cascade {got} != config-derived schedule {exp}"

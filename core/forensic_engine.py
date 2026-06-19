@@ -12,7 +12,7 @@ Based on: Financial Shenanigans India Forensic Edition
 import pandas as pd
 import numpy as np
 from typing import List, Dict
-from config import FORENSIC, PIOTROSKI, FORENSIC_MAX_FLAGS, CONVICTION_TIERS
+from config import FORENSIC, PIOTROSKI, FORENSIC_MAX_FLAGS, CONVICTION_TIERS, FORENSIC_PENALTY_TIERS
 
 # Asset-light sector exclusion mask — used in TWO places (NOT for DSO thresholds):
 #   1. rf_capex_mirage: IT/Pharma/Healthcare have asset-light models; high revenue with
@@ -940,10 +940,14 @@ def compute_cascading_forensic_filter(df: pd.DataFrame) -> pd.DataFrame:
 
     flag_count = df.get("red_flag_count", pd.Series(0, index=df.index)).fillna(0)
 
+    # Cascade read from config.FORENSIC_PENALTY_TIERS (single source of truth). Tiers are ascending
+    # upper bounds; np.select first-match gives 0→1.0, 1-2→0.9, 3-4→0.75, 5+→default 0.5.
+    _finite = [t for t in FORENSIC_PENALTY_TIERS if t["max_flags"] is not None]
+    _open   = next(t for t in FORENSIC_PENALTY_TIERS if t["max_flags"] is None)
     df["forensic_multiplier"] = np.select(
-        [flag_count == 0, flag_count <= 2, flag_count <= 4],
-        [1.0, 0.9, 0.75],
-        default=0.5
+        [flag_count <= t["max_flags"] for t in _finite],
+        [t["multiplier"] for t in _finite],
+        default=_open["multiplier"],
     )
 
     if "composite_score" in df.columns:

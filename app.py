@@ -86,7 +86,8 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
                     BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
-                    MASTER_PROFILES, ANALYSIS_MODES, FORENSIC_MAX_FLAGS)
+                    MASTER_PROFILES, ANALYSIS_MODES, FORENSIC_MAX_FLAGS,
+                    FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1548,6 +1549,75 @@ with tabs[4]:
                   _tier_rows, COLORS["gold"]),
         unsafe_allow_html=True,
     )
+
+    # ── Asymmetric Penalty Multipliers — the two "× penalty" levers the formula card references ──
+    # Both schedules render live from config (FORENSIC_PENALTY_TIERS + GOVERNANCE_RISK_MULTIPLIERS),
+    # the SAME constants the engine applies — so this card can never drift from the real penalty.
+    st.markdown(
+        f'<div style="font-size:0.72rem;color:{COLORS["text_secondary"]};margin:2px 0 8px 2px;">'
+        f'🔻 <strong>Negative signals don\'t subtract points — they MULTIPLY the composite down</strong>, '
+        f'so the penalty scales with conviction (a 90-score loses more absolute points than a 20). '
+        f'Forensic flags are <em>evidence</em> (harsher, ×0.50 floor); ownership signals are '
+        f'<em>warnings</em> (milder, ×0.70 floor).</div>',
+        unsafe_allow_html=True,
+    )
+
+    def _pen_color(m: float) -> str:
+        """Severity tint for a penalty multiplier (display-only)."""
+        return (COLORS["green"] if m >= 0.999 else COLORS["gold"] if m >= 0.85
+                else COLORS["orange"] if m >= 0.70 else COLORS["red"])
+
+    def _pen_row(left: str, mult: float, right: str = "") -> str:
+        c = _pen_color(mult)
+        _r = (f'<span style="font-size:0.66rem;color:{COLORS["text_muted"]};flex:1;">{right}</span>'
+              if right else '<span style="flex:1;"></span>')
+        return (
+            f'<div style="display:flex;align-items:center;gap:10px;padding:4px 0;'
+            f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+            f'<span style="font-size:0.72rem;color:{COLORS["text_secondary"]};min-width:92px;">{left}</span>'
+            f'<span style="font-size:0.74rem;font-weight:800;color:{c};min-width:54px;">× {mult:.2f}</span>'
+            f'{_r}</div>'
+        )
+
+    # Forensic cascade rows — derive the count RANGE from the ascending max_flags upper bounds.
+    _fc_rows, _prev = "", -1
+    for _t in FORENSIC_PENALTY_TIERS:
+        _mx = _t["max_flags"]
+        if _mx is None:
+            _rng = f"{_prev + 1}+ flags"
+        elif _mx == _prev + 1:
+            _rng = f"{_mx} flag" + ("" if _mx == 1 else "s")
+        else:
+            _rng = f"{_prev + 1}–{_mx} flags"
+        _fc_rows += _pen_row(_rng, _t["multiplier"], _t["label"])
+        _prev = _mx if _mx is not None else _prev
+
+    # Governance shield rows — exact count → multiplier; the highest key is the "N+" bucket.
+    _gk = sorted(GOVERNANCE_RISK_MULTIPLIERS)
+    _gmax = max(_gk)
+    _g_lbl = {0: "clean", 1: "caution", 2: "structural concern", 3: "promoter signal"}
+    _gov_rows = ""
+    for _k in _gk:
+        _lab = (f"{_k}+ signals" if (_k == _gmax and _k > 0)
+                else "no signals" if _k == 0 else f"{_k} signal" + ("" if _k == 1 else "s"))
+        _gov_rows += _pen_row(_lab, GOVERNANCE_RISK_MULTIPLIERS[_k], _g_lbl.get(_k, ""))
+
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        st.markdown(
+            _cfg_card("Forensic Red-Flag Cascade — Evidence", "🔬",
+                      f'<div style="font-size:0.64rem;color:{COLORS["text_muted"]};margin-bottom:6px;">'
+                      f'red_flag_count → multiplier on composite_score</div>{_fc_rows}', COLORS["red"]),
+            unsafe_allow_html=True,
+        )
+    with pc2:
+        st.markdown(
+            _cfg_card("Governance Risk Shield — Warnings", "🛡️",
+                      f'<div style="font-size:0.64rem;color:{COLORS["text_muted"]};margin-bottom:6px;">'
+                      f'hard ownership-risk signals → multiplier on composite_score</div>{_gov_rows}',
+                      COLORS["gold"]),
+            unsafe_allow_html=True,
+        )
 
     # ── MARKS CYCLE TEMPERATURE GAUGE (standalone qualitative macro lens) ──
     # Deliberately display-only: a subjective human cycle read must NOT re-rank the deterministic,
