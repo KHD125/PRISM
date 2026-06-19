@@ -144,16 +144,22 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # drift between options and results).
         # Defensive: stored multiselect selections are pruned to the current valid options
         # before each widget renders, preventing Streamlit's "value not in options" crash.
-        def _ms_cascade(label, options, key, default, help=None, format_func=None):
+        def _ms_cascade(label, options, key, default, help=None, format_func=None, count_col=None):
             """Cascade-safe multiselect. Fully manages session_state (no `default=` arg, which
             avoids Streamlit's default-plus-session-state warning) and prunes any stale stored
             selection down to the current options each run. Empty selection = no filter.
             format_func lets the OPTION VALUES stay stable (so pruning holds) while the DISPLAY
-            can vary per run (e.g. a live count) — never bake volatile text into the values."""
+            can vary per run (e.g. a live count) — never bake volatile text into the values.
+            count_col: when given (and no explicit format_func), each option is auto-annotated with
+            its LIVE count in the cascade frame `_cf` at THIS point — so the number reflects every
+            filter above it (the 'smart faceted' feel). Counts live in the display only."""
             if key not in st.session_state:
                 st.session_state[key] = [v for v in default if v in options]
             else:
                 st.session_state[key] = [v for v in st.session_state[key] if v in options]
+            if format_func is None and count_col is not None and count_col in _cf.columns:
+                _vc = _cf[count_col].astype(str).value_counts().to_dict()
+                format_func = lambda v, _c=_vc: f"{v}  ·  {_c.get(str(v), 0)}"
             _kw = {"key": key, "help": help}
             if format_func is not None:
                 _kw["format_func"] = format_func
@@ -178,16 +184,19 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _ALL_MCAPS = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
             _mcap_opts = _ordered_present(_cf, "market_category", _ALL_MCAPS)
             sel_mcap = _ms_cascade("Market Category", _mcap_opts, "sb_mcap", default=[],
-                                   help="Blank = all market-cap tiers. Pick one or more to narrow.")
+                                   help="Blank = all market-cap tiers. Pick one or more to narrow.",
+                                   count_col="market_category")
             if sel_mcap:
                 _cf = _cf[_cf["market_category"].isin(sel_mcap)]
 
             # 2. Sector — only sectors within the chosen market categories
             _sector_opts = ["All"] + sorted(_cf["sector"].dropna().unique().tolist())
+            _sec_vc = _cf["sector"].value_counts().to_dict()
             if st.session_state.get("sb_sector", "All") not in _sector_opts:
                 st.session_state["sb_sector"] = "All"
             sel_sector = st.selectbox(
                 "Sector", _sector_opts, key="sb_sector",
+                format_func=lambda v: "All" if v == "All" else f"{v}  ·  {_sec_vc.get(v, 0)}",
                 help="Filter to one sector. 'All' = every sector; also narrows the Industry list below.",
             )
             if sel_sector != "All":
@@ -195,10 +204,12 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
             # 3. Industry — only industries within the chosen categories AND sector
             _industry_opts = ["All"] + sorted(_cf["industry"].dropna().unique().tolist())
+            _ind_vc = _cf["industry"].value_counts().to_dict()
             if st.session_state.get("sb_industry", "All") not in _industry_opts:
                 st.session_state["sb_industry"] = "All"
             sel_industry = st.selectbox(
                 "Industry", _industry_opts, key="sb_industry",
+                format_func=lambda v: "All" if v == "All" else f"{v}  ·  {_ind_vc.get(v, 0)}",
                 help="Granular industry within the selected sector. Narrows with Sector above.",
             )
             if sel_industry != "All":
@@ -211,7 +222,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _cyc_opts = _ordered_present(_cf, "cyclicality_tier", _CYC_ORDER)
             sel_cyc = _ms_cascade("Cyclicality Tier", _cyc_opts, "sb_cyc", default=[],
                                   help="Business-type by industry. Deep-Cyclical/Cyclical = timing "
-                                       "trades; Defensive/Structural-Growth = hold through the cycle. Empty = all.")
+                                       "trades; Defensive/Structural-Growth = hold through the cycle. Empty = all.",
+                                  count_col="cyclicality_tier")
             if sel_cyc and "cyclicality_tier" in _cf.columns:
                 _cf = _cf[_cf["cyclicality_tier"].isin(sel_cyc)]
 
@@ -221,7 +233,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _cap_opts = _ordered_present(_cf, "sector_capital_phase", _CAPPHASE_ORDER)
             sel_cap = _ms_cascade("Sector Capital Phase", _cap_opts, "sb_capphase", default=[],
                                   help="The sector's capital cycle. Starved = under-invested (supply "
-                                       "opportunity); Hot = over-investing (mean-reversion risk). Empty = all.")
+                                       "opportunity); Hot = over-investing (mean-reversion risk). Empty = all.",
+                                  count_col="sector_capital_phase")
             if sel_cap and "sector_capital_phase" in _cf.columns:
                 _cf = _cf[_cf["sector_capital_phase"].isin(sel_cap)]
             st.caption(f"→ {len(_cf):,} remaining")
@@ -230,21 +243,24 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # 4. Conviction Tier — only tiers present in the remaining stocks
             _tier_opts = sorted(int(t) for t in _cf["conviction_tier"].dropna().unique())
             sel_tier = _ms_cascade("Conviction Tier", _tier_opts, "sb_tier", default=[],
-                                   help="Blank = all tiers. 1 = Crown Jewels, 2 = Strong … pick to narrow.")
+                                   help="Blank = all tiers. 1 = Crown Jewels, 2 = Strong … pick to narrow.",
+                                   count_col="conviction_tier")
             if sel_tier:
                 _cf = _cf[_cf["conviction_tier"].isin(sel_tier)]
 
             # 4b. Verdict — the engine's BUY/WATCH/AVOID decision (filter to the rare BUYs/WATCHes)
             _verdict_opts = _ordered_present(_cf, "verdict_direction", ["BUY", "WATCH", "AVOID"])
             sel_verdict = _ms_cascade("Verdict", _verdict_opts, "sb_verdict", default=[],
-                                      help="The engine's top-line decision. Empty = all stocks.")
+                                      help="The engine's top-line decision. Empty = all stocks.",
+                                      count_col="verdict_direction")
             if sel_verdict and "verdict_direction" in _cf.columns:
                 _cf = _cf[_cf["verdict_direction"].isin(sel_verdict)]
 
             # 4c. Corporate Class — Motilal Oswal capital-allocation quality (Great / Good / Gruesome)
             _corp_opts = _ordered_present(_cf, "corporate_class", ["🏆 GREAT", "👍 GOOD", "💀 GRUESOME"])
             sel_corp = _ms_cascade("Corporate Class", _corp_opts, "sb_corpclass", default=[],
-                                   help="Capital-allocation quality. 'Only Great', or exclude Gruesome.")
+                                   help="Capital-allocation quality. 'Only Great', or exclude Gruesome.",
+                                   count_col="corporate_class")
             if sel_corp and "corporate_class" in _cf.columns:
                 _cf = _cf[_cf["corporate_class"].isin(sel_corp)]
             st.caption(f"→ {len(_cf):,} remaining")
@@ -267,8 +283,10 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                  np.where(_pf >= 4, "➖ Moderate (4–6)", "⚠️ Weak (≤3)"))
             _pio_opts = [t for t in ["💪 Strong (≥7)", "➖ Moderate (4–6)", "⚠️ Weak (≤3)"]
                          if t in set(_pio_tier)]
+            _pio_vc = pd.Series(_pio_tier).value_counts().to_dict()   # derived array → explicit count
             sel_pio = _ms_cascade("Piotroski Strength", _pio_opts, "sb_piotier", default=[],
-                                  help="Financial-strength tier (Piotroski F-Score). Empty = all.")
+                                  help="Financial-strength tier (Piotroski F-Score). Empty = all.",
+                                  format_func=lambda v: f"{v}  ·  {_pio_vc.get(v, 0)}")
             if sel_pio:
                 _cf = _cf[pd.Series(_pio_tier, index=_cf.index).isin(sel_pio)]
 
@@ -327,6 +345,16 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                     mask = mask & frame["frameworks_passed"].str.contains(_pat, regex=True, na=False)
                 return mask
 
+        def _fw_counts(frame):
+            """name -> # stocks passing it (boundary-safe), to annotate each framework option with a
+            live count. Loops the ~37 framework names building array ops — NOT a row loop."""
+            if "frameworks_passed" not in frame.columns:
+                return {}
+            s = frame["frameworks_passed"].fillna("")
+            return {fw: int(s.str.contains(r"(?:^|, )" + re.escape(fw) + r"(?:,|$)",
+                                           regex=True, na=False).sum())
+                    for fw in _extract_frameworks(frame)}
+
         with _grp("🧬 Frameworks", "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", expanded=False):
             st.caption("Set algebra: (Universe − Exclude) ∩ Include ∩ Combination")
 
@@ -375,9 +403,11 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
             # 5a. EXCLUDE Framework — NOT logic (applied first, narrows universe)
             _all_fw_excl = _extract_frameworks(_cf)
+            _fwc_excl = _fw_counts(_cf)
             sel_fw_exclude = _ms_cascade(
                 "🚫 Exclude Framework", _all_fw_excl, "sb_fw_exclude", default=[],
                 help="Remove stocks passing ANY of these frameworks. Applied first.",
+                format_func=lambda v, _c=_fwc_excl: f"{v}  ·  {_c.get(v, 0)}",
             )
             if sel_fw_exclude:
                 _excl_mask = _fw_match_mask(_cf, sel_fw_exclude, logic="or")
@@ -393,9 +423,11 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
             # 5b. INCLUDE Framework — OR logic (show stocks passing ANY selected)
             _all_fw_incl = _extract_frameworks(_cf)
+            _fwc_incl = _fw_counts(_cf)
             sel_fw_include = _ms_cascade(
                 "✅ Include Framework", _all_fw_incl, "sb_fw_include", default=[],
                 help="Show stocks passing ANY of these. Empty = all remaining stocks.",
+                format_func=lambda v, _c=_fwc_incl: f"{v}  ·  {_c.get(v, 0)}",
             )
             if sel_fw_include:
                 _incl_mask = _fw_match_mask(_cf, sel_fw_include, logic="or")
@@ -411,9 +443,11 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
             # 5c. COMBINATION Framework — AND logic (stock must pass ALL selected)
             _all_fw_comb = _extract_frameworks(_cf)
+            _fwc_comb = _fw_counts(_cf)
             sel_fw_combine = _ms_cascade(
                 "🔗 Combination Framework", _all_fw_comb, "sb_fw_combine", default=[],
                 help="Stock must pass ALL of these simultaneously. AND logic.",
+                format_func=lambda v, _c=_fwc_comb: f"{v}  ·  {_c.get(v, 0)}",
             )
             if sel_fw_combine:
                 _comb_mask = _fw_match_mask(_cf, sel_fw_combine, logic="and")
@@ -434,7 +468,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _moat_opts = _ordered_present(_cf, "moat_growth_quad", _MOAT_ORDER)
             sel_moat = _ms_cascade("Moat", _moat_opts, "sb_moat", default=[],
                                    help="Moat-growth quadrant: Wealth Creator / Quality Trap / "
-                                        "Growth Trap / Wealth Destroyer. Empty = all stocks.")
+                                        "Growth Trap / Wealth Destroyer. Empty = all stocks.",
+                                   count_col="moat_growth_quad")
             if sel_moat:
                 _cf = _cf[_cf["moat_growth_quad"].isin(sel_moat)]
 
@@ -445,7 +480,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             ]
             _peg_opts = _ordered_present(_cf, "peg_zone", _PEG_ZONE_ORDER)
             sel_peg_zone = _ms_cascade("PEG Zone", _peg_opts, "sb_peg_zone", default=[],
-                                       help="Valuation tier from the PEG ratio. Empty = all stocks.")
+                                       help="Valuation tier from the PEG ratio. Empty = all stocks.",
+                                       count_col="peg_zone")
             if sel_peg_zone and "peg_zone" in _cf.columns:
                 _cf = _cf[_cf["peg_zone"].isin(sel_peg_zone)]
 
@@ -456,7 +492,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             ]
             _buy_opts = _ordered_present(_cf, "buy_zone_label", _BUY_ZONE_ORDER)
             sel_buy_zone = _ms_cascade("Buy Zone", _buy_opts, "sb_buy_zone", default=[],
-                                       help="Entry timing vs the Volatility Stop. Empty = all stocks.")
+                                       help="Entry timing vs the Volatility Stop. Empty = all stocks.",
+                                       count_col="buy_zone_label")
             if sel_buy_zone and "buy_zone_label" in _cf.columns:
                 _cf = _cf[_cf["buy_zone_label"].isin(sel_buy_zone)]
             st.caption(f"→ {len(_cf):,} remaining")
@@ -468,7 +505,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                            "📉 Stage 4 Declining", "❔ Unknown"]
             _wein_opts = _ordered_present(_cf, "weinstein_stage", _WEIN_ORDER)
             sel_wein = _ms_cascade("Weinstein Stage", _wein_opts, "sb_weinstein", default=[],
-                                   help="Long-term price trend stage. Empty = all stocks.")
+                                   help="Long-term price trend stage. Empty = all stocks.",
+                                   count_col="weinstein_stage")
             if sel_wein and "weinstein_stage" in _cf.columns:
                 _cf = _cf[_cf["weinstein_stage"].isin(sel_wein)]
 
@@ -476,7 +514,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _lynch_opts = _ordered_present(_cf, "lynch_category",
                                            ["Fast Grower", "Stalwart", "Slow Grower", "Declining"])
             sel_lynch = _ms_cascade("Lynch Type", _lynch_opts, "sb_lynchcat", default=[],
-                                    help="Lynch's classification (Fast Grower / Stalwart / …). Empty = all.")
+                                    help="Lynch's classification (Fast Grower / Stalwart / …). Empty = all.",
+                                    count_col="lynch_category")
             if sel_lynch and "lynch_category" in _cf.columns:
                 _cf = _cf[_cf["lynch_category"].isin(sel_lynch)]
 
@@ -484,7 +523,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _mef_opts = _ordered_present(_cf, "mef_label",
                                          ["🟢 Expanding", "✅ Intact", "🟡 Eroding", "🔴 Degrading"])
             sel_mef = _ms_cascade("Moat Endurance", _mef_opts, "sb_mef", default=[],
-                                  help="Whether the moat is widening or eroding over time. Empty = all.")
+                                  help="Whether the moat is widening or eroding over time. Empty = all.",
+                                  count_col="mef_label")
             if sel_mef and "mef_label" in _cf.columns:
                 _cf = _cf[_cf["mef_label"].isin(sel_mef)]
 
@@ -493,7 +533,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                            ["✅ Perfect — Buy Zone", "⚪ Mixed Pattern",
                                             "⚠️ Growth Phase — Watch D/E", "🚨 Debt Trap — Avoid"])
             sel_cftri = _ms_cascade("Cash-Flow Triangle", _cftri_opts, "sb_cftri", default=[],
-                                    help="Operating/investing/financing cash-flow quality. Empty = all.")
+                                    help="Operating/investing/financing cash-flow quality. Empty = all.",
+                                    count_col="cf_triangle")
             if sel_cftri and "cf_triangle" in _cf.columns:
                 _cf = _cf[_cf["cf_triangle"].isin(sel_cftri)]
 
@@ -502,7 +543,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                          ["🌊💎 Elite Accumulation", "🎯 Strong Accumulation",
                                           "✅ Moderate Interest", "⚪ Neutral", "❌ Distribution"])
             sel_smf = _ms_cascade("Smart-Money Flow", _smf_opts, "sb_smartflow", default=[],
-                                  help="Institutional accumulation/distribution level. Empty = all.")
+                                  help="Institutional accumulation/distribution level. Empty = all.",
+                                  count_col="smart_money_flow")
             if sel_smf and "smart_money_flow" in _cf.columns:
                 _cf = _cf[_cf["smart_money_flow"].isin(sel_smf)]
             st.caption(f"→ {len(_cf):,} remaining")
