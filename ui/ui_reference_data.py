@@ -107,6 +107,16 @@ CONCEPT_REFERENCE = {
         ("WATCH", "A qualified call — promising but with a caveat (mid conviction, or a soft forensic/timing flag). Monitor, don't act yet."),
         ("AVOID", "A negative call — low conviction, OR a hard veto from severe forensic red flags / governance risk. Stay away."),
     ],
+    # ── verdict_strength — core/verdict_engine.py:86 (.map over conviction_tier 1-5): the strength
+    # WORD shown in the verdict band beside the direction. It mirrors the tier but uses different
+    # words, and the .map isn't caught by the categorical-label net — so it needs its own entry. ──
+    "🎯 Verdict — Conviction Strength": [
+        ("HIGH CONVICTION", "The verdict band's strength word for Tier 1 (composite ≥85, the Crown Jewels) — the engine's strongest endorsement. Read it with the direction, e.g. 🟢 BUY · HIGH CONVICTION."),
+        ("STRONG", "The band's strength word for Tier 2 (composite ≥70, Strong Compounders) — high quality with momentum confirmation, just below the top tier. (Distinct from the Malik 'Strong' quality rating.)"),
+        ("EMERGING", "The band's strength word for Tier 3 (composite ≥55, Emerging Quality) — a developing thesis where quality is building but not yet proven; monitor for an upgrade."),
+        ("SPECULATIVE", "The band's strength word for Tier 4 (composite ≥40, On Radar) — a low-conviction, unproven setup; size small if at all and wait for confirmation."),
+        ("WEAK", "The band's strength word for Tier 5 (composite below 40, Not Ready) — does not clear the bar; the band's way of saying pass for now. (Distinct from the Malik 'Weak' quality rating.)"),
+    ],
     # ── conviction_tier / tier_label — config.CONVICTION_TIERS (composite-score bands)
     "🏆 Conviction Tier": [
         ("Crown Jewels", "Tier 1 (composite ≥85) — the highest-conviction compounders; deep-dive and build a position."),
@@ -191,11 +201,26 @@ CONCEPT_REFERENCE = {
         ("Low", "40–60% evidence coverage — a meaningful share of inputs are missing; treat with care."),
         ("Very Low", "Under 40% evidence coverage — the verdict rests on thin data; tentative."),
     ],
+    # ── result_age_days / result_stale_flag — core/data_engine.py:1566 (sign-flipped days_from_result;
+    # stale at >120d). Shown as the tearsheet '⏳ Stale Nd' badge + the Discovery 'Hide Stale' filter.
+    # A recency signal (how OLD the data is) — sibling to, and distinct from, the Evidence badge above. ──
+    "⏳ Result Recency": [
+        ("⏳ Stale", "The tearsheet badge shown when the company's most recent reported result is more than 120 days old — the financials may predate recent events, so treat the numbers as potentially out of date. The Discovery tab's 'Hide Stale' filter drops these."),
+        ("Result Age (days)", "How many days since the company last reported financial results — higher means staler numbers. The recency sibling to the 🔍 Evidence badge: coverage measures how MUCH of the data reported, this measures how OLD it is."),
+    ],
     # ── verdict_axis_governance — core/verdict_engine.py:116 (governance multiplier)
     "🛡️ Verdict — Governance Axis": [
         ("Govern 🟢 Safe", "No governance penalty — promoter pledge, dilution and related-party signals are clean."),
         ("Govern 🟡 Caution", "A mild governance penalty — one or more governance signals warrant caution."),
         ("Govern 🔴 Risk", "A heavy governance penalty — serious pledge/dilution/related-party risk drags the score."),
+    ],
+    # ── verdict_axis_forensics — core/verdict_engine.py:111 (nested np.where): the Forensics pill in
+    # the 6-axis scorecard, parallel to the Governance axis above. np.where in an engine file isn't
+    # enumerated by the categorical-label net, so these need explicit entries. ──
+    "🔬 Verdict — Forensics Axis": [
+        ("Forensics 🟢 Clean", "The scorecard's Forensics pill when accounting signals look clean — fewer than 5 red flags and no severe forensic or Schilit veto."),
+        ("Forensics 🟡 Watch", "The Forensics pill when 5 or more red flags fire but no hard veto — some accounting-quality caution; read the specific flags before acting."),
+        ("Forensics 🔴 Flagged", "The Forensics pill when a severe forensic veto fires — forensic score below 50, ten or more red flags, or a Schilit checker hard-fail. A serious accounting-quality concern."),
     ],
     # ── verdict_top_risk — core/verdict_engine.py:121 (the single most important risk)
     "⚠️ Verdict — Top Risk": [
@@ -296,6 +321,22 @@ CONCEPT_REFERENCE = {
         ("💰 Capital Deployment (10L Base)", "The rupee amount the Recommended Capital Weight implies on an illustrative ₹10-lakh portfolio — the same weight expressed in rupees, to make the sizing concrete."),
         ("Value Creation Velocity", "Reinvestment rate × capital spread (the ROCE earned above the cost of capital) — how fast the company compounds intrinsic value by reinvesting at high returns. Higher = faster wealth creation."),
         ("Market-Implied Expectations Gap", "The gap between the growth the current share price already implies and the growth the business actually needs to justify it (Mauboussin). Positive = the market expects MORE than the fundamentals require — a high bar to clear."),
+    ],
+    # ── Mauboussin Expectations-Investing Radar — ui_tearsheet.render_mauboussin_radar (~2817): the
+    # PIE audit (T/O/C pillars) + per-stock Payoff Framework. These are numeric / UI-composed card
+    # signals (not np.select categoricals), so the label-coverage net doesn't enumerate them — grounded
+    # in mauboussin_expectations_specs.json. The framework one-liner lives under "Frameworks" above. ──
+    "🔮 Mauboussin — Expectations Investing": [
+        ("Price-Implied Expectations (PIE) Audit", "Mauboussin & Rappaport's core move, read off the price: instead of guessing a fair value, judge the expectations the current price already bakes in — and score how many of three gates (Treadmill / OpLev / CAP) the stock clears, shown out of 3."),
+        ("T · Treadmill Safety", "PIE pillar 1 — a green check means the stock is NOT priced for indefinite perfection: it doesn't need a continuous stream of positive surprises just to hold today's price. Red means the price already assumes relentless out-performance."),
+        ("O · OpLev Integrity", "PIE pillar 2 — a green check means the operating-leverage engine is intact: incremental revenue is still converting efficiently into profit, rather than drifting (margins decaying even as sales grow)."),
+        ("C · CAP Trap Clear", "PIE pillar 3 — a green check means there's no dangerous pairing of a long competitive-advantage-period expectation with DECELERATING returns on capital. The trap: the price assumes a durable moat while ROCE is actually sliding."),
+        ("Implied CAP Proxy", "The competitive-advantage period — in years — that today's price implies the business can keep earning excess returns. Very high values are a caution: the market is paying for a moat that must last improbably long."),
+        ("NOPAT Margin", "Net Operating Profit After Tax as a share of sales — the clean, capital-structure-neutral operating profitability that Mauboussin's value-driver math runs on (it strips out financing effects)."),
+        ("🧮 Payoff Framework — Expected Excess Return", "The per-stock expected value of the trade: P(Upside) × Upside% − P(Downside) × Downside%, where P(Upside) is the trajectory-calibrated win probability. The book's bar to act is a minimum 5% edge."),
+        ("EV Upside %", "The reward leg of the payoff: how far the price could rise to reach the P/E its quality justifies (the gap to a quality-fair multiple)."),
+        ("EV Downside %", "The risk leg of the payoff: the distance from today's price down to the volatility stop-loss level. Paired with EV Upside % to size the bet honestly."),
+        ("EV Verdict & Position Sizing", "Translates the Expected Excess Return into Mauboussin's Ch.13 sizing bands — roughly: 15%+ edge → High Conviction (8–12% weight); 10%+ → Moderate-High (5–8%); 5%+ → Moderate (3–5%); below 5% → Insufficient Edge, no position."),
     ],
     # ── Schilit Accounting Anomaly Shield — ui_tearsheet.render_schilit_shield (~2162); the four
     # Schilit checkers (schilit_ems/cfs/kms_* flags). Wording follows each checker's own description. ──
