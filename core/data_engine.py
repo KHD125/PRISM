@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import warnings
 from typing import Dict, Tuple, Optional
-from config import (CSV_FILES, MCAP_TIERS, MCAP_MIN_FLOOR,
+from config import (CSV_FILES, MCAP_TIERS,
                     FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES, UTILITY_SECTOR_NAMES,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS)

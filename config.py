@@ -53,9 +53,6 @@ CSV_FILES = {
     "technical":     _get_actual_path(BASE_DIR, DATA_DIR_NAME, "Prism - Technicals.csv"),
 }
 
-# Google Sheets Configuration
-DEFAULT_SHEET_ID = None  # Must be set before using data_source="sheet"; "" causes cryptic errors deep in data_engine
-
 # Exact tab names inside the user's Google Spreadsheet.
 # INVARIANT: These names must never be changed — the data pipeline loads by tab name,
 # not by GID. GIDs are per-spreadsheet and always wrong for a different user's sheet.
@@ -79,8 +76,6 @@ MCAP_TIERS = {
     "Micro Cap":  {"label": "Micro Cap",  "min": 100,     "emoji": "⚗️"},
     "Nano Cap":   {"label": "Nano Cap",   "min": 0,       "emoji": "🔭"},
 }
-
-MCAP_MIN_FLOOR = 0  # No floor — all 2107 stocks included (sheet already categorises)
 
 # ═══════════════════════════════════════════════════════════════
 # 3. HARD GATES — Binary Pass/Fail (Layer 1)
@@ -664,16 +659,6 @@ def get_adaptive_weights(profile_name: str, regime: str = "SIDEWAYS") -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 7f. WAVE DETECTION ANALYTICS (Institutional Smart Money)
-# ═══════════════════════════════════════════════════════════════
-WAVE_DETECTION = {
-    "vqs_liquidity": 0.50,    # VQS: Volume Strength
-    "vqs_smart_money": 0.20,  # VQS: Smart Money Flow
-    "vqs_consistency": 0.20,  # VQS: Pattern Consistency
-    "vqs_efficiency": 0.10,   # VQS: Price Efficiency
-}
-
-# ═══════════════════════════════════════════════════════════════
 # EPOCH 2: REINVESTMENT MOAT THRESHOLDS (7th–12th WCS, 2002–2007)
 # Three mathematical identities for self-funding compound machines:
 #   Identity A: Reinvestment Rate (RR) = 1 − DPR
@@ -937,10 +922,3 @@ FRAMEWORK_CATEGORIES = [
         "Fisher Quality", "Fisher Scalability", "100-Bagger",
     ]),
 ]
-
-# Reverse lookup: framework name → (emoji, short label, color).
-FRAMEWORK_TO_CATEGORY = {
-    fw: (emoji, label, color)
-    for emoji, label, color, fws in FRAMEWORK_CATEGORIES
-    for fw in fws
-}
