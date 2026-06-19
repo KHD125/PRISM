@@ -228,62 +228,13 @@ QUALITY_WEIGHTS = {
     "valuation":     0.10,   # PE discount, PEG, FCF yield — Marks/Baid Entry Price
 }
 
-# Moat sub-signals and their weights within the moat bucket
-MOAT_SIGNALS = {
-    "roce_med_10y":     0.35,
-    "roce_trajectory":  0.15,  # roce_med_7y - roce_med_10y
-    "roe_med_10y":      0.25,
-    "roe_trajectory":   0.10,
-    "roce_current_vs_med": 0.15,  # roce - roce_med_10y (inflection)
-}
-
-GROWTH_SIGNALS = {
-    "pat_gr_5y":           0.17,
-    "pat_gr_10y":          0.10,
-    "rev_gr_5y":           0.17,
-    "rev_gr_10y":          0.10,
-    "eps_gr_5y":           0.15,
-    "ebitda_gr_5y":        0.10,
-    "pat_acceleration":    0.06,   # pat_gr_3y - pat_gr_5y
-    "rev_acceleration":    0.05,   # rev_gr_3y - rev_gr_5y
-    "ebitda_acceleration": 0.04,   # ebitda_gr_3y - ebitda_gr_5y
-    # Quarterly freshness layer (q_pat_yoy × 0.60 + q_rev_yoy × 0.40) × 0.06
-    # NOTE: dict intentionally sums to 0.94. The remaining 0.06 is applied separately in
-    # scoring_engine.py compute_growth_score() because quarterly freshness requires a
-    # blended sub-formula (0.60/0.40 split) that can't be expressed as a flat signal weight.
-}
-# Weights sum: 0.17+0.10+0.17+0.10+0.15+0.10+0.06+0.05+0.04 = 0.94 + 0.06 quarterly = 1.00 total
-
-CASH_SIGNALS = {
-    "cfo_to_pat":      0.20,   # CFO/PAT % — earnings cash-backing
-    "cfo_to_ebitda":   0.15,   # CFO/EBITDA % — clean accounts filter
-    "fcf_yield":       0.15,   # FCF/MCap — absolute attractiveness
-    "fcf_to_cfo_pct":  0.15,   # FCF/CFO — capex discipline (0 when OCF≤0, not neutral 50)
-    "capex_coverage":  0.10,   # OCF/capex multiple
-    "fcf_consistency": 0.15,   # FCF consistently positive (binary)
-    "self_funding":    0.10,   # SSGR ≥ actual growth — no external debt needed (binary)
-}
-# Weights sum: 0.20+0.15+0.15+0.15+0.10+0.15+0.10 = 1.00
-
-MARGIN_SIGNALS = {
-    "npm_med_5y":       0.25,
-    "opm_med_5y":       0.25,
-    "gpm_med_5y":       0.15,
-    "npm_acceleration": 0.15,   # npm_lq - npm_1yb
-    "opm_acceleration": 0.10,   # opm_lq - opm_1yb
-    "opm_stable":       0.10,   # OPM within ±20% of 5Y median = pricing power (binary)
-}
-# Weights sum: 0.25+0.25+0.15+0.15+0.10+0.10 = 1.00
-
-BALANCE_SHEET_SIGNALS = {
-    "net_debt_negative": 0.25,  # negative net_debt = fortress (binary)
-    "debt_slope_3y":     0.20,  # negative = deleveraging (ascending=False)
-    "reserves_growth":   0.15,
-    "cwip_conversion":   0.15,  # positive = capacity came online
-    "cash_change":       0.15,  # positive = building cash
-    "nfat":              0.10,  # Net Fixed Asset Turnover — capital-light moat (Malik)
-}
-# Weights sum: 0.25+0.20+0.15+0.15+0.15+0.10 = 1.00
+# NOTE (2026-06-19): the moat / growth / cash / margin / balance_sheet COMPONENT weights are NOT
+# here — they live inline in core/scoring_engine._compute_*_score. Each weight is inseparable from
+# its per-signal logic (sector-vs-universe rank, ascending direction, binary ×100, FCF/CFO's
+# negative-OCF special case), so a flat weights-dict can never be their full source; the engine is.
+# The dead duplicate dicts (MOAT/GROWTH/CASH/MARGIN/BALANCE_SHEET_SIGNALS) that used to sit here were
+# import-only — editing them did nothing — so they were removed to end the single-source-of-truth
+# breach. Only the VALUATION/RS/TREND/BREAKOUT/SECTOR signal-weight dicts (below) are config-driven.
 
 # ═══════════════════════════════════════════════════════════════
 # 4b. VALUATION SCORE SIGNALS (Marks + Baid Entry Price Discipline)

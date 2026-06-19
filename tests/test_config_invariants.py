@@ -22,13 +22,26 @@ import config as C
 
 
 # ── sub-score weight blends must sum to exactly 1.0 ──────────────────────────
-@pytest.mark.parametrize("name", ["QUALITY_WEIGHTS", "MOMENTUM_WEIGHTS"])
+@pytest.mark.parametrize("name", ["QUALITY_WEIGHTS", "MOMENTUM_WEIGHTS",
+                                  "VALUATION_SIGNALS", "RS_SIGNALS", "TREND_SIGNALS",
+                                  "BREAKOUT_SIGNALS", "SECTOR_SIGNALS"])
 def test_subscore_weight_dicts_sum_to_one(name):
-    """quality_score / momentum_score are weighted blends of their components; if the component
-    weights don't sum to 1.0 the sub-score silently leaves its 0-100 scale."""
+    """Weighted blends must total 1.0 or the sub-score silently leaves its 0-100 scale. Covers the
+    top quality/momentum blends AND the live, config-driven *_SIGNALS dicts the scoring engine reads.
+    (The moat/growth/cash/margin/balance COMPONENT weights live inline in scoring_engine, not config —
+    each is coupled to its per-signal logic; the dead duplicate dicts were removed 2026-06-19.)"""
     d = getattr(C, name)
     s = sum(v for v in d.values() if isinstance(v, (int, float)))
     assert abs(s - 1.0) < 1e-9, f"{name} component weights sum to {s}, expected 1.0"
+
+
+@pytest.mark.parametrize("mode", sorted(C.ANALYSIS_MODES))
+def test_analysis_mode_weights_sum_to_one(mode):
+    """Each analysis mode blends fundamental + momentum into the composite; fundamental_w +
+    momentum_w must total 1.0, else every composite computed under that mode is mis-scaled."""
+    cfg = C.ANALYSIS_MODES[mode]
+    s = cfg["fundamental_w"] + cfg["momentum_w"]
+    assert abs(s - 1.0) < 1e-9, f"{mode}: fundamental_w + momentum_w = {s}, expected 1.0"
 
 
 # ── MASTER_PROFILES: complete + QGLP base weights normalized ─────────────────
