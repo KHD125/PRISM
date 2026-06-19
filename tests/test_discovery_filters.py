@@ -17,8 +17,9 @@ test_cyclicality.py and sector_capital_phase by test_capital_cycle_sector.py (re
 """
 from pathlib import Path
 
+from config import FRAMEWORK_CATEGORIES
 from core.cyclicality_map import TIER_LABELS
-from ui.ui_discovery import _CHIP_META, _compute_active_chips
+from ui.ui_discovery import _CHIP_META, _compute_active_chips, _family_count
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DISC = (_ROOT / "ui" / "ui_discovery.py").read_text(encoding="utf-8")
@@ -95,3 +96,46 @@ def test_every_funnel_key_has_a_chip_entry():
     total_keys = set(re.findall(r'"(sb_\w+)"', _DISC[i:_DISC.index(")", i)]))
     missing = total_keys - {k for k, _, _ in _CHIP_META}
     assert not missing, f"filters counted in the funnel total but with no chip entry: {missing}"
+
+
+# ── 🎭 Framework Family filter (min-count per family, AND across families) ──────
+def test_family_filter_registered_in_group_and_funnel():
+    """sb_fwfam must be wired into BOTH the 🧬 Frameworks _grp() (group badge) AND the final
+    _active_n() funnel total — the same registration contract as every other filter. Its min-count
+    PARAMETER (sb_fwfam_min) is NOT an independent filter and must NOT be counted in the funnel."""
+    grp_line = next(l for l in _DISC.splitlines() if '_grp("🧬 Frameworks"' in l)
+    i = _DISC.rindex("_active_n(")
+    active_block = _DISC[i:_DISC.index(")", i)]
+    assert "sb_fwfam" in grp_line, "sb_fwfam missing from the 🧬 Frameworks _grp() — group badge undercounts"
+    assert "sb_fwfam" in active_block, "sb_fwfam missing from _active_n() — funnel total undercounts"
+    assert "sb_fwfam_min" not in active_block, "sb_fwfam_min is a parameter, not a counted filter"
+
+
+def test_family_filter_sourced_from_framework_categories():
+    """The family options are built from the live FRAMEWORK_CATEGORIES taxonomy (single source), so a
+    renamed/added family can never silently desync the filter from the cards' category chips."""
+    assert "FRAMEWORK_CATEGORIES" in _DISC, "family filter must read FRAMEWORK_CATEGORIES, not a hardcoded list"
+
+
+def test_family_count_boundary_safe_and_correct():
+    """_family_count counts only EXACT framework tokens (boundary-safe) — 'Bruised Blue Chip' must
+    NOT match 'Bruised Blue Chip 29' — and sums across the family's member frameworks."""
+    import pandas as pd
+    df = pd.DataFrame({"frameworks_passed": [
+        "Coffee Can, Diamond, Quality Compounder",   # 3 Moats frameworks
+        "QGLP, CAN SLIM",                            # 0 Moats
+        "Bruised Blue Chip",                         # boundary: NOT the '…29' framework
+    ]})
+    moats = next(fws for (_e, lbl, _c, fws) in FRAMEWORK_CATEGORIES if lbl == "Moats")
+    assert list(_family_count(df, moats)) == [3, 0, 0]
+    mosl = next(fws for (_e, lbl, _c, fws) in FRAMEWORK_CATEGORIES if lbl == "MOSL")
+    assert list(_family_count(df, mosl)) == [0, 1, 0]  # row C ('Bruised Blue Chip') must score 0
+
+
+def test_family_count_handles_missing_and_empty():
+    """No frameworks_passed column, an empty fw list, or NaN cells → all-zero (never crashes)."""
+    import pandas as pd
+    assert list(_family_count(pd.DataFrame({"x": [1, 2]}), ["Coffee Can"])) == [0, 0]
+    df = pd.DataFrame({"frameworks_passed": ["Coffee Can", None]})
+    assert list(_family_count(df, [])) == [0, 0]
+    assert list(_family_count(df, ["Coffee Can"])) == [1, 0]

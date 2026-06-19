@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import COLORS
+from config import COLORS, FRAMEWORK_CATEGORIES
 
 
 # ── Active-filter chips: registry + pure detector (unit-tested) ───────────────
@@ -22,6 +22,7 @@ _CHIP_META = [
     ("sb_cyc", "Cyclicality", "ms"), ("sb_capphase", "Capital Phase", "ms"), ("sb_tier", "Tier", "ms"),
     ("sb_verdict", "Verdict", "ms"), ("sb_corpclass", "Corp Class", "ms"), ("sb_maxrf", "Max Red Flags", "max"),
     ("sb_piotier", "Piotroski", "ms"), ("sb_mincov", "Min Coverage", "min"), ("sb_hidestale", "Hide Stale", "bool"),
+    ("sb_fwfam", "FW Family", "ms"),
     ("sb_fw_exclude", "Exclude FW", "ms"), ("sb_fw_include", "Include FW", "ms"), ("sb_fw_combine", "Combine FW", "ms"),
     ("sb_moat", "Moat", "ms"), ("sb_peg_zone", "PEG Zone", "ms"), ("sb_buy_zone", "Buy Zone", "ms"),
     ("sb_weinstein", "Weinstein", "ms"), ("sb_lynchcat", "Lynch", "ms"), ("sb_mef", "Moat Endurance", "ms"),
@@ -56,6 +57,22 @@ def _compute_active_chips(state, rf_max):
             if v:
                 out.append((key, f"{human}: {v[0]}" + (f" +{len(v) - 1}" if len(v) > 1 else "")))
     return out
+
+
+def _family_count(frame: pd.DataFrame, fw_names) -> pd.Series:
+    """Vectorized per-row count of how many of `fw_names` each stock passes, read from the
+    comma-joined `frameworks_passed` string. Boundary-safe (the same anchored pattern as the
+    Discovery framework filter) so 'Bruised Blue Chip' never substring-matches 'Bruised Blue Chip
+    29'. The loop is over a fixed ~8-12 framework names building array ops — NOT a row loop.
+    Module-level + pure so it is unit-tested (like _compute_active_chips). Returns an int Series."""
+    if "frameworks_passed" not in frame.columns or not fw_names:
+        return pd.Series(0, index=frame.index)
+    s = frame["frameworks_passed"].fillna("")
+    cnt = pd.Series(0, index=frame.index)
+    for fw in fw_names:
+        _pat = r"(?:^|, )" + re.escape(fw) + r"(?:,|$)"
+        cnt = cnt + s.str.contains(_pat, regex=True, na=False).astype(int)
+    return cnt
 
 
 def _remove_one_filter(key) -> None:
@@ -310,8 +327,51 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                     mask = mask & frame["frameworks_passed"].str.contains(_pat, regex=True, na=False)
                 return mask
 
-        with _grp("🧬 Frameworks", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", expanded=False):
+        with _grp("🧬 Frameworks", "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", expanded=False):
             st.caption("Set algebra: (Universe − Exclude) ∩ Include ∩ Combination")
+
+            # 5·0 FRAMEWORK FAMILY — coarse conviction-CHARACTER filter (the 5 §7 families), applied
+            # before the fine name-level set algebra below. Mirrors the category-count chips on the
+            # cards: a stock must pass ≥ the chosen minimum frameworks in EACH selected family (AND
+            # across families). Built on FRAMEWORK_CATEGORIES — the live taxonomy, not the dead reverse-map.
+            _avail_fw = set(_extract_frameworks(_cf))
+            _fam_present = [(e, lbl, clr, fws) for (e, lbl, clr, fws) in FRAMEWORK_CATEGORIES
+                            if any(f in _avail_fw for f in fws)]
+            _fam_meta = {lbl: (e, clr, fws) for (e, lbl, clr, fws) in _fam_present}
+            _fam_avail_n = {lbl: sum(1 for f in fws if f in _avail_fw)
+                            for (e, lbl, clr, fws) in _fam_present}
+            sel_fam = _ms_cascade(
+                "🎭 Framework Family", [lbl for (e, lbl, clr, fws) in _fam_present], "sb_fwfam", default=[],
+                help="Filter by conviction CHARACTER (Quality-Moat / Momentum / Value / MOSL / Fisher). "
+                     "A stock must pass at least the minimum number of frameworks in EACH selected "
+                     "family. The number in brackets is how many of that family's frameworks are still "
+                     "available. Empty = all stocks.",
+                format_func=lambda l: f"{_fam_meta[l][0]} {l} ({_fam_avail_n.get(l, 0)})",
+            )
+            if sel_fam:
+                _fam_cap = max((_fam_avail_n.get(l, 1) for l in sel_fam), default=1)
+                # Pre-seed + clamp the stored min BEFORE the widget instantiates (avoids the
+                # value-and-session-state warning, and an out-of-range stored value when the cap shrinks).
+                if "sb_fwfam_min" not in st.session_state:
+                    st.session_state["sb_fwfam_min"] = 1
+                st.session_state["sb_fwfam_min"] = min(max(1, int(st.session_state["sb_fwfam_min"])),
+                                                       max(1, _fam_cap))
+                _fam_min = st.number_input(
+                    "Min frameworks per selected family", min_value=1, max_value=max(1, _fam_cap),
+                    step=1, key="sb_fwfam_min",
+                    help="Each selected family must contribute at least this many passed frameworks. "
+                         "1 = passes any framework in the family; higher = stronger conviction in it.",
+                )
+                _fam_mask = pd.Series(True, index=_cf.index)
+                for l in sel_fam:
+                    _fam_mask = _fam_mask & (_family_count(_cf, _fam_meta[l][2]) >= int(_fam_min))
+                _cf = _cf[_fam_mask]
+                st.markdown(
+                    f'<div style="font-size:0.6rem;color:{COLORS["purple"]};padding:0 0 6px 2px;">'
+                    f'🎭 {len(sel_fam)} famil{"y" if len(sel_fam) == 1 else "ies"} · ≥{int(_fam_min)} each '
+                    f'· {len(_cf)} stocks remaining</div>',
+                    unsafe_allow_html=True,
+                )
 
             # 5a. EXCLUDE Framework — NOT logic (applied first, narrows universe)
             _all_fw_excl = _extract_frameworks(_cf)
@@ -552,7 +612,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     _active_total = _active_n(
         "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict", "sb_corpclass",
         "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale",
-        "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
+        "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
         "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
         "sb_catalyst", "sb_sellalert", "sb_gate", "sb_minq", "sb_minscore",
     )
