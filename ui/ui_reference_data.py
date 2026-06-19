@@ -292,6 +292,10 @@ CONCEPT_REFERENCE = {
         ("⏳ Decade Moat Trajectory (Tau)", "Reads whether the company's competitive advantage — its returns on capital — is WIDENING or fading over roughly a decade. A positive value (above ~0.25) signals an expanding moat; negative signals a decaying one. It captures the moat's direction, not its level."),
         ("📊 OLS Valuation Residual", "The gap between the stock's actual valuation and the value a regression (least-squares) model predicts from its fundamentals. Negative = the market is pricing it BELOW what its fundamentals justify (potential alpha); positive = a structural premium."),
         ("🚨 Hard Volatility Stop-Loss Level", "The price at which a volatility-based trailing stop would trigger — a risk-management exit reference for sizing a position, never a price target or a forecast."),
+        ("🎯 Recommended Capital Weight", "A suggested position size as a % of your portfolio, from a quarter-Kelly, risk-managed sizing rule — larger for higher-conviction, lower-risk setups. A guide for sizing, not an instruction to buy."),
+        ("💰 Capital Deployment (10L Base)", "The rupee amount the Recommended Capital Weight implies on an illustrative ₹10-lakh portfolio — the same weight expressed in rupees, to make the sizing concrete."),
+        ("Value Creation Velocity", "Reinvestment rate × capital spread (the ROCE earned above the cost of capital) — how fast the company compounds intrinsic value by reinvesting at high returns. Higher = faster wealth creation."),
+        ("Market-Implied Expectations Gap", "The gap between the growth the current share price already implies and the growth the business actually needs to justify it (Mauboussin). Positive = the market expects MORE than the fundamentals require — a high bar to clear."),
     ],
     # ── Schilit Accounting Anomaly Shield — ui_tearsheet.render_schilit_shield (~2162); the four
     # Schilit checkers (schilit_ems/cfs/kms_* flags). Wording follows each checker's own description. ──
@@ -306,5 +310,68 @@ CONCEPT_REFERENCE = {
         ("EP Velocity (YoY)", "The year-on-year change in economic profit (₹ Cr) — how fast the company's profit ABOVE its cost of capital is rising or falling. Rising velocity means value creation is accelerating."),
         ("EP Trajectory", "The company's position on Motilal Oswal's economic-profit power curve (28th study) — where it sits on the create → sustain → erode arc of economic value over time."),
         ("Tax Rate (Est.)", "The estimated effective tax rate, (PBT − PAT) ÷ PBT. A profitable company paying under ~10% can signal deferred-tax exhaustion, tax-holiday reliance, or opaque structuring — a forensic caution, not a positive."),
+    ],
+    # ── Systematic Fisher Proxy — ui_tearsheet.render_fisher_module (~1033); Fisher's 15 qualitative
+    # points, the 7 quantifiable from CSV data. Each entry pairs the Fisher point with its proxy. ──
+    "🧠 Systematic Fisher Proxy": [
+        ("P1: Market Potential", "Fisher Point 1 — does the business have products or services with enough market room for years of sales growth? Proxy: 5-year revenue growth of 15% or more."),
+        ("P4: Sales Org Efficiency", "Fisher Point 4 — an above-average sales and distribution organisation. Proxy: profit growing faster than sales (operating leverage is working)."),
+        ("P5: Worthwhile Margins", "Fisher Point 5 — does the business earn a worthwhile profit margin? Proxy: a net profit margin above 10%."),
+        ("P6: Margin Trajectory", "Fisher Point 6 — is the company doing what it needs to maintain or improve margins? Proxy: net margin at least as high as last year."),
+        ("P10: Accounting Controls", "Fisher Point 10 — sound cost analysis and accounting controls. Proxy: operating cash flow at least 70% of reported profit, so earnings are backed by real cash."),
+        ("P13: No Equity Dilution", "Fisher Point 13 — will growth force equity raises that dilute existing holders? Proxy: a stable share count, with no meaningful dilution."),
+        ("P15: Accounting Integrity", "Fisher Point 15 — management of unquestionable integrity. Proxy: a clean forensic verdict — a high forensic score with few red flags."),
+    ],
+    # ── Hard gates + verdict-band states — config.HARD_GATES (descriptions verbatim) + the verdict
+    # header's SYSTEM-REJECTED / SELL-ALERT branches in app.py. Every stock must pass ALL gates. ──
+    "🚨 Hard Gates & Rejection (Pass ALL)": [
+        ("Gate-Passed", "The stock cleared EVERY hard safety gate below — the universal floor a stock must pass before PRISM scores it seriously. 'Gate-passed' means safe and eligible, not 'buy'."),
+        ("SYSTEM REJECTED", "The Tear-Sheet verdict-band state when a stock FAILS any one hard gate — it is eliminated regardless of its other scores. The band names the gate that failed."),
+        ("SELL ALERT", "The verdict-band state when a Baid sell-trigger has fired (e.g. cash collapse, thesis broken) — a held or candidate stock flashing risk; review the Forensics tab before acting."),
+        ("Debt Safety (gate)", "Hard gate: debt-to-equity ≤ 1.0 — caps balance-sheet risk before a stock can score (Baid prefers ≤ 0.5)."),
+        ("Current Ratio (gate)", "Hard gate: current ratio ≥ 1.0 — a basic liquidity floor, so current assets at least cover current liabilities."),
+        ("Pledge Safety (gate)", "Hard gate: promoter shares pledged ≤ 20% — limits the forced-selling risk that comes from promoters pledging stock as collateral."),
+        ("Pledge Direction (gate)", "Hard gate: promoter pledging is NOT rising quarter-on-quarter — a rising pledge is an early governance warning."),
+        ("Promoter Alignment (gate)", "Hard gate: promoter holding ≥ 30% — the founders must keep meaningful skin in the game."),
+        ("Cash Quality (gate)", "Hard gate: operating cash flow ≥ 70% of reported profit — earnings must be backed by real cash, not just accounting accruals."),
+        ("No Dilution (gate)", "Hard gate: no predatory equity raise — small ESOP-level dilution passes, but a >10% QIP that dilutes existing holders is rejected."),
+        ("Positive OCF (gate)", "Hard gate: operating cash flow must be positive — the business has to actually generate cash from its operations."),
+        ("Positive PAT (gate)", "Hard gate: annual profit after tax above zero — loss-making companies do not pass the screen."),
+        ("Revenue Floor (gate)", "Hard gate: revenue growth of at least −20% year-on-year — excludes businesses in revenue freefall."),
+        ("Mandate Screen (ROCE · Growth · PEG)", "On top of the universal safety gates, each mandate adds its own thesis screen — a minimum ROCE, a minimum growth rate and a PEG ceiling (shown in the banner). 'Mandate fit' = passes both the safety gates and this screen."),
+    ],
+    # ── Forensic integrity verdicts — forensic_engine.py forensic_label (np.where, ~656) + the
+    # Schilit shield pass/fail banner (schilit_pass, score ≥ 70). Binary verdicts shown on the UI. ──
+    "🕵️ Forensic Integrity Verdict": [
+        ("🟢 Clean", "The forensic integrity verdict 'Clean' — the stock clears a strict four-part hard gate: operating cash flow ≥ 80% of profit, promoter pledge under 10%, no share dilution, AND zero red flags. The binary integrity stamp the SQGLP gate relies on."),
+        ("🚨 Sharp Practices Detected", "The forensic integrity verdict when a stock FAILS any one of those four conditions. Note: a stock can have a high forensic SCORE (few flags) yet still be flagged here — the label is a strict binary gate, not a gradient, so treat it as a hard caution."),
+        ("Perimeter Secure (Schilit)", "The Schilit Anomaly Shield's PASS state — at most two of the four Schilit checkers fired (a Schilit score of 70 or more). The accounting clears the manipulation screen."),
+        ("Shenanigan Alert (Schilit)", "The Schilit Anomaly Shield's FAIL state — three or more of the four checkers fired (Schilit score below 70). The accounting raises manipulation concerns; investigate before trusting the reported numbers."),
+    ],
+    # ── Analysis Mode selector — config.ANALYSIS_MODES (label + description). ──
+    "🎛️ Analysis Mode": [
+        ("🔀 Hybrid (Quantamental)", "Analysis Mode — scores on BOTH fundamentals and technicals: a great business that institutions are also buying now. The all-round default."),
+        ("📚 Fundamental Only", "Analysis Mode — pure business quality, setting price action aside. For long-term, buy-and-hold Coffee Can investors."),
+        ("📈 Technical Only", "Analysis Mode — pure price action and institutional money flow (O'Neil rules), with fundamentals set aside."),
+    ],
+    # ── Scoring Profile selector — config.MASTER_PROFILES (label + description). ──
+    "🎚️ Scoring Profile": [
+        ("Balanced (QGLP)", "Scoring Profile — Raamdeo Agrawal's QGLP: a balanced weighting of Quality, Growth, Longevity and Price. The all-weather default."),
+        ("Value (Marks / Kedia)", "Scoring Profile — beaten-down great businesses bought at a high margin of safety, betting on mean reversion (Howard Marks / Vijay Kedia)."),
+        ("Growth (Fisher)", "Scoring Profile — rewards earnings acceleration and tolerates a higher P/E for 20%+ sustained growth (Philip Fisher)."),
+        ("Quality (Coffee Can / Buffett)", "Scoring Profile — pure moat: a decade of consistent ROCE, strong free cash flow and minimal debt, ignoring market noise (Coffee Can / Buffett)."),
+        ("GARP (Lynch)", "Scoring Profile — Growth at a Reasonable Price, with a mandatory PEG below 1.0 (Peter Lynch's golden rule)."),
+        ("Defensive / Cash Cow", "Scoring Profile — capital-protection mode: a free-cash-flow fortress with zero debt."),
+        ("Momentum (O'Neil CAN-SLIM)", "Scoring Profile — price and earnings momentum: buy what FII/DII are accumulating right now (O'Neil CAN-SLIM)."),
+        ("Turnaround / Special Situation", "Scoring Profile — quarter-on-quarter earnings acceleration plus promoter buying and a volume surge. High risk, high reward."),
+    ],
+    # ── Marks Cycle Gauge — Config-tab sliders (config.DEFAULT_CYCLE_TEMPERATURE). DISPLAY-ONLY: a
+    # personal conviction/sizing aid that never alters the engine's scores (CLAUDE.md §5). ──
+    "🌡️ Marks Cycle Gauge (display-only)": [
+        ("📊 Valuations (cycle)", "Marks Cycle dial — how expensive the market is, scored 1 (cheap, PE<17) to 5 (frothy, PE>25). A thinking aid for your own posture; it does NOT change the engine's scores."),
+        ("🏦 Credit Conditions (cycle)", "Marks Cycle dial — how loose credit is, 1 (tight) to 5 (loose, easy money). Display-only; informs your conviction, not the rankings."),
+        ("🧠 Investor Psychology (cycle)", "Marks Cycle dial — the crowd's mood, 1 (fear) to 5 (greed). A display-only conviction dial."),
+        ("📈 Capital Markets (cycle)", "Marks Cycle dial — IPO and issuance heat, 1 (no IPOs) to 5 (IPO mania). Display-only."),
+        ("⚖️ Market Quality (cycle)", "Marks Cycle dial — what's leading, 1 (quality leads) to 5 (junk leads). The five dials sum to a 5–25 cycle temperature that guides YOUR posture — never the engine's scores."),
     ],
 }
