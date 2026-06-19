@@ -8,7 +8,43 @@ import os
 os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
 
 import streamlit as st
-st.set_page_config(page_title="PRISM — Quantamental Intelligence", page_icon="🔷", layout="wide", initial_sidebar_state="expanded")
+
+
+def _prism_favicon(size: int = 128):
+    """Browser-tab favicon = the PRISM refracting-prism mark (mirrors _PRISM_SVG in
+    ui/ui_components.py), drawn as a PNG so the tab icon matches the in-app logo. PIL-only +
+    inline so it runs BEFORE set_page_config without importing the (st-touching) ui package.
+    page_icon takes a PIL.Image reliably; an SVG data-URI favicon is flaky across browsers."""
+    from PIL import Image, ImageDraw
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    pad = size * 0.08
+    s = (size - 2 * pad) / 72.0          # _PRISM_SVG viewBox is 72×56
+    oy = (size - 56 * s) / 2.0
+    P = lambda x, y: (pad + x * s, oy + y * s)
+    WHITE = (230, 237, 243, 255)
+
+    def _rline(p1, p2, rgb, w):          # round-capped line (emulates the SVG stroke-linecap)
+        d.line([p1, p2], fill=rgb, width=w)
+        r = w / 2.0
+        for cx, cy in (p1, p2):
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb)
+
+    wt = max(2, round(2.4 * s))
+    tri = [P(28, 7), P(11, 47), P(45, 47)]
+    d.polygon(tri, fill=(230, 237, 243, 18))                 # faint white triangle fill (~5%)
+    for a, b in zip(tri, tri[1:] + tri[:1]):
+        _rline(a, b, WHITE, wt)                              # white triangle outline
+    _rline(P(3, 29), P(19, 29), WHITE, wt)                   # incoming light beam
+    ws = max(2, round(2.3 * s))
+    for y, rgb in ((21, (163, 113, 247, 255)), (28, (63, 185, 80, 255)), (34, (88, 166, 255, 255)),
+                   (40, (240, 136, 62, 255)), (47, (210, 153, 34, 255))):
+        _rline(P(39, 33), P(69, y), rgb, ws)                 # refracted 5-axis spectrum
+    return img
+
+
+st.set_page_config(page_title="PRISM — Quantamental Intelligence", page_icon=_prism_favicon(),
+                   layout="wide", initial_sidebar_state="expanded")
 
 import pandas as pd
 import numpy as np
@@ -37,7 +73,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 inject_css, render_hero_banner, render_metric_strip, render_pulse_band,
                 render_stock_card, help_chip,
                 render_radar_chart, render_score_bar, render_sidebar_brand,
-                render_reference, render_concepts, render_flags)
+                render_reference, render_concepts, render_flags, build_reference_markdown)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
@@ -349,6 +385,21 @@ with st.sidebar:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # Full-universe export — the complete scored frame (all rows/cols) as Excel-safe CSV. Distinct
+    # from the Deep Scanner's curated/filtered export and the All-Data single-row export. Imports are
+    # co-located here (not top-of-file) to keep this change in one self-contained hunk.
+    from datetime import date as _date
+    from ui.ui_export import scored_universe_csv
+    st.download_button(
+        f"📥 Download full scored data — {total} × {df.shape[1]} cols",
+        data=scored_universe_csv(_score_key, df),
+        file_name=f"prism_scored_universe_{_date.today().isoformat()}_{total}stocks.csv",
+        mime="text/csv",
+        use_container_width=True,
+        help="The complete scored universe (every column) as CSV, for your own Excel/Python "
+             "analysis. For a curated, filtered list, use the Deep Scanner's export instead.",
+    )
 
     regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
     regime_color = COLORS['green'] if regime == "BULL" else COLORS['red'] if regime == "BEAR" else COLORS['gold']
@@ -1583,6 +1634,14 @@ with tabs[5]:
         "Search the glossary", key="ref_search",
         placeholder="Search any term or label (e.g. PEG, Wealth Creator, Stage 2)…",
         label_visibility="collapsed",
+    )
+    # Offline copy of the ENTIRE reference (ignores the search filter) — one generator, same
+    # single-source dicts as the on-screen render, so the download can never drift from the app.
+    st.download_button(
+        "📥 Download Reference (Markdown)",
+        data=build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY),
+        file_name="prism_reference.md", mime="text/markdown",
+        use_container_width=True,
     )
     # Two corpora, one search: the term glossary (column NAMES) + the concept reference (the VALUE
     # labels you see on a cell — Wealth Creator, Deep Value, Stage 2…). The query filters both.

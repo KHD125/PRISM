@@ -2,7 +2,7 @@
 
 Pure render helper — returns inline dark-theme HTML and makes ZERO Streamlit calls.
 The st.text_input search widget lives in app.py (which owns session_state); this module
-only formats. The glossary (the 173-term `_RAW_GLOSSARY` single source of truth in
+only formats. The glossary (the `_RAW_GLOSSARY` single source of truth in
 ui_components) is INJECTED so the coverage test can assert on the returned string.
 
 Framework browser is a deliberate follow-up: `_FW_META` is function-local in the
@@ -98,3 +98,58 @@ def render_flags(flag_display: dict, query: str = "") -> str:
         f'{html.escape(desc)}</span></div>'
         for desc, sev in rows
     )
+
+
+def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: dict,
+                             frameworks: dict = None, as_of: str = None) -> str:
+    """The FULL Reference as one Markdown string, assembled from the SAME single-source dicts the
+    render_* functions consume (NOT scraped from their HTML) — so the download, the on-screen
+    Reference, and any future docs/reference.md can never drift. Exports EVERYTHING (no query filter).
+    Deterministic ordering, matching the renderers. PURE: no Streamlit, no I/O.
+
+    `frameworks` is optional (frameworks-ready): pass _FW_META once it's importable to emit a
+    Frameworks section; None -> the section is omitted (no crash). Each value may be a {emoji,name}
+    dict or a bare string."""
+    import datetime as _dt
+    as_of = as_of or _dt.date.today().isoformat()
+
+    def _clean(s):
+        # One line, whitespace-collapsed. Bullets (not tables) need no MD-escaping; keeping the text
+        # verbatim lets the coverage test match terms exactly after the same collapse.
+        return " ".join(str(s).split())
+
+    n_concepts = sum(len(v) for v in concept_ref.values())
+    out = [
+        "# PRISM Reference", "",
+        f"_Generated {as_of} · {len(glossary)} glossary terms · {n_concepts} concepts · "
+        f"{len(flag_display)} red flags_", "",
+    ]
+
+    out += ["## Glossary", ""]
+    for term, defn in sorted(glossary.items(), key=lambda kv: kv[0].lower()):
+        out.append(f"- **{_clean(term)}** — {_clean(defn)}")
+    out.append("")
+
+    out += ["## Concepts", ""]
+    for category, entries in concept_ref.items():            # dict order = deterministic
+        out += [f"### {_clean(category)}", ""]
+        for lbl, exp in entries:
+            out.append(f"- **{_clean(lbl)}** — {_clean(exp)}")
+        out.append("")
+
+    out += ["## Forensic Red Flags", ""]
+    _sev = {"🔴": 0, "🟠": 1, "🟡": 2}
+    for desc, sev in sorted(((d, s) for d, s in flag_display.values()),
+                            key=lambda r: (_sev.get(r[1], 9), r[0].lower())):
+        out.append(f"- {sev} {_clean(desc)}")
+    out.append("")
+
+    if frameworks:
+        out += ["## Frameworks", ""]
+        for _key, meta in frameworks.items():
+            emoji = meta.get("emoji", "") if isinstance(meta, dict) else ""
+            name = meta.get("name", _key) if isinstance(meta, dict) else str(meta)
+            out.append(f"- {emoji} **{_clean(name)}**")
+        out.append("")
+
+    return "\n".join(out).rstrip() + "\n"
