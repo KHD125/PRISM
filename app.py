@@ -618,13 +618,13 @@ with tabs[1]:
     # ── Column view presets ────────────────────────────────────────
     _DS_VIEWS = {
         "🏆 Core":      ["rank","name","verdict_direction","sector","market_category","composite_score",
-                         "conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
+                         "data_coverage_pct","conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
         "📊 Quality":   ["name","quality_score","moat_score","growth_score","cash_score",
                          "governance_bonus","piotroski_fscore","roce","opm","cfo_to_pat"],
         "💰 Valuation": ["name","valuation_score","expected_excess_return","pe","pb_ratio","peg",
                          "earnings_yield","fcf_yield","market_cap","buy_zone_label"],
-        "🔬 Forensic":  ["name","red_flag_count","piotroski_fscore","forensic_score","cfo_to_pat",
-                         "accruals_ratio","debt_to_equity","promoter_holdings","pledged_percentage"],
+        "🔬 Forensic":  ["name","red_flag_count","piotroski_fscore","forensic_score","forensic_multiplier",
+                         "cfo_to_pat","accruals_ratio","debt_to_equity","promoter_holdings","pledged_percentage"],
         "📈 Technical": ["name","momentum_score","rsi_14d","dist_52wh","crs_52w","weinstein_stage",
                          "breakout_score","smart_money_flow","tsunami_signal","vstop_green"],
     }
@@ -741,12 +741,15 @@ with tabs[1]:
         "accruals_ratio":  ("Accruals", "%.2f"),
         "crs_52w":         ("RS 52W",   "%.0f"),
         "expected_excess_return": ("Edge %", "%.1f%%"),
+        "data_coverage_pct":      ("Evidence",   "%.0f%%"),   # Core: score-confidence % (high score on thin data = trap)
+        "forensic_multiplier":    ("Forensic ×", "%.2f"),     # Forensic: the penalty cutting composite (1.00 clean → 0.50 high-risk)
     }
     for _nc, (_nl, _nf) in _num_fmt.items():
         if _nc in _display_df.columns:
             _CC[_nc] = st.column_config.NumberColumn(_nl, help=_SCANNER_HEADER_TIPS.get(_nc), format=_nf)
-    # String decision-signal columns get clean headers (else they show raw snake_case).
+    # String decision-signal + identity columns get clean headers (else they show raw snake_case).
     for _tc, _tl in {
+        "name": "Stock", "sector": "Sector", "market_category": "Market Cap",
         "verdict_direction": "Verdict", "weinstein_stage": "Trend",
         "moat_growth_quad": "Moat·Growth", "smart_money_flow": "Smart Money",
         "buy_zone_label": "Buy Zone",

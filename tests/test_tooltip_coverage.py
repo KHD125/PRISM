@@ -319,6 +319,51 @@ def test_every_scanner_preset_column_has_header_tip():
     assert not missing, f"Deep Scanner preset columns with no header tooltip: {missing}"
 
 
+def _deep_scanner_block(tree):
+    """The `with tabs[1]:` (Deep Scanner) With-node — scopes label extraction to this tab so it can't
+    pick up a same-named key from an unrelated dict elsewhere in app.py."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.With):
+            for item in node.items:
+                ctx = item.context_expr
+                if (isinstance(ctx, ast.Subscript) and isinstance(ctx.value, ast.Name)
+                        and ctx.value.id == "tabs"
+                        and isinstance(ctx.slice, ast.Constant) and ctx.slice.value == 1):
+                    return node
+    return None
+
+
+def _ds_labeled_columns(block) -> set:
+    """Columns that get an explicit friendly header — the keys of every str/tuple-valued dict literal
+    in the Deep Scanner block (the score / number / boolean / text config label maps). _DS_VIEWS is
+    list-valued so it's excluded: a column merely listed in a preset but never labeled is NOT here."""
+    labeled: set = set()
+    for node in ast.walk(block):
+        if isinstance(node, ast.Dict) and node.keys:
+            keys_str = all(isinstance(k, ast.Constant) and isinstance(k.value, str) for k in node.keys)
+            vals_ok = all(isinstance(v, (ast.Constant, ast.Tuple)) for v in node.values)
+            if keys_str and vals_ok:
+                labeled.update(k.value for k in node.keys)
+    return labeled
+
+
+def test_deep_scanner_columns_have_friendly_headers():
+    """Every column a _DS_VIEWS preset surfaces must get an explicit friendly header label (via the
+    score / number / boolean / text config maps) — never fall through to a raw snake_case header.
+    The 3 identity columns (name / sector / market_category) rendered raw until labeled (2026-06-20).
+    Sibling of test_every_scanner_preset_column_has_header_tip: that pins TOOLTIPS (identity cols
+    exempt); this pins HEADER LABELS (identity cols included — a bare 'sector' header looks unfinished)."""
+    app_src = (Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8")
+    block = _deep_scanner_block(ast.parse(app_src, filename="app.py"))
+    assert block is not None, "could not locate the `with tabs[1]:` Deep Scanner block in app.py"
+    labeled = _ds_labeled_columns(block)
+    raw = sorted(c for c in _DS_VIEW_COLS if c not in labeled)
+    assert not raw, (
+        f"Deep Scanner preset columns with no friendly header (render as raw snake_case): {raw}. "
+        f"Add each to a column-config label map (score / number / boolean / text)."
+    )
+
+
 # ── Forensics tab: the 5 Forensic-Perimeter KPIs explain themselves (the headline forensic numbers) ──
 # The Score Multiplier especially — it IS the penalty that cuts the composite, so a bare "75%" is
 # meaningless without the chip. The red-flag rows / Schilit / Fisher already self-document inline.
