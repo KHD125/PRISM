@@ -11,14 +11,20 @@ import streamlit as st
 
 
 def _prism_favicon(size: int = 128):
-    """Browser-tab favicon = the PRISM refracting-prism mark (mirrors _PRISM_SVG in
-    ui/ui_components.py), drawn as a PNG so the tab icon matches the in-app logo. PIL-only +
-    inline so it runs BEFORE set_page_config without importing the (st-touching) ui package.
-    page_icon takes a PIL.Image reliably; an SVG data-URI favicon is flaky across browsers."""
+    """Browser-tab favicon = the PRISM refracting-prism mark on a dark app-icon TILE (mirrors
+    _PRISM_SVG in ui/ui_components.py). Drawn BOLD on a dark rounded background so it stays legible
+    at 16px tab size — thin white strokes on transparency were invisible. PIL-only + inline so it
+    runs BEFORE set_page_config without importing the (st-touching) ui package; page_icon takes a
+    PIL.Image reliably (an SVG data-URI favicon is flaky across browsers). Strokes are sized as a %
+    of the canvas so they survive the browser's downscale to 16/32px."""
     from PIL import Image, ImageDraw
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    pad = size * 0.08
+    # Dark rounded tile — makes the mark pop on ANY browser tab (light or dark chrome).
+    d.rounded_rectangle([0, 0, size - 1, size - 1], radius=round(size * 0.22),
+                        fill=(13, 17, 23, 255), outline=(48, 54, 61, 255),
+                        width=max(1, round(size * 0.015)))
+    pad = size * 0.16
     s = (size - 2 * pad) / 72.0          # _PRISM_SVG viewBox is 72×56
     oy = (size - 56 * s) / 2.0
     P = lambda x, y: (pad + x * s, oy + y * s)
@@ -30,16 +36,13 @@ def _prism_favicon(size: int = 128):
         for cx, cy in (p1, p2):
             d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb)
 
-    wt = max(2, round(2.4 * s))
     tri = [P(28, 7), P(11, 47), P(45, 47)]
-    d.polygon(tri, fill=(230, 237, 243, 18))                 # faint white triangle fill (~5%)
-    for a, b in zip(tri, tri[1:] + tri[:1]):
-        _rline(a, b, WHITE, wt)                              # white triangle outline
-    _rline(P(3, 29), P(19, 29), WHITE, wt)                   # incoming light beam
-    ws = max(2, round(2.3 * s))
+    d.polygon(tri, fill=WHITE)                                       # SOLID prism (legible at 16px)
+    _rline(P(1, 29), P(20, 29), WHITE, max(2, round(size * 0.045)))  # bold incoming light beam
+    ws = max(2, round(size * 0.058))                                 # bold refracted 5-axis spectrum
     for y, rgb in ((21, (163, 113, 247, 255)), (28, (63, 185, 80, 255)), (34, (88, 166, 255, 255)),
                    (40, (240, 136, 62, 255)), (47, (210, 153, 34, 255))):
-        _rline(P(39, 33), P(69, y), rgb, ws)                 # refracted 5-axis spectrum
+        _rline(P(40, 33), P(70, y), rgb, ws)
     return img
 
 
@@ -1360,52 +1363,52 @@ with tabs[3]:
                 _sec_stats["tailwind"] = (df.groupby("sector")["sector_tailwind"].max()
                                             .reindex(_sec_stats.index).fillna(0).astype(bool))
 
-            # Surface the folded-in context (🌱 tailwind, capital phase) FIRST — next to the sector
-            # name — so it's visible without scrolling the narrow table (that's the point of the fold).
-            _sec_order = [c for c in ["phase", "tailwind", "stocks", "avg_quality",
-                                      "avg_momentum", "avg_composite", "crown_jewels"]
+            # Full-width table so ALL columns show at a glance (the whole point of a rotation table).
+            # Primary metrics first; the folded-in context (Phase, 🌱 Tailwind) trails — width is no
+            # longer the constraint, so no need to squeeze it to the front as before.
+            _sec_order = [c for c in ["stocks", "avg_quality", "avg_momentum", "avg_composite",
+                                      "crown_jewels", "phase", "tailwind"]
                           if c in _sec_stats.columns]
-            _sc1, _sc2 = st.columns([2, 3])
-            with _sc1:
-                st.dataframe(
-                    _sec_stats[_sec_order].reset_index(),
-                    column_config={
-                        "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
-                        "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
-                        "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
-                        "crown_jewels":  st.column_config.NumberColumn("👑 T1",      format="%.0f"),
-                        "stocks":        st.column_config.NumberColumn("Count",      format="%.0f"),
-                        "phase":         st.column_config.TextColumn("Phase"),
-                        "tailwind":      st.column_config.CheckboxColumn("🌱 Tailwind"),
-                    },
-                    use_container_width=True,
-                    height=470,
-                    hide_index=True,
-                )
-            with _sc2:
-                _bar_clrs = [
-                    COLORS["green"] if v >= 65 else COLORS["gold"] if v >= 50 else COLORS["red"]
-                    for v in _sec_stats["avg_composite"]
-                ]
-                _fig_sec = go.Figure(go.Bar(
-                    x=list(_sec_stats.index),
-                    y=list(_sec_stats["avg_composite"]),
-                    marker_color=_bar_clrs,
-                    text=[f"{v:.0f}" for v in _sec_stats["avg_composite"]],
-                    textposition="outside",
-                    textfont=dict(color=COLORS["text_primary"], size=11),
-                ))
-                _fig_sec.update_layout(
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color=COLORS["text_primary"], size=10),
-                    height=470,
-                    margin=dict(t=10, b=90, l=30, r=10),
-                    xaxis=dict(tickangle=-35, gridcolor=COLORS["border"], tickfont=dict(size=10)),
-                    yaxis=dict(gridcolor=COLORS["border"], range=[0, 105]),
-                    showlegend=False,
-                )
-                st.plotly_chart(_fig_sec, use_container_width=True)
+            st.dataframe(
+                _sec_stats[_sec_order].reset_index(),
+                column_config={
+                    "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
+                    "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
+                    "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
+                    "crown_jewels":  st.column_config.NumberColumn("👑 T1",      format="%.0f"),
+                    "stocks":        st.column_config.NumberColumn("Count",      format="%.0f"),
+                    "phase":         st.column_config.TextColumn("Phase"),
+                    "tailwind":      st.column_config.CheckboxColumn("🌱 Tailwind"),
+                },
+                use_container_width=True,
+                height=min(600, 80 + len(_sec_stats) * 35),
+                hide_index=True,
+            )
+            # Sector-score ranking, stacked BELOW the table at full width (the angled labels finally
+            # have room). It re-plots the Score column, so it's a secondary visual — keep it compact.
+            _bar_clrs = [
+                COLORS["green"] if v >= 65 else COLORS["gold"] if v >= 50 else COLORS["red"]
+                for v in _sec_stats["avg_composite"]
+            ]
+            _fig_sec = go.Figure(go.Bar(
+                x=list(_sec_stats.index),
+                y=list(_sec_stats["avg_composite"]),
+                marker_color=_bar_clrs,
+                text=[f"{v:.0f}" for v in _sec_stats["avg_composite"]],
+                textposition="outside",
+                textfont=dict(color=COLORS["text_primary"], size=11),
+            ))
+            _fig_sec.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color=COLORS["text_primary"], size=10),
+                height=380,
+                margin=dict(t=10, b=120, l=30, r=10),
+                xaxis=dict(tickangle=-35, gridcolor=COLORS["border"], tickfont=dict(size=10)),
+                yaxis=dict(gridcolor=COLORS["border"], range=[0, 105]),
+                showlegend=False,
+            )
+            st.plotly_chart(_fig_sec, use_container_width=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
