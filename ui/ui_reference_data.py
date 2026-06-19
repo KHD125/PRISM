@@ -284,4 +284,27 @@ CONCEPT_REFERENCE = {
         ("🌊 Tsunami", "The rarest, highest-conviction setup — all SEVEN conviction conditions (quality + momentum + governance + technical) fire at once. Often only a handful exist, sometimes none."),
         ("🚀 Tipping Points", "A Market Pulse watch-list of stocks at a potential inflection — where a change in the business may be about to accelerate. Context, not a verdict."),
     ],
+    # ── Sizing-cockpit cards — ui_tearsheet.render_valuation_inversion_and_sizing_cockpit (~2999) ──
+    # Deep Layer-3 metric cards on the Tear-Sheet's Matrix & WCS tab; value + status only, so the
+    # term itself needs defining here (read from the cockpit's labels/thresholds).
+    "🔮 Returns & Mispricing Cockpit": [
+        ("👑 Expected CAGR Identity", "The engine's estimate of the stock's intrinsic annual compounding rate — a fundamentals-based return identity (returns on capital and reinvestment), not a price forecast. Above the ~15% hurdle = the business can compound faster than the market; below = a sub-hurdle engine."),
+        ("⏳ Decade Moat Trajectory (Tau)", "Reads whether the company's competitive advantage — its returns on capital — is WIDENING or fading over roughly a decade. A positive value (above ~0.25) signals an expanding moat; negative signals a decaying one. It captures the moat's direction, not its level."),
+        ("📊 OLS Valuation Residual", "The gap between the stock's actual valuation and the value a regression (least-squares) model predicts from its fundamentals. Negative = the market is pricing it BELOW what its fundamentals justify (potential alpha); positive = a structural premium."),
+        ("🚨 Hard Volatility Stop-Loss Level", "The price at which a volatility-based trailing stop would trigger — a risk-management exit reference for sizing a position, never a price target or a forecast."),
+    ],
+    # ── Schilit Accounting Anomaly Shield — ui_tearsheet.render_schilit_shield (~2162); the four
+    # Schilit checkers (schilit_ems/cfs/kms_* flags). Wording follows each checker's own description. ──
+    "🛡️ Schilit Anomaly Shield": [
+        ("EMS Anomaly Gimmick", "Schilit Earnings-Manipulation check — flags income-statement gimmicks such as aggressive revenue recognition or capitalising expenses to inflate reported profit."),
+        ("CFS Cash Flow Trap", "Schilit Cash-Flow-Shenanigans check — flags operating-cash divergence and paper-profit shifts, where reported earnings aren't backed by real operating cash."),
+        ("KMS Leverage Mirage", "Schilit Key-Metrics check (leverage) — flags off-balance-sheet guarantees and pledged-cash mismatches that disguise a company's true leverage."),
+        ("KMS Operational Bloat", "Schilit Key-Metrics check (operations) — flags channel-stuffing and asset/inventory aging that bloats the balance sheet ahead of trouble."),
+    ],
+    # ── Economic-profit dynamics + tax — ui_tearsheet EP power-curve strip (~305) + tax_rate_est ──
+    "📈 Economic-Profit Dynamics & Tax": [
+        ("EP Velocity (YoY)", "The year-on-year change in economic profit (₹ Cr) — how fast the company's profit ABOVE its cost of capital is rising or falling. Rising velocity means value creation is accelerating."),
+        ("EP Trajectory", "The company's position on Motilal Oswal's economic-profit power curve (28th study) — where it sits on the create → sustain → erode arc of economic value over time."),
+        ("Tax Rate (Est.)", "The estimated effective tax rate, (PBT − PAT) ÷ PBT. A profitable company paying under ~10% can signal deferred-tax exhaustion, tax-holiday reliance, or opaque structuring — a forensic caution, not a positive."),
+    ],
 }
