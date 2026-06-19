@@ -6,7 +6,7 @@ asset growth matters at the SECTORAL level — capital flooding into a sector
 pressures all its constituents' returns; capital-starved sectors set up recovery.
 
 sector_asset_growth = sector-median asset_growth_yoy (guarded: sector size >= 5).
-sector_capital_phase: 🔥 Hot Capital (>30%) / ❄️ Capital Starved (<5%) / ⚖️ Neutral.
+sector_capital_phase: 🔥 Hot Capital (>20%) / ❄️ Capital Starved (<5%) / ⚖️ Neutral.
 
 Run with: pytest tests/test_capital_cycle_sector.py -v
 """
@@ -46,9 +46,20 @@ def test_capital_starved_sector():
 
 
 def test_neutral_sector():
-    """Sector-wide ~11% asset growth (5-30 band) -> Neutral."""
+    """Sector-wide ~11% asset growth (5-20 band) -> Neutral."""
     out = _sector_df(total_assets_1yb=900.0)
     assert (out["sector_capital_phase"].str.contains("Neutral")).all()
+
+
+def test_hot_bar_recalibrated_to_20pct():
+    """Pins the 2026-06-18 Hot 30%->20% recalibration: a ~25% sector is now Hot (was Neutral at 30),
+    and a ~18% sector stays Neutral — brackets the new bar so it can't silently drift back. The old
+    test_hot_capital_sector (66.7%) is Hot at both 30 and 20, so it does NOT pin the boundary."""
+    hot = _sector_df(total_assets_1yb=800.0)    # (1000-800)/800 = 25.0% > 20 -> Hot
+    assert (hot["sector_capital_phase"].str.contains("Hot Capital")).all()
+    assert np.allclose(hot["sector_asset_growth"], 25.0)
+    near = _sector_df(total_assets_1yb=850.0)    # (1000-850)/850 = 17.6% < 20 -> Neutral (was the gap)
+    assert (near["sector_capital_phase"] == "⚖️ Neutral").all()
 
 
 def test_small_sector_is_neutral_not_classified():

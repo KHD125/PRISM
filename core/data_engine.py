@@ -1996,13 +1996,18 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # for ALL its constituents; capital-STARVED sectors (low/negative growth) set up recovery.
     # This is the capital cycle's distinctive sectoral signal — orthogonal to firm-level rf_snoa.
     # Guarded by sector size >= 5 (median unstable below that → Neutral). Thresholds are engineering
-    # proxies (Chancellor states no numeric gate). Live: Power Infra +147%, Ship Building +58% =
-    # hot capital; Sugar/Cement-Products/Entertainment ~0% = capital starved.
+    # proxies (Chancellor states no numeric gate), calibrated 2026-06-18 to the live sector-median
+    # asset-growth distribution (64 sectors): Hot > 20% ≈ p90 — the old 30% bar fired only 2 sectors
+    # (IT-Hardware 45%, Diamond/Gems 39%) → near-dead; 20% adds Non-Ferrous Metals/Cables/Capital
+    # Goods-Electrical/Financial Services (6 total, all genuinely capital-intensive). Starved < 5% ≈
+    # p10 (~7 sectors), kept. p80 is only ~15%, so a percentile bar would mislabel normal-growth
+    # sectors (Healthcare 18%) "caution" — hence an ABSOLUTE bar that preserves the over-investing
+    # meaning the label asserts.
     _sec_size = df.groupby("sector")["sector"].transform("size")
     _sec_ag   = df.groupby("sector")["asset_growth_yoy"].transform("median")
     df["sector_asset_growth"] = np.where(_sec_size >= 5, _sec_ag, np.nan)
     df["sector_capital_phase"] = np.select(
-        [df["sector_asset_growth"] > 30.0, df["sector_asset_growth"] < 5.0],
+        [df["sector_asset_growth"] > 20.0, df["sector_asset_growth"] < 5.0],
         ["🔥 Hot Capital (caution)", "❄️ Capital Starved (opportunity)"],
         default="⚖️ Neutral",
     )
