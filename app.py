@@ -820,7 +820,9 @@ with tabs[1]:
         # and it's ~10x smaller to serialize on every rerun. ──
         _export_cols = [c for c in dict.fromkeys(_c for _v in _DS_VIEWS.values() for _c in _v)
                         if c in ds_df.columns]
-        _safe_mandate = _sel_mandate.replace(" ", "_").lower()
+        # _mandate_label is _sel_mandate-or-"Custom": _sel_mandate is None for the Custom mandate
+        # (and when a profile switch clears it), so derive the filename from the None-safe label.
+        _safe_mandate = _mandate_label.replace(" ", "_").lower()
         st.download_button(
             f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {_mandate_label} / {scoring_profile}",
             data=ds_df[_export_cols].to_csv(index=False),

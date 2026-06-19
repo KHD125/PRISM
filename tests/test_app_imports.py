@@ -13,6 +13,7 @@ name is exported, with NO Streamlit runtime and NO CSV data. It never imports/ex
 """
 import ast
 import importlib
+import re
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,21 @@ def test_app_has_first_party_imports():
     """Guard against a silently-empty parse (wrong path / parser regression) that would make the
     parametrized contract below vacuously pass."""
     assert _IMPORTS, "parsed zero first-party imports from app.py — the path or parser is wrong"
+
+
+def test_sel_mandate_never_dereferenced_unguarded():
+    """`_sel_mandate` is None for the ⚙️ Custom mandate (and when switching to a profile that clears
+    it), so a bare `_sel_mandate.<attr>` / `_sel_mandate[...]` raises AttributeError on the RUNNING
+    app — invisible to render tests that never hit that branch. Shipped once: the Momentum profile
+    cleared the mandate, and the Deep Scanner export's `_sel_mandate.replace(...)` crashed the deploy
+    (2026-06-20). Every use must go through a None-safe form: `_sel_mandate or 'Custom'`,
+    `_MANDATES.get(_sel_mandate, ...)`, or an `if _sel_mandate` guard."""
+    src = _APP.read_text(encoding="utf-8")
+    bad = re.findall(r"\b_sel_mandate\b\s*(?:\.\w+|\[)", src)
+    assert not bad, (
+        f"_sel_mandate dereferenced unguarded (it can be None): {bad}. "
+        f"Use `_sel_mandate or 'Custom'` / `_MANDATES.get(_sel_mandate, {{}})` instead."
+    )
 
 
 @pytest.mark.parametrize("module,name", _IMPORTS, ids=[f"{m}.{n}" for m, n in _IMPORTS])
