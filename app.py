@@ -1464,6 +1464,37 @@ with tabs[4]:
     _q_clr = {"moat": COLORS["purple"], "growth": COLORS["green"], "cash": COLORS["blue"],
               "margin": COLORS["orange"], "balance_sheet": COLORS["gold"], "valuation": COLORS["cyan"]}
 
+    # ── Composite Score Formula — the master blend the sub-weights below feed into ──
+    # Mirrors scoring_engine: composite = quality·(F) + momentum·(M) + governance·gov_w, where
+    # governance is fixed and F+M fill (1-gov_w), split by analysis mode (from ANALYSIS_MODES — DRY).
+    _gov_w  = COMPOSITE_WEIGHTS.get("governance", 0.15)
+    _scale  = 1.0 - _gov_w
+    _mode_icon = {"Hybrid": "🧭", "Fundamental": "📊", "Technical": "📈"}
+    _mode_rows = "".join(
+        f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;padding:3px 0;'
+        f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+        f'<span style="color:{COLORS["text_secondary"]};">{_mode_icon.get(_m, "•")} {_m}</span>'
+        f'<span style="color:{COLORS["text_muted"]};">Quality '
+        f'<strong style="color:{COLORS["purple"]};">{_v["fundamental_w"]*100:.0f}%</strong> : '
+        f'Momentum <strong style="color:{COLORS["orange"]};">{_v["momentum_w"]*100:.0f}%</strong></span></div>'
+        for _m, _v in ANALYSIS_MODES.items()
+    )
+    _comp_body = (
+        f'<div style="font-size:0.82rem;color:{COLORS["text_primary"]};font-weight:700;margin-bottom:4px;">'
+        f'Composite = Quality × F &nbsp;+&nbsp; Momentum × M &nbsp;+&nbsp; '
+        f'Governance × <span style="color:{COLORS["gold"]};">{_gov_w*100:.0f}%</span></div>'
+        f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin-bottom:8px;">'
+        f'Governance is fixed at {_gov_w*100:.0f}%; F and M split the remaining {_scale*100:.0f}% by analysis mode:</div>'
+        f'{_mode_rows}'
+        f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin-top:8px;'
+        f'border-top:1px solid {COLORS["border"]};padding-top:8px;">'
+        f'Then: <strong style="color:{COLORS["text_secondary"]};">+ framework boosts</strong> (e.g. SQGLP +15) '
+        f'→ <strong style="color:{COLORS["text_secondary"]};">× forensic penalty</strong> multiplier '
+        f'→ clamped to a final 0–100 score.</div>'
+    )
+    st.markdown(_cfg_card("Composite Score Formula — How the Final Score is Built", "🧮",
+                          _comp_body, COLORS["green"]), unsafe_allow_html=True)
+
     cc1, cc2 = st.columns(2)
     with cc1:
         _qbody = "".join(
@@ -1496,6 +1527,25 @@ with tabs[4]:
     st.markdown(
         _cfg_card(f"Hard Gates · {len(HARD_GATES)} Criteria — Every Stock Must Pass ALL", "🚨",
                   f'<div style="display:flex;gap:6px;flex-wrap:wrap;">{_gate_cells}</div>', COLORS["red"]),
+        unsafe_allow_html=True,
+    )
+
+    # ── Conviction Tiers — the post-penalty composite_score → tier mapping (from CONVICTION_TIERS) ──
+    _tier_rows = "".join(
+        f'<div style="display:flex;align-items:center;gap:10px;padding:5px 0;'
+        f'border-bottom:1px solid rgba(255,255,255,0.04);flex-wrap:wrap;">'
+        f'<span style="font-size:0.78rem;font-weight:800;color:{t["color"]};min-width:150px;">'
+        f'{t["emoji"]} {t["label"]}</span>'
+        f'<span style="font-size:0.68rem;font-weight:700;color:{t["color"]};background:{t["color"]}1a;'
+        f'border:1px solid {t["color"]}44;border-radius:5px;padding:1px 8px;white-space:nowrap;">'
+        f'score ≥ {t["min"]}</span>'
+        f'<span style="font-size:0.7rem;color:{COLORS["text_secondary"]};flex:1;min-width:200px;">'
+        f'{t["description"]}</span></div>'
+        for t in CONVICTION_TIERS
+    )
+    st.markdown(
+        _cfg_card(f"Conviction Tiers · {len(CONVICTION_TIERS)} Bands — Score → Tier Mapping", "🏆",
+                  _tier_rows, COLORS["gold"]),
         unsafe_allow_html=True,
     )
 
