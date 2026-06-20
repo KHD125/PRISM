@@ -3401,6 +3401,23 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     df["fair_pe_qglp"] = (_t2c_growth * (_t2c_roce / COST_OF_EQUITY)).round(2)
 
+    # Cyclical reality-check: the EVA fair PE above is correct for durable compounders, but for
+    # Deep-Cyclical/Commodity businesses pat_gr_5y and roce_med_10y are CYCLICAL-PEAK (commodity
+    # upcycle) and mean-revert — so they don't justify a compounder multiple. Without this a
+    # peak-earnings low trailing PE gets an absurd "fair" PE (Coal India 9.4→86, Shah Alloys 3.5→180)
+    # and a phantom +800% upside — the classic cyclical value-trap, amplified into the valuation axis.
+    # Cap their fair PE at the high end of what cyclicals sustain through-cycle (mid-teens). This is a
+    # deliberate deviation from the pure EVA formula (CLAUDE.md book-fidelity-vs-math: the MATH is
+    # right, the INPUTS are peak). Tier is already computed (~line 2055); compounders/defensives keep
+    # the full multiple, and the broad "Cyclical" tier is left alone — only the deep-commodity tail
+    # is mispriced. NaN tier (no map) compares False → uncapped (semantic-truth).
+    _CYCLICAL_FAIR_PE_CAP = 18.0
+    df["fair_pe_qglp"] = np.where(
+        df["cyclicality_tier"] == "Deep Cyclical / Commodity",
+        np.minimum(df["fair_pe_qglp"], _CYCLICAL_FAIR_PE_CAP),
+        df["fair_pe_qglp"],
+    )
+
     # pe_discount_to_quality: positive = stock trading BELOW quality-adjusted fair value (BUY zone)
     # negative = stock trading ABOVE quality-adjusted fair value (expensive vs quality offered)
     df["pe_discount_to_quality"] = np.where(
