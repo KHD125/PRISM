@@ -28,6 +28,7 @@ _CHIP_META = [
     ("sb_weinstein", "Weinstein", "ms"), ("sb_lynchcat", "Lynch", "ms"), ("sb_mef", "Moat Endurance", "ms"),
     ("sb_cftri", "Cash-Flow Tri", "ms"), ("sb_smartflow", "Smart Money", "ms"),
     ("sb_catalyst", "Catalyst", "ms_count"), ("sb_sellalert", "Sell Alert", "ms_count"),
+    ("sb_eppc", "EP Curve", "ms"), ("sb_epbox", "Earnings Box", "ms"), ("sb_mbsetup", "Multibagger", "ms_count"),
     ("sb_gate", "Gate-passed", "bool"), ("sb_minq", "Min Quality", "min"), ("sb_minscore", "Min Score", "min"),
 ]
 
@@ -609,6 +610,68 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 )
             st.caption(f"→ {len(_cf):,} remaining")
 
+        # ── 🚀 Multibagger Setups — the engine's multibagger-thesis reads, finally filterable ──
+        # A tool named for multibaggers should let you isolate its OWN candidates: the deepest
+        # "creates economic value / is a 100x candidate" signals were computed + shown on the tearsheet
+        # but never screenable. EP curve/box are categoricals (like cf_triangle); the candidate flags
+        # are an OR-group (the same stable-column-name + live-count mechanic as 🔥 Catalysts).
+        with _grp("🚀 Multibagger Setups", "sb_eppc", "sb_epbox", "sb_mbsetup", expanded=False):
+            # EP Power Curve — economic-profit trajectory (the deepest "creates value" read)
+            _EPPC_ORDER = ["🚀 Hockey Stick", "✅ EP Positive", "📈 Improving", "📉 Value Trap"]
+            _eppc_opts = _ordered_present(_cf, "ep_power_curve", _EPPC_ORDER)
+            sel_eppc = _ms_cascade(
+                "EP Power Curve", _eppc_opts, "sb_eppc", default=[],
+                help="Economic-profit trajectory. 🚀 Hockey Stick = positive AND accelerating economic "
+                     "profit (the multibagger fundamental); 📉 Value Trap = destroying value. Empty = all.",
+                count_col="ep_power_curve")
+            if sel_eppc and "ep_power_curve" in _cf.columns:
+                _cf = _cf[_cf["ep_power_curve"].isin(sel_eppc)]
+
+            # Earnings Power Box — Heiserman quadrant (economic profit × free cash flow); blank excluded
+            _EPBOX_ORDER = ["📦 Earnings Power", "💰 Cash Cow", "🚀 Cash-Hungry Grower", "⚠️ Weakest"]
+            _epbox_opts = ([v for v in _EPBOX_ORDER if (_cf["earnings_power_box"] == v).any()]
+                           if "earnings_power_box" in _cf.columns else [])
+            sel_epbox = _ms_cascade(
+                "Earnings Power Box", _epbox_opts, "sb_epbox", default=[],
+                help="Heiserman's economic-profit × free-cash-flow quadrant. 📦 Earnings Power = both "
+                     "positive (the elite); ⚠️ Weakest = neither. Empty = all.",
+                count_col="earnings_power_box")
+            if sel_epbox and "earnings_power_box" in _cf.columns:
+                _cf = _cf[_cf["earnings_power_box"].isin(sel_epbox)]
+
+            # Multibagger-candidate flags — OR-group (stable column-name values + live-count format_func,
+            # exactly like 🔥 Catalysts). Show stocks firing ANY selected candidate flag.
+            _MULTIBAGGER = {
+                "🐘 100x Candidate":       "mosl_100x_candidate",
+                "🏅 Category Winner":      "category_winner_flag",
+                "📈 Compound Growth":      "compound_growth_power_flag",
+                "🛡️ Consistency Champion": "consistency_champion",
+                "🔄 ROE Turnaround":       "roe_turnaround_flag",
+                "🧲 Value Migration":      "value_migration_flag",
+                "💎 Bruised Blue Chip":    "bruised_blue_chip",
+                "🚀 Mid→Mega":             "mid_to_mega_candidate",
+            }
+            _mb_name = {v: k for k, v in _MULTIBAGGER.items()}
+            _mb_opts = [c for c in _MULTIBAGGER.values()
+                        if c in _cf.columns and int(_cf[c].fillna(0).sum()) > 0]
+            sel_mb = _ms_cascade(
+                "🚀 Candidate Flags", _mb_opts, "sb_mbsetup", default=[],
+                help="Show stocks firing ANY selected multibagger-candidate flag (OR). e.g. 100x "
+                     "Candidate (MOSL screen), Category Winner (best-in-industry), Compound Growth. "
+                     "Empty = all. Count = stocks with that flag in the current filtered set.",
+                format_func=lambda c: f"{_mb_name[c]} ({int(_cf[c].fillna(0).sum())})")
+            if sel_mb:
+                _mb_mask = pd.Series(False, index=_cf.index)
+                for _c in sel_mb:
+                    _mb_mask = _mb_mask | (_cf[_c].fillna(0) == 1)
+                _cf = _cf[_mb_mask]
+                st.markdown(
+                    f'<div style="font-size:0.6rem;color:{COLORS["purple"]};padding:0 0 6px 2px;">'
+                    f'🚀 {len(sel_mb)} setup(s) (OR) · {len(_cf)} stocks remaining</div>',
+                    unsafe_allow_html=True,
+                )
+            st.caption(f"→ {len(_cf):,} remaining")
+
         with _grp("🌊 Refine", "sb_gate", "sb_minq", "sb_minscore", expanded=False):
             # Final power-user knobs — now applied to the cascade frame (_cf) IN-GROUP, exactly like
             # every other group, so the funnel, this group's "·N" badge, and its "→ remaining"
@@ -656,7 +719,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale",
         "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
         "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
-        "sb_catalyst", "sb_sellalert", "sb_gate", "sb_minq", "sb_minscore",
+        "sb_catalyst", "sb_sellalert", "sb_eppc", "sb_epbox", "sb_mbsetup",
+        "sb_gate", "sb_minq", "sb_minscore",
     )
     # Every filter now defaults to its show-all state, so zero active filters == the full universe.
     _flabel = (f"🎯 {_active_total} filter{'s' if _active_total != 1 else ''} active"
