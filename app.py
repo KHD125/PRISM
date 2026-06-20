@@ -846,9 +846,13 @@ with tabs[1]:
         # _mandate_label is _sel_mandate-or-"Custom": _sel_mandate is None for the Custom mandate
         # (and when a profile switch clears it), so derive the filename from the None-safe label.
         _safe_mandate = _mandate_label.replace(" ", "_").lower()
+        # Encode via the shared _to_csv_bytes (UTF-8-with-BOM) — the SAME Excel-safe path the sidebar
+        # full-dump uses — so the export's emoji decision-columns (moat_growth_quad ⭐💀, smart_money_flow
+        # ⚪✅❌, weinstein_stage, buy_zone_label) render in Excel instead of mojibaking on a BOM-less file.
+        from ui.ui_export import _to_csv_bytes
         st.download_button(
             f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {_mandate_label} / {scoring_profile}",
-            data=ds_df[_export_cols].to_csv(index=False),
+            data=_to_csv_bytes(ds_df[_export_cols]),
             file_name=f"scan_{_safe_mandate}_{scoring_profile.lower()}.csv",
             mime="text/csv",
             use_container_width=True,
