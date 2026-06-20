@@ -3068,6 +3068,27 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
 # vs SECTOR PEERS — per-stock sector-relative context (the value-trap guard)
 # ═══════════════════════════════════════════════════════════════
 
+def _roce_sector_label(raw_rank):
+    """Pure: sector_roce_pct_rank (0-1, or None/NaN) -> (band, value_str, subtitle). The subtitle's
+    "Top X%" is DERIVED from the actual percentile (100 - pct), never a fixed band string — so it can
+    no longer contradict the displayed value: a 100th-pctile stock reads "Top 1% — sector ROCE
+    leader", a 71st reads "Top 29% in sector" (the old code hardcoded "Top 30% — sector ROCE leader"
+    for the entire 70-100 band, mislabelling both). `band` ∈ {none, leader, above, below} drives the
+    tile colour in the caller. Bands are the engine's own lines (0.70 = category-winner top-30%,
+    0.50 = sector median)."""
+    if raw_rank is None or raw_rank != raw_rank:        # None or NaN
+        return "none", "—", "No sector peer rank"
+    pct = float(raw_rank) * 100.0
+    top = max(1, round(100.0 - pct))                    # the stock's ACTUAL top-X% position
+    val = f"{pct:.0f}"
+    if pct >= 70.0:
+        sub = f"Top {top}% — sector ROCE leader" if pct >= 95.0 else f"Top {top}% in sector"
+        return "leader", val, sub
+    if pct >= 50.0:
+        return "above", val, "Above sector median"
+    return "below", val, "Below sector median — value-trap check"
+
+
 def _sector_peer_strip_html(stock: pd.Series) -> str:
     """Build the 'vs Sector Peers' HTML strip — PURE function, zero st calls (unit-testable).
 
@@ -3085,18 +3106,10 @@ def _sector_peer_strip_html(stock: pd.Series) -> str:
     )
 
     # ── Tile 1: ROCE percentile within sector (the value-trap signal) ───────────
-    raw_rank = _g(stock, "sector_roce_pct_rank", None)   # _g returns None on NaN/missing
-    if raw_rank is None:
-        rk_clr, rk_val, rk_sub = MUTE, "—", "No sector peer rank"
-    else:
-        pct = float(raw_rank) * 100.0
-        if pct >= 70.0:
-            rk_clr, rk_sub = GREEN, "Top 30% — sector ROCE leader"
-        elif pct >= 50.0:
-            rk_clr, rk_sub = GOLD, "Above sector median"
-        else:
-            rk_clr, rk_sub = RED, "Below sector median — value-trap check"
-        rk_val = f"{pct:.0f}"
+    # Subtitle's "Top X%" is derived from the actual percentile in _roce_sector_label, so it can
+    # never contradict the displayed value (the old fixed "Top 30%" did, for a pctile-100 leader).
+    _rk_band, rk_val, rk_sub = _roce_sector_label(_g(stock, "sector_roce_pct_rank", None))
+    rk_clr = {"none": MUTE, "leader": GREEN, "above": GOLD, "below": RED}[_rk_band]
 
     # ── Tile 2: Sector ROE moat (EMC — 17th WCS sector-relative persistence) ────
     emc_on   = int(_g(stock, "emc_flag", 0)) == 1

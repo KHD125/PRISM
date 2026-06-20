@@ -37,10 +37,15 @@ def _stock(**kw) -> pd.Series:
 
 
 def test_sector_leader_is_green():
-    html = _sector_peer_strip_html(_stock(sector_roce_pct_rank=0.92))
-    assert "92" in html
+    # A genuine leader (97th pctile) → green + the "sector ROCE leader" tag + a percentile-DERIVED
+    # "Top 3%" (100-97). The old code hardcoded "Top 30% — sector ROCE leader" for the whole 70-100
+    # band, contradicting the displayed value; that fixed string must be gone now.
+    html = _sector_peer_strip_html(_stock(sector_roce_pct_rank=0.97))
+    assert "97" in html
     assert COLORS["green"] in html
-    assert "leader" in html.lower() or "top 30" in html.lower()
+    assert "sector roce leader" in html.lower()
+    assert "top 3%" in html.lower()
+    assert "top 30%" not in html.lower()
 
 
 def test_above_median_is_gold():
