@@ -154,6 +154,19 @@ CONCEPT_REFERENCE = {
         ("🚀 Cash-Hungry Grower", "Enterprising but not defensive — reinvesting hard for growth, but the base economics aren't yet stable."),
         ("⚠️ Weakest", "Weak on both Heiserman tests — neither stable economics nor productive reinvestment."),
     ],
+    # ── 🚀 Multibagger Setups (Candidate Flags) — mirrors the Discovery filter group's OR-list
+    # (ui_discovery.py:644 _MULTIBAGGER). Exact dropdown labels so the filter and Reference read 1:1;
+    # the EP Power Curve + Earnings Power Box dropdowns in the same group are the two categories above. ──
+    "🚀 Multibagger Setups": [
+        ("🐘 100x Candidate", "Passes Motilal Oswal's tough small-cap screen for businesses that could compound enormously — a potential 100-bagger — over the long run. The rarest, highest-ceiling setup."),
+        ("🏅 Category Winner", "The sector leader on the WCS screen: top-30% capital efficiency (ROCE) within its OWN sector AND above-market 5-year revenue growth — winning its category on both quality and growth."),
+        ("📈 Compound Growth", "Sustained compounding power — profit growth clears 15% (3Y), 12% (5Y) and 10% (10Y); earnings compound across every horizon, not just one good stretch."),
+        ("🛡️ Consistency Champion", "Profits have grown steadily and durably — a 'consistent' compounder whose earnings rise smoothly rather than lumpily. Low-volatility compounding is the coffee-can ideal."),
+        ("🔄 ROE Turnaround", "ROE is still below 15% but has turned UP above its 5-year trend — an early-innings quality inflection (a turnaround bargain), caught before the re-rating."),
+        ("🧲 Value Migration", "The company is in the top quartile of its sector by revenue growth — a sign that value (demand and market share) is migrating TOWARD this business within its sector."),
+        ("💎 Bruised Blue Chip", "A high-quality company trading unusually cheap — below 2× book value — after a setback. Quality on sale: a strong franchise the market has temporarily marked down."),
+        ("🚀 Mid→Mega", "A mid-cap with the financial profile to grow into a mega-cap — the size-migration thesis (small/mid → large) that produces the biggest multibaggers."),
+    ],
     # ── fisher_lifecycle_quadrant — core/scoring_engine.py:2787 (Fisher quality_pass × scalability pass)
     "🧬 Fisher Lifecycle Quadrant": [
         ("👑 Apex Winner", "Elite quality business at its operating-leverage peak — passes both the Fisher quality and scalability screens. Prime entry."),
