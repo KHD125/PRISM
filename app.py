@@ -413,20 +413,13 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # Full-universe export — the complete scored frame (all rows/cols) as Excel-safe CSV. Distinct
-    # from the Deep Scanner's curated/filtered export and the All-Data single-row export. Imports are
-    # co-located here (not top-of-file) to keep this change in one self-contained hunk.
+    # Scored-data export — placeholder here (prominent, in the data panel); FILLED after the filter
+    # cascade runs (below) so it reflects the LIVE filter: it downloads exactly the stocks surviving
+    # your sidebar filters (every column), or the whole universe when nothing is filtered. Distinct
+    # from the Deep Scanner's curated (~40-col) export and the All-Data single-row export.
     from datetime import date as _date
     from ui.ui_export import scored_universe_csv
-    st.download_button(
-        f"📥 Download full scored data — {total} × {df.shape[1]} cols",
-        data=scored_universe_csv(_score_key, df),
-        file_name=f"prism_scored_universe_{_date.today().isoformat()}_{total}stocks.csv",
-        mime="text/csv",
-        use_container_width=True,
-        help="The complete scored universe (every column) as CSV, for your own Excel/Python "
-             "analysis. For a curated, filtered list, use the Deep Scanner's export instead.",
-    )
+    _scored_dl_ph = st.empty()
 
     regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
     regime_color = COLORS['green'] if regime == "BULL" else COLORS['red'] if regime == "BEAR" else COLORS['gold']
@@ -441,6 +434,23 @@ with st.sidebar:
 # Discovery filter cascade — built in ui/ui_discovery.py (stateful counterpart to the
 # stateless ui_tearsheet). Returns the fully-filtered frame the tabs render.
 filt = render_discovery_sidebar(df)
+
+# Fill the scored-data download now that the filtered frame exists. Filter-aware: exports the surviving
+# rows (all columns), cached on a cheap (score + count + composite-sum) signature so it re-serializes
+# ONLY when the filter actually changes — not on every rerun (the full 724-col frame is expensive to
+# serialize). No filter active → the whole universe, exactly as before.
+with _scored_dl_ph.container():
+    _dl_sig = f"{_score_key}|{len(filt)}|{float(filt['composite_score'].sum()):.2f}"
+    st.download_button(
+        f"📥 Download {len(filt):,} stocks · all {df.shape[1]} cols",
+        data=scored_universe_csv(_dl_sig, filt),
+        file_name=f"prism_scored_{_date.today().isoformat()}_{len(filt)}stocks.csv",
+        mime="text/csv",
+        use_container_width=True,
+        help="Downloads the CURRENTLY FILTERED stocks (every column) as Excel-safe CSV — reflects your "
+             "sidebar filters (no filter = the full universe). For a curated column set, use the Deep "
+             "Scanner's export.",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
