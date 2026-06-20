@@ -968,11 +968,42 @@ def render_guru_frameworks(stock: pd.Series):
 # SYSTEMATIC FISHER PROXY — 100% Automated from CSV
 # ═══════════════════════════════════════════════════════════════
 
+def _fisher_quality_proxies(stock: pd.Series):
+    """The 7 Fisher Quality gates EXACTLY as scoring_engine.fw_fisher (Framework 11) computes them —
+    same columns, same fillna defaults, same thresholds — so the on-screen pass/fail can NEVER diverge
+    from the engine's `fisher_quality_pass` / the "Fisher Quality" framework pill. Pure: returns a list
+    of (label, is_pass: bool, value_str); no Streamlit, no recomputation drift. Pinned across the whole
+    universe by test_fisher_module_consistency.
+
+    P15 is Fisher's STRICTER integrity bar (forensic_score >= 90) — deliberately tighter than the
+    forensic cascade's "Clean" verdict (>=80 & <=3 flags) shown in the Fraud Perimeter above, because
+    Fisher treats integrity as the master filter. So a cascade-"Clean" stock (e.g. forensic 89) can
+    still read ❌ here and correctly miss the Fisher Quality framework — that's intended, not a bug.
+    """
+    rev  = _g(stock, "rev_gr_5y", 0.0)
+    npm  = _g(stock, "npm", 0.0)
+    npm1 = _g(stock, "npm_1yb", 0.0)
+    cfo  = _g(stock, "cfo_to_pat", 0.0)
+    dil  = int(_g(stock, "dilution_flag", 1))
+    opl  = int(_g(stock, "operating_leverage", 0))
+    fsc  = _g(stock, "forensic_score", 999.0)
+    return [
+        ("P1: Market Potential (Sales Growth >15%)",        bool(rev >= 15),   f"{rev:.1f}%"),
+        ("P4: Sales Org Efficiency (Profit Gr > Sales Gr)", bool(opl == 1),    "Passed" if opl == 1 else "Failed"),
+        ("P5: Worthwhile Margins (NPM >10%)",               bool(npm >= 10),   f"{npm:.1f}%"),
+        ("P6: Margin Trajectory (NPM ≥ Last Year)",         bool(npm >= npm1), "Improving" if npm >= npm1 else "Declining"),
+        ("P10: Accounting Controls (CFO/PAT ≥70%)",         bool(cfo >= 70),   f"{cfo:.1f}%"),
+        ("P13: No Equity Dilution (Share Count Stable)",    bool(dil == 0),    "Clean" if dil == 0 else "Diluted"),
+        ("P15: Fisher Integrity (Forensic Score ≥90)",      bool(fsc >= 90),   f"{fsc:.0f} / 90"),
+    ]
+
+
 def render_fisher_module(stock: pd.Series):
     """
     Translates Philip Fisher's 15 qualitative principles into strict quantitative
     proxies using ONLY pre-derived CSV columns. Zero manual input; zero re-computation.
-    Columns read directly from the pre-computed stock row (data_engine outputs).
+    The 7 pass/fail checks come from _fisher_quality_proxies (mirrors the engine's fw_fisher gate);
+    the headline verdict reads the engine's binary `fisher_quality_pass` — never a softer recomputation.
     """
     # ── Fisher Lifecycle Quadrant Banner ─────────────────────────────────────
     # Materialised by scoring_engine fw_fisher_scalability + fw_fisher dual-engine.
@@ -1029,56 +1060,27 @@ def render_fisher_module(stock: pd.Series):
     </div>
     """, unsafe_allow_html=True)
 
-    proxies = []
-
-    # P1 — Market Potential: Revenue growth → rev_gr_5y (pre-computed 5Y CAGR)
-    rev_gr = _g(stock, "rev_gr_5y", 0)
-    proxies.append(("P1: Market Potential (Sales Growth >15%)", rev_gr >= 15, f"{rev_gr:.1f}%"))
-
-    # P4 — Sales Org Efficiency: Profit CAGR > Revenue CAGR → operating_leverage binary
-    p4_pass = int(_g(stock, "operating_leverage", 0)) == 1
-    proxies.append(("P4: Sales Org Efficiency (Profit Gr > Sales Gr)",
-                    p4_pass, "Passed" if p4_pass else "Failed"))
-
-    # P5 — Worthwhile Margins: npm from pre-computed data_engine column
-    npm = _g(stock, "npm", 0)
-    proxies.append(("P5: Worthwhile Margins (NPM >10%)", npm >= 10, f"{npm:.1f}%"))
-
-    # P6 — Maintaining Margins: current npm vs npm_1yb (1-year-back column)
-    npm_1yb = _g(stock, "npm_1yb", 0)
-    p6_pass = npm >= npm_1yb and npm > 0
-    proxies.append(("P6: Margin Trajectory (NPM ≥ Last Year)",
-                    p6_pass, "Improving" if p6_pass else "Declining"))
-
-    # P10 — Accounting Controls: cfo_to_pat is PERCENTAGE in CSV (73.04 = 73%)
-    # Threshold must be 70 (not 0.7). Confirmed unit: data_engine stores raw CSV value.
-    cfo_pat = _g(stock, "cfo_to_pat", 0)
-    proxies.append(("P10: Accounting Controls (CFO/PAT ≥70%)", cfo_pat >= 70, f"{cfo_pat:.1f}%"))
-
-    # P13 — No Equity Dilution: dilution_flag = 0 means clean (no meaningful dilution)
-    p13_pass = int(_g(stock, "dilution_flag", 1)) == 0
-    proxies.append(("P13: No Equity Dilution (Share Count Stable)",
-                    p13_pass, "Clean" if p13_pass else "Diluted"))
-
-    # P15 — Accounting Integrity: selective forensic verdict (forensic_score + red_flag_count), so
-    # P15 agrees with the Fraud Perimeter status and the Schilit shield instead of failing 98.6% of
-    # the universe off the near-universal forensic_label. See _forensic_status().
-    _f15_txt, _, p15_pass = _forensic_status(_g(stock, "forensic_score", 100),
-                                             int(_g(stock, "red_flag_count", 0)))
-    proxies.append(("P15: Accounting Integrity (Clean/Watch)",
-                    p15_pass, _esc(_f15_txt)))
-
-    passed     = sum(1 for _, is_pass, _ in proxies if is_pass)
-    total      = len(proxies)
-    score_pct  = (passed / total) * 100
-    gauge_color = (COLORS["green"] if score_pct >= 80 else
-                   COLORS["gold"]  if score_pct >= 50 else
-                   COLORS["red"])
+    # The 7 Fisher Quality proxies — sourced from _fisher_quality_proxies, which mirrors the engine's
+    # fw_fisher gate EXACTLY (same columns, fillna defaults, thresholds). So the on-screen pass/fail can
+    # never diverge from fisher_quality_pass / the "Fisher Quality" pill (pinned by
+    # test_fisher_module_consistency). P15 is Fisher's STRICTER integrity bar (forensic ≥90).
+    proxies = _fisher_quality_proxies(stock)
+    passed  = sum(1 for _, is_pass, _ in proxies if is_pass)
+    total   = len(proxies)
+    score_pct = (passed / total) * 100
 
     # ── Score summary bar ─────────────────────────────────────────────────
-    verdict = ("🟢 High Quality Alignment" if score_pct >= 80 else
-               "🟡 Moderate Alignment"     if score_pct >= 50 else
-               "🔴 Low Alignment — Review Carefully")
+    # Verdict = the ENGINE's binary fisher_quality_pass (single source of truth), NOT a soft %-gradient.
+    # So the module can never say "qualifies" when the framework gate — and the Lifecycle banner above —
+    # say it doesn't. passed == total ⟺ fisher_quality_pass (drift-pinned).
+    q_pass = int(_g(stock, "fisher_quality_pass", 0)) == 1
+    if q_pass:
+        verdict     = "🟢 Fisher Quality — Framework MET"
+        gauge_color = COLORS["green"]
+    else:
+        _short      = total - passed
+        verdict     = f"⚪ Fisher Quality — Not Met ({_short} gate{'s' if _short != 1 else ''} short)"
+        gauge_color = COLORS["gold"] if passed >= 4 else COLORS["red"]
     st.markdown(f"""
     <div style="display:flex;align-items:center;gap:16px;
                 background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};

@@ -1148,7 +1148,7 @@ with tabs[2]:
         # ══ Tab C: Guru Frameworks ═════════════════════════════════════════
         with _itabs[2]:
             st.markdown(
-                f"<div class='sec-head'>🏛️ Guru Framework Alignment — 32 Frameworks</div>",
+                f"<div class='sec-head'>🏛️ Guru Framework Alignment — {len(_FW_META)} Frameworks</div>",
                 unsafe_allow_html=True,
             )
             st.markdown(
