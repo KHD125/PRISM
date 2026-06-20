@@ -55,6 +55,25 @@ def test_frameworks_ready_both_ways():
     fw = build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY,
                                   frameworks={"x": {"emoji": "🎯", "name": "Test Framework"}})
     assert "## Frameworks" in fw and "Test Framework" in fw and "🎯" in fw
+    # Optional desc is emitted when present, omitted when absent (backward-compatible with bare dicts).
+    fw_d = build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY,
+                                    frameworks={"x": {"emoji": "🎯", "name": "Test FW", "desc": "the gate spec"}})
+    assert "**Test FW** — the gate spec" in fw_d
+
+
+def test_real_framework_registry_fully_exported():
+    """The LIVE wiring: the tearsheet's _FW_META (now module-scope) → the Markdown export must carry a
+    ## Frameworks section listing every one of the 37 frameworks by name + its gate-spec description,
+    using the SAME {emoji,name,desc} adapter app.py builds. Locks the registry into the download so a
+    future framework can never silently miss the offline reference."""
+    from ui.ui_tearsheet import _FW_META
+    fw_md = {name: {"emoji": meta[1], "name": name, "desc": meta[2]} for name, meta in _FW_META.items()}
+    md = build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY, frameworks=fw_md)
+    assert "## Frameworks" in md
+    missing = [name for name in _FW_META if _norm(name) not in md]
+    assert not missing, f"{len(missing)} frameworks missing from export: {missing[:8]}"
+    miss_desc = [name for name, meta in _FW_META.items() if _norm(meta[2]) not in md]
+    assert not miss_desc, f"{len(miss_desc)} framework descriptions missing: {miss_desc[:5]}"
 
 
 def test_pure_nonempty_and_module_has_no_streamlit():

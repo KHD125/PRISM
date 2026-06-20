@@ -838,19 +838,14 @@ _FW_IDEA = {
 }
 
 
-def render_guru_frameworks(stock: pd.Series):
-    """
-    Displays which institutional Guru frameworks the stock passes.
-    Reads pre-computed framework flags from scoring_engine — no re-computation.
-    """
-    fw_list = _parse_frameworks(stock.get("frameworks_passed", "None"))
-
-    # ── 37-FRAMEWORK EMOJI MATRIX — absolute zero-duplicate uniqueness contract ──────
-    # Every emoji below is unique across all 37 frameworks (visual-sanitization mandate).
-    # Names must match exactly what scoring_engine writes into frameworks_passed column.
-    # NOTE: "Fisher Scalability" was moved 📡 → 📶 because CAN SLIM now owns 📡 (radar);
-    #        📶 (ascending signal bars) cleanly reads as operating-leverage scaling.
-    _FW_META = {
+# ── 37-FRAMEWORK EMOJI MATRIX — absolute zero-duplicate uniqueness contract ──────
+# Every emoji below is unique across all 37 frameworks (visual-sanitization mandate).
+# Names must match exactly what scoring_engine writes into frameworks_passed column.
+# NOTE: "Fisher Scalability" was moved 📡 → 📶 because CAN SLIM now owns 📡 (radar);
+#        📶 (ascending signal bars) cleanly reads as operating-leverage scaling.
+# Module-level (importable) so the Reference → Markdown export emits the full framework registry from
+# this SAME single source. Read statically (AST) by the emoji/concept tests; used live by the tearsheet.
+_FW_META = {
         # ── 🏛️ Motilal Oswal Wealth Creation Frameworks ──
         "QGLP":                    (COLORS["purple"], "🥇", "Quality + Growth + Longevity + Price — Raamdeo"),
         "MOSL Wealth Creator":     (COLORS["gold"],   "🌟", "Raamdeo's Wealth Creator criteria from annual WCS"),
@@ -893,7 +888,15 @@ def render_guru_frameworks(stock: pd.Series):
         "Fisher Quality":          (COLORS["green"],  "🎣", "Phil Fisher 15-point scuttlebutt quality check"),
         "Fisher Scalability":      (COLORS["purple"], "📶", "Fisher operating leverage inflection — Rev runway + OpLev + Pricing + Anti-dilution"),
         "100-Bagger":              (COLORS["gold"],   "💯", "Mayer: owner-operator + small + high ROCE + low payout"),
-    }
+}
+
+
+def render_guru_frameworks(stock: pd.Series):
+    """
+    Displays which institutional Guru frameworks the stock passes.
+    Reads pre-computed framework flags from scoring_engine — no re-computation.
+    """
+    fw_list = _parse_frameworks(stock.get("frameworks_passed", "None"))
 
     if not fw_list:
         st.info("No institutional Guru frameworks fully met in current market configuration.")
@@ -2019,6 +2022,17 @@ def render_raw_signals(stock: pd.Series):
         _cell("SQGLP Score",      g("sqglp_score"),     "{:.0f}/5") +    # Size+Quality+Growth+Longevity+Price
         _cell("QV Score",         g("vqs_score"),       "{:.0f}") +      # Gray quantitative value-quality composite
         _cell("Sector Type",      stock.get("sector_consistent_type","") or "", "")  # Consistent vs Volatile sector
+    )
+
+    # Data Trust — meta-signals on how COMPLETE & FRESH this row's inputs are. Mirrors the verdict
+    # band's 🔍 Evidence badge + ⏳ Stale chip, surfaced here so the raw-data view answers "how much do
+    # I trust the numbers above?" (coverage % of the 44 core scoring inputs; days since last result).
+    # NaN-safe: np.nan default → "N/A" (never a fabricated 0%/0d) when the engine column is absent.
+    _section("🔍 Data Trust", COLORS["blue"],
+        _cell("Evidence Coverage", g("data_coverage_pct", np.nan), "{:.0f}%") +
+        _cell("Coverage Label",    stock.get("data_coverage_label", "") or "", "") +
+        _cell("Result Age",        g("result_age_days", np.nan), "{:.0f}d") +
+        _cell("Result Stale",      "Yes ⏳" if g("result_stale_flag") == 1 else "No", "")
     )
 
     # Framework PILLAR breakdowns (Dorsey / Outsider / Marks / Lynch / Mauboussin / CAN SLIM /

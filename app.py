@@ -81,7 +81,7 @@ from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
 from ui.ui_reference_data import CONCEPT_REFERENCE
-from ui.ui_tearsheet import _FLAG_DISPLAY
+from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
@@ -1216,9 +1216,13 @@ with tabs[2]:
                 "Signal": df[df["name"] == selected].iloc[0].index,
                 "Value":  df[df["name"] == selected].iloc[0].values,
             })
+            # Excel-safe UTF-8-with-BOM encode (the SAME path as the Deep Scanner + sidebar exports) —
+            # this row's Value column is full of emoji decision-strings (corporate_class 🏆, smart_money
+            # ⚪/✅/❌, weinstein_stage, verdict emojis) + Indian names that mojibake under a bare to_csv.
+            from ui.ui_export import _to_csv_bytes
             st.download_button(
                 f"📥 Export {selected} — Full Data Row (all columns)",
-                data=_stock_export.to_csv(index=False),
+                data=_to_csv_bytes(_stock_export),
                 file_name=f"{re.sub(r'[^A-Za-z0-9._-]+', '_', selected).lower()}_signals.csv",
                 mime="text/csv",
                 use_container_width=True,
@@ -1789,9 +1793,6 @@ with tabs[4]:
     st.markdown(f"""
     <div style="text-align:center; padding:20px; color:{COLORS['text_muted']}; font-size:0.75rem;">
         PRISM v{UI['version']} · Quantamental Intelligence · Every lens, one verdict<br>
-        Dr. Malik (SSGR+8 Params) · Raamdeo (QGLP) · O'Neil (CAN-SLIM) · Mukherjea (Coffee Can)<br>
-        Howard Marks (Cycles) · Philip Fisher · Peter Lynch (PEG) · Schilit (Forensics)<br>
-        {total} stocks · {len(df.columns)} signals · {load_time:.1f}s pipeline<br>
         <strong>Marks Cycle Posture: {posture['label']}</strong>
     </div>
     """, unsafe_allow_html=True)
@@ -1814,9 +1815,13 @@ with tabs[5]:
     )
     # Offline copy of the ENTIRE reference (ignores the search filter) — one generator, same
     # single-source dicts as the on-screen render, so the download can never drift from the app.
+    # The 37-framework registry rides along: _FW_META (tuple (color, emoji, desc)) adapted to the
+    # {emoji,name,desc} shape the builder emits — same single source the tearsheet renders.
+    _fw_md = {name: {"emoji": meta[1], "name": name, "desc": meta[2]}
+              for name, meta in _FW_META.items()}
     st.download_button(
         "📥 Download Reference (Markdown)",
-        data=build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY),
+        data=build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY, frameworks=_fw_md),
         file_name="prism_reference.md", mime="text/markdown",
         use_container_width=True,
     )

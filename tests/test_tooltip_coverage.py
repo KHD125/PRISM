@@ -153,10 +153,9 @@ def test_every_framework_card_has_an_idea_tooltip():
     """Coverage contract: every framework name in _FW_META must have a plain-language _FW_IDEA
     one-liner — so a future new framework can't ship a card without its beginner explainer
     (ties into CLAUDE.md §7 'ships complete')."""
-    from ui.ui_tearsheet import _FW_IDEA
+    from ui.ui_tearsheet import _FW_IDEA, _FW_META
 
-    block = _fn_block("render_guru_frameworks")
-    names = set(re.findall(r'"([^"]+)":\s*\(COLORS', block))
+    names = set(_FW_META)   # _FW_META is now module-scope (importable) — read it directly, not via regex
     assert len(names) >= 35, f"expected ~37 framework names in _FW_META, found {len(names)}"
     missing = sorted(n for n in names if n not in _FW_IDEA)
     assert not missing, f"these framework cards have no plain-language idea tooltip: {missing}"

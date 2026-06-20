@@ -5,8 +5,8 @@ The st.text_input search widget lives in app.py (which owns session_state); this
 only formats. The glossary (the `_RAW_GLOSSARY` single source of truth in
 ui_components) is INJECTED so the coverage test can assert on the returned string.
 
-Framework browser is a deliberate follow-up: `_FW_META` is function-local in the
-parallel-session-owned ui_tearsheet.py and not importable — see the plan's follow-up.
+The Markdown export (build_reference_markdown) also emits the 37-framework registry: `_FW_META`
+now lives at module scope in ui_tearsheet.py, imported by app.py and passed through here.
 """
 import html
 
@@ -18,11 +18,14 @@ def render_reference(glossary: dict, query: str = "") -> str:
     as definition rows, filtered case-insensitively by `query` over term AND definition.
     Pure: no Streamlit, no I/O, no global state. Terms sorted case-insensitively (deterministic),
     so acronyms (CFO, CRS) interleave naturally with words (Capital, Cash) instead of ASCII-clumping."""
-    q = (query or "").strip().lower()
-    # Plain substring match — NOT regex — so query chars like '(' can never raise.
+    # Token-AND match: split the query on whitespace and require EVERY token to appear (in the term
+    # OR its definition), order-independent — so "vampire dilution" still finds "Dilution Vampire" and
+    # "roce coffee" finds entries mentioning both. Empty query → no tokens → all rows. Per-token plain
+    # substring (NOT regex), so query chars like '(' can never raise.
+    tokens = (query or "").lower().split()
     items = [
         (term, defn) for term, defn in sorted(glossary.items(), key=lambda kv: kv[0].lower())
-        if q in term.lower() or q in str(defn).lower()
+        if all(tok in f"{term}\n{defn}".lower() for tok in tokens)
     ]
 
     intro = (
@@ -59,11 +62,11 @@ def render_concepts(concept_ref: dict, query: str = "") -> str:
     """Inline dark-theme HTML for the categorical VALUE-labels (Wealth Creator, Deep Value, Stage 2…),
     grouped by category, filtered case-insensitively by `query` over label AND explanation. Pure: no
     Streamlit, no I/O. Returns "" when nothing matches (the glossary section shows its own state)."""
-    q = (query or "").strip().lower()
+    tokens = (query or "").lower().split()   # token-AND: every word must appear (see render_reference)
     blocks = []
     for category, entries in concept_ref.items():
         rows = [(lbl, exp) for lbl, exp in entries
-                if q in lbl.lower() or q in str(exp).lower()]
+                if all(tok in f"{lbl}\n{exp}".lower() for tok in tokens)]
         if not rows:
             continue
         head = (f'<div style="font-size:0.7rem;font-weight:800;color:{COLORS["purple"]};'
@@ -84,10 +87,10 @@ def render_flags(flag_display: dict, query: str = "") -> str:
     """Inline dark-theme HTML for the forensic RED FLAGS — each shown as the engine's OWN display
     description + severity dot, severity-sorted (🔴→🟠→🟡). Pure: no Streamlit. Single source =
     `_FLAG_DISPLAY` in ui_tearsheet (rf_col → (description, severity)); rendered, never duplicated."""
-    q = (query or "").strip().lower()
+    tokens = (query or "").lower().split()   # token-AND: every word must appear (see render_reference)
     _sev = {"🔴": 0, "🟠": 1, "🟡": 2}
     rows = [(desc, sev) for rf, (desc, sev) in flag_display.items()
-            if q in desc.lower() or q in rf.lower()]
+            if all(tok in f"{desc}\n{rf}".lower() for tok in tokens)]
     if not rows:
         return ""
     rows.sort(key=lambda r: (_sev.get(r[1], 9), r[0].lower()))
@@ -107,9 +110,9 @@ def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: di
     Reference, and any future docs/reference.md can never drift. Exports EVERYTHING (no query filter).
     Deterministic ordering, matching the renderers. PURE: no Streamlit, no I/O.
 
-    `frameworks` is optional (frameworks-ready): pass _FW_META once it's importable to emit a
-    Frameworks section; None -> the section is omitted (no crash). Each value may be a {emoji,name}
-    dict or a bare string."""
+    `frameworks` is optional: app.py passes the tearsheet's _FW_META (adapted to {emoji,name,desc}) to
+    emit a Frameworks section; None -> the section is omitted (no crash). Each value may be an
+    {emoji,name[,desc]} dict or a bare string."""
     import datetime as _dt
     as_of = as_of or _dt.date.today().isoformat()
 
@@ -147,9 +150,14 @@ def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: di
     if frameworks:
         out += ["## Frameworks", ""]
         for _key, meta in frameworks.items():
-            emoji = meta.get("emoji", "") if isinstance(meta, dict) else ""
-            name = meta.get("name", _key) if isinstance(meta, dict) else str(meta)
-            out.append(f"- {emoji} **{_clean(name)}**")
+            if isinstance(meta, dict):
+                emoji, name, desc = meta.get("emoji", ""), meta.get("name", _key), meta.get("desc", "")
+            else:
+                emoji, name, desc = "", str(meta), ""
+            line = f"- {emoji} **{_clean(name)}**"
+            if desc:
+                line += f" — {_clean(desc)}"
+            out.append(line)
         out.append("")
 
     return "\n".join(out).rstrip() + "\n"

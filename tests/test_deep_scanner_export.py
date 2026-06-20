@@ -98,3 +98,39 @@ def test_every_export_column_exists_on_scored_frame():
 
     missing = [c for c in union if c not in df.columns]
     assert not missing, f"Deep Scanner export columns absent from the scored frame: {missing}"
+
+
+def _download_button_by_label(tree, label_substr):
+    """The st.download_button Call whose label (first positional arg, str or f-string) contains
+    label_substr — targets one button by its visible text without depending on tab nesting."""
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "download_button" and node.args):
+            label = node.args[0]
+            if isinstance(label, ast.JoinedStr):
+                text = "".join(v.value for v in label.values if isinstance(v, ast.Constant))
+            elif isinstance(label, ast.Constant) and isinstance(label.value, str):
+                text = label.value
+            else:
+                text = ""
+            if label_substr in text:
+                return node
+    return None
+
+
+def test_all_data_export_encodes_through_bom_helper():
+    """The All Data tab's single-row export (📥 ... Full Data Row) must ALSO encode via _to_csv_bytes
+    (UTF-8 BOM) — its Value column dumps every engine column, which includes emoji decision-strings
+    (corporate_class 🏆, smart_money_flow ⚪/✅/❌, weinstein_stage, verdict emojis) + Indian names that
+    mojibake in Excel under a bare DataFrame.to_csv(). Same regression class as the Deep Scanner export,
+    on the third (previously unguarded) download button."""
+    tree = ast.parse(_APP.read_text(encoding="utf-8"), filename="app.py")
+    btn = _download_button_by_label(tree, "Full Data Row")
+    assert btn is not None, "could not locate the All Data single-row export button in app.py"
+    data = next((kw.value for kw in btn.keywords if kw.arg == "data"), None)
+    assert data is not None, "All Data export download_button has no data= keyword"
+    assert (isinstance(data, ast.Call) and isinstance(data.func, ast.Name)
+            and data.func.id == "_to_csv_bytes"), (
+        "All Data single-row export must encode via _to_csv_bytes(...) for an Excel-safe UTF-8 BOM "
+        "(consistency with the Deep Scanner + sidebar exports); found a different data= expression."
+    )
