@@ -2998,8 +2998,11 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
 
     # Extract pre-materialized metrics — zero inline arithmetic
     exp_cagr = _g(stock, "expected_cagr_engine", 0.0)
-    moat_tau = _g(stock, "moat_tau", 0.0)
-    val_res  = _g(stock, "valuation_residual", 0.0)
+    _id_g    = _g(stock, "expected_cagr_growth_term", 0.0)
+    _id_y    = _g(stock, "expected_cagr_yield_term", 0.0)
+    _id_r    = _g(stock, "expected_cagr_rerate_term", 0.0)
+    moat_tau = stock.get("moat_tau")                    # NaN-aware: 35 live rows have no ladder
+    val_rank = stock.get("valuation_residual_rank")     # MOD 2 percentile of the OLS residual, 0-100
     sepa_scr = int(_g(stock, "sepa_score", 0))
     sepa_pss = int(_g(stock, "sepa_pass", 0))
 
@@ -3020,23 +3023,39 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
             f'{sub_html}</div>'
         )
 
-    # Row 1 — Intrinsic Value Return Identity (display label/colour are the only conditionals)
-    cagr_good = exp_cagr > 15.0
-    tau_good  = moat_tau > 0.25
-    val_good  = val_res < 0          # negative OLS residual ⇒ market underpriced ⇒ alpha
+    # Row 1 — three honest reads: can the business compound / is the margin trending / is the
+    # price justified. Post-audit 2026-08-22: the CAGR tile shows its capped decomposition (the
+    # raw sum reached ±300%/yr on degenerate inputs); the valuation tile shows the engine's
+    # bounded PERCENTILE, not the raw mean-zero OLS residual (whose negative half — 51.6% of
+    # the universe by construction — used to wear a green "Alpha" badge); the tau tile names
+    # what moat_tau actually measures (operating margins over ~5y, not a decade of ROCE).
+    cagr_good  = exp_cagr > 15.0
+    _tau_known = pd.notna(moat_tau)
+    tau_good   = bool(_tau_known and float(moat_tau) > 0.25)
+    _rank_known = pd.notna(val_rank)
+    _cheaper    = (100.0 - float(val_rank)) if _rank_known else None   # low rank = cheapest
+    if _rank_known:
+        _val_clr = (COLORS["green"] if _cheaper >= 75.0
+                    else COLORS["gold"] if _cheaper >= 25.0 else COLORS["red"])
+        _val_txt, _val_sub = f"{_cheaper:.0f}%", (
+            f"Cheaper than {_cheaper:.0f}% of fundamentals-matched peers")
+    else:
+        _val_clr, _val_txt, _val_sub = COLORS["text_muted"], "—", "No cross-sectional rank"
     row1 = (
-        _cockpit_card("👑 Expected CAGR Identity", f"{exp_cagr:.2f}% / yr",
-                      "Intrinsic Overperformance" if cagr_good else "Sub-Hurdle Engine",
-                      COLORS["green"] if cagr_good else COLORS["red"],
-                      COLORS["green"] if cagr_good else COLORS["red"]) +
-        _cockpit_card("⏳ Decade Moat Trajectory (Tau)", f"{moat_tau:+.2f}",
-                      "Expanding Advantage Moat" if tau_good else "Decaying Operational Moat",
-                      COLORS["green"] if tau_good else COLORS["orange"],
-                      COLORS["green"] if tau_good else COLORS["orange"]) +
-        _cockpit_card("📊 OLS Valuation Residual", f"{val_res:+.4f}",
-                      "Market Underpriced (Alpha)" if val_good else "Premium Structural Pricing",
-                      COLORS["green"] if val_good else COLORS["orange"],
-                      COLORS["green"] if val_good else COLORS["orange"])
+        _cockpit_card("👑 Expected Return Estimate", f"{exp_cagr:+.1f}% /yr",
+                      f"Growth {_id_g:+.0f} · Cash {_id_y:+.0f} · Re-rating {_id_r:+.0f} (capped)",
+                      COLORS["green"] if cagr_good else COLORS["orange"],
+                      COLORS["text_muted"]) +
+        _cockpit_card("⏳ Margin Trend (5Y Tau)",
+                      f"{float(moat_tau):+.2f}" if _tau_known else "—",
+                      ("Operating margins trending up" if tau_good
+                       else "Operating margins flat / fading" if _tau_known
+                       else "Not enough margin history"),
+                      COLORS["green"] if tau_good
+                      else COLORS["orange"] if _tau_known else COLORS["text_muted"],
+                      COLORS["green"] if tau_good
+                      else COLORS["orange"] if _tau_known else COLORS["text_muted"]) +
+        _cockpit_card("📊 Price vs Fundamentals", _val_txt, _val_sub, _val_clr, _val_clr)
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{row1}</div>',

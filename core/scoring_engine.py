@@ -1213,27 +1213,39 @@ def compute_composite_score(
     _fair_pe_m5  = df.get("fair_pe_qglp",     pd.Series(np.nan, index=df.index))
     _g_star_m5   = df.get("g_star",           pd.Series(np.nan, index=df.index))
     _fcfy_m5     = df.get("fcf_yield",        pd.Series(np.nan, index=df.index))
-    _sigma_g_m5  = df.get("sigma_g",          pd.Series(np.nan, index=df.index))
     _traj_m5     = df.get("trajectory_score", pd.Series(np.nan, index=df.index))
     _close_m5    = df.get("close_price",      pd.Series(np.nan, index=df.index))
     _vstop_m5    = df.get("vstop_value",      pd.Series(np.nan, index=df.index))
 
-    # fillna(0.0): loss-makers have no PE → no re-rating estimate → neutral 0 term.
-    # Without it, NaN poisons the whole identity even when g* and FCF yield are known.
+    # ── Expected Return Estimate — Bogle/Grinold 3-term decomposition (DISPLAY-ONLY) ──
+    # E[return] ≈ sustainable growth + cash yield + re-rating. Each term is clipped to an
+    # economically meaningful band so ONE degenerate input cannot fabricate a ±300%/yr
+    # "forecast" (pre-fix live: median −13.2%/yr, min −845%, max +300% — Kiri Industries
+    # displayed +299.8%/yr off a 161% FCF yield at a 0.43 P/E):
+    #   growth   g*                 clip [−25, +40]  — beyond this is not "sustainable growth"
+    #   yield    FCF yield          clip [−15, +25]  — beyond is distress / one-off artifacts
+    #   re-rate  ln(fairPE/PE)/5yr  clip [−15, +15]  — ≈ a full 2x re/de-rating over 5 years
+    # The former σ²/2 "variance drag" is REMOVED: it applied sigma_g — REVENUE-GROWTH
+    # volatility — where RETURN volatility belongs (at sigma_g's live p95 of 113% it
+    # fabricated a −64%/yr drag and pushed the MEDIAN stock negative). σ²/2 is correct math
+    # for the wrong σ; reinstate only if a true return-volatility column ever exists.
+    # fillna(0) = documented neutral term (a missing component contributes nothing, and the
+    # tile's decomposition sub-caption makes the 0 visible rather than hidden).
+    # NO scoring consumer reads these four columns — tearsheet row-1 only
+    # (pinned by tests/test_return_identity_honesty.py).
     _re_rating_drift = (
         np.log(
             _fair_pe_m5.fillna(_pe_m5).clip(lower=1)
             / _pe_m5.clip(lower=1)
         ) / 5.0
     ).fillna(0.0)
-    # σ²/2 Ito variance drag: converts % σ to decimal, applies geometric-vs-arithmetic correction.
-    # E[log CAGR] = μ − σ²/2. At σ=20%: drag=2%; at σ=40%: drag=8%. Mathematically correct.
-    _variance_drag = ((_sigma_g_m5.fillna(0.0) / 100.0) ** 2) / 2.0 * 100.0
+    df["expected_cagr_growth_term"] = _g_star_m5.clip(-25.0, 40.0).fillna(0.0)
+    df["expected_cagr_yield_term"]  = _fcfy_m5.clip(-15.0, 25.0).fillna(0.0)
+    df["expected_cagr_rerate_term"] = (_re_rating_drift * 100.0).clip(-15.0, 15.0)
     df["expected_cagr_engine"] = (
-        _g_star_m5.fillna(0)
-        + _fcfy_m5.fillna(0)
-        + (_re_rating_drift * 100.0)
-        - _variance_drag
+        df["expected_cagr_growth_term"]
+        + df["expected_cagr_yield_term"]
+        + df["expected_cagr_rerate_term"]
     )
 
     _total_equity_rupees = 1_000_000.0

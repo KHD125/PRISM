@@ -109,8 +109,10 @@ def test_loss_maker_expected_cagr_not_nan():
     out = compute_composite_score(_frame(pe=np.nan, fair_pe_qglp=np.nan))
     e = out["expected_cagr_engine"]
     assert not e.isna().any(), "Expected CAGR identity must survive missing PE"
-    # g* 12 + fcf_yield 4 - drag (0.2^2/2*100 = 2) = 14
-    assert abs(e.iloc[0] - 14.0) < 1e-9
+    # g* 12 + fcf_yield 4 + re-rating 0 = 16 (the sigma_g "variance drag" was removed
+    # 2026-08-22 — it applied revenue-growth σ where return σ belongs; see
+    # tests/test_return_identity_honesty.py)
+    assert abs(e.iloc[0] - 16.0) < 1e-9
 
 
 def test_expected_excess_return_identity():
