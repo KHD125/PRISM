@@ -292,7 +292,7 @@ CONCEPT_REFERENCE = {
         ("⚡ SEPA Momentum", "Minervini — Specific Entry Point Analysis: the trend template (above rising MAs), a volatility contraction (VCP), relative strength, institutional support, and an earnings catalyst."),
         ("🚀 Quality Momentum", "Wesley Gray's Quantitative Momentum — top-20% relative strength plus a governance guard (pledge ≤30%) and quality. Durable price momentum in a quality name."),
         ("👓 Lynch Dream Framework", "Peter Lynch's growth-at-a-reasonable-price — strong EPS growth at PEG ≤~1, modest institutional ownership (room to be discovered), real free cash flow, and no inventory surge."),
-        ("📈 EP Improver", "MOSL 28th study — economic profit on an improving trajectory: a positive, rising economic-profit trend. Value creation accelerating."),
+        ("📈 EP Improver", "MOSL 28th study's turnaround stage: economic profit still NEGATIVE but climbing, with returns, capital efficiency and margins all turning at once. The study calls this stage speculative — completed turnarounds earned its best returns, at lower odds. The step before 🏒 EP Hockey Stick."),
         ("😊 SMILE", "Vijay Kedia — Small size, Medium experience, Large aspiration, Extra-large potential, with Integrity: a ₹100–2,000 Cr small-cap, 5-yr growth ≥20%, ROCE ≥20%, honest management."),
     ],
     "🛡️ Frameworks — Valuation & Capital Allocation": [

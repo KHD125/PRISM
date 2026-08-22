@@ -279,7 +279,7 @@ def render_ep_power_curve_module(stock: pd.Series):
         <div style="display:flex;gap:6px;margin-bottom:6px;">{segs_html}</div>
         <div style="text-align:center;font-size:0.72rem;color:{COLORS['text_muted']};">
             Q1 = Top 20% Economic Profit Earners &nbsp;·&nbsp;
-            Q2/Q3 = Hockey-Stick Zone &nbsp;·&nbsp;
+            Q2/Q3 = Breakout Launch Zone (the study's best starting point) &nbsp;·&nbsp;
             Q5 = Bottom 20% Capital Destroyers
         </div>
     </div>
@@ -831,7 +831,7 @@ _FW_IDEA = {
     "SEPA Momentum":          "Minervini's Specific Entry Point Analysis — buy strength at a low-risk pivot after a volatility contraction.",
     "Quality Momentum":       "Gray's strongest, smoothest uptrends among quality names — top-20% relative strength with a governance guard.",
     "Lynch Dream":            "Peter Lynch's fast grower at a fair price — growth-at-a-reasonable-price the big funds haven't crowded yet.",
-    "EP Improver":            "RoE rising and above the cost of equity, ROCE also rising, and economic profit positive.",
+    "EP Improver":            "28th WCS turnaround stage: economic profit still negative but climbing, with RoE, ROCE and margins all turning. Speculative by the study's own word.",
     "SMILE":                  "Vijay Kedia's small-cap with Integrity, large aspiration and extra-large potential — an under-the-radar scaler.",
     # 🛡️ Valuation, capital allocation & defense shields
     "Magic Formula":          "Greenblatt's cheap-and-good — a high-return business (ROCE) at a genuinely cheap enterprise price (EBIT/EV).",
@@ -884,7 +884,7 @@ _FW_META = {
         "SEPA Momentum":           (COLORS["blue"],   "⚡", "Mark Minervini: Stage 2 + RS + Earnings acceleration"),
         "Quality Momentum":        (COLORS["green"],  "🚀", "High quality fundamentals + price momentum confluence"),
         "Lynch Dream":             (COLORS["green"],  "👓", "PEG ≤1.0 + Rev outpacing costs — Peter Lynch"),
-        "EP Improver":             (COLORS["green"],  "📈", "Economic Profit expanding — moving up Power Curve"),
+        "EP Improver":             (COLORS["orange"], "📈", "28th WCS Q4/Q5 turnaround: EP negative but climbing, RoE+ROCE+margins all turning — speculative stage"),
         "SMILE":                   (COLORS["green"],  "😊", "Vijay Kedia: Small + Integrity + Large aspiration + Extra-large potential"),
         # ── 🛡️ Valuation, Capital Allocation & System Defense Shields ──
         "Magic Formula":           (COLORS["gold"],   "🧮", "High ROCE + High Earnings Yield — Joel Greenblatt"),

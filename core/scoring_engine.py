@@ -1889,13 +1889,16 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #              + current PE ≥ 25% below own 10Y median PE
     fw_bruised_bb = df.get("bruised_blue_chip", pd.Series(0, index=df.index)).fillna(0) == 1
 
-    # 8. Economic Profit Improver (28th MOSL Study — TEM Hockey-Stick Setup)
-    #    Companies moving UP the Economic Profit Power Curve:
-    #    RoE improving + above COST_OF_EQUITY + Economic Profit is positive
+    # 8. EP Improver (28th MOSL Study) — REPURPOSED 2026-08-22 as the Q4/Q5 turnaround stage.
+    #    The old recipe (RoE improving + EP positive + ROCE rising) had collapsed into "EP Hockey
+    #    Stick without the price gate": 181 of its 183 non-Hockey-Stick passers differed ONLY on
+    #    P/E > 20 — an end-run around the study's own P — while the genuine approaching cohort
+    #    (EP < 0 and climbing, 398 stocks) earned no pill at all. Now the pair is a stage ladder:
+    #    📈 APPROACHING the Power Curve here, 🏒 ARRIVED (and buyable) in Framework 30 — mutually
+    #    exclusive by construction. Gate logic + book evidence live on ep_approaching_flag
+    #    (data_engine); contract: tests/test_ep_power_curve_28wcs.py §9.
     fw_ep_improver = (
-        (df.get("eco_profit_improving", pd.Series(0, index=df.index)).fillna(0) == 1) &
-        (df.get("economic_profit_positive", pd.Series(0, index=df.index)).fillna(0) == 1) &
-        (df.get("d35_roce_trend", pd.Series(0, index=df.index)).fillna(0) > 0)  # ROCE also rising
+        df.get("ep_approaching_flag", pd.Series(0, index=df.index)).fillna(0) == 1
     )
 
     # 9. Peaceful Investing (Vijay Malik) — India's most systematic forensic quality filter

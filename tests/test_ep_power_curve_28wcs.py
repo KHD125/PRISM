@@ -330,3 +330,121 @@ def test_all_data_shows_undefined_ep_as_na_not_zero_rupees():
 def test_all_data_shows_undefined_ep_quintile_as_na():
     html = _render_all_data(_undefined_ep_stock())
     assert _all_data_cell(html, "EP Quintile") == "N/A"
+
+
+def test_quintile_caption_does_not_reuse_the_hockey_stick_name():
+    """One card, one meaning per term: the quintile bar's Q2/Q3 caption used to say
+    "Hockey-Stick Zone" while a Q1 stock right below it displayed the 🚀 Hockey Stick
+    EP-state label — two different concepts (the breakout LAUNCH ZONE vs the EP state)
+    wearing the same name read as a contradiction (seen live on Sarda Energy: Q1 +
+    🚀 Hockey Stick under a "Q2/Q3 = Hockey-Stick Zone" caption)."""
+    html = _render_ep_card(pd.Series({
+        "name": "Q1 Compounder Ltd", "economic_profit": 178.0,
+        "economic_profit_velocity": 250.0, "economic_profit_positive": 1,
+        "ep_power_curve": "🚀 Hockey Stick", "ep_quintile": 1.0,
+        "ep_hockey_stick_breakout": 0,
+    }))
+    assert "Hockey-Stick Zone" not in html
+    assert "Launch Zone" in html
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 9. The stage ladder — 📈 EP Improver repurposed as the Q4/Q5 turnaround
+# ══════════════════════════════════════════════════════════════════════
+# 28th WCS, Exhibit 10 commentary (verbatim): "Upmoves from Quintile 4 and 5 also
+# generate handsome returns, albeit they tend to be speculative in nature as they
+# involve mainly turnarounds." Exhibit 25: 14 of the 54 Hockey-Stick-Return
+# companies (26%) STARTED in Q4/Q5; the completed turnaround earns the matrix's
+# best returns (Q4→Q1 = 34%, Q5→Q1 = 29% CAGR, six-period average), with an HSR
+# probability of ~7% (vs 18-19% from Q2/Q3). Before this repurpose the EP Improver
+# pill was 99% "EP Hockey Stick but too expensive" (181 of its 183 non-HS passers
+# differed ONLY on the P/E gate) while the genuine approaching cohort — EP < 0 and
+# climbing, 398 stocks — earned no pill at all. The ladder:
+#   📈 EP Improver      = APPROACHING (EP < 0, climbing, full internal confirmation)
+#   🏒 EP Hockey Stick  = ARRIVED and buyable (EP > 0, climbing, P/E ≤ 20)
+# No price gate on the approaching stage — the study's own note: "P/E is not
+# meaningful due to accounting loss" (that cohort still returned 27%).
+
+def _approaching_frame(**over):
+    """One stock in the canonical approaching state: EP < 0, EP climbing, and all
+    three internal confirmations (RoE up, ROCE trend up, margins up) firing."""
+    base = dict(
+        n=1,
+        reserves=[500.0], reserves_1yb=[430.0],
+        roe=[10.0], roe_1yb=[6.0],                 # EP −10 vs −25.8 → velocity +15.8
+        roce=[12.0], roce_1yb=[9.0], roce_2yb=[8.0],
+        opm_med_5y=[8.0], opm_1yb=[9.0], opm=[10.0], opm_latest_q=[11.0],
+    )
+    base.update(over)
+    return compute_derived_signals(_frame(**base))
+
+
+def test_canonical_turnaround_is_flagged_approaching():
+    assert int(_approaching_frame()["ep_approaching_flag"].iloc[0]) == 1
+
+
+def test_arrived_stock_is_not_approaching():
+    """EP already positive belongs to the Hockey-Stick stage, never this one."""
+    df = _approaching_frame(roe=[20.0], roe_1yb=[15.0])
+    assert df["economic_profit"].iloc[0] > 0
+    assert int(df["ep_approaching_flag"].iloc[0]) == 0
+
+
+def test_deepening_loss_is_not_approaching():
+    """EP falling further below zero is a Value Trap, not a turnaround."""
+    df = _approaching_frame(roe=[4.0], roe_1yb=[8.0], roce=[6.0])
+    assert int(df["ep_approaching_flag"].iloc[0]) == 0
+
+
+def test_falling_roe_fails_the_returns_confirmation():
+    """EP velocity can turn positive from a shrinking equity base alone — RoE
+    direction must confirm the RETURNS are actually improving."""
+    df = _approaching_frame(reserves=[300.0], roe=[4.8], roe_1yb=[5.0])
+    assert df["economic_profit_velocity"].iloc[0] > 0     # velocity alone would pass
+    assert int(df["ep_approaching_flag"].iloc[0]) == 0
+
+
+def test_flat_roce_fails_the_capital_efficiency_confirmation():
+    df = _approaching_frame(roce=[8.0], roce_1yb=[9.0], roce_2yb=[9.0])
+    assert int(df["ep_approaching_flag"].iloc[0]) == 0
+
+
+def test_fading_margins_fail_the_margin_confirmation():
+    df = _approaching_frame(opm_med_5y=[12.0], opm_1yb=[11.0], opm=[10.0], opm_latest_q=[9.0])
+    assert int(df["ep_approaching_flag"].iloc[0]) == 0
+
+
+def test_unknown_velocity_is_not_approaching():
+    """Unverifiable is not passed: no prior-year equity → no velocity → no flag."""
+    df = _approaching_frame(reserves_1yb=[np.nan], roe_1yb=[np.nan])
+    assert int(df["ep_approaching_flag"].iloc[0]) == 0
+
+
+def test_the_two_stages_are_mutually_exclusive():
+    """EP < 0 here, EP > 0 there — one stock can never hold both stages."""
+    df = compute_derived_signals(_frame(
+        n=6,
+        reserves=[500.0] * 6, reserves_1yb=[430.0] * 6,
+        roe=[10.0, 20.0, 8.0, 25.0, 11.0, 30.0],
+        roe_1yb=[6.0, 15.0, 10.0, 20.0, 7.0, 22.0],
+        roce=[12.0] * 6, roce_1yb=[9.0] * 6, roce_2yb=[8.0] * 6,
+        opm_med_5y=[8.0] * 6, opm_1yb=[9.0] * 6, opm=[10.0] * 6, opm_latest_q=[11.0] * 6,
+    ))
+    assert int(((df["ep_approaching_flag"] == 1) & (df["ep_hockey_stick"] == 1)).sum()) == 0
+
+
+def test_ep_improver_pill_now_reads_the_approaching_stage():
+    """The framework gate reads ep_approaching_flag — and the OLD gate (RoE improving +
+    EP positive + ROCE trend) no longer awards the pill: that recipe was 99% 'Hockey
+    Stick but too expensive', an end-run around the study's P."""
+    df = pd.DataFrame({
+        "company_id": ["NSE:A", "NSE:B"],
+        "name": ["Turnaround Co", "Expensive Arrived Co"],
+        "ep_approaching_flag":      [1, 0],
+        "eco_profit_improving":     [0, 1],
+        "economic_profit_positive": [0, 1],
+        "d35_roce_trend":           [1.0, 5.0],
+    })
+    pills = compute_qglp_score(df)["frameworks_passed"]
+    assert "EP Improver" in pills.iloc[0]
+    assert "EP Improver" not in pills.iloc[1]

@@ -3242,6 +3242,30 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         [df["roce_tau"], df["moat_tau"], df["revenue_tau"], df["pat_tau"]], axis=1
     ).mean(axis=1)
 
+    # ── EP Approaching (28th WCS — the Q4/Q5 turnaround stage of the Power Curve) ──
+    # Exhibit 10 commentary, verbatim: "Upmoves from Quintile 4 and 5 also generate handsome
+    # returns, albeit they tend to be speculative in nature as they involve mainly turnarounds."
+    # Exhibit 25: 14 of the 54 Hockey-Stick-Return companies (26%) STARTED in Q4/Q5, and the
+    # completed turnaround earns the matrix's best returns (Q4→Q1 = 34%, Q5→Q1 = 29% CAGR,
+    # six-period average) at ~7% probability (vs 18-19% from Q2/Q3). Because the study calls the
+    # stage SPECULATIVE, the gate demands the full internal confirmation that TEM's "Moves" are
+    # working — returns (RoE), capital efficiency (ROCE trend) AND margins (tau) all turning at
+    # once: live rate 7.0%, matching the study's own 7% probability. Deliberately NO price gate —
+    # the study prices this cohort separately ("P/E is not meaningful due to accounting loss",
+    # Exhibit 20 note; that cohort still returned 27%). Mutually exclusive with ep_hockey_stick
+    # by construction (EP < 0 here, > 0 there): together they form the Power-Curve stage ladder
+    #   📈 EP Improver (fw) = APPROACHING   ·   🏒 EP Hockey Stick (fw) = ARRIVED & buyable.
+    # Placed HERE (after moat_tau) because the margin confirmation needs the tau ladder; the EP
+    # family itself is computed far earlier. NaN discipline: every comparison is False on NaN —
+    # an unverifiable confirmation is a failed one, never a free pass.
+    df["ep_approaching_flag"] = (
+        (df["economic_profit"] < 0) &                 # still an Economic Loss (Q4/Q5 territory)
+        (df["economic_profit_velocity"] > 0) &        # ...but climbing the curve
+        (df["roe"] > df["roe_1yb"]) &                 # returns turning (not a shrinking-equity artifact)
+        (df["d35_roce_trend"] > 0) &                  # capital efficiency turning
+        (df["moat_tau"] > 0)                          # margins turning
+    ).astype(int)
+
     # ── Anti-Pattern A: Dilution Vampire (Capital Deficiency Trap) ──
     # Fast revenue growth (≥30%) funded by chronic equity dilution rather than internal capital.
     # Structural ROE < 12% = cannot self-fund growth → constant share issuance to minority investors.
