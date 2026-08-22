@@ -1456,8 +1456,12 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     if profile is None:
         profile = MASTER_PROFILES["Balanced"]
 
-    # Q: Quality (ROCE rank + management quality)
-    q_score = _pct_rank(df.get("roce", pd.Series(0, index=df.index)), ascending=True).fillna(50) * 0.7
+    # Q: Quality (ROCE rank + management quality). Full 0-100 scale — the former ×0.7 capped
+    # Quality at 80 (live median 35) while Price ran to 100 (median 85), inverting the 25th
+    # WCS's own structure ("QGL is the Value component which is then juxtaposed with P" — P is
+    # the final CHECK, Q the first principle). The checklist assigns NO numeric weights, so the
+    # 0.7 had no book basis; promoter/pledge stay as the ±10 management-quality adjustments.
+    q_score = _pct_rank(df.get("roce", pd.Series(0, index=df.index)), ascending=True).fillna(50)
     if "promoter_buying" in df.columns:
         q_score += df.get("promoter_buying", pd.Series(0, index=df.index)) * 10
     if "pledge_rising" in df.columns:

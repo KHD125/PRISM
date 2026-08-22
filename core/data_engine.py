@@ -2779,18 +2779,29 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # prior comment's "<15%" was the one inaccuracy; the 25/12/18 figures are book-exact).
     # VERBATIM definition (17th Study; methodology p.35): "Companies whose RoE was higher than sector
     # average for 6 years or more [of the 8-yr 1995-2002 window] were deemed to enjoy an Economic Moat."
-    # Faithful proxy: 5 ROE timeframes (current, 1yb, 3y/5y/10y medians) each vs their own sector median;
-    # require >= 4 of 5 above sector (80% persistence ~ the study's 6/8 = 75% sustained-outperformance bar).
-    # Stronger than the prior 2-point check — captures sustained moat, not a single-snapshot beat.
+    # Faithful proxy: 5 ROE timeframes (current, 1yb, 3y/5y/10y medians) each vs their sector AVERAGE
+    # — the book's word, twice (p.35: "we calculated the average sector RoE"; "higher than the
+    # industry average"). The prior sector-MEDIAN was a deviation that inflated the rate: beating a
+    # median is a ~50% coin flip per window, beating a skewed-RoE mean is harder (41.5% → 37.2%).
+    # Require >= 4 of 5 windows above sector (80% — slightly STRICTER than the study's 6/8 = 75% /
+    # 7/10 = 70%; with only 5 observable windows, 4/5 is the nearest bar at or above the book's).
+    # PEERLESS RULE (p.35, verbatim): companies without comparable peers are deemed EMCs "given
+    # their high absolute RoEs" — proxied as beating the UNIVERSE average. The old self-median made
+    # sole-listed companies permanently ineligible, the opposite of the book.
     _sector_grp_roe = df["sector"].fillna("Unknown")
+    _emc_peers = df.groupby(_sector_grp_roe)["roe"].transform("size")
     _emc_timeframes = ["roe", "roe_1yb", "roe_med_3y", "roe_med_5y", "roe_med_10y"]
     _emc_above_count = pd.Series(0, index=df.index)
     for _tf in _emc_timeframes:
         if _tf not in df.columns:
             continue
-        _sec_med = df.groupby(_sector_grp_roe)[_tf].transform("median").fillna(df[_tf].median())
-        # NaN company ROE → fillna(0): cannot beat a positive sector median → conservatively not counted.
-        _emc_above_count = _emc_above_count + (df[_tf].fillna(0) > _sec_med.fillna(0)).astype(int)
+        _uni_avg = df[_tf].mean()
+        _sec_avg = df.groupby(_sector_grp_roe)[_tf].transform("mean")
+        _bench   = pd.Series(
+            np.where(_emc_peers >= 2, _sec_avg, _uni_avg), index=df.index
+        ).fillna(_uni_avg)
+        # NaN company ROE → fillna(0): cannot beat a positive benchmark → conservatively not counted.
+        _emc_above_count = _emc_above_count + (df[_tf].fillna(0) > _bench.fillna(0)).astype(int)
     df["emc_sector_beat_count"] = _emc_above_count          # 0-5: diagnostic / tearsheet display
     df["emc_flag"] = (_emc_above_count >= 4).astype(int)    # >= 4 of 5 timeframes beat sector
 
@@ -2968,24 +2979,32 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #   → ROCE > cost of capital. Use COST_OF_EQUITY (12%) as the system-wide hurdle (consistent with
     #   economic_profit). Prior code used a hardcoded 10% — BELOW the 12% hurdle, so an 11%-ROCE
     #   company earning below its cost of capital (no real moat) was wrongly flagged. Now corrected.
+    # CAP metric/hurdle: RoE ≥ 15 per the study's verbatim definition — see the CAP block below.
     # GAP (§5.1, VERBATIM): "Growth Advantage Period (GAP) is the time during which a company grows its
     #   profits at a faster rate than that of the benchmark indices." The book's GAP chart (p.19) labels
     #   the "15% threshold (benchmark growth rate)". Prior code used 12%/8% — below the study's 15% bar.
     # The study's whole thesis is LONGEVITY (duration), so we also expose year-count proxies.
     # "Moat without growth underperforms; growth without moat ends soon." — MOSL 22nd Study.
 
-    # CAP duration proxy (0-5): how many ROCE timeframes clear the cost-of-capital hurdle.
-    _cap_tfs = ["roce_med_10y", "roce_med_7y", "roce_med_5y", "roce_1yb", "roce"]
+    # CAP — BOOK-EXACT (22nd WCS, verbatim box p.8/§3): "CAP is RoE > Cost of Equity", and the
+    # study states its own hurdle: "We deem Cost of Equity in India to be about 15%". Two prior
+    # deviations corrected 2026-08-22: the engine used ROCE (the book says RoE — and RoE includes
+    # banks naturally, where ROCE structurally punishes them) and the system-wide 12% hurdle
+    # (the study's is 15). Study-specific hurdle follows the emerging_vc_flag precedent (18th
+    # study's 15% there, while economic_profit keeps the system 12). Effect: cap_extended
+    # 39.6% → 17.6%, fw_cap_gap 9.0% → 4.3% — a genuinely elite longevity badge.
+    # CAP duration proxy (0-5): how many RoE timeframes clear the study's 15% hurdle.
+    _cap_tfs = ["roe_med_10y", "roe_med_5y", "roe_med_3y", "roe_1yb", "roe"]
     _cap_years = pd.Series(0, index=df.index)
     for _c in _cap_tfs:
         if _c in df.columns:
-            _cap_years = _cap_years + (df[_c].fillna(0) >= COST_OF_EQUITY).astype(int)
+            _cap_years = _cap_years + (df[_c].fillna(0) >= 15.0).astype(int)
     df["cap_years_proxy"] = _cap_years
-    # Extended CAP: long-run (10Y), recent (5Y) and current ROCE all above cost of capital.
+    # Extended CAP: long-run (10Y), recent (5Y) and current RoE all above the study's CoE.
     df["cap_extended_flag"] = (
-        (df["roce_med_10y"].fillna(0) >= COST_OF_EQUITY) &
-        (df["roce_med_5y"].fillna(0)  >= COST_OF_EQUITY) &
-        (df["roce"].fillna(0)         >= COST_OF_EQUITY)
+        (df["roe_med_10y"].fillna(0) >= 15.0) &
+        (df["roe_med_5y"].fillna(0)  >= 15.0) &
+        (df["roe"].fillna(0)         >= 15.0)
     ).astype(int)
 
     # GAP duration proxy (0-3): how many PAT-growth windows clear the 15% benchmark rate.

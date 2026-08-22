@@ -810,8 +810,8 @@ _FW_IDEA = {
     "SQGLP Century Stock":    "The strictest bar — QGLP plus a small Size base that can still multiply many times. Passes are very rare by design.",
     "100x Candidate":         "An early-stage, small-base business with the structural setup to compound roughly 100× over a long runway (high ceiling, high uncertainty).",
     "Fallen Quality":         "A genuinely high-quality business temporarily beaten down — quality on sale, not a permanent decliner.",
-    "CAP-GAP Compounder":     "A competitive-advantage runway the market appears to be under-pricing — the moat likely outlasts what the valuation assumes.",
-    "Economic Moat":          "A wide, durable moat — returns on capital sustained well above the cost of capital over time, not a one-cycle wonder.",
+    "CAP-GAP Compounder":     "22nd WCS longevity proof: RoE at or above 15% across the decade, five years AND today (CAP), with PAT growth at or above 15% across all three windows (GAP).",
+    "Economic Moat":          "17th WCS sector-relative moat: RoE above the SECTOR average in at least 4 of 5 windows — a durable edge over direct peers, not an absolute-return test.",
     "Blue Chip Quality":      "An established, high-quality large-cap — a proven, lower-risk compounder.",
     "Consistent in Volatile": "A steady performer that holds up through volatile markets — low earnings/return volatility alongside solid quality.",
     "EP Hockey Stick":        "28th WCS TEMP setup: economic profit positive AND rising, bought at a P/E of 20x or less.",
@@ -863,8 +863,8 @@ _FW_META = {
         "SQGLP Century Stock":     (COLORS["gold"],   "👑", "MOSL 19th: ≥4 of 5 SQGLP pillars (Size·Quality·Growth·Longevity·Price)"),
         "100x Candidate":          (COLORS["gold"],   "🐘", "17th WCS Mouse-to-Elephant: PAT CAGR ≥20% + ROCE ≥20% + mcap ≤₹15k Cr + D/E <0.5 + ROE ≥15%"),
         "Fallen Quality":          (COLORS["cyan"],   "🩹", "All-cap fallen quality: ROCE≥15% + PAT CAGR≥10%, >40% off 52WH, cheap vs own 10Y PE"),
-        "CAP-GAP Compounder":      (COLORS["green"],  "📐", "Capital efficiency gap: ROCE expanding vs sector peers"),
-        "Economic Moat":           (COLORS["purple"], "🏰", "Morningstar wide-moat: ROCE > WACC sustained 10Y+"),
+        "CAP-GAP Compounder":      (COLORS["green"],  "📐", "22nd WCS: RoE ≥ 15% (10Y/5Y/now) + PAT growth ≥ 15% (10/5/3Y) — longevity proof"),
+        "Economic Moat":           (COLORS["purple"], "🏰", "17th WCS: RoE above sector AVERAGE in ≥4 of 5 windows — sector-relative moat"),
         "Blue Chip Quality":       (COLORS["blue"],   "💙", "MOSL 16th: 10Y ROE ≥15% + dividend payout ≥20% + PAT no-crash consistency + ≥5M shares"),
         "Consistent in Volatile":  (COLORS["orange"], "🌪️", "27th WCS: consistent compounder in volatile sector — 19% CAGR"),
         "EP Hockey Stick":         (COLORS["green"],  "🏒", "28th WCS TEMP: Economic Profit positive AND rising YoY, entered at P/E <= 20x"),
@@ -3206,7 +3206,7 @@ def _sector_peer_strip_html(stock: pd.Series) -> str:
 
     Thresholds are the engine's OWN, not invented: 0.70 = the `category_winner_flag` top-30%
     sector-ROCE line; 0.50 = the sector median. Reads sector_roce_pct_rank (0-1, fillna 0.5 in
-    the engine), emc_flag / emc_sector_beat_count (ROE beats sector median in N of 5 windows),
+    the engine), emc_flag / emc_sector_beat_count (ROE beats sector AVERAGE in N of 5 windows),
     and sector_capital_phase (Chancellor capital-cycle: Hot / Starved / Neutral).
     """
     GOLD, GREEN, RED, MUTE = (
