@@ -203,10 +203,15 @@ def render_ep_power_curve_module(stock: pd.Series):
     st.markdown("<div class='sec-head'>📈 Economic Profit Power Curve (28th WCS)</div>",
                 unsafe_allow_html=True)
 
+    # EP is UNDEFINED when equity is gone or RoE is unreported — the engine leaves it NaN.
+    # Never render that as ₹0 / Value Trap; a data hole is not a verdict.
+    ep_known     = pd.notna(stock.get("economic_profit"))
+    ep_vel_known = pd.notna(stock.get("economic_profit_velocity",
+                                      stock.get("economic_profit_delta")))
     ep_val      = _g(stock, "economic_profit",          0)
     ep_vel      = _g(stock, "economic_profit_velocity",
                     _g(stock, "economic_profit_delta",  0))
-    ep_curve    = stock.get("ep_power_curve", "📉 Value Trap") or "📉 Value Trap"
+    ep_curve    = stock.get("ep_power_curve", "") or "❔ Not reported"
     ep_q        = stock.get("ep_quintile",    None)
     hs_breakout = int(_g(stock, "ep_hockey_stick_breakout", 0))
     ep_positive = int(_g(stock, "economic_profit_positive",  0))
@@ -234,7 +239,7 @@ def render_ep_power_curve_module(stock: pd.Series):
     _Q_LABELS = {
         1: "Alpha Creators",
         2: "Value Creators",
-        3: "Mediocre",
+        3: "Emerging",
         4: "Destroyers",
         5: "Capital Destroyers",
     }
@@ -299,12 +304,18 @@ def render_ep_power_curve_module(stock: pd.Series):
         )
 
     ep_strip = (
-        _ep_metric("Economic Profit", f"₹{ep_val:,.0f} Cr",
-                   "EP Positive ✅" if ep_positive else "EP Negative ❌",
-                   ep_clr, ep_clr) +
-        _ep_metric("EP Velocity (YoY)", f"{vel_sign}₹{ep_vel:,.0f} Cr",
-                   "Ascending ↑" if ep_vel > 0 else "Descending ↓",
-                   vel_clr, vel_clr) +
+        _ep_metric("Economic Profit",
+                   f"₹{ep_val:,.0f} Cr" if ep_known else "—",
+                   ("EP Positive ✅" if ep_positive else "EP Negative ❌")
+                       if ep_known else "Equity or RoE not reported",
+                   ep_clr if ep_known else COLORS["text_muted"],
+                   ep_clr if ep_known else COLORS["text_muted"]) +
+        _ep_metric("EP Velocity (YoY)",
+                   f"{vel_sign}₹{ep_vel:,.0f} Cr" if ep_vel_known else "—",
+                   ("Ascending ↑" if ep_vel > 0 else "Descending ↓")
+                       if ep_vel_known else "No prior-year equity",
+                   vel_clr if ep_vel_known else COLORS["text_muted"],
+                   vel_clr if ep_vel_known else COLORS["text_muted"]) +
         _ep_metric("Quintile Position", f"Q{ep_q_int}" if ep_q_int else "N/A",
                    q_label, q_color, q_color) +
         _ep_metric("EP Trajectory", ep_curve, "28th WCS curve position",
@@ -803,7 +814,7 @@ _FW_IDEA = {
     "Economic Moat":          "A wide, durable moat — returns on capital sustained well above the cost of capital over time, not a one-cycle wonder.",
     "Blue Chip Quality":      "An established, high-quality large-cap — a proven, lower-risk compounder.",
     "Consistent in Volatile": "A steady performer that holds up through volatile markets — low earnings/return volatility alongside solid quality.",
-    "EP Hockey Stick":        "Economic profit inflecting sharply upward — value creation is bending up at an early inflection.",
+    "EP Hockey Stick":        "28th WCS TEMP setup: economic profit positive AND rising, bought at a P/E of 20x or less.",
     "Bruised Blue Chip 29":   "A blue chip fallen hard and cheap versus its own history — a quality name the market has temporarily punished.",
     "Multi-Trillion Cap":     "The very largest, most-proven compounders — mega-cap size with elite, durable quality.",
     # 📚 Fundamental & cash-quality moats
@@ -820,7 +831,7 @@ _FW_IDEA = {
     "SEPA Momentum":          "Minervini's Specific Entry Point Analysis — buy strength at a low-risk pivot after a volatility contraction.",
     "Quality Momentum":       "Gray's strongest, smoothest uptrends among quality names — top-20% relative strength with a governance guard.",
     "Lynch Dream":            "Peter Lynch's fast grower at a fair price — growth-at-a-reasonable-price the big funds haven't crowded yet.",
-    "EP Improver":            "Economic profit on an improving trajectory — value creation that is accelerating.",
+    "EP Improver":            "RoE rising and above the cost of equity, ROCE also rising, and economic profit positive.",
     "SMILE":                  "Vijay Kedia's small-cap with Integrity, large aspiration and extra-large potential — an under-the-radar scaler.",
     # 🛡️ Valuation, capital allocation & defense shields
     "Magic Formula":          "Greenblatt's cheap-and-good — a high-return business (ROCE) at a genuinely cheap enterprise price (EBIT/EV).",
@@ -856,7 +867,7 @@ _FW_META = {
         "Economic Moat":           (COLORS["purple"], "🏰", "Morningstar wide-moat: ROCE > WACC sustained 10Y+"),
         "Blue Chip Quality":       (COLORS["blue"],   "💙", "MOSL 16th: 10Y ROE ≥15% + dividend payout ≥20% + PAT no-crash consistency + ≥5M shares"),
         "Consistent in Volatile":  (COLORS["orange"], "🌪️", "27th WCS: consistent compounder in volatile sector — 19% CAGR"),
-        "EP Hockey Stick":         (COLORS["green"],  "🏒", "28th WCS: Economic Profit positive AND rising YoY — ascending the Power Curve"),
+        "EP Hockey Stick":         (COLORS["green"],  "🏒", "28th WCS TEMP: Economic Profit positive AND rising YoY, entered at P/E <= 20x"),
         "Bruised Blue Chip 29":    (COLORS["blue"],   "🏛️", "Elite ROCE + large-cap at P/B ≤2× — 29th WCS"),
         "Multi-Trillion Cap":      (COLORS["purple"], "🌐", "Sunrise sector at compounding velocity — 30th WCS"),
         # ── 📚 Fundamental & Cash Quality Moats ──
@@ -1970,8 +1981,8 @@ def render_raw_signals(stock: pd.Series):
         _cell("Forensic Mult", g("forensic_multiplier"), "{:.0%}") +
         _cell("Accruals Ratio",g("accruals_ratio"),      "{:.2f}") +  # Sloan accruals — negative = conservative
         # Piotroski shown in 🏭 Business Quality; EP Quintile in 🏛️ MOSL Signals (both de-duped).
-        _cell("Econ Profit",   g("economic_profit"),     "₹{:,.0f} Cr") +
-        _cell("EP Spread",     g("economic_profit_spread"), "{:.1f}%") +  # ROIC − WACC spread (EP per capital)
+        _cell("Econ Profit",   g("economic_profit", float("nan")), "₹{:,.0f} Cr") +
+        _cell("EP Spread",     g("economic_profit_spread", float("nan")), "{:.1f}%") +  # ROIC − WACC spread (EP per capital)
         _cell("Earnings Power",stock.get("earnings_power_box","") or "","") +  # Heiserman defensive×enterprising box
 
         _cell("QGLP Score",    g("qglp_score"),          "{:.0f}/100") +
@@ -2964,7 +2975,9 @@ def render_mauboussin_radar(stock: pd.Series):
         _ev_tile("Downside Leg", f"−{dn_pct:.1f}%",
                  f"P↓ {100 - p_up:.0f}% · distance to volatility stop", "#e74c3c") +
         _ev_tile("Expected Excess Return", f"{ev:+.1f}%",
-                 _esc(ev_verdict), ev_color)
+                 _esc(f"{ev_verdict} · executable today: "
+                      f"{float(_g(stock, 'optimal_portfolio_weight_pct', 0.0)):.2f}% "
+                      f"(see Sizing Cockpit)"), ev_color)
     )
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;'>{_ev_tiles}</div>",
@@ -3042,10 +3055,63 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     allocation = _g(stock, "rupee_capital_allocation", 0.0)
     stop_loss  = _g(stock, "vstop_value", 0.0)
 
-    # Row 2 — Fractional Kelly Capital Allocation Matrix (inline flex; no st.columns/st.metric)
+    # ── Thesis vs Executable reconciliation (mirror-and-explain — Fisher precedent, 7fff308) ──
+    # The tearsheet carries TWO sizes for one stock: the Mauboussin EV verdict (the THESIS size —
+    # what the expected value justifies) and this cockpit's Kelly×Minervini weight (the EXECUTABLE
+    # size today — what trend + stop allow). They legitimately diverge: a 0% weight beside a
+    # "High Conviction · 8–12%" band means "target — no entry now", not a contradiction (190 of the
+    # 426 High-Conviction stocks sat exactly there on 2026-08-22). The strip states the band, the
+    # executable weight, and the REASON for any gap. Display-only: it reads engine columns and
+    # names which engine constraint bound — zero sizing math is re-derived here.
+    _ev_verdict = str(stock.get("mauboussin_ev_verdict", "") or "")
+    _EV_BANDS = {                                   # engine's Ch.13 verdict strings → thesis band
+        "High Conviction · 8–12% position":           (8.0, 12.0),
+        "Moderate-High · 5–8% position":              (5.0, 8.0),
+        "Moderate · 3–5% position":                   (3.0, 5.0),
+        "Insufficient Edge · No position (< 5% min)": (0.0, 0.0),
+    }
+    _band = _EV_BANDS.get(_ev_verdict)
+    _close_rc = stock.get("close_price")
+    _vstop_rc = stock.get("vstop_value")
+    _stopped  = bool(pd.notna(_close_rc) and pd.notna(_vstop_rc)
+                     and float(_close_rc) <= float(_vstop_rc))
+    if weight_pct <= 0.0:
+        _gap_reason = ("price at/below its volatility stop — no entry now"
+                       if _stopped else
+                       "Kelly edge ≤ 0 at current proxy odds — the formula sees no positive expectancy")
+    elif _band == (0.0, 0.0):
+        _gap_reason = ("EV below the 5% book minimum — thesis says no position; "
+                       "technical sizing shown for reference only")
+    elif _band and weight_pct < _band[0]:
+        _gap_reason = "risk-capped below the thesis band (quarter-Kelly × 1%-risk rule)"
+    elif _band and weight_pct > _band[1]:
+        _gap_reason = "executable weight above the thesis band — trim to the band"
+    elif _band:
+        _gap_reason = "aligned with the thesis band"
+    else:
+        _gap_reason = ""
+    if _ev_verdict:
+        _recon_clr = (COLORS["orange"] if (weight_pct <= 0.0 or _band == (0.0, 0.0))
+                      else COLORS["green"])
+        st.markdown(
+            f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {_recon_clr}55;'
+            f'border-left:3px solid {_recon_clr};border-radius:8px;padding:8px 14px;'
+            f'margin:6px 0 8px 0;font-size:0.72rem;color:{COLORS["text_muted"]};">'
+            f'🧭 <strong style="color:#e6edf3;">EV Thesis:</strong> {_esc(_ev_verdict)}'
+            f' &nbsp;·&nbsp; <strong style="color:#e6edf3;">Executable today:</strong> '
+            f'<strong style="color:{_recon_clr};">{weight_pct:.2f}%</strong>'
+            + (f' — {_esc(_gap_reason)}' if _gap_reason else "")
+            + '</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Row 2 — Fractional-Kelly Capital Allocation Matrix (inline flex; no st.columns/st.metric).
+    # Copy is deliberately modest: p and b are UNCALIBRATED PROXIES (see the MOD 5 docstring in
+    # scoring_engine.py), so "Quarter-Kelly Risk Managed" overclaimed — this is a sizing heuristic
+    # whose real risk control is the Minervini 1%-risk cap.
     row2 = (
-        _cockpit_card("🎯 Recommended Capital Weight", f"{weight_pct:.2f}%",
-                      "Quarter-Kelly Risk Managed", COLORS["blue"], COLORS["text_muted"]) +
+        _cockpit_card("🎯 Executable Capital Weight", f"{weight_pct:.2f}%",
+                      "Fractional-Kelly heuristic · proxy odds", COLORS["blue"], COLORS["text_muted"]) +
         _cockpit_card("💰 Capital Deployment (10L Base)", f"₹ {allocation:,.2f}",
                       "", COLORS["gold"], COLORS["text_muted"]) +
         _cockpit_card("🚨 Hard Volatility Stop-Loss Level", f"₹ {stop_loss:,.2f}",
@@ -3053,6 +3119,13 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{row2}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div style="font-size:0.64rem;color:{COLORS["text_muted"]};margin-top:6px;">'
+        f'Per-stock sizing: each weight is computed independently for this stock alone and is '
+        f'<strong>not portfolio-normalized</strong> — weights across many stocks will not sum '
+        f'to 100% of capital.</div>',
         unsafe_allow_html=True,
     )
 
@@ -3257,7 +3330,7 @@ def render_mosl_wealth_matrix(stock: pd.Series):
         ep_val   = f"₹{ep_abs:,.0f} Cr"
         ep_badge = "VALUE CREATOR (RoE > CoE)" if ep_pos == 1 else "Value Destroyer (RoE < CoE)"
     else:
-        ep_clr, ep_val, ep_badge = _MUTE, "—", "Net worth unavailable"
+        ep_clr, ep_val, ep_badge = _MUTE, "—", "Equity or RoE unavailable"
 
     # ── Tile 4: Business Design (26th WCS Atoms→Bits) ───────────────────────
     _atb_map = {

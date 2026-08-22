@@ -631,7 +631,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # economic_profit_spread: ROCE minus India cost of equity (COST_OF_EQUITY from config).
     # Positive = value creation above hurdle; > COST_OF_EQUITY = substantial competitive advantage.
     # Validated across all 30 MOSL Annual Wealth Creation Studies.
-    df["economic_profit_spread"] = df["roce"].fillna(0) - COST_OF_EQUITY
+    # NaN-propagating: roce.fillna(0) fabricated a spread of exactly -COST_OF_EQUITY for 84 live
+    # rows, i.e. an "earns 12pp below its cost of capital" verdict manufactured from a data hole.
+    df["economic_profit_spread"] = df["roce"] - COST_OF_EQUITY
 
     # compound_growth_power_flag: PAT CAGR consistent across 3 timeframes simultaneously.
     # 3Y ≥ 15% (recent), 5Y ≥ 12% (medium-term), 10Y ≥ 10% (long-term).
@@ -1294,7 +1296,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── Mid-Cap Velocity Compounder (1st WCS) ──
-    # 1st WCS empirical finding: smaller companies (Mid/Small/Micro-Cap) with sustained
+    # 1st WCS empirical finding: smaller companies (Mid/Small/Micro/Nano-Cap) with sustained
     # ROCE ≥ 20% compound at dramatically higher rates than large/mega caps with similar ROCE.
     # Scale-velocity advantage: a ₹500 Cr company can double revenue in 3 years;
     # a ₹50,000 Cr company needs 50 times the incremental revenue for the same effect.
@@ -1450,8 +1452,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _ic_csv = df.get("interest_coverage", _de_nan)   # NaN if not in CSV
     df["interest_coverage"] = _ic_csv.fillna(_ic_synthetic)
 
-    # ── Economic Profit (28th WCS) ──
-    # EP = Net Worth × (RoE − Cost of Equity)  [MOSL 23rd/28th WCS formula]
+    # ── Net Worth (shared equity measure — SNOA, CFROIC, P/B, duPont) ──
+    # NOTE: the Economic Profit family below does NOT use this column; it needs an equity figure
+    # that exists in BOTH years, and there is no historical price_to_book. See the EP block.
     # net_worth = market_cap / price_to_book — algebraically exact:
     #   price_to_book = close_price / book_value_per_share
     #   market_cap    = close_price × equity_shares
@@ -1482,44 +1485,83 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         _snoa_ta_lag > 0, _snoa_noa / _snoa_ta_lag, np.nan
     )
 
+    # ── EQUITY BASE FOR THE EP FAMILY — one balance-sheet line, both years ──
+    # net_worth (above) is market_cap ÷ P/B and has NO prior-year counterpart — the CSV carries no
+    # historical price_to_book. Pairing it against reserves_1yb therefore subtracted two DIFFERENT
+    # definitions of equity, biasing every velocity upward by the share-capital gap (~7% of book,
+    # median) and inflating the Hockey-Stick population. The EP family uses reserves / reserves_1yb:
+    # the same line in both years, so the level, the prior level and the delta are one basis.
+    # net_worth itself is left untouched for its other consumers (SNOA, CFROIC, P/B, duPont).
+    #
+    # GUARD — equity <= 0 means EP is UNDEFINED, not a profit. EP = E × (RoE − CoE) FLIPS SIGN when
+    # E < 0, so wiped-out companies scored as the study's best state (Tata Teleservices: a loss on
+    # −29,659 Cr of equity, labelled 🚀 Hockey Stick and paid the top-quintile quality bonus).
+    # A company whose equity is gone has no equity base to charge; the study never contemplates it.
+    #
+    # KNOWN LIMITATION (deliberate, ~20 rows / 0.9%): InvITs and REITs (Altius Telecom, Brookfield
+    # India, National Highways Infra Trust) carry NEGATIVE reserves because they distribute more
+    # than they retain, even though their real equity is positive. They fall into the guard and show
+    # an unknown EP. Accepted: book-equity economic profit is a poor lens for a pass-through trust
+    # anyway, and the alternative — falling back to the market_cap ÷ P/B figure — would reintroduce
+    # exactly the two-basis defect this block removes. Their RoE remains visible everywhere else.
+    _ep_equity     = df["reserves"].where(df["reserves"] > 0)
+    _ep_equity_1yb = df["reserves_1yb"].where(df["reserves_1yb"] > 0)
+
+    # EP = Equity × (RoE − CoE)  [28th WCS Equation 3]. RoE stays NaN-propagating: roe.fillna(0)
+    # used to manufacture an Economic Loss (−CoE × Equity) out of a missing-RoE data hole.
     df["economic_profit"] = (
-        df["net_worth"] * (df["roe"].fillna(0) / 100.0 - COST_OF_EQUITY / 100.0)
+        _ep_equity * (df["roe"] - COST_OF_EQUITY) / 100.0
     )
     df["economic_profit_1yb"] = (
-        df["net_worth_1yb"] * (df["roe_1yb"].fillna(0) / 100.0 - COST_OF_EQUITY / 100.0)
+        _ep_equity_1yb * (df["roe_1yb"] - COST_OF_EQUITY) / 100.0
     )
     df["economic_profit_positive"] = (df["economic_profit"] > 0).astype(int)
 
     # ── Economic Profit Velocity (28th WCS — Hockey Stick EP Trajectory) ──
-    # Multi-year EP direction: companies moving UP the Economic Profit Power Curve
-    # are the "Hockey Stick" setup from MOSL 28th Study (2023).
+    # Companies moving UP the Economic Profit Power Curve are the "Hockey Stick" setup from the
+    # MOSL 28th Study (2023). A missing prior year leaves velocity NaN — never 0: when
+    # reserves_1yb was 0 the prior EP collapsed to 0, so velocity became EP itself and every
+    # profitable such company auto-qualified as a Hockey Stick (Tata Motors, Timken India).
     df["economic_profit_velocity"] = df["economic_profit"] - df["economic_profit_1yb"]
     # Backward-compat alias consumed by downstream flags
     df["economic_profit_delta"] = df["economic_profit_velocity"]
 
-    # Hockey Stick: EP is positive AND improving YoY = ascending the EP Power Curve
+    # Hockey Stick: EP is positive AND improving YoY = ascending the EP Power Curve.
+    # NaN velocity compares False, so an unknown trend can never qualify.
     df["ep_hockey_stick"] = (
         (df["economic_profit"] > 0) &
         (df["economic_profit_velocity"] > 0)
     ).astype(int)
-    # EP Power Curve position (McKinsey taxonomy applied to Indian equity universe)
+    # EP Power Curve position (McKinsey taxonomy applied to Indian equity universe).
+    # Conditions are ordered, so "✅ EP Positive" absorbs both a flat/falling EP and an unknown
+    # trend. Unknown EP (equity gone or RoE missing) falls through to "" — a blank, never a
+    # verdict, the same convention earnings_power_box uses.
+    _epc_known  = df["economic_profit"].notna()
+    _epc_pos    = df["economic_profit"] > 0
+    _epc_rising = df["economic_profit_velocity"] > 0
     df["ep_power_curve"] = np.select(
         [
-            (df["economic_profit"] > 0) & (df["economic_profit_velocity"] > 0),
-            (df["economic_profit"] > 0) & (df["economic_profit_velocity"] <= 0),
-            (df["economic_profit"] <= 0) & (df["economic_profit_velocity"] > 0),
+            _epc_known &  _epc_pos & _epc_rising,
+            _epc_known &  _epc_pos,
+            _epc_known & ~_epc_pos & _epc_rising,
+            _epc_known & ~_epc_pos,
         ],
-        ["🚀 Hockey Stick", "✅ EP Positive", "📈 Improving"],
-        default="📉 Value Trap"
+        ["🚀 Hockey Stick", "✅ EP Positive", "📈 Improving", "📉 Value Trap"],
+        default=""
     )
 
     # ── EP Power Curve QUINTILE (28th WCS — the study's actual methodology) ──
     # Rank the universe by ABSOLUTE economic profit into 5 quintiles: Q1 = highest EP, Q5 = deepest loss.
-    # Book-verified 2026-06-13. The study's REAL findings (prior comment's "ending in Q1/Q2 → 24/21%
-    # CAGR, Q4/Q5 → 8/4%" matched no exhibit):
-    #   • EP > Accounting Profit: top-EP portfolio +8% alpha (80% hit rate) vs Economic-LOSS +2% (Exhibit 7).
-    #   • Returns come from MOVING UP the curve (the "Hockey Stick"): Q5→Q2 = 26% CAGR (25 cos),
-    #     Q2→Q1 = 25% (21 cos) over 2013-23; 6-period 10yr avg = Exhibit 10.
+    # Book-verified 2026-06-13, re-verified against the converted study 2026-08-22:
+    #   • EP beats Accounting Profit: EP portfolio +8% alpha (80% hit rate) vs Economic-LOSS +2%
+    #     (Exhibit 6 — the alpha table; Exhibit 7 is the Power Curve chart).
+    #   • ENDING in Q1/Q2 is what pays: Exhibit 10's Total row, by end-quintile, is
+    #     24% / 21% / 10% / 8% / 4% CAGR (six 10-yr windows, 2008-23) vs Nifty 500's 11%.
+    #     "Almost all market-beating returns happen when companies end up in Quintiles 1 and 2,
+    #     no matter what the starting Quintile is." This is what ep_top_quintile_flag rewards.
+    #     (A 2026-06-13 note called these figures unsourced — they are Exhibit 10's Total row.)
+    #   • Returns come from MOVING UP the curve (the "Hockey Stick"): over 2013-23, Q3→Q2 = 26%
+    #     CAGR (25 cos), Q3→Q1 = 43% (5 cos), Q2→Q1 = 25% (21 cos) — Exhibits 8 and 9.
     #   • Best to START from Quintile 2/3 — 68% of up-moves originate there, highest HSR probability
     #     (18%/19%). Q1 is already at the top; Q4/Q5 (Economic Loss) are erratic.
     # ep_top_quintile_flag below = high CURRENT EP (Q1/Q2 = quality marker); the UP-MOVE is captured
@@ -1571,16 +1613,19 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── P/Sales and P/B Ratios (Studies 9, 13 multi-bagger formulas) ──
     # Study 13: "PE < 10x, P/B < 1x, P/Sales ≤ 1x, Payback ≤ 1x" = four explicit multi-bagger formulas.
     # Study 9: "If you want a doubler, buy at: P/Book < 1x, P/E < 10x, P/Sales < 0.5x"
+    # NUMERATOR guard as well as denominator (§5): market_cap.fillna(0) made a missing market cap
+    # read as P/B = 0.0 — the deepest possible value — firing pb_lt1_flag's "doubler zone" and
+    # slipping through the Bruised Blue Chip P/B < 2x entry gate on a data hole.
     df["pb_ratio"] = np.where(
-        df["net_worth"].fillna(0) > 0,
-        df["market_cap"].fillna(0) / df["net_worth"],
+        (df["net_worth"].fillna(0) > 0) & df["market_cap"].notna(),
+        df["market_cap"] / df["net_worth"],
         np.nan
     )
     df["pb_lt1_flag"]  = (df["pb_ratio"].fillna(999) <  1.0).astype(int)   # doubler zone (Study 9/13)
 
-    df["ps_ratio"] = np.where(
-        _revenue.fillna(0) > 0,
-        df["market_cap"].fillna(0) / _revenue,
+    df["ps_ratio"] = np.where(                      # same numerator guard as pb_ratio above
+        (_revenue.fillna(0) > 0) & df["market_cap"].notna(),
+        df["market_cap"] / _revenue,
         np.nan
     )
     df["ps_lt1_flag"]  = (df["ps_ratio"].fillna(999) <= 1.0).astype(int)   # multi-bagger formula (Study 13)
@@ -2407,8 +2452,30 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["pat_gr_10y"].fillna(df["pat_gr_5y"]).fillna(0) > 0
     ).astype(int)
 
-    # 5 YoY transitions (full window incl. pat_4yb→pat_5yb). Only positive prior years count —
-    # turnarounds (negative→positive) are not treated as declines.
+    # ── WINDOW VALIDITY (27th WCS §2.1) ──
+    # The study states all three Consistent criteria in terms of YoY PAT GROWTH % (Exhibit 1), over
+    # a universe of top-500 wealth creators — every one of them profitable. A de-growth % is
+    # undefined on a negative base, so a LOSS year cannot be scored against criteria 1-2 at all.
+    # The previous implementation resolved that by SKIPPING any transition where either side was
+    # non-positive (`~_both_pos | ...`), which inverted the book: a profit→loss collapse is a
+    # de-growth of MORE than 100% — precisely Exhibit 2's Company G disqualifier ("only 1 PAT
+    # de-growth, but greater than 50% → Volatile") — yet it passed for free. On live data 169 of
+    # 908 champions had a loss year and 94 had two or more; Supreme Infrastructure (four loss
+    # years, −1,426 Cr) and GMR Airports (four) were certified Consistents.
+    # KNOWN CALIBRATION DIVERGENCE (data-constrained, deliberate): the study measures over 15 years
+    # (or 10); the CSV carries only 6 PAT points, so criterion 1 is scaled proportionally (3-in-15 ->
+    # 1-in-5). Proportional scaling does NOT make the test equally strict — a shorter window is
+    # structurally easier to survive — so this fires ~34.7% vs the study's 114/697 = 16.4%. Do NOT
+    # "fix" that by tightening the count without forward-return evidence (tools/validate.py).
+    # So the whole window must be REPORTED and PROFITABLE before we certify a Consistent:
+    # a criterion that cannot be evaluated has not been met. (`> 0` is False for NaN, so this
+    # single clause enforces both.)
+    _pat_window = [_pat_5yb, _pat_4yb, _pat_3yb, _pat_2yb, _pat_1yb, _pat]
+    _window_ok = pd.Series(True, index=df.index)
+    for _p in _pat_window:
+        _window_ok = _window_ok & (_p > 0)
+
+    # 5 YoY transitions across that window (oldest pat_4yb→pat_5yb pair included).
     _pat_seq = [
         (_pat,     _pat_1yb),
         (_pat_1yb, _pat_2yb),
@@ -2419,24 +2486,25 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _no_crash_5y = pd.Series(True, index=df.index)       # Criterion 2: no >50% fall
     _decline_10_count = pd.Series(0, index=df.index)     # Criterion 1: count of >10% falls
     for _curr_p, _prev_p in _pat_seq:
-        _both_pos = (_curr_p.fillna(0) > 0) & (_prev_p.fillna(0) > 0)
-        _ratio    = (_curr_p.fillna(0) / _prev_p.replace(0, np.nan)).fillna(1.0)
-        _no_big_fall = ~_both_pos | (_ratio > 0.5)                       # not a >50% crash
-        _no_crash_5y = _no_crash_5y & _no_big_fall
-        _fell_10  = _both_pos & (_ratio < 0.90)                          # >10% YoY decline
-        _decline_10_count = _decline_10_count + _fell_10.astype(int)
+        # Denominator guard (§5): the ratio exists only against a positive prior-year base.
+        # NaN compares False in both tests below, and _window_ok already rejects those rows.
+        _base  = _prev_p.where(_prev_p > 0)
+        _ratio = _curr_p.where(_prev_p > 0) / _base
+        _no_crash_5y = _no_crash_5y & ~(_ratio < 0.50)                   # >50% fall = Volatile
+        _decline_10_count = _decline_10_count + (_ratio < 0.90).astype(int)
     df["pat_decline_count_5y"] = _decline_10_count
 
-    # Terminal > initial (5Y criterion — skip if pat_5yb unavailable)
-    _5yb_available        = _pat_5yb.fillna(0) > 0
-    _terminal_gt_initial  = ~_5yb_available | (_pat.fillna(0) > _pat_5yb.fillna(0))
+    # Criterion 3: "The terminal year PAT should not be lower than the initial year PAT."
+    # ">=" is the book's "not be lower". A missing initial year yields False (NaN comparison) —
+    # `~_5yb_available |` used to auto-PASS it, certifying 125 companies on an absent baseline.
+    _terminal_ge_initial = _pat >= _pat_5yb
 
     df["consistency_champion"] = (
-        (_decline_10_count <= 1) &        # Criterion 1: <=1 fall >10% (proportional 3-in-15 / 2-in-10)
-        _no_crash_5y &                     # Criterion 2: no >50% crash
-        _terminal_gt_initial &             # Criterion 3a: terminal >= initial
-        (df["pat_growing_long"] == 1) &    # Criterion 3b: long-term positive CAGR
-        (_pat.fillna(0) > 0)
+        _window_ok &                       # reported AND profitable throughout (see note above)
+        (_decline_10_count <= 1) &         # Criterion 1: <=1 fall >10% (proportional 3-in-15 / 2-in-10)
+        _no_crash_5y &                     # Criterion 2: no fall >50% (Exhibit 2, Company G)
+        _terminal_ge_initial &             # Criterion 3: terminal not lower than initial
+        (df["pat_growing_long"] == 1)      # engine addition: long-term positive CAGR confirmation
     ).astype(int)
 
     # ── Volatile Flag (27th Study — counterpart to consistency_champion) ──
@@ -2468,11 +2536,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── Economic Profit Improving (28th Study — TEM Hockey-Stick Setup) ──
-    # Companies moving UP the Economic Profit Power Curve:
-    # ROE improving AND above cost of equity (10% for India)
+    # Companies moving UP the Economic Profit Power Curve: RoE improving AND above the cost of
+    # equity. Hurdle is COST_OF_EQUITY, not a hardcoded 10 — the same fix already applied to the
+    # CAP-GAP gate below: 10 sits BELOW the 12% hurdle, so an 11%-RoE company that destroys value
+    # counted as "improving". Sentinels dropped too: roe_1yb.fillna(0) turned a missing prior year
+    # into "improved from zero" for every profitable company.
     df["eco_profit_improving"] = (
-        (df["roe"].fillna(0) > df["roe_1yb"].fillna(0)) &
-        (df["roe"].fillna(0) > 10.0)
+        (df["roe"] > df["roe_1yb"]) &
+        (df["roe"] > COST_OF_EQUITY)
     ).astype(int)
 
     # ── P/E to Sustainable ROE Ratio (continuous MoS — 1st Study, all 30 confirmed) ──
@@ -2944,7 +3015,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── Study 23 (2018): Valuation Insights — ROE vs India CoE (15%) ──
     # Study 23 explicitly defines India Cost of Equity = 15% (not 10% as in Graham/US frameworks).
     # ROE - Ke (15%) = economic spread: positive = value creation, negative = value destruction.
-    # Note: existing economic_profit uses CoE=10%; this signal uses the India-specific 15% threshold.
+    # Note: economic_profit uses COST_OF_EQUITY (config); this signal uses Study 23's India-specific 15%.
     df["roe_vs_coe15"] = df["roe"].fillna(0) - 15.0
 
     # ══════════════════════════════════════════════════════════════

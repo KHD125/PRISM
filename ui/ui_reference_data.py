@@ -142,10 +142,10 @@ CONCEPT_REFERENCE = {
     ],
     # ── ep_power_curve — core/data_engine.py:1506 (economic profit level × its velocity)
     "📊 Economic-Profit Power Curve": [
-        ("🚀 Hockey Stick", "Positive economic profit AND accelerating — earns above its cost of capital and the spread is widening. The best state."),
-        ("✅ EP Positive", "Positive economic profit but not accelerating — earns above its cost of capital, holding steady."),
-        ("📈 Improving", "Economic profit still negative but improving — below its cost of capital, yet the trend is turning up."),
-        ("📉 Value Trap", "Negative economic profit and not improving — earns below its cost of capital with no upturn."),
+        ("🚀 Hockey Stick", "Earns above its cost of equity AND that economic profit is larger than a year ago — climbing the Power Curve. The best state."),
+        ("✅ EP Positive", "Earns above its cost of equity, but the profit is not larger than last year — or the prior year isn't reported. Value-creating, not yet climbing."),
+        ("📈 Improving", "Economic profit still negative but larger than a year ago — below its cost of equity, yet the trend is turning up."),
+        ("📉 Value Trap", "Negative economic profit and no larger than a year ago — earns below its cost of equity with no upturn."),
     ],
     # ── earnings_power_box — core/data_engine.py:1547 (Heiserman defensive × enterprising)
     "📦 Earnings Power Box": [
@@ -273,7 +273,7 @@ CONCEPT_REFERENCE = {
         ("🏰 Economic Moat", "A wide, durable competitive advantage — returns on capital sustained well above the cost of capital over time. A structural edge, not a one-cycle wonder."),
         ("💙 Blue Chip Quality", "An established, high-quality large-cap — large size with strong, stable quality metrics. A proven, lower-risk compounder."),
         ("🌪️ Consistent in Volatile", "A steady performer through volatile markets — low earnings/return volatility alongside solid quality. Holds up when the market doesn't."),
-        ("🏒 EP Hockey Stick", "Economic profit inflecting sharply upward — a step-change acceleration in economic profit; value creation bending up."),
+        ("🏒 EP Hockey Stick", "MOSL's 28th study: earns above its cost of equity, that profit is growing, AND the shares still trade at a P/E of 20 or less — the study's full TEMP setup (value creation bought cheap)."),
         ("🏛️ Bruised Blue Chip 29", "MOSL's 29th study — a quality large-cap fallen hard, trading at a steep discount (P/B ≤~2×) to its own history. Temporarily punished by the market."),
         ("🌐 Multi-Trillion Cap", "MOSL's 30th study — the very largest, most-proven compounders: mega-cap size with elite, durable quality. Battleship-grade."),
     ],

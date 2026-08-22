@@ -627,11 +627,12 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     # ── 28th Study: EP Power Curve Top-Quintile Bonus ──
-    # Book-verified 2026-06-13: the top-EP portfolio delivered +8% alpha (80% hit rate) vs the
-    # Economic-LOSS portfolio's +2% (Exhibit 7) — so high CURRENT EP (Q1/Q2) is a genuine quality
-    # marker worth a small reinforcement. (Prior "24%/21% vs 4-8% CAGR by quintile" matched no
-    # exhibit; the study's 24-26% figures are MOVE-UP returns Q5→Q2 / Q2→Q1, captured separately by
-    # ep_hockey_stick.) +3 modest (kept small since absolute EP correlates with market cap).
+    # Book-verified 2026-06-13, re-verified 2026-08-22: the EP portfolio delivered +8% alpha (80%
+    # hit rate) vs the Economic-LOSS portfolio's +2% — Exhibit 6, the alpha table (Exhibit 7 is the
+    # Power Curve chart). Exhibit 10's Total row then prices the destination directly: ending in
+    # Q1/Q2 returned 24%/21% CAGR vs 10%/8%/4% for Q3/Q4/Q5. So high CURRENT EP is a genuine
+    # quality marker. +3 stays modest because absolute EP correlates with company size; the
+    # UP-MOVE (Q3→Q2 = 26%, Q2→Q1 = 25%) is rewarded separately via ep_hockey_stick.
     if "ep_top_quintile_flag" in df.columns:
         df["quality_score"] = pd.Series(
             np.where(
@@ -1185,6 +1186,28 @@ def compute_composite_score(
     # MOD 5: Expected Returns & Vectorized Kelly-Minervini Sizing
     # All data_engine-computed columns accessed via .get() so tests with synthetic frames
     # that lack those columns don't KeyError — missing inputs propagate NaN (semantic truth).
+    #
+    # ── HONEST FRAMING (audited 2026-08-22) — read before "improving" this block ──
+    # The f* = p − q/b formula below is textbook Kelly and quarter-Kelly is Carver-mandated,
+    # but its INPUTS are uncalibrated proxies, so the output is a sizing HEURISTIC, not
+    # estimated-odds Kelly:
+    #   p (win_rate_proxy)     = 0.35 + 0.30 × normalized trajectory_score — an affine rescale
+    #                            of a momentum score. Nothing yet validates that trajectory 0.5
+    #                            means a 53% win rate; calibration is tools/validate.py's job
+    #                            once ≥25 snapshots exist.
+    #   b (payoff_ratio_proxy) = fair_pe/pe UPSIDE ALONE (not upside÷downside — it implicitly
+    #                            assumes 100% loss of stake) and is near-constant: 85.5% of the
+    #                            live universe sits on the two constants 1.5 / 1.0.
+    # DO NOT redefine b as upside÷downside here without calibrating p FIRST: at p≈0.53 that
+    # change raises every weight ~55% on an unvalidated win probability — the understated b is
+    # currently an accidental conservatism offsetting the uncalibrated p. The queued, evidence-
+    # gated fix (formula included) lives in docs/known-issues.md. The binding risk control that
+    # does the real work today is the Minervini 1%-equity-risk cap below (binds on 379 of 1,241
+    # cap-eligible rows).
+    # optimal_portfolio_weight_pct is PER-STOCK and never portfolio-normalized: top-25-by-rank
+    # weights summed to 112.7% of capital on live data. Consumers (tearsheet cockpit,
+    # tools/verify.py) treat it as single-stock guidance; the UI discloses this.
+    # Contract: tests/test_kelly_sizing_honesty.py (+ per-stock edges in test_sizing_cockpit.py).
     # ══════════════════════════════════════════════════════════════
     _pe_m5       = df.get("pe",               pd.Series(np.nan, index=df.index))
     _fair_pe_m5  = df.get("fair_pe_qglp",     pd.Series(np.nan, index=df.index))
@@ -1856,7 +1879,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
 
     # 8. Economic Profit Improver (28th MOSL Study — TEM Hockey-Stick Setup)
     #    Companies moving UP the Economic Profit Power Curve:
-    #    ROE improving + above cost of equity (10%) + Economic Profit is positive
+    #    RoE improving + above COST_OF_EQUITY + Economic Profit is positive
     fw_ep_improver = (
         (df.get("eco_profit_improving", pd.Series(0, index=df.index)).fillna(0) == 1) &
         (df.get("economic_profit_positive", pd.Series(0, index=df.index)).fillna(0) == 1) &
@@ -2659,13 +2682,13 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #      — no other framework simultaneously checks 3 PAT timeframes. Proxy for MOSL's "Consistent" category.
     #   2. payback_lt2: payback ratio < 2 as a hard gate — 5th Study: payback 1-2 band = 37.4% annual returns
     #      — no other framework gates on payback_lt2 specifically.
-    #   3. economic_profit_spread >= 10: ROCE ≥ 20% above cost of equity (CoE = 10%) = substantial moat
+    #   3. economic_profit_spread >= 10: ROCE a full 10pp above COST_OF_EQUITY = substantial moat
     #      — all other ROCE thresholds are absolute; this uses the margin-above-CoE framing.
     # These three together catch sustained, cash-backed compounders at reasonable prices — the MOSL DNA.
     _mw_nan = pd.Series(np.nan, index=df.index)
     cgp_mw      = df.get("compound_growth_power_flag", pd.Series(0, index=df.index)).fillna(0)
     paylt2_mw   = df.get("payback_lt2",               pd.Series(0, index=df.index)).fillna(0)
-    ep_mw       = df.get("economic_profit_spread",     _mw_nan)   # ROCE - 10 (cost of equity)
+    ep_mw       = df.get("economic_profit_spread",     _mw_nan)   # ROCE - COST_OF_EQUITY
     cfo_pat_mw  = df.get("cfo_to_pat",                _mw_nan)   # PERCENTAGE: 70.0 = 70%
     de_mw       = df.get("debt_to_equity",             _mw_nan)
     is_fin_mw   = df.get("is_financial",               pd.Series(False, index=df.index)).fillna(False)
@@ -2673,7 +2696,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     fw_mosl_wealth_creator = (
         (cgp_mw              == 1) &              # UNIQUE: PAT consistent across 3Y + 5Y + 10Y simultaneously
         (paylt2_mw           == 1) &              # UNIQUE: payback ratio < 2 as gate (MOSL 5th Study)
-        (ep_mw.fillna(-99)   >= 10) &            # UNIQUE: ROCE ≥ 20% above CoE (substantial competitive moat)
+        (ep_mw.fillna(-99)   >= 10) &            # UNIQUE: spread ≥ 10pp over CoE (ROCE ≥ 22) = substantial moat
         (cfo_pat_mw.fillna(0) >= 70) &           # Cash quality: CFO/PAT ≥ 70% (PERCENTAGE unit)
         (is_fin_mw | (de_mw.fillna(999) < 1.0)) & # Balance sheet: D/E < 1.0 (financials exempt)
         (mcap_mw.fillna(0)   >= 500)             # Scale: ₹500 Cr minimum
@@ -2723,8 +2746,16 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     )
 
     # ── Framework 30: fw_ep_hockey_stick — EP Hockey Stick (28th WCS, 2023) ──
+    # The study's framework is TEM-P, not TEM. §3 (Trends/Endowment/Moves) drives Economic Profit;
+    # §4 "Engendering Hockey-Stick valuations" adds the P and says it "completes the framework for
+    # Hockey-Stick Returns i.e. TEMP" — TEM alone moves EP, but the RETURN needs a cheap entry.
+    # P/E <= 20x is the study's own indicative number: of its 54 Hockey-Stick Return companies the
+    # median 2013 entry P/E was 12x, 70% were <= 20x, and the sub-20 buckets returned 35-36% CAGR
+    # vs 28% above it (Exhibits 20-21). Gating here and NOT on the ep_hockey_stick column keeps
+    # that column (and ep_power_curve / the Discovery filter) a pure fundamentals signal.
     fw_ep_hockey_stick = (
-        df.get("ep_hockey_stick", pd.Series(0, index=df.index)).fillna(0) == 1
+        (df.get("ep_hockey_stick", pd.Series(0, index=df.index)).fillna(0) == 1) &
+        (df.get("pe", pd.Series(np.nan, index=df.index)).fillna(9999.0) <= 20.0)
     )
 
     # ── Framework 31: fw_bruised_bb_29 — Bruised Blue Chip WCS 29 (Large-Cap Edition, 2024) ──
@@ -3161,7 +3192,9 @@ def run_full_scoring(
             (df["roce"].fillna(0) >= 15.0),                    # 13th WCS: still high NOW (not eroding)
             (df["roce_med_10y"].fillna(0) >= 12.0) &
             (df["fcf_to_ocf_velocity"].fillna(0) < 0.60),
-            (df["roce_med_10y"].fillna(0) < 12.0),
+            # notna guard: roce_med_10y.fillna(0) sentenced 16 rows with NO reported history to
+            # GRUESOME — and its 50% quality haircut — purely for missing data. They fall to GOOD.
+            (df["roce_med_10y"].notna() & (df["roce_med_10y"] < 12.0)),
         ],
         ["🏆 GREAT", "👍 GOOD", "💀 GRUESOME"],
         default="👍 GOOD"
