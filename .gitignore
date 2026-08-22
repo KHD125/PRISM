@@ -53,3 +53,8 @@ audit/
 # break every public clone. Ignored IN PLACE — pytest still collects it locally (count stays
 # 1693); it just can never leak into the code-only public repo. (paired with tools/ above)
 tests/test_snapshot_tool.py
+
+# WAVE 3.0 lives in alpha/ as its OWN standalone git repo (github.com/KHD125/WAVE-3.0).
+# PRISM must never track it — fully separate systems by owner decision (2026-08-23).
+alpha/
+Wave (2.0)/
