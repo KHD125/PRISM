@@ -55,7 +55,13 @@ def scored_df() -> pd.DataFrame:
 
 
 def _render_tearsheet_app():
-    """Mini-app executed by AppTest: renders every major tearsheet module for one stock."""
+    """Mini-app executed by AppTest: renders EVERY public tearsheet module for one stock.
+
+    Completeness is enforced by test_every_public_render_function_is_smoke_covered — 13 of the 26
+    public render_* functions had no smoke coverage at all until 2026-08-23 (the radars, the verdict
+    scorecard, the raw-signals table, the Schilit shield). They were verified clean at that point by
+    a live sweep over 179 adversarial rows; this keeps them that way.
+    """
     import streamlit as st
     from ui.ui_tearsheet import (
         render_stock_hero, render_score_strip, render_sell_alerts_panel,
@@ -63,28 +69,53 @@ def _render_tearsheet_app():
         render_mauboussin_radar, render_valuation_inversion_and_sizing_cockpit,
         render_canslim_radar, render_sepa_radar, render_marks_radar,
         render_mosl_wealth_matrix, render_sector_peer_strip,
+        render_bruised_blue_chip_badge, render_dorsey_radar, render_ep_power_curve_module,
+        render_fisher_module, render_lynch_radar, render_malik_radar,
+        render_moat_growth_matrix, render_multitrillioncap_card, render_outsider_radar,
+        render_qglp_radar, render_raw_signals, render_schilit_shield, render_verdict_scorecard,
     )
     stock = st.session_state["stock_row"]
     render_stock_hero(stock)
     render_score_strip(stock)
+    render_verdict_scorecard(stock)
     render_sell_alerts_panel(stock)
     render_sector_peer_strip(stock)
     render_financial_insights(stock)
     render_forensic_perimeter(stock)
+    render_schilit_shield(stock)
     render_guru_frameworks(stock)
+    render_fisher_module(stock)
     render_mauboussin_radar(stock)
     render_valuation_inversion_and_sizing_cockpit(stock)
     render_canslim_radar(stock)
     render_sepa_radar(stock)
     render_marks_radar(stock)
+    render_dorsey_radar(stock)
+    render_lynch_radar(stock)
+    render_malik_radar(stock)
+    render_outsider_radar(stock)
+    render_qglp_radar(stock)
     render_mosl_wealth_matrix(stock)
+    render_ep_power_curve_module(stock)
+    render_bruised_blue_chip_badge(stock)
+    render_multitrillioncap_card(stock)
+    render_raw_signals(stock)
+    # universe-level panel — takes the FRAME, not a row (a past sweep called it with a Series
+    # and got 'numpy.float64 has no attribute fillna'; the signature is the contract).
+    render_moat_growth_matrix(st.session_state["universe_df"], highlight_stock=stock.get("name"))
 
 
-def _run_tearsheet_for(stock: pd.Series):
+def _run_tearsheet_for(stock: pd.Series, universe: pd.DataFrame = None):
+    """Render the whole tearsheet for one stock. `universe` feeds the frame-level panel
+    (render_moat_growth_matrix); it defaults to the single row so callers that only care about
+    per-stock panels stay unchanged."""
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_function(_render_tearsheet_app)
     at.session_state["stock_row"] = stock
-    at.run(timeout=60)
+    at.session_state["universe_df"] = (
+        stock.to_frame().T if universe is None else universe
+    )
+    at.run(timeout=90)
     return at
 
 
@@ -93,14 +124,41 @@ def _all_rendered_text(at) -> str:
     return " ".join(str(md.value) for md in at.markdown)
 
 
+def test_every_public_render_function_is_smoke_covered():
+    """No render path may exist without a smoke test. 13 of 26 public render_* functions were
+    uncovered until 2026-08-23 — every radar, the verdict scorecard, the raw-signals table — so a
+    crash in any of them would have reached the user with the suite fully green. This is a pure
+    source-introspection check: it needs no data and so runs even on a code-only checkout."""
+    import ast
+    import inspect
+    import textwrap
+
+    import ui.ui_tearsheet as ts
+
+    public = {n for n in dir(ts)
+              if n.startswith("render_") and callable(getattr(ts, n))}
+    # Collect ACTUAL call sites via AST. A substring check would pass on the import list alone —
+    # verified by mutation: deleting `render_dorsey_radar(stock)` left the name in the `from ...
+    # import (...)` block and the substring version stayed green. Imports are not ast.Call nodes.
+    tree = ast.parse(textwrap.dedent(inspect.getsource(_render_tearsheet_app)))
+    called = {n.func.id for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    missing = sorted(public - called)
+    assert not missing, (
+        f"{len(missing)} public tearsheet render function(s) have no smoke coverage: {missing}. "
+        "Add each to _render_tearsheet_app (check its signature — the frame-level panels take the "
+        "DataFrame, not a row)."
+    )
+
+
 def test_tearsheet_renders_top_stock_without_exception(scored_df):
-    at = _run_tearsheet_for(scored_df.iloc[0])
+    at = _run_tearsheet_for(scored_df.iloc[0], scored_df)
     assert not at.exception, f"Tearsheet raised: {[str(e.value) for e in at.exception]}"
 
 
 def test_tearsheet_renders_worst_stock_without_exception(scored_df):
     """Bottom-ranked stock: maximum missing data / fired flags — the hostile path."""
-    at = _run_tearsheet_for(scored_df.iloc[-1])
+    at = _run_tearsheet_for(scored_df.iloc[-1], scored_df)
     assert not at.exception, f"Tearsheet raised: {[str(e.value) for e in at.exception]}"
 
 
@@ -114,7 +172,7 @@ def test_tearsheet_renders_loss_maker_without_exception(scored_df):
         stock["pe"] = np.nan
     else:
         stock = loss_makers.iloc[0]
-    at = _run_tearsheet_for(stock)
+    at = _run_tearsheet_for(stock, scored_df)
     assert not at.exception, f"Tearsheet raised: {[str(e.value) for e in at.exception]}"
 
 
