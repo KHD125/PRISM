@@ -366,22 +366,16 @@ class TestFrameworksPassedWiring:
         )
 
     def test_fisher_scalability_before_schilit(self):
-        """Fisher Scalability must appear before Financial Shenanigans in fw_str."""
+        """Fisher Scalability must appear before Schilit Clean in fw_str."""
         src = _src()
         fisher_pos = src.find('"Fisher Scalability|"')
-        schilit_pos = src.find('"Financial Shenanigans|"')
+        schilit_pos = src.find('"Schilit Clean|"')
         assert fisher_pos != -1, '"Fisher Scalability|" not found in fw_str'
-        assert schilit_pos != -1, '"Financial Shenanigans|" not found in fw_str'
+        assert schilit_pos != -1, '"Schilit Clean|" not found in fw_str'
         assert fisher_pos < schilit_pos, (
-            "Fisher Scalability must appear before Financial Shenanigans in fw_str builder"
+            "Fisher Scalability must appear before Schilit Clean in fw_str builder"
         )
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PART 7 — fisher_score structure (0-4 composite)
-# ═══════════════════════════════════════════════════════════════════════════
-
-class TestFisherScoreStructure:
     def test_fisher_score_sums_four_components(self):
         """fisher_score must sum exactly 4 sub-gate boolean casts."""
         block = _fisher_block(_src())

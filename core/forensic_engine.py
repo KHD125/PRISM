@@ -638,8 +638,13 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     #   Used by: fw_diamond (requires == 0), fw_dhandho (requires == 0), forensic_score column.
     # forensic_label (text): WCS 24 hard-gate classification using 4 specific conditions:
     #   CFO/PAT ≥ 80% + pledge < 10% + no dilution + zero red flags → "🟢 Clean"
-    #   Any one fails → "🚨 Sharp Practices Detected"
-    #   A stock CAN have forensic_score=95 (1 flag) but label="🚨 Sharp Practices Detected".
+    #   Any one fails → "⚠️ Integrity Gates Open"
+    #   A stock CAN have forensic_score=95 (1 flag) but label="⚠️ Integrity Gates Open".
+    #   RENAMED 2026-08-22 (was "🚨 Sharp Practices Detected"): the band fires for ~98.6% of the
+    #   universe — any single flag of 28 fails it — so borrowing the 24th study's term for actual
+    #   malpractice patterns was a cry-wolf accusation on decent companies (Sarda: Piotroski 8,
+    #   Schilit pass, CFO/PAT 163%). The label now states what it IS. The hero's graded
+    #   _forensic_status keeps "Sharp Practices" for its SEVERE band only (score<60 / 8+ flags).
     #   This is intentional: the label is a hard binary for the SQGLP integrity gate.
     # ──────────────────────────────────────────────────────────────
 
@@ -653,7 +658,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     no_red_flags  = (df["red_flag_count"] == 0)
 
     integrity_pass = cfo_pat_valid & pledge_valid & no_dilution & no_red_flags
-    df["forensic_label"] = np.where(integrity_pass, "🟢 Clean", "🚨 Sharp Practices Detected")
+    df["forensic_label"] = np.where(integrity_pass, "🟢 Clean", "⚠️ Integrity Gates Open")
 
     # Human-readable flag list
     flag_descriptions = {
@@ -703,7 +708,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     print(f"   High Risk (5+): {(df['red_flag_count'] >= 5).sum()}")
     print(f"🛡️ WCS 24 Forensic Label Distribution:")
     print(f"   🟢 Clean: {(df['forensic_label'] == '🟢 Clean').sum()}")
-    print(f"   🚨 Sharp Practices Detected: {(df['forensic_label'] == '🚨 Sharp Practices Detected').sum()}")
+    print(f"   ⚠️ Integrity Gates Open: {(df['forensic_label'] == '⚠️ Integrity Gates Open').sum()}")
 
     return df
 

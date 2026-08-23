@@ -281,7 +281,7 @@ class TestSchilitSpecLedger:
         assert val == 70.0, f"Expected 70.0, got {val}"
 
     def test_spec_framework_label(self, spec):
-        assert spec["_meta"]["framework_label"] == "Financial Shenanigans"
+        assert spec["_meta"]["framework_label"] == "Schilit Clean"
 
     def test_spec_all_checker_deductions_match_global(self, spec):
         """Every checker's deduction_points must equal the global per_checker_deduction."""
@@ -1285,11 +1285,11 @@ class TestSchilitPipelineIntegration:
         assert "fw_schilit" in se_source, \
             "fw_schilit not defined in scoring_engine.py"
 
-    def test_financial_shenanigans_label_in_fw_str(self, se_source):
-        """'Financial Shenanigans' string must appear in the fw_str construction."""
-        assert "Financial Shenanigans" in se_source, \
-            "'Financial Shenanigans' label not in fw_str in scoring_engine.py"
-
+    def test_schilit_clean_label_in_fw_str(self, se_source):
+        """'Schilit Clean' pill must appear in fw_str (renamed 2026-08-22: the old token
+        'Financial Shenanigans' named the DISEASE the screen detects while shown on stocks
+        that PASS it — beside the forensic label it read as an accusation)."""
+        assert "Schilit Clean" in se_source,             "'Schilit Clean' label not in fw_str in scoring_engine.py"
     def test_fw_schilit_uses_schilit_pass_column(self, se_source):
         """fw_schilit must read from schilit_pass column."""
         assert 'schilit_pass' in se_source, \
@@ -1297,9 +1297,7 @@ class TestSchilitPipelineIntegration:
 
     def test_fw_str_includes_schilit_in_pipe_format(self, se_source):
         """The fw_str must have the pipe-separated label format."""
-        assert '"Financial Shenanigans|"' in se_source or \
-               "'Financial Shenanigans|'" in se_source, \
-            "fw_str does not include 'Financial Shenanigans|' pipe-format label"
+        assert '"Schilit Clean|"' in se_source,             "fw_str does not include 'Schilit Clean|' pipe-format label"
 
     def test_no_forensic_guard_block_in_run_full_scoring(self, se_source):
         """SINGLE-PASS CONTRACT: the legacy forensic guard must stay removed.

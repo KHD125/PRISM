@@ -112,7 +112,7 @@ def test_S6_max_density_35_frameworks():
         "MOSL Wealth Creator", "Economic Moat", "Blue Chip Quality",
         "SQGLP Century Stock", "CAP-GAP Compounder", "Consistent in Volatile",
         "EP Hockey Stick", "Bruised Blue Chip 29", "Multi-Trillion Cap",
-        "Fisher Scalability", "Financial Shenanigans", "Marks Cycle Shield",
+        "Fisher Scalability", "Schilit Clean", "Marks Cycle Shield",
     ]
     cell = ", ".join(_ALL_35)
     df = _df(cell)
@@ -222,7 +222,7 @@ def test_F10_2108_row_simulation():
         "MOSL Wealth Creator", "Economic Moat", "Blue Chip Quality",
         "SQGLP Century Stock", "CAP-GAP Compounder", "Consistent in Volatile",
         "EP Hockey Stick", "Bruised Blue Chip 29", "Multi-Trillion Cap",
-        "Fisher Scalability", "Financial Shenanigans", "Marks Cycle Shield",
+        "Fisher Scalability", "Schilit Clean", "Marks Cycle Shield",
         "Expectations Matrix",
     ]
     N = 2108

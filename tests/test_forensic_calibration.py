@@ -120,3 +120,15 @@ def test_healthy_psu_not_flagged():
     """PSU earning ABOVE cost of equity: no value destruction, regardless of CWIP."""
     out = _psu_frame(roce=20.0)   # spread = +8
     assert (out["psu_value_destruction_flag"] == 0).all()
+
+
+def test_forensic_label_language_is_honest():
+    """The negative band fires for ~98.6% of the universe (any 1 of 28 flags fails the 4-gate
+    purity screen), so its wording must state what it IS — integrity gates open — not accuse
+    'Sharp Practices Detected' (the 24th study's term for actual malpractice patterns; the hero's
+    graded _forensic_status keeps that term for its SEVERE band only, score<60 / 8+ flags)."""
+    import io, os
+    src = io.open(os.path.join(os.path.dirname(__file__), "..", "core", "forensic_engine.py"),
+                  encoding="utf-8").read()
+    assert 'np.where(integrity_pass, "🟢 Clean", "⚠️ Integrity Gates Open")' in src
+    assert 'np.where(integrity_pass, "🟢 Clean", "🚨' not in src, "the cry-wolf label wording is back"

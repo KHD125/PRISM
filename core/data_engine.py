@@ -2979,32 +2979,35 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #   → ROCE > cost of capital. Use COST_OF_EQUITY (12%) as the system-wide hurdle (consistent with
     #   economic_profit). Prior code used a hardcoded 10% — BELOW the 12% hurdle, so an 11%-ROCE
     #   company earning below its cost of capital (no real moat) was wrongly flagged. Now corrected.
-    # CAP metric/hurdle: RoE ≥ 15 per the study's verbatim definition — see the CAP block below.
     # GAP (§5.1, VERBATIM): "Growth Advantage Period (GAP) is the time during which a company grows its
     #   profits at a faster rate than that of the benchmark indices." The book's GAP chart (p.19) labels
     #   the "15% threshold (benchmark growth rate)". Prior code used 12%/8% — below the study's 15% bar.
     # The study's whole thesis is LONGEVITY (duration), so we also expose year-count proxies.
     # "Moat without growth underperforms; growth without moat ends soon." — MOSL 22nd Study.
 
-    # CAP — BOOK-EXACT (22nd WCS, verbatim box p.8/§3): "CAP is RoE > Cost of Equity", and the
-    # study states its own hurdle: "We deem Cost of Equity in India to be about 15%". Two prior
-    # deviations corrected 2026-08-22: the engine used ROCE (the book says RoE — and RoE includes
-    # banks naturally, where ROCE structurally punishes them) and the system-wide 12% hurdle
-    # (the study's is 15). Study-specific hurdle follows the emerging_vc_flag precedent (18th
-    # study's 15% there, while economic_profit keeps the system 12). Effect: cap_extended
-    # 39.6% → 17.6%, fw_cap_gap 9.0% → 4.3% — a genuinely elite longevity badge.
-    # CAP duration proxy (0-5): how many RoE timeframes clear the study's 15% hurdle.
-    _cap_tfs = ["roe_med_10y", "roe_med_5y", "roe_med_3y", "roe_1yb", "roe"]
+    # CAP — deliberately ROCE-based (REVERTED to this 2026-08-22 after a one-day RoE detour).
+    # The 22nd WCS box says "CAP is RoE > Cost of Equity" (CoE 15) — but that is the study's
+    # SIMPLIFICATION of the underlying concept it cites (Mauboussin): returns on INVESTED CAPITAL
+    # above their cost, which is leverage-immune. The live A/B settled it: the RoE-15 "book-exact"
+    # variant expelled 104 pill-holders of which 65 were UNLEVERED quality (D/E<0.3, ROCE ~15,
+    # RoE dragged to ~12.8 by cash — the 13th study's own Adjusted-RoE logic names this drag), and
+    # admitted 4 names of which 3 were debt-juiced RoE (Supreme Infrastructure among them); zero
+    # financials actually benefited. ROCE keeps the moat test honest against leverage.
+    # The RoE-verbatim variant + the 15-vs-12 hurdle question are REGISTERED in
+    # docs/known-issues.md as a competing cohort for tools/validate.py — evidence, not
+    # re-litigation, will move this next. Contract: tests/test_mosl_framework_gates.py.
+    # CAP duration proxy (0-5): how many ROCE timeframes clear the cost-of-capital hurdle.
+    _cap_tfs = ["roce_med_10y", "roce_med_7y", "roce_med_5y", "roce_1yb", "roce"]
     _cap_years = pd.Series(0, index=df.index)
     for _c in _cap_tfs:
         if _c in df.columns:
-            _cap_years = _cap_years + (df[_c].fillna(0) >= 15.0).astype(int)
+            _cap_years = _cap_years + (df[_c].fillna(0) >= COST_OF_EQUITY).astype(int)
     df["cap_years_proxy"] = _cap_years
-    # Extended CAP: long-run (10Y), recent (5Y) and current RoE all above the study's CoE.
+    # Extended CAP: long-run (10Y), recent (5Y) and current ROCE all above cost of capital.
     df["cap_extended_flag"] = (
-        (df["roe_med_10y"].fillna(0) >= 15.0) &
-        (df["roe_med_5y"].fillna(0)  >= 15.0) &
-        (df["roe"].fillna(0)         >= 15.0)
+        (df["roce_med_10y"].fillna(0) >= COST_OF_EQUITY) &
+        (df["roce_med_5y"].fillna(0)  >= COST_OF_EQUITY) &
+        (df["roce"].fillna(0)         >= COST_OF_EQUITY)
     ).astype(int)
 
     # GAP duration proxy (0-3): how many PAT-growth windows clear the 15% benchmark rate.

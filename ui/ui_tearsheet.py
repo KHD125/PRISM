@@ -655,7 +655,7 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
 def _forensic_status(forensic_score: float, flag_count: int):
     """Selective forensic verdict from the cascade's OWN metrics (forensic_score + red_flag_count).
 
-    NOT the forensic_label column — that reads "🚨 Sharp Practices Detected" for ~98.6% of the
+    NOT the forensic_label column — that fires its negative band for ~98.6% of the
     universe (only 29/2107 are "🟢 Clean"), so it cried wolf on clean Crown Jewels and CONTRADICTED
     the Schilit shield's "Clean Audit". Census 2026-06-15 on the 2107-stock universe:
     🔴 Sharp 474 (22%) · 🟡 Watch 879 (42%) · 🟢 Clean 754 (36%). Returns (text, color, is_clean).
@@ -840,7 +840,7 @@ _FW_IDEA = {
     "Wide Moat":              "Dorsey's structural, durable moats — high returns on capital with a moat that is wide and still holding.",
     "Outsider CEO":           "Thorndike's elite capital allocators — buybacks without dilution, strong cash generation, debt discipline.",
     "Expectations Matrix":    "Mauboussin's expectations gap — the market is implying less than the business can likely deliver.",
-    "Financial Shenanigans":  "Schilit's manipulation screen — the accounts clear the cooked-books checkers.",
+    "Schilit Clean":          "Passes Schilit's Financial Shenanigans screen — at most 2 of the 4 accounting-manipulation checkers fire.",
     "Marks Cycle Shield":     "Howard Marks' cycle posture — risk/reward is favourable, not late-cycle euphoric.",
     # 🎣 Fisher & Mayer
     "Fisher Quality":         "Fisher's 15 qualitative points on a truly excellent business, run as automated quantitative proxies.",
@@ -893,7 +893,7 @@ _FW_META = {
         "Wide Moat":               (COLORS["purple"], "🌊", "Pat Dorsey: structural moat with ROCE expanding"),
         "Outsider CEO":            (COLORS["orange"], "🎯", "Thorndike: buybacks + decentralised capital allocation"),
         "Expectations Matrix":     (COLORS["purple"], "🔮", "Mauboussin PIE: implied CAP realistic + treadmill safe + operating leverage intact"),
-        "Financial Shenanigans":   (COLORS["red"],    "🕵️", "Schilit clean bill — passes accounting-manipulation forensic perimeter"),
+        "Schilit Clean":           (COLORS["red"],    "🕵️", "Passes Schilit's Financial Shenanigans screen — accounting-manipulation perimeter clear"),
         "Marks Cycle Shield":      (COLORS["cyan"],   "🛡️", "Howard Marks: not at cyclical-peak margins; mean-reversion risk low"),
         # ── 🎣 Fisher dual-engine + Mayer 100-Bagger (not in the 34-row matrix; kept unique) ──
         "Fisher Quality":          (COLORS["green"],  "🎣", "Phil Fisher 15-point scuttlebutt quality check"),
@@ -1480,7 +1480,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     mcat       = _esc(stock.get("market_category", "") or "")
     mg_quad    = _esc(stock.get("moat_growth_quad", "") or "")
     # Selective forensic badge (forensic_score + red_flag_count) — the forensic_label column reads
-    # "Sharp Practices Detected" for 98.6% of the universe, which contradicted the BUY/Clean-Audit
+    # its negative band for 98.6% of the universe, which contradicted the BUY/Clean-Audit
     # verdict in the hero. See _forensic_status() (same logic powers the Perimeter + Fisher P15).
     f_txt, f_clr, _ = _forensic_status(_g(stock, "forensic_score", 100),
                                        int(_g(stock, "red_flag_count", 0)))

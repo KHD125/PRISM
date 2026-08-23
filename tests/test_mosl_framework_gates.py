@@ -117,34 +117,45 @@ def test_cap_and_gap_extended_on_the_full_profile():
     assert r["cap_extended_flag"] == 1 and r["gap_extended_flag"] == 1
 
 
-def test_cap_is_defined_on_roe_not_roce():
-    """22nd WCS, verbatim box: "CAP is RoE > Cost of Equity". A bank-like profile —
-    strong RoE windows, ROCE low/meaningless — must pass CAP (the study's own framing
-    includes financials; ROCE structurally punishes them)."""
-    r = _one(**{**_PASS_ALL, "roce": [6.0], "roce_1yb": [6.0],
-                "roce_med_5y": [6.0], "roce_med_7y": [6.0], "roce_med_10y": [6.0]})
+def test_cap_is_defined_on_roce_leverage_immune():
+    """CAP deliberately uses ROCE, not the 22nd's RoE simplification — REVERTED 2026-08-22
+    after a live A/B showed the RoE-15 'book-exact' variant expelled 65 UNLEVERED quality
+    compounders (D/E<0.3, ROCE~15, RoE dragged to ~12.8 by cash) while admitting 4 names,
+    3 of them debt-juiced (Supreme Infrastructure among them). The underlying CAP concept
+    (Mauboussin, cited by the study itself) is return on INVESTED capital > its cost —
+    leverage-immune by design. The RoE-verbatim variant is registered in known-issues as
+    the competing cohort for tools/validate.py. A debt-juiced RoE profile must NOT pass:"""
+    r = _one(**{**_PASS_ALL, "roce": [10.0], "roce_1yb": [10.0], "roce_med_5y": [10.0],
+                "roce_med_7y": [10.0], "roce_med_10y": [10.0]})   # RoE windows stay 25
+    assert r["cap_extended_flag"] == 0
+
+
+def test_cap_unlevered_quality_is_not_expelled():
+    """The 65-name cohort: debt-free, ROCE clears the hurdle, cash-dragged RoE below 15."""
+    r = _one(**{**_PASS_ALL, "roe": [12.8], "roe_1yb": [12.8], "roe_med_3y": [12.8],
+                "roe_med_5y": [12.8], "roe_med_10y": [12.8], "debt_to_equity": [0.1]})
     assert r["cap_extended_flag"] == 1
 
 
-def test_cap_hurdle_is_the_studys_15_not_the_system_12():
-    """22nd WCS: "We deem Cost of Equity in India to be about 15%" — RoE at 13.5
-    (above the system-wide 12) must still FAIL the study's own bar. Same precedent as
-    emerging_vc_flag, which uses the 18th study's 15% while economic_profit uses 12."""
-    r = _one(**{**_PASS_ALL, "roe": [13.5], "roe_1yb": [13.5], "roe_med_3y": [13.5],
-                "roe_med_5y": [13.5], "roe_med_10y": [13.5]})
+def test_cap_hurdle_is_the_system_cost_of_equity():
+    """ROCE at CoE−1 across all windows fails; the 15-vs-12 hurdle question rides with
+    the RoE-vs-ROCE A/B in known-issues."""
+    below = COST_OF_EQUITY - 1.0
+    r = _one(**{**_PASS_ALL, "roce": [below], "roce_1yb": [below], "roce_med_5y": [below],
+                "roce_med_7y": [below], "roce_med_10y": [below]})
     assert r["cap_extended_flag"] == 0
     assert r["cap_years_proxy"] == 0
+
+
+def test_cap_missing_roce_history_counts_zero_years_not_five():
+    r = _one(**{**_PASS_ALL, "roce": [np.nan], "roce_1yb": [np.nan], "roce_med_5y": [np.nan],
+                "roce_med_7y": [np.nan], "roce_med_10y": [np.nan]})
+    assert r["cap_years_proxy"] == 0 and r["cap_extended_flag"] == 0
 
 
 def test_gap_requires_all_three_growth_windows():
     r = _one(**{**_PASS_ALL, "pat_gr_10y": [10.0]})     # long window below 15
     assert r["gap_extended_flag"] == 0
-
-
-def test_cap_missing_roe_history_counts_zero_years_not_five():
-    r = _one(**{**_PASS_ALL, "roe": [np.nan], "roe_1yb": [np.nan], "roe_med_3y": [np.nan],
-                "roe_med_5y": [np.nan], "roe_med_10y": [np.nan]})
-    assert r["cap_years_proxy"] == 0 and r["cap_extended_flag"] == 0
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -223,3 +234,35 @@ def test_quality_leg_promoter_adjustments_still_apply():
     assert df["qglp_quality"].iloc[9] <= 92.0     # top stock docked ~10 for rising pledge
     df2 = _qglp_frame(promoter_buying=[0] * 9 + [1])
     assert df2["qglp_quality"].iloc[9] >= df["qglp_quality"].iloc[9]
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 13th WCS — the book-exact Great/Gruesome siblings (Annexure 2, p.31)
+# ══════════════════════════════════════════════════════════════════════
+# Verbatim: GREAT = (a) 10-yr average Adjusted RoE > 25%, (b) Adjusted RoE not less
+# than 15% in ANY of the last 10 years, (c) rising trend of RoEs. GRUESOME = 10-yr
+# average Adjusted RoE < 10%. GOOD = neither. These data_engine flags are the
+# book-faithful implementation (RoE-based, 25 / 18-floor-proxy / rising, < 10) and
+# are the MEASURING STICK for the queued corporate_class basis question (the scoring
+# taxonomy deviates to ROCE 25/12 — deliberate, documented, evidence-gated in
+# docs/known-issues.md). They must not drift while they wait to judge it.
+
+def test_great_screen_needs_the_25_average():
+    r = _one(**{**_PASS_ALL, "roe_med_10y": [22.0]})
+    assert int(r["great_company_screen"]) == 0
+
+
+def test_great_screen_needs_the_rising_trend():
+    """Criterion (c) verbatim — a 30% RoE with a falling trend is not Great."""
+    high_flat = _one(**{**_PASS_ALL, "roe_med_10y": [30.0], "roe": [28.0],
+                        "roe_med_5y": [32.0], "roe_med_3y": [34.0]})   # decaying ladder
+    assert int(high_flat["great_company_screen"]) == 0
+
+
+def test_gruesome_is_the_books_roe_under_10():
+    """The flag is RoE-based at the book's 10 — NOT ROCE at 12 (that deviation lives
+    only in corporate_class, documented). Pins the census annotation too."""
+    r = _one(**{**_PASS_ALL, "roe_med_10y": [9.0]})
+    assert int(r["gruesome_flag"]) == 1
+    r2 = _one(**{**_PASS_ALL, "roe_med_10y": [11.0]})
+    assert int(r2["gruesome_flag"]) == 0

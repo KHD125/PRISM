@@ -302,7 +302,7 @@ CONCEPT_REFERENCE = {
         ("🌊 Wide Moat", "Pat Dorsey — structural, durable moats: high returns (ROCE ≥20% both windows), a healthy FCF yield ≥5%, and a moat that isn't eroding. Wide and holding."),
         ("🎯 Outsider CEO", "Thorndike's 'Outsiders' — elite capital allocators: disciplined buybacks without dilution, strong cash generation, debt discipline. Compounds per-share value."),
         ("🔮 Expectations Matrix", "Mauboussin — the price embeds expectations: judge the growth/returns the price implies versus what the business can deliver. A pass = the market implies less than the business can."),
-        ("🕵️ Financial Shenanigans", "Howard Schilit — avoid cooked books: the stock clears the four-checker accounting-manipulation screen (at most two checkers firing)."),
+        ("🕵️ Schilit Clean", "Howard Schilit's Financial Shenanigans screen, passed — the stock clears the four-checker accounting-manipulation perimeter (at most two checkers firing)."),
         ("🛡️ Marks Cycle Shield", "Howard Marks — respect the cycle: price-vs-value and cycle position are favourable, not late-cycle euphoric. A defensive overlay."),
     ],
     "🎣 Frameworks — Fisher & Mayer": [
@@ -398,7 +398,7 @@ CONCEPT_REFERENCE = {
     # Schilit shield pass/fail banner (schilit_pass, score ≥ 70). Binary verdicts shown on the UI. ──
     "🕵️ Forensic Integrity Verdict": [
         ("🟢 Clean", "The forensic integrity verdict 'Clean' — the stock clears a strict four-part hard gate: operating cash flow ≥ 80% of profit, promoter pledge under 10%, no share dilution, AND zero red flags. The binary integrity stamp the SQGLP gate relies on."),
-        ("🚨 Sharp Practices Detected", "The forensic integrity verdict when a stock FAILS any one of those four conditions. Note: a stock can have a high forensic SCORE (few flags) yet still be flagged here — the label is a strict binary gate, not a gradient, so treat it as a hard caution."),
+        ("⚠️ Integrity Gates Open", "The forensic integrity verdict when any one of those four purity conditions is not met — most of the universe sits here, since a single red flag of 28 opens a gate. It means 'not surgically clean', NOT detected manipulation: a stock can hold a high forensic score and a Schilit pass and still show this. Treat it as a prompt to read WHICH flags fired, not as an accusation."),
         ("Perimeter Secure (Schilit)", "The Schilit Anomaly Shield's PASS state — at most two of the four Schilit checkers fired (a Schilit score of 70 or more). The accounting clears the manipulation screen."),
         ("Shenanigan Alert (Schilit)", "The Schilit Anomaly Shield's FAIL state — three or more of the four checkers fired (Schilit score below 70). The accounting raises manipulation concerns; investigate before trusting the reported numbers."),
     ],

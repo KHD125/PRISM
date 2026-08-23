@@ -3018,7 +3018,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         np.where(fw_bruised_bb_29,          "Bruised Blue Chip 29|",       "") +
         np.where(fw_multitrillioncap,       "Multi-Trillion Cap|",         "") +
         np.where(fw_fisher_scalability,    "Fisher Scalability|",          "") +
-        np.where(fw_schilit,               "Financial Shenanigans|",       "") +
+        np.where(fw_schilit,               "Schilit Clean|",               "") +
         np.where(fw_marks_cycle,           "Marks Cycle Shield|",           "") +
         np.where(fw_mauboussin,            "Expectations Matrix|",          "") +
         np.where(fw_mosl_100x,             "100x Candidate|",               "")
@@ -3192,6 +3192,16 @@ def run_full_scoring(
     #   GRUESOME = 10yr-avg Adjusted RoE < 10%;   GOOD = neither.
     #   (Adjusted RoE = PAT less 7% of cash, over Net Worth less excess cash — p.31.)
     # data_engine's great_company_screen / gruesome_flag follow this faithfully (ROE 25/10).
+    # ── 13th-WCS closing-sweep verdict (2026-08-22, Annexure 2 p.31 re-read verbatim) ──
+    # The book's screen: GREAT = 10-yr avg Adjusted RoE > 25 AND >= 15 EVERY year AND rising;
+    # GRUESOME = 10-yr avg Adjusted RoE < 10. This taxonomy deviates on BASIS (ROCE 25/12 + FCF
+    # gate) — a DELIBERATE, reasoned deviation (leverage-immunity; see below), unlike the silent
+    # drifts fixed elsewhere. Book-exact measured live: 342 stocks change class (GREAT 110→14,
+    # matching the book's "only a few Great companies"; 134 escape / 102 newly enter the 50%
+    # haircut; 40 movers inside the top-100 ranks). Because it MOVES SCORES on a contested basis,
+    # the unification is EVIDENCE-GATED, registered as the validation flywheel's first instrumented
+    # decision — docs/known-issues.md has the delta table and the exact test. The book-exact
+    # siblings are pinned by tests/test_mosl_framework_gates.py so the measuring stick cannot drift.
     # corporate_class below uses ROCE not RoE (ROCE is leverage-immune — consistent with the book's
     # "low capital intensity, very high RoE" Great profile, p.28) + an asset-light FCF-velocity gate
     # (the book's qualitative Great trait) + a CURRENT-ROCE floor so an eroded moat (Crompton: 10Y med
