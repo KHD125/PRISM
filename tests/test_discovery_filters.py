@@ -251,6 +251,78 @@ def test_first_zero_filter_names_first_culprit():
     assert log == ["The Culprit"], "an already-empty frame must not overwrite the culprit"
 
 
+def test_zero_culprit_reaches_the_main_panel_empty_state():
+    """Two places report "no stocks match": the sidebar funnel and the Discovery main-panel card.
+    They must name the SAME culprit — a funnel that says "PEG Zone removed the last stocks" beside
+    a main panel that says only "loosen one" makes the user hunt for what the code already knows.
+
+    The sidebar publishes the culprit on `filt.attrs` (the same channel the pipeline already uses
+    for `detected_market_regime`); app.py's empty branch reads it. Set on `filt` AFTER the .copy(),
+    so this never depends on pandas propagating attrs through an operation — which differs between
+    the local pandas 3 and prod's pandas 2.
+    """
+    disc = _ui_discovery_source()
+    app_src = (_ROOT / "app.py").read_text(encoding="utf-8")
+    assert 'attrs["zero_culprit"]' in disc, \
+        "render_discovery_sidebar must publish the culprit on filt.attrs"
+    assert "zero_culprit" in app_src, \
+        "the Discovery main-panel empty state must read filt.attrs['zero_culprit']"
+    # the publish must happen on `filt` (post-copy), never on the cascade frame `_cf`
+    assert '_cf.attrs["zero_culprit"]' not in disc, \
+        "publish on filt (post-copy), not on _cf — attrs propagation through .copy() is not a contract"
+
+
+def _zero_culprit_app():
+    """Mini-app for AppTest: drives the REAL sidebar over a 2-row synthetic frame (no CSVs needed,
+    fully deterministic) and prints what the caller receives."""
+    import pandas as _pd
+    import streamlit as _st
+
+    from ui.ui_discovery import render_discovery_sidebar
+
+    df = _pd.DataFrame({
+        "name":             ["A", "B"],
+        "sector":           ["X", "X"],
+        "industry":         ["Y", "Y"],
+        "conviction_tier":  [1, 2],
+        "piotroski_fscore": [5, 6],
+        "red_flag_count":   [0, 1],
+        "quality_score":    [10.0, 12.0],
+        "composite_score":  [10.0, 12.0],
+    })
+    filt = render_discovery_sidebar(df)
+    _st.text(f"N={len(filt)}")
+    _st.text(f"CULPRIT={filt.attrs.get('zero_culprit', '<MISSING>')}")
+
+
+def test_sidebar_publishes_the_culprit_through_the_real_widget_machinery():
+    """End-to-end on the ONE link the pure unit tests can't reach: that the culprit survives out of
+    render_discovery_sidebar to the caller, through real Streamlit widgets. Both synthetic rows score
+    10-12, so a Min-Composite of 50 empties the frame and 'Min Score' must be named."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_function(_zero_culprit_app)
+    at.session_state["sb_minscore"] = 50          # above both composites -> guaranteed zero
+    at.run()
+    assert not at.exception, f"sidebar raised: {at.exception}"
+    out = [t.value for t in at.text]
+    assert "N=0" in out, f"filter did not empty the frame: {out}"
+    assert "CULPRIT=Min Score" in out, f"culprit not published to the caller: {out}"
+
+
+def test_no_culprit_published_when_results_remain():
+    """The inverse: with no filter active the frame is full, so the culprit must be EMPTY — never a
+    stale name that would make the main panel accuse an innocent filter."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_function(_zero_culprit_app)
+    at.run()
+    assert not at.exception, f"sidebar raised: {at.exception}"
+    out = [t.value for t in at.text]
+    assert "N=2" in out, f"unfiltered frame should keep both rows: {out}"
+    assert "CULPRIT=" in out, f"culprit key must exist and be empty: {out}"
+
+
 def test_all_filter_sites_route_through_choke_point():
     """Static pin: NO filter application may bypass the _narrow choke point (`_cf = _cf[` == 0),
     and the funnel's zero-state must actually read the culprit log."""

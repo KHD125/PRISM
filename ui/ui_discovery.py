@@ -753,6 +753,12 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     # is just `_cf`. The .copy() is REQUIRED: _cf is `df` itself when nothing is filtered, so the
     # copy guarantees the caller can never mutate the source frame.
     filt = _cf.copy()
+    # Publish the zero-results culprit to the caller so the Discovery main-panel empty state names
+    # the SAME filter this sidebar's funnel does (two disagreeing zero-states make the user hunt for
+    # what the code already knows). `.attrs` is the channel the pipeline already uses for
+    # `detected_market_regime`. Set on `filt` AFTER the .copy() — never rely on pandas propagating
+    # attrs through an operation, which differs between local pandas 3 and prod's pandas 2.
+    filt.attrs["zero_culprit"] = _zero_at[0] if _zero_at else ""
 
     # Applied-filter chips — computed AFTER the cascade so a value pruned by an upper filter can't
     # linger as a stale chip (same end-fill rationale as the funnel). Click ✕ to drop one filter.

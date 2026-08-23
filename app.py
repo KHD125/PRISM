@@ -7,6 +7,8 @@ Dr. Malik + Raamdeo Agrawal + O'Neil + Mukherjea + Marks + Fisher + Lynch
 import os
 os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
 
+import html as _html
+
 import streamlit as st
 
 
@@ -584,6 +586,15 @@ with tabs[0]:
     # ── No-match dead-end → actionable empty-state (filters can narrow to zero; the engine and
     # the non-empty path below are untouched — this only ADDS the empty branch) ──
     if _disc_df.empty:
+        # Name the filter that emptied the list — the sidebar cascade records it (the first filter
+        # to take a non-empty frame to zero) and publishes it on filt.attrs. Read from `filt`, not
+        # `_disc_df`: attrs need not survive sort_values, but `filt` is the object it was set on.
+        _culprit = str(filt.attrs.get("zero_culprit", "") or "")
+        _culprit_line = (
+            f'<div style="font-size:0.75rem;color:{COLORS["red"]};margin-top:8px;">'
+            f'⚠️ <strong>{_html.escape(_culprit)}</strong> removed the last stocks — loosen that one first.'
+            f'</div>'
+        ) if _culprit else ""
         st.markdown(
             f'<div style="text-align:center;background:{COLORS["bg_secondary"]};'
             f'border:1px dashed {COLORS["border"]};border-radius:12px;padding:28px 18px;margin-top:6px;">'
@@ -592,7 +603,7 @@ with tabs[0]:
             f'No stocks match these filters</div>'
             f'<div style="font-size:0.72rem;color:{COLORS["text_muted"]};margin-top:4px;">'
             f'Your active filters narrowed all {len(df):,} stocks out. Loosen one — or clear everything '
-            f'and start fresh.</div></div>',
+            f'and start fresh.</div>{_culprit_line}</div>',
             unsafe_allow_html=True,
         )
         _, _ec, _ = st.columns([3, 2, 3])
