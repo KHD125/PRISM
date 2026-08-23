@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import html as _html
-from config import COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS, FRAMEWORK_CATEGORIES
+from config import COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS, FRAMEWORK_CATEGORIES, MASTER_PROFILES
 # Single source of truth for the "?" help chip lives in ui_components (which owns the .ts-help CSS).
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
@@ -2835,6 +2835,145 @@ def render_lynch_radar(stock: pd.Series):
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;'>{_ly_grid}</div>",
         unsafe_allow_html=True,
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# QGLP DEEP-DIVE RADAR — the namesake methodology (Raamdeo Agrawal)
+# ═══════════════════════════════════════════════════════════════
+
+def render_qglp_radar(stock: pd.Series, profile_name: str = "Balanced"):
+    """Deep-dive audit card for QGLP — Quality, Growth, Longevity, reasonable Price
+    (25th WCS: "QGL is the Value component which is then juxtaposed with P").
+
+    PURE DISPLAY over pre-materialized engine columns: the four 0-100 sub-scores
+    (qglp_quality/growth/longevity/price), qglp_score/qglp_pass, the raw gate inputs,
+    and the 19th-WCS SQGLP letter screen. Hard-gate thresholds are read from
+    MASTER_PROFILES[profile_name] — the SAME source compute_qglp_score used — so the
+    card can never drift from the gate (the Fisher module-vs-engine lesson, 7fff308).
+    Missing data renders honest blanks ("—"), never fabricated zeros.
+    """
+    _Q_GOLD = "#d4a017"
+    prof = MASTER_PROFILES.get(profile_name, MASTER_PROFILES["Balanced"])
+    roce_gate  = prof.get("roce_gate", 15.0)
+    growth_gate = prof.get("growth_gate", 15.0)
+    peg_gate   = prof.get("peg_gate", 1.5)
+
+    st.markdown("<div class='sec-head'>👑 QGLP — Raamdeo's Process (Q·G·L·P)</div>",
+                unsafe_allow_html=True)
+
+    q_pass  = int(_g(stock, "qglp_pass", 0)) == 1
+    q_score = stock.get("qglp_score")
+    _score_known = pd.notna(q_score)
+    hdr_color  = _Q_GOLD if q_pass else COLORS["text_muted"]
+    status_msg = "QGLP-COMPLIANT" if q_pass else "Hard Gates Pending"
+    big = f"{float(q_score):.0f}" if _score_known else "—"
+
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,#0d1117 0%,#171204 100%);'
+        f'border:1px solid {COLORS["border"]};border-top:3px solid {hdr_color};'
+        f'border-radius:12px;padding:14px 18px;margin-bottom:12px;">'
+        f'<div style="display:flex;align-items:center;justify-content:space-between;">'
+        f'<div><div style="font-size:0.95rem;font-weight:800;color:#e6edf3;">'
+        f'Raamdeo Agrawal QGLP Compliance Profile</div>'
+        f'<div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">'
+        f'Status: <strong style="color:{hdr_color};">{_esc(status_msg)}</strong>'
+        f' &nbsp;·&nbsp; Profile: <strong style="color:{hdr_color};">{_esc(profile_name)}</strong>'
+        f'</div></div>'
+        f'<div style="text-align:right;">'
+        f'<div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">'
+        f'{big}<span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 100</span></div>'
+        f'<div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;'
+        f'letter-spacing:0.5px;margin-top:2px;">Profile-Weighted QGLP Score</div>'
+        f'</div></div></div>',
+        unsafe_allow_html=True)
+
+    # ── The four legs (0-100 percentile sub-scores; Q-leg at full parity since 2026-08-22) ──
+    _legs = [("Q", "Quality",   "qglp_quality",   "ROCE percentile · promoter conduct"),
+             ("G", "Growth",    "qglp_growth",    "PAT + EPS 5-yr growth percentiles"),
+             ("L", "Longevity", "qglp_longevity", "Decade-RoE consistency percentile"),
+             ("P", "Price",     "qglp_price",     "PEG zone (the final check on QGL)")]
+    _rows = ""
+    for letter, title, col, sub in _legs:
+        v = stock.get(col)
+        known = pd.notna(v)
+        pct   = max(0.0, min(100.0, float(v))) if known else 0.0
+        clr   = (_Q_GOLD if pct >= 70 else COLORS["gold"] if pct >= 40
+                 else COLORS["orange"]) if known else COLORS["text_muted"]
+        disp  = f"{float(v):.0f}" if known else "—"
+        _rows += (
+            f"<div style='display:flex;align-items:center;gap:10px;margin:6px 0;'>"
+            f"<div style='width:22px;font-size:1.05rem;font-weight:900;color:{clr};'>{letter}</div>"
+            f"<div style='width:86px;font-size:0.74rem;font-weight:700;color:#e6edf3;'>{title}</div>"
+            f"<div style='flex:1;height:10px;background:#161b22;border-radius:5px;overflow:hidden;'>"
+            f"<div style='width:{pct:.0f}%;height:100%;background:{clr};'></div></div>"
+            f"<div style='width:34px;text-align:right;font-size:0.85rem;font-weight:800;"
+            f"color:{clr};'>{disp}</div>"
+            f"<div style='width:230px;font-size:0.6rem;color:#8b949e;'>{_esc(sub)}</div>"
+            f"</div>")
+    st.markdown(f"<div style='margin-bottom:12px;'>{_rows}</div>", unsafe_allow_html=True)
+
+    # ── Hard gates: actual vs the ACTIVE profile's thresholds (mirrors qglp_pass exactly) ──
+    _roce = stock.get("roce")
+    _gr   = stock.get("pat_gr_5y")
+    _peg  = stock.get("peg")
+
+    def _gate(label, actual, thr_txt, ok):
+        clr = _Q_GOLD if ok else COLORS["text_muted"]
+        a   = f"{float(actual):.1f}" if pd.notna(actual) else "—"
+        ico = "✅" if ok else "❌"
+        return (f"<div style='background:{clr}12;border:1px solid {clr}40;border-radius:8px;"
+                f"padding:9px 12px;text-align:center;min-width:130px;flex:1;'>"
+                f"<div style='font-size:0.62rem;font-weight:700;color:#8b949e;"
+                f"text-transform:uppercase;'>{_esc(label)}</div>"
+                f"<div style='font-size:1.05rem;font-weight:900;color:{clr};margin-top:2px;'>"
+                f"{a} <span style='font-size:0.66rem;color:#8b949e;font-weight:600;'>"
+                f"{_esc(thr_txt)}</span></div>"
+                f"<div style='font-size:0.9rem;margin-top:2px;'>{ico}</div></div>")
+
+    gates = (
+        _gate("ROCE", _roce, f"vs ≥ {roce_gate:.0f}",
+              bool(pd.notna(_roce) and float(_roce) >= roce_gate)) +
+        _gate("PAT 5Y CAGR", _gr, f"vs ≥ {growth_gate:.0f}",
+              bool(pd.notna(_gr) and float(_gr) >= growth_gate)) +
+        _gate("PEG", _peg, f"vs 0–{peg_gate:.1f}",
+              bool(pd.notna(_peg) and 0.0 <= float(_peg) <= peg_gate))
+    )
+    st.markdown(
+        f"<div style='font-size:0.62rem;font-weight:800;color:#8b949e;text-transform:uppercase;"
+        f"letter-spacing:0.8px;margin:4px 0 6px 0;'>Hard Gates · profile: {_esc(profile_name)}</div>"
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;'>{gates}</div>",
+        unsafe_allow_html=True)
+
+    # ── SQGLP letter strip (19th WCS century-stock variant — same DNA, small-cap 100x form) ──
+    _letters = [("S", "Size",      "sqglp_s", "< ₹5,000 Cr small base"),
+                ("Q", "Quality",   "sqglp_q", "ROCE·RoE ≥ 15 · CFO/PAT ≥ 70"),
+                ("G", "Growth",    "sqglp_g", "PAT ≥ 20 · Rev ≥ 15 (5Y)"),
+                ("L", "Longevity", "sqglp_l", "10-yr growth ≥ 12"),
+                ("P", "Price",     "sqglp_p", "P/E ≤ 15 entry")]
+    _grid = ""
+    for letter, title, col, base in _letters:
+        on  = int(_g(stock, col, 0)) == 1
+        clr = _Q_GOLD if on else COLORS["text_muted"]
+        bg  = "18" if on else "08"
+        ico = "✅" if on else "❌"
+        _grid += (
+            f"<div style='background:{clr}{bg};border:1px solid {clr}40;"
+            f"border-radius:8px;padding:10px;text-align:center;min-width:105px;flex:1;'>"
+            f"<div style='font-size:1.5rem;font-weight:900;color:{clr};line-height:1.1;'>{letter}</div>"
+            f"<div style='font-size:0.66rem;font-weight:700;color:#e6edf3;margin-top:3px;'>{_esc(title)}</div>"
+            f"<div style='font-size:0.56rem;color:#8b949e;margin-top:2px;'>{_esc(base)}</div>"
+            f"<div style='font-size:0.95rem;margin-top:3px;'>{ico}</div></div>")
+    _cent = int(_g(stock, "century_stock_flag", 0)) == 1
+    _sq   = stock.get("sqglp_score")
+    _sq_s = f"{int(_sq)}/5" if pd.notna(_sq) else "—"
+    _cent_s = " · 🐘 Century Candidate" if _cent else ""
+    st.markdown(
+        f"<div style='font-size:0.62rem;font-weight:800;color:#8b949e;text-transform:uppercase;"
+        f"letter-spacing:0.8px;margin:2px 0 6px 0;'>SQGLP Century-Stock Screen (19th WCS) · "
+        f"{_sq_s}{_cent_s}</div>"
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;'>{_grid}</div>",
+        unsafe_allow_html=True)
+
 
 
 # ═══════════════════════════════════════════════════════════════

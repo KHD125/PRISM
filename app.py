@@ -70,7 +70,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_sell_alerts_panel, render_raw_signals,
                 render_canslim_radar, render_sepa_radar, render_schilit_shield, render_dorsey_radar,
                 render_outsider_radar, render_marks_radar, render_malik_radar,
-                render_lynch_radar, render_mauboussin_radar, render_mosl_wealth_matrix,
+                render_lynch_radar, render_mauboussin_radar, render_qglp_radar, render_mosl_wealth_matrix,
                 render_sector_peer_strip,
                 render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_pulse_band,
@@ -1168,6 +1168,8 @@ with tabs[2]:
                 "a specific methodology (its signals are already summarized in the scorecard above).</div>",
                 unsafe_allow_html=True,
             )
+            with st.expander("👑 QGLP — Raamdeo's Process (Q·G·L·P)", expanded=False):
+                render_qglp_radar(stock, scoring_profile)
             with st.expander("📊 CAN SLIM — Tactical Momentum (O'Neil)", expanded=False):
                 render_canslim_radar(stock)
             with st.expander("⚡ Minervini SEPA — Momentum & VCP", expanded=False):
