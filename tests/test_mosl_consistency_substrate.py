@@ -203,3 +203,58 @@ def test_all_data_shows_undefined_ep_spread_as_na():
     html = " ".join(str(md.value) for md in at.markdown)
     mt = re.search(r'EP Spread.*?ts-raw-val">([^<]*)<', html, re.S)
     assert mt and mt.group(1).strip() == "N/A", mt and mt.group(1)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Moat Endurance Factor (17th WCS) — no verdicts fabricated from data holes
+# ══════════════════════════════════════════════════════════════════════
+# MEF = current ROCE ÷ 10-yr median ROCE. The old construction filled the NUMERATOR
+# with 0 and the no-denominator case with 0.0 — so a stock with UNREPORTED ROCE got
+# MEF = 0.0 exactly, landing in the "🔴 Degrading" label band AND the −8-point
+# quality band ("ROCE degraded below 80% of its median") — a fabricated penalty for
+# ~84 live rows, the mirror image of the EP −12-spread fabrication. Contract: an
+# unknown ratio is NaN; NaN earns the NEUTRAL adjustment and a blank label.
+
+def _mef_frame(roce, roce_med_10y):
+    return compute_derived_signals(_frame(
+        n=len(roce), roce=roce, roce_med_10y=roce_med_10y,
+    ))
+
+
+def test_missing_current_roce_gives_unknown_mef_not_zero():
+    df = _mef_frame([np.nan, 20.0], [15.0, 15.0])
+    assert np.isnan(df["moat_endurance_factor"].iloc[0])
+    assert df["moat_endurance_factor"].iloc[1] == pytest_approx(20.0 / 15.0)
+
+
+def test_missing_median_gives_unknown_mef():
+    df = _mef_frame([20.0], [np.nan])
+    assert np.isnan(df["moat_endurance_factor"].iloc[0])
+
+
+def test_nonpositive_median_gives_unknown_mef():
+    df = _mef_frame([20.0], [-5.0])
+    assert np.isnan(df["moat_endurance_factor"].iloc[0])
+
+
+def test_unknown_mef_is_not_labelled_degrading():
+    df = _mef_frame([np.nan], [15.0])
+    assert df["mef_label"].iloc[0] not in ("🔴 Degrading", "🟡 Eroding", "✅ Intact", "🟢 Expanding")
+
+
+def test_unknown_mef_earns_the_neutral_quality_adjustment_not_minus_eight():
+    """Two stocks identical except MEF: unknown vs the neutral 0.9 band — their moat
+    scores must be EQUAL (0.0 adj), while a genuine 0.5 MEF still takes the −8."""
+    from core.scoring_engine import _compute_moat_score
+    base = pd.DataFrame({
+        "moat_endurance_factor": [np.nan, 0.9, 0.5],
+        "roce": [20.0] * 3, "roce_med_5y": [20.0] * 3,
+    })
+    s = _compute_moat_score(base)
+    assert s.iloc[0] == pytest_approx(s.iloc[1])
+    assert s.iloc[2] == pytest_approx(s.iloc[1] - 8.0)
+
+
+def pytest_approx(x):
+    import pytest as _pt
+    return _pt.approx(x)

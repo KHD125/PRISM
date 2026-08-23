@@ -250,12 +250,20 @@ def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
     # MEF = ROCE_current / ROCE_med_10y. Stable/expanding ≥ 1.0 = moat intact.
     # Boost expanding moats; penalize degrading ones where current ROCE trails long-run median.
     if "moat_endurance_factor" in df.columns:
-        _mef = df["moat_endurance_factor"].fillna(1.0)
+        # NaN = unknown history → NEUTRAL 0.0 adjustment (fixed 2026-08-23). The old
+        # fillna(1.0) here was dead code — data_engine used to emit 0.0 sentinels, never
+        # NaN, so missing-ROCE stocks fell to the −8 "moat degraded" default. Now the
+        # column is NaN-propagating and unknown earns neither bonus nor penalty.
+        _mef = df["moat_endurance_factor"]
+        _mef_known = _mef.notna()
         _mef_adj = pd.Series(
             np.select(
-                [_mef >= 1.2,  _mef >= 1.0,  _mef >= EPOCH3_TAXONOMY["mef_eroding_threshold"]],
-                [5.0,           2.0,           0.0],
-                default=-8.0   # MEF < 0.80: ROCE has degraded below 80% of 10Y median
+                [_mef_known & (_mef >= 1.2),
+                 _mef_known & (_mef >= 1.0),
+                 _mef_known & (_mef >= EPOCH3_TAXONOMY["mef_eroding_threshold"]),
+                 _mef_known],
+                [5.0, 2.0, 0.0, -8.0],   # last arm: known AND < 0.80 = genuine degradation
+                default=0.0              # unknown → neutral, never a verdict
             ),
             index=df.index
         )

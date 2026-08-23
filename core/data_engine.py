@@ -1045,10 +1045,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             0     # Paper profits
         )
     )
+    # An unreported CFO/PAT is not an accusation: 24 live rows read "📄 Paper Profits"
+    # purely from a missing input (fixed 2026-08-23, the MEF-label class).
+    _cm_known = df["cfo_to_pat"].notna()
     df["cash_machine_label"] = np.select(
-        [df["cash_machine_score"] == 100, df["cash_machine_score"] == 50],
-        ["💰 Cash Machine", "✅ Solid"],
-        default="📄 Paper Profits"
+        [_cm_known & (df["cash_machine_score"] == 100),
+         _cm_known & (df["cash_machine_score"] == 50),
+         _cm_known],
+        ["💰 Cash Machine", "✅ Solid", "📄 Paper Profits"],
+        default=""
     )
 
     # ── BALANCE SHEET DERIVED ──
@@ -1721,9 +1726,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
                np.where(_ic_p4 >= 3, pw * 0.7, 0))
 
     # P5: D/E < 0.5
-    malik_p5 = np.where(df["debt_to_equity"].fillna(0) <= 0, pw,
-               np.where(df["debt_to_equity"].fillna(0) <= 0.5, pw * 0.9,
-               np.where(df["debt_to_equity"].fillna(0) <= 1.0, pw * 0.5, 0)))
+    # Missing D/E must NOT read as "debt-free" (fixed 2026-08-23): fillna(0) <= 0 granted
+    # FULL points to ~114 no-data rows — the inverse fabrication (unearned good). Missing
+    # now earns the 0 band, matching siblings P4/P6; a genuine 0.0 D/E still earns pw.
+    _de_p5 = df["debt_to_equity"]
+    malik_p5 = np.where(_de_p5.notna() & (_de_p5 <= 0), pw,
+               np.where(_de_p5.notna() & (_de_p5 <= 0.5), pw * 0.9,
+               np.where(_de_p5.notna() & (_de_p5 <= 1.0), pw * 0.5, 0)))
 
     # P6: Current Ratio > 1.25
     malik_p6 = np.where(df["current_ratio"].fillna(0) >= 1.5, pw,
@@ -1765,12 +1774,21 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # equity = 15%); we use ROCE ≥ 15 (roce_med_5y) — leverage-clean and consistent with this module.
     # The 15% growth line matches the book exactly. This quad is a snapshot of position TODAY; the
     # study's headline longevity dimension (CAP/GAP duration) is a separate measure, not this matrix.
-    has_moat = df["roce_med_5y"].fillna(df["roce"]).fillna(0) >= 15
-    has_growth = df["pat_gr_5y"].fillna(df["pat_gr_3y"]).fillna(0) >= 15
+    # The quadrant needs BOTH axes reported: with neither, the old default branded 16 live
+    # rows "💀 Wealth Destroyer" — the harshest label in the system — purely for absent data
+    # (fixed 2026-08-23, the MEF-label class). Genuine low-moat/low-growth still earns it.
+    _moat_src   = df["roce_med_5y"].fillna(df["roce"])
+    _growth_src = df["pat_gr_5y"].fillna(df["pat_gr_3y"])
+    _quad_known = _moat_src.notna() & _growth_src.notna()
+    has_moat   = _moat_src.fillna(0)   >= 15
+    has_growth = _growth_src.fillna(0) >= 15
     df["moat_growth_quad"] = np.select(
-        [has_moat & has_growth, has_moat & ~has_growth, ~has_moat & has_growth],
-        ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap"],
-        default="💀 Wealth Destroyer"
+        [_quad_known & has_moat & has_growth,
+         _quad_known & has_moat & ~has_growth,
+         _quad_known & ~has_moat & has_growth,
+         _quad_known],
+        ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"],
+        default=""
     )
 
     # ── Growth-Value Trap (23rd WCS, Exhibit 8/9 — "all growth is not good") ──
@@ -1857,16 +1875,22 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── PEG Safety with multiple tiers ──
+    # NaN PEG (loss-makers, no growth estimate) must NOT fall through to "Overpriced" —
+    # 255 live rows were branded on absent data (fixed 2026-08-23, the MEF-label class).
+    # Every band is gated on notna(); the genuine >2.0 case still reads Overpriced.
+    _peg_known = df["peg"].notna()
     df["peg_zone"] = np.select(
         [
-            df["peg"].fillna(99) <= 0,           # negative PEG = declining earnings
-            df["peg"].fillna(99) <= 0.5,          # very cheap
-            df["peg"].fillna(99) <= 1.0,          # Lynch sweet spot
-            df["peg"].fillna(99) <= 1.5,          # fair
-            df["peg"].fillna(99) <= 2.0,          # expensive
+            _peg_known & (df["peg"] <= 0),      # negative PEG = declining earnings
+            _peg_known & (df["peg"] <= 0.5),    # very cheap
+            _peg_known & (df["peg"] <= 1.0),    # Lynch sweet spot
+            _peg_known & (df["peg"] <= 1.5),    # fair
+            _peg_known & (df["peg"] <= 2.0),    # expensive
+            _peg_known,                          # > 2.0 = genuinely overpriced
         ],
-        ["🔴 Declining", "💎 Deep Value", "🟢 Fair PEG", "🟡 Stretched", "🟠 Expensive"],
-        default="🔴 Overpriced"
+        ["🔴 Declining", "💎 Deep Value", "🟢 Fair PEG", "🟡 Stretched", "🟠 Expensive",
+         "🔴 Overpriced"],
+        default=""                               # unknown -> blank, never a verdict
     )
 
     # ── Capex Efficiency (CWIP → Revenue conversion) ──
@@ -2108,9 +2132,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── D28: FCF-to-PAT (%) ──
     # D28 > 50%: FCF covers more than half of PAT = strong real cash generation
+    # Guard BOTH sides (fixed 2026-08-23): the PAT-only guard let a NaN FCF numerator
+    # print "FCF covers 0% of PAT" for 24 live rows — a measured-looking verdict on a hole.
     df["d28_fcf_to_pat_pct"] = np.where(
-        _pat.notna() & (_pat.abs() > 0),
-        _fcf.fillna(0) / _pat.abs() * 100,
+        _pat.notna() & (_pat.abs() > 0) & _fcf.notna(),
+        _fcf / _pat.abs() * 100,
         np.nan
     )
 
@@ -2325,24 +2351,32 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── D48: Breakout Readiness (categorical) ──
+    # Unknown distance is not "FAR" (fixed 2026-08-23, latent — technicals currently full):
+    # a data hole must never produce a verdict, even a mild one.
+    _d48_known = df["dist_52wh"].notna()
     df["d48_breakout_readiness"] = np.select(
         [
-            (df["dist_52wh"].fillna(999) < 10) & (df["dist_13wh"].fillna(999) < 5),
-            df["dist_52wh"].fillna(999) < 20,
+            _d48_known & (df["dist_52wh"] < 10) & (df["dist_13wh"].fillna(999) < 5),
+            _d48_known & (df["dist_52wh"] < 20),
+            _d48_known,
         ],
-        ["IMMINENT", "NEAR"],
-        default="FAR"
+        ["IMMINENT", "NEAR", "FAR"],
+        default=""
     )
 
     # ── D49: Momentum Quality (categorical) ──
-    _rsi_mq = df.get("rsi_14d", pd.Series(np.nan, index=df.index)).fillna(0)
+    # Unknown RSI is not "WEAK" momentum (fixed 2026-08-23, same class).
+    _rsi_mq = df.get("rsi_14d", pd.Series(np.nan, index=df.index))
+    _rsi_known = _rsi_mq.notna()
     df["d49_momentum_quality"] = np.select(
         [
-            _rsi_mq > 70,
-            (_rsi_mq >= 50) & (_rsi_mq <= 70) & (df.get("adx_14w", pd.Series(np.nan, index=df.index)).fillna(0) > 20),
+            _rsi_known & (_rsi_mq > 70),
+            _rsi_known & (_rsi_mq >= 50) & (_rsi_mq <= 70)
+                       & (df.get("adx_14w", pd.Series(np.nan, index=df.index)).fillna(0) > 20),
+            _rsi_known,
         ],
-        ["OVERHEATED", "HIGH"],
-        default="WEAK"
+        ["OVERHEATED", "HIGH", "WEAK"],
+        default=""
     )
 
     # ── D50: Alpha Score (average return vs benchmarks) ──
@@ -3326,26 +3360,39 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["capital_return_spread"] = df["economic_profit_spread"]
 
     # ── Identity A: FCF Generation Velocity (FCF/OCF ratio) ──
+    # NaN when OCF <= 0 / missing (fixed 2026-08-23): "FCF as a share of OCF" is undefined
+    # on a non-positive denominator, and the old 0.0 read as a measured "generates no free
+    # cash" for 498 live rows. Its consumer (corporate_class) reaches the same verdict via
+    # its default branch either way — but this is exactly the latent sentinel that hid the
+    # MEF bug until a consumer trusted it. FCF must be reported too (guard was OCF-only).
     df["fcf_to_ocf_velocity"] = np.where(
-        _ocf.fillna(0) > 0,
-        _fcf.fillna(0) / _ocf,
-        0.0
+        _ocf.notna() & (_ocf > 0) & _fcf.notna(),
+        _fcf / _ocf,
+        np.nan
     )
 
     # ── Identity C: Moat Endurance Factor (MEF) ──
+    # NaN-propagating on BOTH sides (fixed 2026-08-23): the old roce.fillna(0) numerator and
+    # 0.0 no-denominator fallback made an UNREPORTED ROCE read as MEF = 0.0 exactly — landing in
+    # the "🔴 Degrading" label band and the −8-point quality band, a fabricated moat-collapse
+    # verdict for ~84 live rows (the mirror of the EP −12-spread fabrication). Unknown is NaN.
     df["moat_endurance_factor"] = np.where(
-        df["roce_med_10y"].fillna(0) > 0,
-        df["roce"].fillna(0) / df["roce_med_10y"],
-        0.0
+        df["roce"].notna() & df["roce_med_10y"].notna() & (df["roce_med_10y"] > 0),
+        df["roce"] / df["roce_med_10y"],
+        np.nan
     )
+    # Unknown MEF → blank label (the ep_power_curve / earnings_power_box convention):
+    # a data hole is not a verdict, and "🔴 Degrading" was branding no-history stocks.
+    _mef_known = df["moat_endurance_factor"].notna()
     df["mef_label"] = np.select(
         [
-            df["moat_endurance_factor"] >= 1.2,
-            df["moat_endurance_factor"] >= 1.0,
-            df["moat_endurance_factor"] >= 0.80,
+            _mef_known & (df["moat_endurance_factor"] >= 1.2),
+            _mef_known & (df["moat_endurance_factor"] >= 1.0),
+            _mef_known & (df["moat_endurance_factor"] >= 0.80),
+            _mef_known,
         ],
-        ["🟢 Expanding", "✅ Intact", "🟡 Eroding"],
-        default="🔴 Degrading"
+        ["🟢 Expanding", "✅ Intact", "🟡 Eroding", "🔴 Degrading"],
+        default=""
     )
 
     # ── Cyclical Profit Mirage Anti-Pattern (Gruesome Growth Trap) ──

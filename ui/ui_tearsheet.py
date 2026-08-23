@@ -1290,7 +1290,8 @@ def render_financial_insights(stock: pd.Series):
         "PEG Ratio",
         (0 < peg <= 1.0) if peg > 0 else None,
         f"{peg:.2f}×" if peg > 0 else "N/A",
-        f"{peg_zone}  |  Lynch rule: ≤1.0 = growth at bargain price",
+        (f"{peg_zone}  |  " if peg_zone else "")
+        + "Lynch rule: ≤1.0 = growth at bargain price",
     )
     vl += _row(
         "Earnings Yield",
@@ -1926,7 +1927,7 @@ def render_raw_signals(stock: pd.Series):
         _cell("P/S",           g("ps_ratio"),        "{:.2f}×") +
         _cell("FGV",           g("fgv_pct"),         "{:.0%}") +
         _cell("PEG",           g("peg"),             "{:.2f}") +
-        _cell("PEG Zone",      stock.get("peg_zone","") or "", "") +
+        _cell("PEG Zone",      stock.get("peg_zone","") or "N/A", "") +
         _cell("Earnings Yield",g("earnings_yield"),  "{:.1f}%") +
         _cell("PE vs 10Y Med", g("pe_discount"),     "{:.1f}%") +
         _cell("EV/EBITDA Dir", g("ev_ebitda_direction"), "{:.2f}") +
