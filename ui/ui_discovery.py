@@ -76,6 +76,58 @@ def _family_count(frame: pd.DataFrame, fw_names) -> pd.Series:
     return cnt
 
 
+# ── ❔ Unknown option + zero-results culprit: pure substrate (unit-tested) ────
+_UNKNOWN = "❔ Unknown"
+
+
+def _blank_mask(series: pd.Series) -> pd.Series:
+    """Rows where the engine deliberately declined to judge — NaN or blank/whitespace label.
+    The SINGLE definition of 'unknown' shared by the option builder (_ordered_present), the
+    facet counts (_ms_cascade) and the filter mask (_label_mask), so the three can never
+    disagree on what ❔ Unknown means."""
+    return series.isna() | (series.astype(str).str.strip() == "")
+
+
+def _label_mask(series: pd.Series, sel) -> pd.Series:
+    """Mask for a label multiselect whose options may include the ❔ Unknown sentinel. Real
+    labels match by value — INCLUDING a literal '❔ Unknown' the engine itself emits (Weinstein
+    Stage) — and the sentinel ADDITIONALLY claims the honest holes (NaN/blank), so 'Unknown'
+    always means the full 'engine declined to judge' set regardless of how a column spells it."""
+    m = series.isin(list(sel))
+    if _UNKNOWN in sel:
+        m = m | _blank_mask(series)
+    return m
+
+
+def _first_zero_filter(frame: pd.DataFrame, mask, label: str, zero_log: list) -> pd.DataFrame:
+    """Apply one filter mask to the cascade frame, recording in `zero_log` the FIRST filter that
+    empties a previously non-empty cascade — the funnel's zero-results state names it so the
+    user knows exactly which dial to loosen. Pure + module-level so it is unit-tested; the
+    sidebar binds it to its local log via the nested `_narrow` choke point."""
+    out = frame[mask]
+    if len(out) == 0 and len(frame) > 0 and not zero_log:
+        zero_log.append(label)
+    return out
+
+
+def _ordered_present(frame: pd.DataFrame, col: str, order) -> list:
+    """Labels present in frame[col], in canonical `order`; unknown labels appended last.
+
+    BLANKS ARE NEVER OFFERED AS THEMSELVES (fixed 2026-08-23): the "no verdict from a data
+    hole" pass makes an unknown label "" instead of fabricating a verdict, and dropna() does
+    not strip the empty string — so 7 dropdowns briefly offered an unlabelled checkbox. Those
+    honest holes now surface as a selectable ❔ Unknown option (appended LAST, and never
+    duplicated when the engine already emits the literal label, e.g. Weinstein Stage)."""
+    if col not in frame.columns:
+        return []
+    present = {v for v in frame[col].dropna().astype(str).unique() if v.strip()}
+    opts = [v for v in order if v in present]
+    opts += [v for v in sorted(present) if v not in opts]
+    if _UNKNOWN not in opts and bool(_blank_mask(frame[col]).any()):
+        opts.append(_UNKNOWN)
+    return opts
+
+
 def _remove_one_filter(key) -> None:
     """Chip ✕ callback — drop one filter (re-inits to its show-all default on the auto-rerun the
     button fires). Runs BEFORE any widget instantiates, so popping a widget-key is safe (no
@@ -160,22 +212,26 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 st.session_state[key] = [v for v in st.session_state[key] if v in options]
             if format_func is None and count_col is not None and count_col in _cf.columns:
                 _vc = _cf[count_col].astype(str).value_counts().to_dict()
+                # ❔ Unknown facet count = the honest holes (NaN/blank) PLUS any literal
+                # "❔ Unknown" the engine emits — the same union _label_mask filters by.
+                _nb = int(_blank_mask(_cf[count_col]).sum())
+                if _nb:
+                    _vc[_UNKNOWN] = _vc.get(_UNKNOWN, 0) + _nb
                 format_func = lambda v, _c=_vc: f"{v}  ·  {_c.get(str(v), 0)}"
             _kw = {"key": key, "help": help}
             if format_func is not None:
                 _kw["format_func"] = format_func
             return st.multiselect(label, options, **_kw)
 
-        def _ordered_present(frame, col, order):
-            """Labels present in frame[col], in canonical `order`; unknown labels appended last."""
-            if col not in frame.columns:
-                return []
-            present = set(frame[col].dropna().astype(str).unique())
-            opts = [v for v in order if v in present]
-            opts += [v for v in sorted(present) if v not in opts]
-            return opts
-
         _cf = df   # progressively-narrowed cascade frame — drives every option list below
+        # Zero-results culprit log + the choke point EVERY filter application must go through
+        # (pinned by test: no direct-subscript filter may appear). One funnel-point means the Unknown-mask
+        # logic, the culprit naming, and any future per-filter behavior live in ONE place.
+        _zero_at = []
+
+        def _narrow(frame, mask, label):
+            return _first_zero_filter(frame, mask, label, _zero_at)
+
         # Fixed slider ceiling for the 🛡️ Safety "Max red flags" dial (computed on the FULL df so the
         # slider range is stable across the cascade); _active_n treats this value as the show-all state.
         _RF_MAX = int(df["red_flag_count"].max()) if "red_flag_count" in df.columns else 28
@@ -188,7 +244,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                    help="Blank = all market-cap tiers. Pick one or more to narrow.",
                                    count_col="market_category")
             if sel_mcap:
-                _cf = _cf[_cf["market_category"].isin(sel_mcap)]
+                _cf = _narrow(_cf, _label_mask(_cf["market_category"], sel_mcap), "Market Cap")
 
             # 2. Sector — only sectors within the chosen market categories
             _sector_opts = ["All"] + sorted(_cf["sector"].dropna().unique().tolist())
@@ -201,7 +257,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 help="Filter to one sector. 'All' = every sector; also narrows the Industry list below.",
             )
             if sel_sector != "All":
-                _cf = _cf[_cf["sector"] == sel_sector]
+                _cf = _narrow(_cf, _cf["sector"] == sel_sector, "Sector")
 
             # 3. Industry — only industries within the chosen categories AND sector
             _industry_opts = ["All"] + sorted(_cf["industry"].dropna().unique().tolist())
@@ -214,7 +270,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 help="Granular industry within the selected sector. Narrows with Sector above.",
             )
             if sel_industry != "All":
-                _cf = _cf[_cf["industry"] == sel_industry]
+                _cf = _narrow(_cf, _cf["industry"] == sel_industry, "Industry")
 
             # 3b. Cyclicality Tier — structural business-type roll-up of industry (hold-vs-trade
             # "what": cyclicals are timing trades; defensives/structural-growers hold through cycle)
@@ -226,7 +282,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                        "trades; Defensive/Structural-Growth = hold through the cycle. Empty = all.",
                                   count_col="cyclicality_tier")
             if sel_cyc and "cyclicality_tier" in _cf.columns:
-                _cf = _cf[_cf["cyclicality_tier"].isin(sel_cyc)]
+                _cf = _narrow(_cf, _label_mask(_cf["cyclicality_tier"], sel_cyc), "Cyclicality")
 
             # 3c. Sector Capital Phase — Chancellor capital cycle ("when": Starved = under-invested
             # supply opportunity; Hot = over-investing, mean-reversion risk)
@@ -237,7 +293,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                        "opportunity); Hot = over-investing (mean-reversion risk). Empty = all.",
                                   count_col="sector_capital_phase")
             if sel_cap and "sector_capital_phase" in _cf.columns:
-                _cf = _cf[_cf["sector_capital_phase"].isin(sel_cap)]
+                _cf = _narrow(_cf, _label_mask(_cf["sector_capital_phase"], sel_cap), "Capital Phase")
             st.caption(f"→ {len(_cf):,} remaining")
 
         with _grp("🎯 Decision & Class", "sb_tier", "sb_verdict", "sb_corpclass", expanded=True):
@@ -247,7 +303,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                    help="Blank = all tiers. 1 = Crown Jewels, 2 = Strong … pick to narrow.",
                                    count_col="conviction_tier")
             if sel_tier:
-                _cf = _cf[_cf["conviction_tier"].isin(sel_tier)]
+                _cf = _narrow(_cf, _label_mask(_cf["conviction_tier"], sel_tier), "Tier")
 
             # 4b. Verdict — the engine's BUY/WATCH/AVOID decision (filter to the rare BUYs/WATCHes)
             _verdict_opts = _ordered_present(_cf, "verdict_direction", ["BUY", "WATCH", "AVOID"])
@@ -255,7 +311,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                       help="The engine's top-line decision. Empty = all stocks.",
                                       count_col="verdict_direction")
             if sel_verdict and "verdict_direction" in _cf.columns:
-                _cf = _cf[_cf["verdict_direction"].isin(sel_verdict)]
+                _cf = _narrow(_cf, _label_mask(_cf["verdict_direction"], sel_verdict), "Verdict")
 
             # 4c. Corporate Class — Motilal Oswal capital-allocation quality (Great / Good / Gruesome)
             _corp_opts = _ordered_present(_cf, "corporate_class", ["🏆 GREAT", "👍 GOOD", "💀 GRUESOME"])
@@ -263,7 +319,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                    help="Capital-allocation quality. 'Only Great', or exclude Gruesome.",
                                    count_col="corporate_class")
             if sel_corp and "corporate_class" in _cf.columns:
-                _cf = _cf[_cf["corporate_class"].isin(sel_corp)]
+                _cf = _narrow(_cf, _label_mask(_cf["corporate_class"], sel_corp), "Corp Class")
             st.caption(f"→ {len(_cf):,} remaining")
 
         with _grp("🛡️ Safety", "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale", expanded=False):
@@ -276,7 +332,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             sel_maxrf = st.slider("Max red flags", 0, _RF_MAX, _RF_MAX, key="sb_maxrf",
                                   help="Cap how many of the 28 forensic red flags a stock may carry. Max = all.")
             if sel_maxrf < _RF_MAX and "red_flag_count" in _cf.columns:
-                _cf = _cf[_cf["red_flag_count"] <= sel_maxrf]
+                _cf = _narrow(_cf, _cf["red_flag_count"] <= sel_maxrf, "Max Red Flags")
 
             # 4e. Piotroski Strength — financial-strength tier from the F-Score (derived inline, vectorized)
             _pf = _cf["piotroski_fscore"]
@@ -289,18 +345,18 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                   help="Financial-strength tier (Piotroski F-Score). Empty = all.",
                                   format_func=lambda v: f"{v}  ·  {_pio_vc.get(v, 0)}")
             if sel_pio:
-                _cf = _cf[pd.Series(_pio_tier, index=_cf.index).isin(sel_pio)]
+                _cf = _narrow(_cf, pd.Series(_pio_tier, index=_cf.index).isin(sel_pio), "Piotroski")
 
             # 4f. Min data coverage % — don't trust a high score built on thin data
             sel_mincov = st.slider("Min data coverage %", 0, 100, 0, key="sb_mincov",
                                    help="Hide stocks whose score rests on below-this-% evidence coverage.")
             if sel_mincov > 0 and "data_coverage_pct" in _cf.columns:
-                _cf = _cf[_cf["data_coverage_pct"] >= sel_mincov]
+                _cf = _narrow(_cf, _cf["data_coverage_pct"] >= sel_mincov, "Min Coverage")
 
             # 4g. Hide stale results — drop frozen filers (>120 days; catches Gensol-style filing freezes)
             if st.checkbox("Hide stale results (>120d)", value=False, key="sb_hidestale") \
                     and "result_stale_flag" in _cf.columns:
-                _cf = _cf[_cf["result_stale_flag"] == 0]
+                _cf = _narrow(_cf, _cf["result_stale_flag"] == 0, "Hide Stale")
             st.caption(f"→ {len(_cf):,} remaining")
 
         # ── 3-TIER FRAMEWORK FILTER ENGINE ───────────────────────────────────────
@@ -394,7 +450,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _fam_mask = pd.Series(True, index=_cf.index)
                 for l in sel_fam:
                     _fam_mask = _fam_mask & (_family_count(_cf, _fam_meta[l][2]) >= int(_fam_min))
-                _cf = _cf[_fam_mask]
+                _cf = _narrow(_cf, _fam_mask, "FW Family")
                 st.markdown(
                     f'<div style="font-size:0.6rem;color:{COLORS["purple"]};padding:0 0 6px 2px;">'
                     f'🎭 {len(sel_fam)} famil{"y" if len(sel_fam) == 1 else "ies"} · ≥{int(_fam_min)} each '
@@ -412,7 +468,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             )
             if sel_fw_exclude:
                 _excl_mask = _fw_match_mask(_cf, sel_fw_exclude, logic="or")
-                _cf = _cf[~_excl_mask]
+                _cf = _narrow(_cf, ~_excl_mask, "Exclude FW")
             # Exclude badge
             _n_excl_fw = len(sel_fw_exclude)
             if _n_excl_fw > 0:
@@ -432,7 +488,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             )
             if sel_fw_include:
                 _incl_mask = _fw_match_mask(_cf, sel_fw_include, logic="or")
-                _cf = _cf[_incl_mask]
+                _cf = _narrow(_cf, _incl_mask, "Include FW")
             # Include badge
             _n_incl_fw = len(sel_fw_include)
             if _n_incl_fw > 0:
@@ -452,7 +508,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             )
             if sel_fw_combine:
                 _comb_mask = _fw_match_mask(_cf, sel_fw_combine, logic="and")
-                _cf = _cf[_comb_mask]
+                _cf = _narrow(_cf, _comb_mask, "Combine FW")
             # Combination badge
             _n_comb_fw = len(sel_fw_combine)
             if _n_comb_fw > 0:
@@ -472,7 +528,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                         "Growth Trap / Wealth Destroyer. Empty = all stocks.",
                                    count_col="moat_growth_quad")
             if sel_moat:
-                _cf = _cf[_cf["moat_growth_quad"].isin(sel_moat)]
+                _cf = _narrow(_cf, _label_mask(_cf["moat_growth_quad"], sel_moat), "Moat")
 
             # 7. PEG Zone — valuation tier (options present in remaining stocks, canonical order)
             _PEG_ZONE_ORDER = [
@@ -484,7 +540,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                        help="Valuation tier from the PEG ratio. Empty = all stocks.",
                                        count_col="peg_zone")
             if sel_peg_zone and "peg_zone" in _cf.columns:
-                _cf = _cf[_cf["peg_zone"].isin(sel_peg_zone)]
+                _cf = _narrow(_cf, _label_mask(_cf["peg_zone"], sel_peg_zone), "PEG Zone")
 
             # 8. Buy Zone — entry timing vs Volatility Stop (options present in remaining stocks)
             _BUY_ZONE_ORDER = [
@@ -496,7 +552,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                        help="Entry timing vs the Volatility Stop. Empty = all stocks.",
                                        count_col="buy_zone_label")
             if sel_buy_zone and "buy_zone_label" in _cf.columns:
-                _cf = _cf[_cf["buy_zone_label"].isin(sel_buy_zone)]
+                _cf = _narrow(_cf, _label_mask(_cf["buy_zone_label"], sel_buy_zone), "Buy Zone")
             st.caption(f"→ {len(_cf):,} remaining")
 
         with _grp("📈 Trend · Style · Flow", "sb_weinstein", "sb_lynchcat", "sb_mef",
@@ -509,7 +565,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                    help="Long-term price trend stage. Empty = all stocks.",
                                    count_col="weinstein_stage")
             if sel_wein and "weinstein_stage" in _cf.columns:
-                _cf = _cf[_cf["weinstein_stage"].isin(sel_wein)]
+                _cf = _narrow(_cf, _label_mask(_cf["weinstein_stage"], sel_wein), "Weinstein")
 
             # 8c. Lynch Type — Peter Lynch's stock archetype
             _lynch_opts = _ordered_present(_cf, "lynch_category",
@@ -518,7 +574,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                     help="Lynch's classification (Fast Grower / Stalwart / …). Empty = all.",
                                     count_col="lynch_category")
             if sel_lynch and "lynch_category" in _cf.columns:
-                _cf = _cf[_cf["lynch_category"].isin(sel_lynch)]
+                _cf = _narrow(_cf, _label_mask(_cf["lynch_category"], sel_lynch), "Lynch")
 
             # 8d. Moat Endurance — is the competitive advantage widening or eroding
             _mef_opts = _ordered_present(_cf, "mef_label",
@@ -527,7 +583,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                   help="Whether the moat is widening or eroding over time. Empty = all.",
                                   count_col="mef_label")
             if sel_mef and "mef_label" in _cf.columns:
-                _cf = _cf[_cf["mef_label"].isin(sel_mef)]
+                _cf = _narrow(_cf, _label_mask(_cf["mef_label"], sel_mef), "Moat Endurance")
 
             # 8e. Cash-Flow Triangle — cash-flow quality pattern
             _cftri_opts = _ordered_present(_cf, "cf_triangle",
@@ -537,7 +593,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                     help="Operating/investing/financing cash-flow quality. Empty = all.",
                                     count_col="cf_triangle")
             if sel_cftri and "cf_triangle" in _cf.columns:
-                _cf = _cf[_cf["cf_triangle"].isin(sel_cftri)]
+                _cf = _narrow(_cf, _label_mask(_cf["cf_triangle"], sel_cftri), "Cash-Flow Tri")
 
             # 8f. Smart-Money Flow — the 5-level institutional-flow read
             _smf_opts = _ordered_present(_cf, "smart_money_flow",
@@ -547,7 +603,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                   help="Institutional accumulation/distribution level. Empty = all.",
                                   count_col="smart_money_flow")
             if sel_smf and "smart_money_flow" in _cf.columns:
-                _cf = _cf[_cf["smart_money_flow"].isin(sel_smf)]
+                _cf = _narrow(_cf, _label_mask(_cf["smart_money_flow"], sel_smf), "Smart Money")
             st.caption(f"→ {len(_cf):,} remaining")
 
         with _grp("🔥 Catalysts & Alerts", "sb_catalyst", "sb_sellalert", expanded=False):
@@ -574,7 +630,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cat_mask = pd.Series(False, index=_cf.index)
                 for _c in sel_catalyst:
                     _cat_mask = _cat_mask | (_cf[_c] == 1)
-                _cf = _cf[_cat_mask]
+                _cf = _narrow(_cf, _cat_mask, "Catalyst")
                 st.markdown(
                     f'<div style="font-size:0.6rem;color:{COLORS["orange"]};padding:0 0 6px 2px;"'
                     f'>🔥 {len(sel_catalyst)} catalyst(s) (OR) · {len(_cf)} stocks remaining</div>',
@@ -602,7 +658,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _sa_mask = pd.Series(False, index=_cf.index)
                 for _c in sel_alert:
                     _sa_mask = _sa_mask | (_cf[_c] == 1)
-                _cf = _cf[_sa_mask]
+                _cf = _narrow(_cf, _sa_mask, "Sell Alert")
                 st.markdown(
                     f'<div style="font-size:0.6rem;color:{COLORS["red"]};padding:0 0 6px 2px;"'
                     f'>🚨 {len(sel_alert)} alert(s) (OR) · {len(_cf)} stocks remaining</div>',
@@ -625,19 +681,19 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                      "profit (the multibagger fundamental); 📉 Value Trap = destroying value. Empty = all.",
                 count_col="ep_power_curve")
             if sel_eppc and "ep_power_curve" in _cf.columns:
-                _cf = _cf[_cf["ep_power_curve"].isin(sel_eppc)]
+                _cf = _narrow(_cf, _label_mask(_cf["ep_power_curve"], sel_eppc), "EP Curve")
 
-            # Earnings Power Box — Heiserman quadrant (economic profit × free cash flow); blank excluded
+            # Earnings Power Box — Heiserman quadrant (economic profit × free cash flow); the
+            # standard builder so its honest holes surface as ❔ Unknown like every sibling
             _EPBOX_ORDER = ["📦 Earnings Power", "💰 Cash Cow", "🚀 Cash-Hungry Grower", "⚠️ Weakest"]
-            _epbox_opts = ([v for v in _EPBOX_ORDER if (_cf["earnings_power_box"] == v).any()]
-                           if "earnings_power_box" in _cf.columns else [])
+            _epbox_opts = _ordered_present(_cf, "earnings_power_box", _EPBOX_ORDER)
             sel_epbox = _ms_cascade(
                 "Earnings Power Box", _epbox_opts, "sb_epbox", default=[],
                 help="Heiserman's economic-profit × free-cash-flow quadrant. 📦 Earnings Power = both "
                      "positive (the elite); ⚠️ Weakest = neither. Empty = all.",
                 count_col="earnings_power_box")
             if sel_epbox and "earnings_power_box" in _cf.columns:
-                _cf = _cf[_cf["earnings_power_box"].isin(sel_epbox)]
+                _cf = _narrow(_cf, _label_mask(_cf["earnings_power_box"], sel_epbox), "Earnings Box")
 
             # Multibagger-candidate flags — OR-group (stable column-name values + live-count format_func,
             # exactly like 🔥 Catalysts). Show stocks firing ANY selected candidate flag.
@@ -664,7 +720,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _mb_mask = pd.Series(False, index=_cf.index)
                 for _c in sel_mb:
                     _mb_mask = _mb_mask | (_cf[_c].fillna(0) == 1)
-                _cf = _cf[_mb_mask]
+                _cf = _narrow(_cf, _mb_mask, "Multibagger")
                 st.markdown(
                     f'<div style="font-size:0.6rem;color:{COLORS["purple"]};padding:0 0 6px 2px;">'
                     f'🚀 {len(sel_mb)} setup(s) (OR) · {len(_cf)} stocks remaining</div>',
@@ -679,17 +735,17 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             gate_only = st.checkbox("Gate-passed only", value=False, key="sb_gate",
                                     help="Show only stocks that clear the engine's quality gate.")
             if gate_only and "gate_pass" in _cf.columns:
-                _cf = _cf[_cf["gate_pass"] == 1]
+                _cf = _narrow(_cf, _cf["gate_pass"] == 1, "Gate-passed")
             min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq",
                                     help="Min fundamental quality score (PRE-forensic-penalty — moat + "
                                          "growth + cash + governance, before red-flag cuts).")
             if min_quality > 0 and "quality_score" in _cf.columns:
-                _cf = _cf[_cf["quality_score"] >= min_quality]
+                _cf = _narrow(_cf, _cf["quality_score"] >= min_quality, "Min Quality")
             min_score = st.slider("Min Composite Score", 0, 100, 0, key="sb_minscore",
                                   help="Min headline composite_score (post-forensic-penalty — the score "
                                        "your tiers are built on; stronger than Min Quality, which is pre-penalty).")
             if min_score > 0 and "composite_score" in _cf.columns:
-                _cf = _cf[_cf["composite_score"] >= min_score]
+                _cf = _narrow(_cf, _cf["composite_score"] >= min_score, "Min Score")
             st.caption(f"→ {len(_cf):,} remaining")
 
     # The cascade frame (_cf) now encodes EVERY filter — the categorical groups AND the Refine
@@ -725,6 +781,14 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     # Every filter now defaults to its show-all state, so zero active filters == the full universe.
     _flabel = (f"🎯 {_active_total} filter{'s' if _active_total != 1 else ''} active"
                if _active_total else "○ No filters — full universe")
+    # Zero-results culprit — when the cascade is empty, name the filter that emptied it (recorded
+    # by the _narrow choke point) so the user knows exactly which dial to loosen or ✕-chip away.
+    _culprit = ""
+    if _fin_n == 0 and _zero_at:
+        _culprit = (
+            f'<div style="font-size:0.62rem;color:{COLORS["red"]};margin-top:5px;">'
+            f'⚠️ <strong>{_zero_at[0]}</strong> removed the last stocks — loosen it or click its ✕ chip</div>'
+        )
     _funnel.markdown(
         f'''<div style="background:linear-gradient(135deg,{COLORS['bg_secondary']},{COLORS['bg_tertiary']});
              border:1px solid {COLORS['border']};border-radius:10px;padding:10px 12px;margin:2px 0 10px 0;">
@@ -737,7 +801,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
           </div>
           <div style="font-size:0.6rem;color:{COLORS['text_muted']};text-transform:uppercase;letter-spacing:0.6px;">
             {_flabel}
-          </div>
+          </div>{_culprit}
         </div>''',
         unsafe_allow_html=True,
     )

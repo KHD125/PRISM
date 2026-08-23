@@ -139,3 +139,126 @@ def test_family_count_handles_missing_and_empty():
     df = pd.DataFrame({"frameworks_passed": ["Coffee Can", None]})
     assert list(_family_count(df, [])) == [0, 0]
     assert list(_family_count(df, ["Coffee Can"])) == [1, 0]
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Blank labels must never become dropdown options (added 2026-08-23)
+# ══════════════════════════════════════════════════════════════════════
+# `_ordered_present` built options with frame[col].dropna() — which strips NaN but NOT the
+# empty string. The "no verdict from a data hole" pass makes an unknown label "" instead of
+# fabricating a verdict, so 7 dropdowns began offering an unlabelled, unusable checkbox
+# (peg_zone, mef_label, moat_growth_quad, cash_machine_label, d49_momentum_quality, plus
+# ep_power_curve / earnings_power_box which carried default="" all along). Selecting it
+# silently narrowed the universe to rows the engine deliberately declined to judge.
+
+
+def _ui_discovery_source() -> str:
+    import io as _io
+    import os as _os
+    return _io.open(_os.path.join(_os.path.dirname(__file__), "..", "ui", "ui_discovery.py"),
+                    encoding="utf-8").read()
+
+
+def test_option_builder_excludes_blank_labels():
+    src = _ui_discovery_source()
+    i = src.find("def _ordered_present")
+    assert i > 0, "helper not found"
+    block = src[i:i + 900]
+    assert "dropna()" in block, "helper no longer drops NaN"
+    assert "if v.strip()" in block, "helper does not exclude blank labels"
+
+
+def test_blank_never_offered_across_label_columns():
+    """Exercise the REAL helper (module-level since the ❔ Unknown pass, so import it directly)."""
+    import pandas as _pd
+
+    from ui.ui_discovery import _ordered_present as fn
+
+    frame = _pd.DataFrame({
+        "peg_zone":  ["🟢 Fair PEG", "", "🔴 Overpriced", None],
+        "mef_label": ["", "   ", "✅ Intact", "🔴 Degrading"],
+    })
+    for col, order in [("peg_zone",  ["🟢 Fair PEG", "🔴 Overpriced"]),
+                       ("mef_label", ["✅ Intact", "🔴 Degrading"])]:
+        opts = fn(frame, col, order)
+        assert "" not in opts, f"{col}: blank option offered -> {opts}"
+        assert not any(o.strip() == "" for o in opts), f"{col}: whitespace option -> {opts}"
+        for real in order:
+            assert real in opts, f"{col}: lost a real label {real!r}"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# ❔ Unknown option + zero-results culprit (added 2026-08-23)
+# ══════════════════════════════════════════════════════════════════════
+# Two approved UX upgrades, one shared substrate:
+#   1. The honest blanks the "no verdict from a data hole" pass produces (255 peg_zone,
+#      177 mef_label, 133 ep_power_curve, …) must be SELECTABLE — a "❔ Unknown" option that
+#      matches NaN/blank rows — not just hidden. Weinstein already emits a LITERAL "❔ Unknown"
+#      label, so the sentinel must match by value AND union the holes (never replace value-match).
+#   2. When the cascade hits 0 results the funnel must NAME the filter that emptied it, which
+#      requires every one of the ~32 filter applications to route through one choke point.
+
+
+def test_unknown_option_appended_when_blanks_present():
+    """_ordered_present appends ❔ Unknown (last) iff the cascade frame holds NaN/blank rows —
+    and never duplicates it when the engine itself emits the literal label (Weinstein)."""
+    import pandas as _pd
+
+    from ui.ui_discovery import _UNKNOWN, _ordered_present
+
+    frame = _pd.DataFrame({
+        "peg_zone":  ["🟢 Fair PEG", "", "🔴 Overpriced", None],       # holes -> sentinel offered
+        "mef_label": ["✅ Intact", "🔴 Degrading", "✅ Intact", "✅ Intact"],  # fully labelled -> no sentinel
+        "weinstein_stage": ["📈 Stage 2 Advancing", "❔ Unknown", "❔ Unknown", None],  # literal + hole
+    })
+    opts = _ordered_present(frame, "peg_zone", ["🟢 Fair PEG", "🔴 Overpriced"])
+    assert opts[-1] == _UNKNOWN, f"sentinel missing/not last -> {opts}"
+    assert _UNKNOWN not in _ordered_present(frame, "mef_label", ["✅ Intact", "🔴 Degrading"]), \
+        "sentinel offered for a fully-labelled column"
+    wein = _ordered_present(frame, "weinstein_stage", ["📈 Stage 2 Advancing", "❔ Unknown"])
+    assert wein.count(_UNKNOWN) == 1, f"literal engine label duplicated the sentinel -> {wein}"
+
+
+def test_label_mask_sentinel_matches_holes_and_literal():
+    """_label_mask: real labels match by value; the ❔ Unknown sentinel additionally claims the
+    honest holes (NaN / '' / whitespace) AND still matches a literal '❔ Unknown' the engine
+    emits — so 'Unknown' always means the full 'engine declined to judge' set."""
+    import pandas as _pd
+
+    from ui.ui_discovery import _UNKNOWN, _label_mask
+
+    s = _pd.Series(["🟢 Fair PEG", "", "   ", None, "❔ Unknown", "🔴 Overpriced"])
+    assert list(_label_mask(s, ["🟢 Fair PEG"])) == [True, False, False, False, False, False]
+    assert list(_label_mask(s, [_UNKNOWN])) == [False, True, True, True, True, False]
+    assert list(_label_mask(s, ["🔴 Overpriced", _UNKNOWN])) == [False, True, True, True, True, True]
+    assert list(_label_mask(s, [])) == [False] * 6, "empty selection must match nothing"
+
+
+def test_first_zero_filter_names_first_culprit():
+    """The choke point records the FIRST filter that empties a previously non-empty cascade —
+    never a later filter applied to an already-empty frame, never a filter that leaves rows."""
+    import pandas as _pd
+
+    from ui.ui_discovery import _first_zero_filter
+
+    df = _pd.DataFrame({"x": [1, 2, 3]})
+    log = []
+    out = _first_zero_filter(df, df["x"] > 1, "Keeps Rows", log)
+    assert len(out) == 2 and log == [], "a filter that leaves rows must not be logged"
+    out = _first_zero_filter(out, out["x"] > 99, "The Culprit", log)
+    assert len(out) == 0 and log == ["The Culprit"]
+    out = _first_zero_filter(out, out["x"] > 0, "Too Late", log)
+    assert log == ["The Culprit"], "an already-empty frame must not overwrite the culprit"
+
+
+def test_all_filter_sites_route_through_choke_point():
+    """Static pin: NO filter application may bypass the _narrow choke point (`_cf = _cf[` == 0),
+    and the funnel's zero-state must actually read the culprit log."""
+    src = _ui_discovery_source()
+    n_direct = src.count("_cf = _cf[")
+    assert n_direct == 0, (
+        f"{n_direct} filter site(s) bypass the choke point — every application must be "
+        "`_cf = _narrow(_cf, <mask>, <label>)` so the funnel can name a zero-results culprit"
+    )
+    assert "_first_zero_filter" in src, "choke-point helper not wired"
+    assert src.count("_zero_at") >= 2, "funnel zero-state does not read the culprit log"
