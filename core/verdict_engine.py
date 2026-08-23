@@ -55,6 +55,14 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     moat    = _col("moat_score", np.nan)
     valn    = _col("valuation_score", np.nan)
     bal     = _col("balance_sheet_score", np.nan)
+    # Evidence honesty (2026-08-23): the rank helpers neutral-fill missing inputs to 50, so a
+    # stock with ZERO moat/growth signals still carries a real-looking score. Mask the axis to
+    # NaN when its evidence count (from scoring_engine, same list the scorer iterates) is zero —
+    # _band_num then renders the pill as ⚪ N/A instead of a fabricated 🟡 50. `== 0` is False
+    # for NaN, so frames WITHOUT the count columns (old snapshots, minimal fixtures) keep the
+    # pre-2026-08-23 behavior — the mask can only default OFF, never ON.
+    moat = moat.mask(_col("moat_signals_available", np.nan) == 0)
+    g    = g.mask(_col("growth_signals_available", np.nan) == 0)
 
     # ── Hard-risk veto masks (cap downward only) ──
     # CALIBRATED 2026-06-14: forensic_label is "🚨" for 98.6% of the universe (only 29 "Clean") →
@@ -108,9 +116,14 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     df["verdict_axis_growth"]    = _pill_num("Growth",    g,    60, 40)
     df["verdict_axis_valuation"] = _pill_num("Valuation", valn, 60, 40)
     df["verdict_axis_balance"]   = _pill_num("Balance",   bal,  55, 38)
+    # Zero flags on Very-Low coverage (the existing <40 confidence band — no new threshold) means
+    # the checks could not RUN, not that they passed: "unverifiable is not passed" (§5). Fired
+    # flags ARE evidence, so Flagged/Watch outrank Unverified; only the Clean claim needs coverage.
+    _forensics_unverified = (rflags == 0) & (cov < 40.0)
     df["verdict_axis_forensics"] = np.where(
         forensic_veto | schilit_fail, "Forensics 🔴 Flagged",
-        np.where(rflags >= 5, "Forensics 🟡 Watch", "Forensics 🟢 Clean"),
+        np.where(rflags >= 5, "Forensics 🟡 Watch",
+        np.where(_forensics_unverified, "Forensics ⚪ Unverified", "Forensics 🟢 Clean")),
     )
     df["verdict_axis_governance"] = np.select(
         [govmult < 0.85, govmult < 1.0], ["Govern 🔴 Risk", "Govern 🟡 Caution"],

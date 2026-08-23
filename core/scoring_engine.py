@@ -225,21 +225,48 @@ def apply_hard_gates(df: pd.DataFrame) -> pd.DataFrame:
 # LAYER 2: QUALITY SCORE
 # ═══════════════════════════════════════════════════════════════
 
+# ── Axis signal lists — SINGLE SOURCE for both the score AND its evidence count ──────────
+# The scorers iterate these dicts; run_full_scoring counts notna over the same keys to emit
+# moat_signals_available / growth_signals_available (display-only — the verdict scorecard masks
+# its pill to ⚪ N/A on zero evidence). One list → the count can never drift from the score.
+# Pinned by tests/test_axis_evidence_honesty.py.
+MOAT_SIGNAL_WEIGHTS = {
+    "roce_med_10y":        0.35,
+    "roce_trajectory":     0.15,
+    "roe_med_10y":         0.25,
+    "roe_trajectory":      0.10,
+    "roce_current_vs_med": 0.15,
+}
+GROWTH_SIGNAL_WEIGHTS = {
+    "pat_gr_5y":           0.17,   # -0.03 to fund quarterly freshness layer
+    "pat_gr_10y":          0.10,
+    "rev_gr_5y":           0.17,   # -0.03 to fund quarterly freshness layer
+    "rev_gr_10y":          0.10,
+    "eps_gr_5y":           0.15,
+    "ebitda_gr_5y":        0.10,
+    "pat_acceleration":    0.06,
+    "rev_acceleration":    0.05,
+    "ebitda_acceleration": 0.04,
+}   # sums to 0.94; quarterly freshness layer carries the remaining 0.06
+GROWTH_Q_COLS = ("q_pat_yoy", "q_rev_yoy")
+
+
 def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
     """Moat score: ROCE trajectory + ROE evaluated within industry/sector cohorts.
     Uses groupby-based _sector_pct_rank (pure sector-relative rank) for peer benchmarking.
-    MEF (Moat Endurance Factor) modifier from 17th WCS boosts or penalises structural durability."""
+    MEF (Moat Endurance Factor) modifier from 17th WCS boosts or penalises structural durability.
+
+    NOTE (2026-08-23): the loop's fillna(0/50) is DEAD CODE — _sector_pct_rank neutral-fills
+    NaN to 50 internally (line ~116), so no NaN ever reaches it and a stock with ZERO moat
+    inputs scores exactly 50 (16 live rows). Whether short-history stocks should instead earn
+    0 on the 10-year signals is a SCORING calibration question — parked in known-issues.md
+    behind the snapshot evidence gate. The display layer now tells the truth regardless, via
+    moat_signals_available (the verdict pill shows ⚪ N/A on zero evidence)."""
     score = pd.Series(0.0, index=df.index)
-    # Long-term signals require 10-year history to be meaningful.
-    # fillna(0) for these two: a stock listed <10 years has NOT proven its moat — neutral credit is unearned.
-    # Trajectory/current signals use fillna(50): short history doesn't invalidate recent performance trends.
     _long_term_signals = {"roce_med_10y", "roe_med_10y"}
     signals = {
-        "roce_med_10y":        (_sector_pct_rank(df, "roce_med_10y", ascending=True), 0.35),
-        "roce_trajectory":     (_sector_pct_rank(df, "roce_trajectory", ascending=True), 0.15),
-        "roe_med_10y":         (_sector_pct_rank(df, "roe_med_10y", ascending=True), 0.25),
-        "roe_trajectory":      (_sector_pct_rank(df, "roe_trajectory", ascending=True), 0.10),
-        "roce_current_vs_med": (_sector_pct_rank(df, "roce_current_vs_med", ascending=True), 0.15),
+        name: (_sector_pct_rank(df, name, ascending=True), weight)
+        for name, weight in MOAT_SIGNAL_WEIGHTS.items()
     }
 
     for name, (ranked, weight) in signals.items():
@@ -294,23 +321,12 @@ def _compute_growth_score(df: pd.DataFrame) -> pd.Series:
         lo, hi = s.quantile(0.01), s.quantile(0.99)
         return _pct_rank(s.clip(lower=lo, upper=hi), ascending=True).fillna(50)
 
-    signals = {
-        "pat_gr_5y":           (True, 0.17),   # -0.03 to fund quarterly freshness layer
-        "pat_gr_10y":          (True, 0.10),
-        "rev_gr_5y":           (True, 0.17),   # -0.03 to fund quarterly freshness layer
-        "rev_gr_10y":          (True, 0.10),
-        "eps_gr_5y":           (True, 0.15),
-        "ebitda_gr_5y":        (True, 0.10),
-        "pat_acceleration":    (True, 0.06),
-        "rev_acceleration":    (True, 0.05),
-        "ebitda_acceleration": (True, 0.04),
-    }
-    # Signals sum: 0.17+0.10+0.17+0.10+0.15+0.10+0.06+0.05+0.04 = 0.94
-
+    # Signal columns + weights live in GROWTH_SIGNAL_WEIGHTS (module constant, sums to 0.94) —
+    # the SAME dict run_full_scoring counts evidence over, so score and count cannot drift.
     # Use winsorized rank for all growth signals to prevent outlier compression.
     # Acceleration signals (pat_acceleration, rev_acceleration, ebitda_acceleration)
     # are differences of CAGR values — far smaller magnitude, still benefit from winsorization.
-    for col, (_ascending, weight) in signals.items():
+    for col, weight in GROWTH_SIGNAL_WEIGHTS.items():
         score += _pct_rank_w(col) * weight
 
     # Quarterly freshness (6%): latest-quarter YoY — 4-6 months fresher than annual data.
@@ -505,6 +521,17 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
 
     df["moat_score"] = _compute_moat_score(df)
     df["growth_score"] = _compute_growth_score(df)
+    # Evidence counts for the two axis scores — DISPLAY-ONLY, zero score arithmetic. The rank
+    # helpers neutral-fill NaN to 50 internally, so a stock with NO inputs still scores exactly 50
+    # (16 moat-blind / 25 growth-blind live rows, e.g. Ather Energy). These counts let the verdict
+    # scorecard show ⚪ N/A instead of a fabricated pill. Counted over the SAME constants the
+    # scorers iterate (single source — cannot drift). reindex() tolerates absent columns (all-NaN).
+    df["moat_signals_available"] = (
+        df.reindex(columns=list(MOAT_SIGNAL_WEIGHTS)).notna().sum(axis=1).astype(int)
+    )
+    df["growth_signals_available"] = (
+        df.reindex(columns=[*GROWTH_SIGNAL_WEIGHTS, *GROWTH_Q_COLS]).notna().sum(axis=1).astype(int)
+    )
     df["cash_score"] = _compute_cash_score(df)
     df["margin_score"] = _compute_margin_score(df)
     df["balance_sheet_score"] = _compute_balance_sheet_score(df)
