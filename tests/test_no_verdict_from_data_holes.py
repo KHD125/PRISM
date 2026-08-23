@@ -168,3 +168,55 @@ def test_missing_rsi_is_not_branded_weak_momentum():
 def test_genuinely_weak_momentum_still_reads_weak():
     r = _one(rsi_14d=[35.0])
     assert r["d49_momentum_quality"] == "WEAK"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# forensic_engine — the WCS-24 integrity gates (same class, both directions)
+# ══════════════════════════════════════════════════════════════════════
+# The 4-gate purity screen behind forensic_label used bare fillna(0) on two gates:
+#   no_dilution: equity_shares.fillna(0) <= equity_shares_1yb.fillna(0)
+#     -> current known + prior NaN gives "X <= 0" = False = a FALSE DILUTION verdict
+#        (65 live rows), and the mirror case (current NaN) would grant an unearned pass.
+#        The SAME logical test is implemented correctly 500 lines above in f_no_dilution,
+#        which guards on notna() — one file, two answers.
+#   pledge_valid: pledged_percentage.fillna(0.0) < 10 -> an UNREPORTED pledge certified
+#     as "low pledge" (44 live rows), while management_integrity_score uses fillna(100)
+#     for the very same column. Rule (CLAUDE.md 5): unverifiable is not passed.
+
+def _forensic_row(**over):
+    import pandas as _pd
+    from forensic_engine import compute_forensic_signals as _cfs
+    base = dict(n=1, cfo_to_pat=[120.0], equity_shares=[1_000_000.0],
+                equity_shares_1yb=[1_000_000.0], pledged_percentage=[0.0])
+    base.update(over)
+    return _cfs(compute_derived_signals(_frame(**base))).iloc[0]
+
+
+def test_missing_prior_share_count_is_not_a_dilution_verdict():
+    """The engine cannot see last year's share count -> it must not conclude 'diluting'."""
+    r = _forensic_row(equity_shares_1yb=[np.nan])
+    assert r["forensic_label"] != "🟢 Clean"          # unverifiable is not certified...
+    # ...but the reason must be non-verifiability, not a fabricated dilution comparison:
+    from forensic_engine import compute_forensic_signals  # noqa: F401
+    import io as _io, os as _os
+    src = _io.open(_os.path.join(_os.path.dirname(__file__), "..", "core", "forensic_engine.py"),
+                   encoding="utf-8").read()
+    assert 'df.get("equity_shares",     pd.Series(np.nan, index=df.index)).fillna(0.0) <=' not in src, \
+        "the fillna(0) dilution comparison is back"
+
+
+def test_unreported_pledge_is_not_certified_as_low_pledge():
+    """A company whose pledge is unreported cannot pass the pledge purity gate."""
+    r = _forensic_row(pledged_percentage=[np.nan])
+    assert r["forensic_label"] != "🟢 Clean"
+
+
+def test_genuinely_clean_company_still_certifies():
+    """The positive case must survive: full data, no flags, no pledge, no dilution."""
+    r = _forensic_row()
+    assert r["forensic_label"] == "🟢 Clean"
+
+
+def test_genuine_dilution_still_fails_the_gate():
+    r = _forensic_row(equity_shares=[2_000_000.0], equity_shares_1yb=[1_000_000.0])
+    assert r["forensic_label"] != "🟢 Clean"

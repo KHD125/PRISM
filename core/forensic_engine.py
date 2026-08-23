@@ -333,7 +333,10 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     df["rf_fcf_to_cfo_low"] = np.where(
         df["free_cash_flow"].notna() & df["operating_cash_flow"].notna() &
         (df["operating_cash_flow"] > 0) & ~_cwip_conv_active,
-        (df["free_cash_flow"].fillna(0) / df["operating_cash_flow"] < 0.15).astype(int),
+        # no fillna on the numerator: the outer guard already requires FCF reported, and a
+        # dead .fillna(0) here is a landmine — it starts firing false flags the moment anyone
+        # loosens that guard (the MEF lesson: dead sentinels wait for a consumer to trust them).
+        (df["free_cash_flow"] / df["operating_cash_flow"] < 0.15).astype(int),
         0
     )
 
@@ -649,12 +652,20 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # ──────────────────────────────────────────────────────────────
 
     # Risk classification - WCS 24 Forensic Hard Gates Absolute Gatekeeper Model
+    # UNVERIFIABLE IS NOT PASSED (CLAUDE.md §5) — fixed 2026-08-23. Two gates fabricated:
+    #  • no_dilution compared equity_shares.fillna(0) <= equity_shares_1yb.fillna(0), so a
+    #    KNOWN current count against a MISSING prior year read "X <= 0" = a false DILUTION
+    #    verdict (65 live rows); the mirror case would have granted an unearned pass. The
+    #    same test is guarded correctly by f_no_dilution above — one file, two answers.
+    #  • pledge_valid used fillna(0.0) < 10, certifying an UNREPORTED pledge as "low pledge"
+    #    (44 live rows), while management_integrity_score uses fillna(100) for that very
+    #    column. Both now require the input; a purity gate you cannot verify is not passed.
+    _eq_ig  = df.get("equity_shares",     pd.Series(np.nan, index=df.index))
+    _eq1_ig = df.get("equity_shares_1yb", pd.Series(np.nan, index=df.index))
+    _pl_ig  = df.get("pledged_percentage", pd.Series(np.nan, index=df.index))
     cfo_pat_valid = (df["cfo_to_pat"].fillna(0.0) >= 80.0)
-    pledge_valid  = (df.get("pledged_percentage", pd.Series(0.0, index=df.index)).fillna(0.0) < 10.0)
-    no_dilution   = (
-        df.get("equity_shares",     pd.Series(np.nan, index=df.index)).fillna(0.0) <=
-        df.get("equity_shares_1yb", pd.Series(np.nan, index=df.index)).fillna(0.0)
-    )
+    pledge_valid  = (_pl_ig.notna() & (_pl_ig < 10.0))
+    no_dilution   = (_eq_ig.notna() & _eq1_ig.notna() & (_eq_ig <= _eq1_ig))
     no_red_flags  = (df["red_flag_count"] == 0)
 
     integrity_pass = cfo_pat_valid & pledge_valid & no_dilution & no_red_flags
