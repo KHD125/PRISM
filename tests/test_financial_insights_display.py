@@ -193,3 +193,101 @@ def test_icons_agree_with_the_thresholds_the_rows_themselves_state():
         "icon contradicts the threshold the row itself states (the NumPy-bool class):\n  "
         + "\n  ".join(failures[:10])
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FORENSIC FLAG EVIDENCE — every fired flag must show NUMBERS from the metric it
+# actually tested, and the Clean verdict must respect severity.
+# ══════════════════════════════════════════════════════════════════════════════
+# Two classes found from user screenshots (2026-08-24), both invisible to crash/NaN tests:
+#   * WRONG METRIC — the evidence line printed a DIFFERENT column than the flag fired on, so it
+#     appeared to REFUTE its own accusation. rf_ssgr_deficit showed pat_gr_yoy 9.4% under the
+#     title "growth exceeds SSGR" while the flag used revenue growth 20.9% vs SSGR 13.5%.
+#     rf_opm_volatile showed the CURRENT opm while the engine tests opm_1yb (52/474 rows, 11%,
+#     displayed a pair that does not breach the stated 30% threshold).
+#   * NO EVIDENCE — 5 of 28 flags fell back to prose ("Beneish TATA forensic signal") or, for
+#     rf_dilution, rendered a title above a BLANK line (626 firing stocks).
+
+
+@pytest.mark.skipif(not os.path.isdir(_DATA_DIR), reason="local CSV data absent")
+def test_every_fired_flag_shows_numeric_evidence():
+    """No fired forensic flag may fall back to a slogan or a blank line: the reader must see the
+    measured value behind the accusation. Sampled across every flag that fires on live data."""
+    import contextlib
+    import io as _io
+
+    from core import run_scoring_pipeline
+    from core.data_engine import (coerce_numeric_columns, compute_derived_signals,
+                                  load_all_csvs, merge_datasets)
+    from ui.ui_tearsheet import _FLAG_DISPLAY, _get_flag_context
+
+    with contextlib.redirect_stdout(_io.StringIO()):
+        df = run_scoring_pipeline(compute_derived_signals(coerce_numeric_columns(
+            merge_datasets(load_all_csvs("local")))))
+
+    offenders = []
+    for col in _FLAG_DISPLAY:
+        if col not in df.columns:
+            continue
+        fired = df[df[col].fillna(0) == 1]
+        if fired.empty:
+            continue
+        # a flag passes if it yields numeric evidence on the majority of its firing rows
+        sample = min(20, len(fired))
+        with_numbers = sum(bool(re.search(r"\d", _get_flag_context(fired.iloc[i], col) or ""))
+                           for i in range(sample))
+        if with_numbers < sample * 0.5:
+            offenders.append(f"{col} ({with_numbers}/{sample} rows show numbers, fires {len(fired)}x)")
+    assert not offenders, (
+        "forensic flags falling back to prose or a blank line instead of showing the measured "
+        f"value: {offenders}. Add a handler in _get_flag_context mirroring the engine's condition."
+    )
+
+
+@pytest.mark.skipif(not os.path.isdir(_DATA_DIR), reason="local CSV data absent")
+def test_flag_evidence_never_refutes_its_own_flag():
+    """WRONG-METRIC GUARD for the two flags whose evidence states an explicit threshold: the
+    numbers shown must actually breach that threshold. This is what would have caught the
+    rf_ssgr_deficit ('9.4% exceeds 13.5%'?) and rf_opm_volatile mismatches."""
+    import contextlib
+    import io as _io
+
+    from core import run_scoring_pipeline
+    from core.data_engine import (coerce_numeric_columns, compute_derived_signals,
+                                  load_all_csvs, merge_datasets)
+    from ui.ui_tearsheet import _get_flag_context
+
+    with contextlib.redirect_stdout(_io.StringIO()):
+        df = run_scoring_pipeline(compute_derived_signals(coerce_numeric_columns(
+            merge_datasets(load_all_csvs("local")))))
+
+    bad = []
+    ssgr_fired = df[df["rf_ssgr_deficit"].fillna(0) == 1]
+    for i in range(0, len(ssgr_fired), max(1, len(ssgr_fired) // 40)):
+        ctx = _get_flag_context(ssgr_fired.iloc[i], "rf_ssgr_deficit")
+        m = re.search(r"growth:\s*([\d.-]+)%.*?SSGR:\s*([\d.-]+)%", ctx or "")
+        if m and float(m.group(1)) <= float(m.group(2)):
+            bad.append(f"ssgr {ssgr_fired.iloc[i]['name']}: growth {m.group(1)} !> SSGR {m.group(2)}")
+
+    opm_fired = df[df["rf_opm_volatile"].fillna(0) == 1]
+    for i in range(0, len(opm_fired), max(1, len(opm_fired) // 40)):
+        ctx = _get_flag_context(opm_fired.iloc[i], "rf_opm_volatile")
+        m = re.search(r"deviation\s*(\d+)%\s*·\s*threshold:\s*>(\d+)%", ctx or "")
+        if m and int(m.group(1)) <= int(m.group(2)):
+            bad.append(f"opm {opm_fired.iloc[i]['name']}: deviation {m.group(1)}% !> {m.group(2)}%")
+
+    assert not bad, ("flag evidence contradicts the flag that fired:\n  " + "\n  ".join(bad[:10]))
+
+
+def test_clean_verdict_respects_severity():
+    """'No Material Red Flags' must not print above a CRITICAL flag. 201 of 639 Clean labels
+    (31.5%) did exactly that before the severity gate was added."""
+    from ui.ui_tearsheet import _CRITICAL_FLAG_COLS, _forensic_status
+
+    assert len(_CRITICAL_FLAG_COLS) == 7, "critical severity set changed — re-verify _FLAG_DISPLAY"
+    clean_txt, _, is_clean = _forensic_status(89.0, 3, has_critical=False)
+    assert is_clean and "Clean" in clean_txt
+    elev_txt, _, is_clean2 = _forensic_status(89.0, 3, has_critical=True)
+    assert not is_clean2 and "Elevated" in elev_txt, "a critical flag must block the Clean verdict"
+    # a genuinely bad stock still reads Sharp Practices regardless of severity flag
+    assert "Sharp" in _forensic_status(39.0, 17, has_critical=True)[0]

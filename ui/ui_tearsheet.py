@@ -72,7 +72,7 @@ _FLAG_DISPLAY = {
     "rf_high_accruals":     ("High accruals >5% of assets — Beneish TATA forensic signal",  "🔴"),
     "rf_low_fcf_ebitda":    ("FCF/EBITDA <30% — EBITDA significantly overstates real cash", "🟠"),
     "rf_fcf_to_cfo_low":    ("FCF/CFO <15% — capital trap: capex consuming all OCF",        "🟠"),
-    "rf_opm_volatile":      ("OPM >30% off 5Y median — commodity trap, no pricing power",   "🟡"),
+    "rf_opm_volatile":      ("OPM deviates >30% from 5Y median — unstable margins, no pricing power", "🟡"),
     "rf_nfat_very_low":     ("NFAT <1.5 — extreme capital intensity, growth destroys value","🟡"),
     "rf_debt_ebitda_high":  ("Debt/EBITDA >5× — Amtek Auto collapse pattern",              "🔴"),
     "rf_cwip_bloat":        ("CWIP share of assets grew >50% YoY — IL&FS balance-sheet parking", "🟠"),
@@ -562,19 +562,81 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         if pg: parts.append(f"pat_gr: {pg}")
         return "  ·  ".join(parts)
     if rf_col == "rf_ssgr_deficit":
-        gr   = _v("pat_gr_yoy", "{:.1f}%")
-        ssgr = _v("ssgr",       "{:.1f}%")
-        parts = []
-        if gr:   parts.append(f"actual_gr: {gr}")
-        if ssgr: parts.append(f"SSGR: {ssgr}")
-        return "  ·  ".join(parts)
+        # WRONG METRIC (fixed 2026-08-24): this printed pat_gr_yoy — PROFIT growth year-over-year
+        # — while the flag fires on ssgr_cushion, which the engine builds from REVENUE growth 5Y.
+        # Sarda rendered "actual_gr: 9.4% · SSGR: 13.5%" beneath the title "Actual growth exceeds
+        # SSGR by >5%": evidence that appears to REFUTE its own accusation, making a correct
+        # forensic flag look like a false positive. The true pair is 20.9% vs 13.5%.
+        # Derived from the cushion (actual = ssgr − cushion) so the evidence is self-consistent
+        # with the firing condition BY CONSTRUCTION and can never drift from it again.
+        _ss, _cu = stock.get("ssgr"), stock.get("ssgr_cushion")
+        if pd.isna(_ss) or pd.isna(_cu):
+            return ""
+        return (f"growth: {float(_ss) - float(_cu):.1f}%  ·  SSGR: {float(_ss):.1f}%"
+                f"  ·  exceeds by {abs(float(_cu)):.1f}%")
     if rf_col == "rf_opm_volatile":
-        opm  = _v("opm",       "{:.1f}%")
-        opm5 = _v("opm_med_5y", "{:.1f}%")
-        parts = []
-        if opm:  parts.append(f"OPM: {opm}")
-        if opm5: parts.append(f"5Y median: {opm5}")
-        return "  ·  ".join(parts)
+        # WRONG METRIC (fixed 2026-08-24, same class as rf_ssgr_deficit): this printed the CURRENT
+        # opm, but the engine tests |opm_1yb − opm_med_5y| / opm_med_5y > 0.30 (annual vs annual;
+        # the quarterly fallback was removed as seasonally distorted). On 52 of 474 firing rows
+        # (11.0%) the displayed pair does NOT breach 30%, so the evidence appeared to refute its
+        # own flag. Now shows the compared annual figure and the deviation the flag measured.
+        _o5 = stock.get("opm_med_5y")
+        _o1 = stock.get("opm_1yb")
+        if pd.isna(_o5) or float(_o5) <= 0:
+            return ""
+        _cmp = float(_o1) if pd.notna(_o1) else float(_o5)
+        _dev = abs(_cmp - float(_o5)) / float(_o5) * 100.0
+        return (f"OPM {_cmp:.1f}% vs 5Y median {float(_o5):.1f}%"
+                f"  ·  deviation {_dev:.0f}%  ·  threshold: >30%")
+    if rf_col == "rf_high_accruals":
+        # engine (forensic_engine ~L311): (PAT − OCF) / avg_total_assets > 0.05
+        _pat_a = stock.get("pat"); _ocf_a = stock.get("operating_cash_flow")
+        _ta = stock.get("total_assets"); _ta1 = stock.get("total_assets_1yb")
+        if pd.isna(_pat_a) or pd.isna(_ocf_a) or pd.isna(_ta):
+            return ""
+        _avg_ta = (float(_ta) + (float(_ta1) if pd.notna(_ta1) else float(_ta))) / 2.0
+        if _avg_ta <= 0:
+            return ""
+        _acc = (float(_pat_a) - float(_ocf_a)) / _avg_ta * 100.0
+        return (f"accruals: {_acc:.1f}% of assets  ·  threshold: >5%"
+                f"  ·  PAT ₹{float(_pat_a):,.0f}cr vs OCF ₹{float(_ocf_a):,.0f}cr")
+    if rf_col == "rf_low_fcf_ebitda":
+        # engine (~L320): FCF / EBITDA < 0.30, only when EBITDA > 0
+        _fcf_e, _ebd = stock.get("free_cash_flow"), stock.get("ebitda")
+        if pd.isna(_fcf_e) or pd.isna(_ebd) or float(_ebd) <= 0:
+            return ""
+        return (f"FCF/EBITDA: {100.0 * float(_fcf_e) / float(_ebd):.0f}%  ·  threshold: <30%"
+                f"  ·  FCF ₹{float(_fcf_e):,.0f}cr vs EBITDA ₹{float(_ebd):,.0f}cr")
+    if rf_col == "rf_debt_ebitda_high":
+        # engine (~L384): debt / EBITDA > 5.0, non-financials only
+        _dbt, _ebd2 = stock.get("debt"), stock.get("ebitda")
+        if pd.isna(_dbt) or pd.isna(_ebd2) or float(_ebd2) <= 0:
+            return ""
+        return (f"Debt/EBITDA: {float(_dbt) / float(_ebd2):.1f}×  ·  threshold: >5×"
+                f"  ·  debt ₹{float(_dbt):,.0f}cr")
+    if rf_col == "rf_cwip_bloat":
+        # engine (~L409): CWIP share of assets grew >50% YoY
+        _cw, _ta_c = stock.get("cwip"), stock.get("total_assets")
+        _cw1, _ta1c = stock.get("cwip_1yb"), stock.get("total_assets_1yb")
+        if any(pd.isna(v) for v in (_cw, _ta_c, _cw1, _ta1c)) or float(_ta_c) <= 0 or float(_ta1c) <= 0:
+            return ""
+        _now = 100.0 * float(_cw) / float(_ta_c)
+        _then = 100.0 * float(_cw1) / float(_ta1c)
+        if _then <= 0:
+            return ""
+        return (f"CWIP {_then:.1f}% → {_now:.1f}% of assets"
+                f"  ·  +{100.0 * (_now / _then - 1.0):.0f}% YoY  ·  threshold: >+50%")
+    if rf_col == "rf_dilution":
+        # engine (~L260): dilution_flag >= 2 (Tier 2+ = >3% meaningful dilution).
+        # The old handler returned "" whenever shares_gr_yoy was missing AND this flag's
+        # description carries no fallback text — so the row rendered a title above a BLANK line
+        # (626 firing stocks, user-reported). Tier is always present when the flag fires.
+        _sh_gr = stock.get("shares_gr_yoy")
+        _tier_d = int(_g(stock, "dilution_flag", 0))
+        _tier_txt = "Tier 3 (>10%, predatory)" if _tier_d >= 3 else "Tier 2 (3–10%)"
+        if pd.notna(_sh_gr):
+            return f"share count grew: {float(_sh_gr):.1f}%  ·  {_tier_txt}  ·  threshold: >3%"
+        return f"{_tier_txt} dilution  ·  threshold: >3% share-count growth"
     if rf_col == "rf_nfat_very_low":
         v = _v("nfat", "{:.2f}×")
         return f"NFAT: {v}  ·  threshold: <1.5×" if v else ""
@@ -651,19 +713,37 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
     return ""
 
 
-def _forensic_status(forensic_score: float, flag_count: int):
-    """Selective forensic verdict from the cascade's OWN metrics (forensic_score + red_flag_count).
+# The 7 flags the Fraud Perimeter groups under "🔴 Critical" — derived from _FLAG_DISPLAY so the
+# severity map stays the single source of truth (add a critical flag there and this follows).
+_CRITICAL_FLAG_COLS = tuple(c for c, (_d, _sev) in _FLAG_DISPLAY.items() if _sev == "🔴")
+
+
+def _forensic_status(forensic_score: float, flag_count: int, has_critical: bool = False):
+    """Selective forensic verdict from the cascade's OWN metrics (forensic_score + red_flag_count
+    + critical-severity presence).
 
     NOT the forensic_label column — that fires its negative band for ~98.6% of the
     universe (only 29/2107 are "🟢 Clean"), so it cried wolf on clean Crown Jewels and CONTRADICTED
     the Schilit shield's "Clean Audit". Census 2026-06-15 on the 2107-stock universe:
     🔴 Sharp 474 (22%) · 🟡 Watch 879 (42%) · 🟢 Clean 754 (36%). Returns (text, color, is_clean).
+
+    SEVERITY GATE (added 2026-08-24): the Clean band judged COUNT and SCORE only, so a stock could
+    print "🟢 Clean — No Material Red Flags" directly above a panel headed "🔴 CRITICAL — 1 FLAG"
+    (Sarda: score 89, 3 flags, one of them critical). "Material" is exactly what a critical flag
+    IS. Measured: 639 stocks were labelled Clean and 201 of them (31.5%) carried a critical flag.
+    Those now fall to the existing Elevated band — which is what they always were.
+    `has_critical` defaults False so callers that cannot compute it keep the old behaviour.
     """
     if forensic_score < 60 or flag_count >= 8:
         return ("🚨 Sharp Practices Detected", COLORS["red"], False)
-    if forensic_score >= 80 and flag_count <= 3:
+    if forensic_score >= 80 and flag_count <= 3 and not has_critical:
         return ("🟢 Clean — No Material Red Flags", COLORS["green"], True)
     return ("🟡 Elevated — Watch the Accounts", COLORS["gold"], False)
+
+
+def _has_critical_flag(stock: pd.Series) -> bool:
+    """True when any 🔴-severity forensic flag fired — the severity input to _forensic_status."""
+    return any(int(_g(stock, c, 0)) == 1 for c in _CRITICAL_FLAG_COLS)
 
 
 def render_forensic_perimeter(stock: pd.Series):
@@ -674,7 +754,8 @@ def render_forensic_perimeter(stock: pd.Series):
     """
     flag_count     = int(_g(stock, "red_flag_count",         0))
     forensic_score = _g(stock,  "forensic_score",            100)
-    status_txt, status_clr, _ = _forensic_status(forensic_score, flag_count)
+    status_txt, status_clr, _ = _forensic_status(forensic_score, flag_count,
+                                                 _has_critical_flag(stock))
     f_mult         = _g(stock,  "forensic_multiplier",       1.0)
     piotroski      = int(_g(stock, "piotroski_fscore",        0))
     pio_label      = stock.get("piotroski_label",  "") or ""
@@ -1558,7 +1639,8 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     # its negative band for 98.6% of the universe, which contradicted the BUY/Clean-Audit
     # verdict in the hero. See _forensic_status() (same logic powers the Perimeter + Fisher P15).
     f_txt, f_clr, _ = _forensic_status(_g(stock, "forensic_score", 100),
-                                       int(_g(stock, "red_flag_count", 0)))
+                                       int(_g(stock, "red_flag_count", 0)),
+                                       _has_critical_flag(stock))
     # Label as "… Market" so this market-wide regime badge isn't mistaken for a per-stock trait
     # (it's the same on every tearsheet by design — one breadth-derived regime for the whole universe).
     reg_map    = {"BULL": ("🟢 Bull Market", COLORS["green"]), "BEAR": ("🔴 Bear Market", COLORS["red"])}
@@ -2231,21 +2313,27 @@ def render_canslim_radar(stock: pd.Series):
 
 def _get_schilit_context(stock: pd.Series, checker_col: str) -> str:
     """Returns a compact metric string to show beneath an active Schilit flag."""
+    # HUMAN LABELS (fixed 2026-08-24): these cards printed raw internal column names —
+    # "accruals_warning: 1 · inv_gap: 30.2%", "high_cash_high_debt: 1" — developer snake_case
+    # leaking into a user-facing panel, with booleans rendered as a bare "1" that means nothing
+    # to a reader. Every other panel in the app uses plain-language labels; these now match.
     if checker_col == "schilit_ems_flag":
         aw  = int(_g(stock, "accruals_warning", 0))
         igp = _g(stock, "inv_vs_rev_gap", 0)
-        return f"accruals_warning: {aw}  ·  inv_gap: {igp:.1f}%"
+        return (f"Accruals warning: {'yes' if aw else 'no'}"
+                f"  ·  Inventory outgrew revenue by {igp:.1f}%")
     if checker_col == "schilit_cfs_flag":
         pg  = _g(stock, "pat_gr_yoy",  0)
         ocf = _g(stock, "ocf_growth",  0)
-        return f"pat_gr_yoy: {pg:.1f}%  ·  ocf_growth: {ocf:.1f}%"
+        return f"Profit growth {pg:+.1f}%  ·  Operating cash flow {ocf:+.1f}%"
     if checker_col == "schilit_kms_lev_flag":
         hcd = int(_g(stock, "high_cash_high_debt", 0))
-        return f"high_cash_high_debt: {hcd}"
+        return ("Holding high cash AND high debt at once" if hcd else
+                "Leverage structure flagged")
     if checker_col == "schilit_kms_bloat_flag":
         dso = _g(stock, "dso_delta_3y",           0)
         idc = _g(stock, "inventory_days_change",  0)
-        return f"dso_delta_3y: {dso:.0f}d  ·  inventory_days_change: {idc:.0f}d"
+        return (f"Receivable days {dso:+.0f}d over 3Y  ·  Inventory days {idc:+.0f}d YoY")
     return ""
 
 

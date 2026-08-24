@@ -690,7 +690,7 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "rf_snoa":            "Net operating assets bloat — cumulative accrual build-up (QV SNOA >1.0)",
         "rf_low_fcf_ebitda":  "FCF/EBITDA <30% — EBITDA overstates real earnings (Malik S5)",
         "rf_fcf_to_cfo_low":           "FCF/CFO <15% — capital trap, capex consuming all operating cash",
-        "rf_opm_volatile":             "OPM >30% off 5Y median — commodity trap, no pricing power",
+        "rf_opm_volatile":             "OPM deviates >30% from 5Y median — unstable margins, no pricing power",
         "rf_nfat_very_low":            "NFAT <1.5 — extreme capital intensity, growth destroys value",
         "rf_debt_ebitda_high":         "Debt/EBITDA >5× — Amtek Auto collapse pattern, critical for infra/real estate",
         "rf_cwip_bloat":               "CWIP share of assets grew >50% YoY — IL&FS-style balance sheet parking",
