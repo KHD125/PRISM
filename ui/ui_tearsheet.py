@@ -1145,6 +1145,15 @@ def render_financial_insights(stock: pd.Series):
     """
 
     def _row(label: str, passed, value_str: str, context: str = "") -> str:
+        # NUMPY BOOL TRAP (fixed 2026-08-24): every threshold here compares a NumPy float, and
+        # `np.float64(18.4) >= 15` returns np.bool_ — for which `x is True` is FALSE. The identity
+        # checks below therefore fell through to the neutral ⚪ branch for 13 of 17 rows on EVERY
+        # stock, silently turning computed verdicts into "no data" — and ⚪ is this codebase's
+        # honest-blank signal, so the panel actively lied about having no answer. Normalizing HERE
+        # (not at each call site) immunizes every present and future caller; None is preserved as
+        # the genuine unknown state. Pinned by tests/test_financial_insights_display.py.
+        if passed is not None:
+            passed = bool(passed)
         if passed is True:
             ico, clr = "✅", COLORS["green"]
         elif passed is False:
@@ -1191,7 +1200,6 @@ def render_financial_insights(stock: pd.Series):
     roce_curr = _g(stock, "roce", 0)
     pat_5y    = _g(stock, "pat_gr_5y", 0)
     rev_5y    = _g(stock, "rev_gr_5y", 0)
-    op_lev    = int(_g(stock, "operating_leverage", 0))
     npm       = _g(stock, "npm", 0)
     npm_5y    = _g(stock, "npm_med_5y", npm)
 
@@ -1208,11 +1216,18 @@ def render_financial_insights(stock: pd.Series):
         f"{pat_5y:.1f}% p.a.",
         f"vs Revenue {rev_5y:.1f}% · {'Expanding margin ✅' if pat_5y > rev_5y else 'Margin pressure ⚠️'}",
     )
+    # The help text used to read "PAT CAGR > Revenue CAGR" — the FALLBACK basis only. The engine
+    # prefers EBIT 3Y − Revenue 3Y (capital-structure-neutral), so a stock could show +18.2pp here
+    # while the row ABOVE showed 5-year PAT trailing revenue ("Margin pressure ⚠️") — two true
+    # statements reading as a contradiction (EPack Prefab, reported 2026-08-24). Now the row names
+    # its real basis and surfaces the computed value instead of a bare "Positive".
+    _spc = stock.get("sales_profit_conversion")
+    _spc_known = pd.notna(_spc)
     bq += _row(
         "Sales→Profit Conversion",
-        op_lev == 1,
-        "Positive ✅" if op_lev else "Negative",
-        "PAT CAGR > Revenue CAGR → scalable cost structure",
+        (float(_spc) > 0) if _spc_known else None,
+        (f"{float(_spc):+.1f}pp" if _spc_known else "Not reported"),
+        "EBIT 3Y vs Revenue 3Y (PAT 5Y fallback) — profit engine scaling faster than sales",
     )
     bq += _row(
         "Net Margin — 5Y Median",
@@ -1236,12 +1251,28 @@ def render_financial_insights(stock: pd.Series):
         f"{cfo_pat:.1f}%",
         "≥70%: real cash  |  50–70%: watch  |  <50%: accrual risk",
     )
-    ssgr_txt = (
-        f"Self-Funded — SSGR {ssgr:.1f}% covers growth ({ssgr_c:.1f}% cushion)"
-        if ssgr_sf else
-        f"External Capital — actual growth exceeds SSGR {ssgr:.1f}%"
-    )
-    cd += _row("Growth Funding (SSGR)", ssgr_sf == 1, ssgr_txt, "")
+    # SSGR — three HONEST states (fixed 2026-08-24):
+    #  * UNKNOWN: 428 live rows (20.2%) carry a NaN SSGR, and the old `_g(..., 0)` default printed
+    #    a red ✗ "External Capital — actual growth exceeds SSGR 0.0%" — a fabricated accusation on
+    #    absent data, hitting ranks #1/#3/#4/#6. Only 28 rows have a genuine 0.0% SSGR.
+    #  * The fail branch stated only the LEVEL in a sentence that reads as the GAP: "exceeds SSGR
+    #    13.5%" parses as "exceeds BY 13.5%" (Sarda: SSGR 13.5%, growth 21.0%, shortfall −7.4%).
+    #    Both branches now state the level AND the gap explicitly, mirroring each other.
+    _ssgr_raw, _cush_raw = stock.get("ssgr"), stock.get("ssgr_cushion")
+    if pd.isna(_ssgr_raw) or pd.isna(_cush_raw):
+        cd += _row("Growth Funding (SSGR)", None, "SSGR unavailable",
+                   "Needs net margin, asset turnover and payout — one or more not reported")
+    else:
+        _ssgr_v, _cush_v = float(_ssgr_raw), float(_cush_raw)
+        _self_funded = _cush_v > 0
+        cd += _row(
+            "Growth Funding (SSGR)",
+            _self_funded,
+            (f"Self-Funded — SSGR {_ssgr_v:.1f}% · covers growth by {_cush_v:.1f}%"
+             if _self_funded else
+             f"External Capital — SSGR {_ssgr_v:.1f}% · growth exceeds it by {abs(_cush_v):.1f}%"),
+            "Malik: growth above the self-sustainable rate must be funded externally",
+        )
     # Distinguish truly debt-free (int_cov data absent AND D/E near zero) from
     # missing coverage data (company has debt but interest_coverage not in CSV).
     _int_raw = _g(stock, "interest_coverage", None)  # None = NaN/missing
@@ -1406,6 +1437,11 @@ def render_verdict_scorecard(stock: pd.Series):
     # (WCS wealth-creation composite, economic profit, Buffett VCR, terms-of-trade, cash machine).
     # Scales verified 2026-06-14: wcs 0-10, EP ₹Cr, VCR ~1x, ToT days, cash 0/50/100.
     def _ds(label, val_str, good):
+        # Same NumPy-bool trap as _row (fixed 2026-08-24): the Deep Signals chips pass raw
+        # comparisons ((_wcs >= 5) etc.) so all 5 rendered permanently neutral on every stock,
+        # while the Entry-Timing chips were correct only because _good() returns Python bools.
+        if good is not None:
+            good = bool(good)
         clr = (COLORS["green"] if good is True else
                COLORS["red"] if good is False else COLORS["text_secondary"])
         return (f'<span style="font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:10px;'
