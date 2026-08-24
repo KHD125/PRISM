@@ -1271,20 +1271,29 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # trends "Perfect Entry (Low Risk)" — the most dangerous technical state wearing the
     # safest label (883 stocks). It also polluted the Marks Shield Price-vs-Value pillar,
     # which awards its check on this exact label. Marks: risk is highest when it feels lowest.
+    # Band ladder is EXHAUSTIVE over valid distances (fixed 2026-08-24): the old arms
+    # [<0, ≤5, ≤12, >25] left the 12–25% band uncovered, so 650 live stocks (30.7%) with a
+    # perfectly VALID stop distance fell to "⚪ Uncharted" — which the Reference tab defines
+    # as "missing price/volatility data". The default is now reserved for genuine NaN only.
+    # LABEL RULE (pinned by test_entry_timing_calibration): no label except "🔻 Below Stop"
+    # may contain Below/Avoid/Overextend/Stop — verdict_engine's timing_poor veto is a
+    # SUBSTRING match, and a name like "Above Stop" would silently downgrade BUYs to WATCH.
     df["buy_zone_label"] = np.select(
         [
             df["dist_to_vstop"] < 0,    # Price BELOW the stop — trend broken, not an entry
             df["dist_to_vstop"] <= 5,   # Within 5% above stop (Asymmetric Risk/Reward)
             df["dist_to_vstop"] <= 12,  # Normal volatility buffer
+            df["dist_to_vstop"] <= 25,  # In-trend but wide risk-to-stop (3× Minervini's max loss)
             df["dist_to_vstop"] > 25    # Extended far beyond 50DMA/VSTOP
         ],
         [
             "🔻 Below Stop (Trend Broken)",
             "🟢 Perfect Entry (Low Risk)",
             "🟡 Standard Zone",
+            "🟠 Loose Entry Zone",
             "🔴 Extended (Wait for Pullback)"
         ],
-        default="⚪ Uncharted"
+        default="⚪ Uncharted"           # ONLY genuine NaN (its documented meaning, at last)
     )
 
     # ── MARKET CAP TIER (mirrors Google Sheet ARRAYFORMULA exactly) ──
@@ -3587,6 +3596,18 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["pe_discount_to_quality"] = np.where(
         df["pe"].notna() & (df["pe"] > 0),
         df["fair_pe_qglp"] - df["pe"],
+        np.nan
+    )
+
+    # fair_value_qglp (added 2026-08-24): the SAME fair PE, expressed in rupees for the tearsheet's
+    # Execution Strip — fair_pe_qglp × EPS. Materialized HERE (not derived in the display layer) per
+    # the pure-display mandate. Guards: EPS must be reported AND positive — a loss-maker's "fair
+    # value" via an earnings multiple is undefined (a negative target would be nonsense), so it
+    # propagates NaN and the strip renders an honest "—" (semantic-truth, §5).
+    _eps_fv = df.get("eps", pd.Series(np.nan, index=df.index))
+    df["fair_value_qglp"] = np.where(
+        _eps_fv.notna() & (_eps_fv > 0) & df["fair_pe_qglp"].notna(),
+        (df["fair_pe_qglp"] * _eps_fv).round(2),
         np.nan
     )
 

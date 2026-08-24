@@ -1477,6 +1477,11 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     sector     = _esc(stock.get("sector", "") or "")
     industry   = _esc(stock.get("industry", "") or "")
     mcap       = _g(stock, "market_cap", 0)
+    # Price chip (added 2026-08-24): the tearsheet showed a ₹ stop and ₹ allocation but never the
+    # price itself. NaN -> omitted entirely (no fabricated zero).
+    _px_hero   = stock.get("close_price")
+    px_chip    = (f' &nbsp;·&nbsp; ₹{float(_px_hero):,.2f}'
+                  if pd.notna(_px_hero) and float(_px_hero) > 0 else "")
     mcat       = _esc(stock.get("market_category", "") or "")
     mg_quad    = _esc(stock.get("moat_growth_quad", "") or "")
     # Selective forensic badge (forensic_score + red_flag_count) — the forensic_label column reads
@@ -1639,7 +1644,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
           <div style="font-size:2.1rem;font-weight:900;color:{COLORS['text_primary']};
                       line-height:1.1;word-break:break-word;">{name}</div>
           <div style="font-size:0.78rem;color:{COLORS['text_muted']};margin-top:4px;">
-            {industry} &nbsp;·&nbsp; ₹{mcap:,.0f} Cr
+            {industry} &nbsp;·&nbsp; ₹{mcap:,.0f} Cr{px_chip}
           </div>
           <div style="margin-top:12px;">{badges_html}</div>
         </div>
@@ -3277,6 +3282,42 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{row2}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Row 3 · EXECUTION STRIP (added 2026-08-24) — the price, at last, against the engine's
+    # own levels. The cockpit printed a ₹ stop and a ₹ allocation while the price itself appeared
+    # NOWHERE on the tearsheet — the reader couldn't verify the stop distance or turn the
+    # allocation into shares. Pure display over pre-materialized columns (fair_value_qglp is
+    # engine-guarded: loss-makers propagate NaN → honest "—"). Price is as of the last data
+    # refresh — there is no price-date column, so no timestamp is fabricated.
+    _px_ex   = stock.get("close_price")
+    _fv_ex   = stock.get("fair_value_qglp")
+    _d52_ex  = stock.get("dist_52wh")
+    _dvs_ex  = stock.get("dist_to_vstop")
+    _px_ok   = pd.notna(_px_ex) and float(_px_ex) > 0
+    _fv_txt, _fv_sub, _fv_clr = "—", "needs positive EPS", COLORS["text_muted"]
+    if _px_ok and pd.notna(_fv_ex):
+        _upside = (float(_fv_ex) / float(_px_ex) - 1.0) * 100.0
+        _fv_txt = f"₹ {float(_fv_ex):,.0f}"
+        _fv_sub = f"{_upside:+.0f}% vs price · QGLP fair PE × EPS"
+        _fv_clr = COLORS["green"] if _upside >= 0 else COLORS["red"]
+    _sh_txt = "—"
+    if _px_ok and allocation and allocation > 0:
+        _sh_txt = f"{int(allocation // float(_px_ex)):,} shares"
+    _dvs_sub = (f"{float(_dvs_ex):+.1f}% vs stop" if pd.notna(_dvs_ex) else "stop distance unknown")
+    _d52_sub = (f"{float(_d52_ex):.1f}% off 52w high" if pd.notna(_d52_ex) else "")
+    row3 = (
+        _cockpit_card("💹 Price (last data refresh)",
+                      f"₹ {float(_px_ex):,.2f}" if _px_ok else "—",
+                      f"{_dvs_sub}" + (f" · {_d52_sub}" if _d52_sub else ""),
+                      COLORS["text_primary"], COLORS["text_muted"]) +
+        _cockpit_card("⚖️ Fair Value (QGLP)", _fv_txt, _fv_sub, _fv_clr, _fv_clr) +
+        _cockpit_card("🧾 Executable at 10L Base", _sh_txt,
+                      "deployment ÷ price", COLORS["blue"], COLORS["text_muted"])
+    )
+    st.markdown(
+        f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">{row3}</div>',
         unsafe_allow_html=True,
     )
     st.markdown(

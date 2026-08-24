@@ -35,6 +35,7 @@ CONCEPT_REFERENCE = {
         ("🟡 Standard Zone", "Price is 5–12% above the Volatility Stop — a normal volatility buffer; an ordinary entry, not extended."),
         ("🔴 Extended (Wait for Pullback)", "Price is more than 25% above the Volatility Stop — stretched far from support; waiting for a pullback lowers entry risk."),
         ("🔻 Below Stop (Trend Broken)", "Price has fallen BELOW its Volatility Stop — the trend is broken. The most dangerous state, not an entry however cheap it looks."),
+        ("🟠 Loose Entry Zone", "12–25% above the Volatility Stop — still in the uptrend, but entering here means accepting a 12–25% loss if the stop is honored (~3× Minervini's max-loss rule). Fine to hold; mediocre to initiate."),
         ("⚪ Uncharted", "No valid Volatility Stop (missing price/volatility data) — entry timing can't be judged."),
     ],
     # ── weinstein_stage — core/data_engine.py:2204 (price vs rising/falling 30-week MA + MA stacking)

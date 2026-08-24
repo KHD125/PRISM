@@ -161,3 +161,76 @@ def test_marks_price_value_pillar_rejects_below_stop():
         "Marks 'price below value' pillar must not award its check to a stock "
         "trading below its volatility stop"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FIX 4 (2026-08-24) — the 12–25% band gap: "⚪ Uncharted" was lying to 650 stocks
+# The np.select arms were [<0, ≤5, ≤12, >25] — nothing covered 12–25%, so 30.7%
+# of the live universe (650 stocks, every one with a VALID dist_to_vstop) fell to
+# the default "⚪ Uncharted", which the Reference tab explicitly defines as
+# "missing price/volatility data". A healthy in-trend cushion read as a data hole.
+# The fix adds an explicit ≤25 arm — "🟠 Loose Entry Zone" — and reserves the
+# default for genuine NaN, restoring the documented meaning of Uncharted.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_12_to_25_band_is_loose_entry_not_uncharted():
+    """18% above the stop: valid data, in-trend, wide risk-to-stop — a real verdict, not a hole."""
+    out = compute_derived_signals(_frame(close_price=118.0, vstop_value=100.0))
+    lbl = out["buy_zone_label"].iloc[0]
+    assert "Uncharted" not in lbl, "a stock with a VALID stop distance must never read Uncharted"
+    assert lbl == "🟠 Loose Entry Zone", f"12-25% band must be Loose Entry Zone, got {lbl!r}"
+
+
+def test_uncharted_reserved_for_genuinely_missing_stop():
+    """No volatility stop at all -> the default fires, and ONLY then (its documented meaning)."""
+    out = compute_derived_signals(_frame(close_price=118.0, vstop_value=np.nan))
+    assert (out["buy_zone_label"] == "⚪ Uncharted").all()
+
+
+def test_band_boundaries_are_exhaustive_and_ordered():
+    """Every band edge lands where the ladder says: 5/12/25 boundaries inclusive-below."""
+    cases = [(104.9, "🟢 Perfect Entry (Low Risk)"), (105.0, "🟢 Perfect Entry (Low Risk)"),
+             (112.0, "🟡 Standard Zone"), (112.1, "🟠 Loose Entry Zone"),
+             (125.0, "🟠 Loose Entry Zone"), (125.1, "🔴 Extended (Wait for Pullback)")]
+    for close, want in cases:
+        out = compute_derived_signals(_frame(close_price=close, vstop_value=100.0))
+        got = out["buy_zone_label"].iloc[0]
+        assert got == want, f"close={close}: want {want!r}, got {got!r}"
+
+
+def test_no_buy_zone_label_trips_the_verdict_timing_veto_except_below_stop():
+    """LANDMINE GUARD: verdict_engine's timing_poor is a SUBSTRING match —
+    bz.str.contains("Below|Avoid|Overextend|Stop") — so a label merely CONTAINING 'Stop'
+    (e.g. a candidate name '🔵 Above Stop' once floated for this band) would silently
+    soft-downgrade every BUY in that band to WATCH. Exactly ONE label may match: the
+    genuine '🔻 Below Stop (Trend Broken)'. Pins every label in the data_engine ladder."""
+    import re
+    LABELS = ["🔻 Below Stop (Trend Broken)", "🟢 Perfect Entry (Low Risk)", "🟡 Standard Zone",
+              "🟠 Loose Entry Zone", "🔴 Extended (Wait for Pullback)", "⚪ Uncharted"]
+    src = open(os.path.join(os.path.dirname(__file__), "..", "core", "data_engine.py"),
+               encoding="utf-8").read()
+    for lbl in LABELS:
+        assert lbl in src, f"ladder label missing from data_engine: {lbl!r}"
+    veto = re.compile("Below|Avoid|Overextend|Stop", re.IGNORECASE)
+    trippers = [l for l in LABELS if veto.search(l)]
+    assert trippers == ["🔻 Below Stop (Trend Broken)"], (
+        f"labels tripping the verdict timing veto: {trippers} — only Below Stop may. "
+        "A new/renamed band label must avoid the substrings Below/Avoid/Overextend/Stop."
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Execution Strip substrate (2026-08-24): fair_value_qglp — engine-materialized
+# (never derived in the display layer), and undefined for loss-makers.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_fair_value_qglp_guards():
+    """fair_value = fair_pe_qglp × EPS, ONLY when EPS is reported and positive — a loss-maker's
+    earnings-multiple 'fair value' is undefined (a negative target is nonsense), so it propagates
+    NaN and the tearsheet renders an honest em-dash."""
+    out = compute_derived_signals(_frame(eps=[10.0, -4.0, np.nan] + [10.0] * 22,
+                                         pat_gr_5y=20.0, roce_med_10y=30.0))
+    fv, fpe = out["fair_value_qglp"], out["fair_pe_qglp"]
+    assert np.isclose(fv.iloc[0], round(fpe.iloc[0] * 10.0, 2)), "positive EPS -> fair PE × EPS"
+    assert np.isnan(fv.iloc[1]), "negative EPS (loss-maker) must propagate NaN, never a negative target"
+    assert np.isnan(fv.iloc[2]), "missing EPS must propagate NaN"
