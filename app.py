@@ -402,32 +402,27 @@ with tabs[0]:
         unsafe_allow_html=True,
     )
 
-    # ── Controls: sort + count ─────────────────────────────────────
-    _dc1, _dc2 = st.columns([6, 2])
-    with _dc1:
-        _disc_sort = st.pills(
-            "Sort by",
-            ["🏆 Score", "📊 Quality", "📈 Momentum", "💰 PEG"],
-            default="🏆 Score",
-            key="disc_sort",
-        )
+    # ── Control: how many cards to show ────────────────────────────
+    # The "Sort by" pills (Quality / Momentum / PEG) were REMOVED 2026-08-24: they reordered the
+    # cards by numbers the cards never display (only the composite is shown, in large type), which
+    # also produced the confusing "#37 above #5" rank jumble. The Deep Scanner sorts by those
+    # metrics AND shows each as a visible column — that is the view built for numeric comparison.
+    # Discovery now always presents the engine's own ranking.
+    _, _dc2 = st.columns([6, 2])
     with _dc2:
         _disc_n = st.selectbox(
             "Show", [10, 20, 30, 50], index=1, key="disc_n",
         )
 
-    # Sort the filtered data
-    _sort_map = {
-        "🏆 Score":    ("composite_score", False),
-        "📊 Quality":  ("quality_score",   False),
-        "📈 Momentum": ("momentum_score",  False),
-        "💰 PEG":      ("peg",             True),
-    }
-    if not _disc_sort:
-        _disc_sort = "🏆 Score"
-    _sc, _sa = _sort_map.get(_disc_sort, ("composite_score", False))
-    _disc_df  = filt.sort_values(_sc, ascending=_sa) if _sc in filt.columns else filt.copy()
-    _shown_n  = int(_disc_n or 20)
+    # LOAD-BEARING sort — not cosmetic. run_full_scoring sorts by the PRE-penalty composite and
+    # resets the index; apply_forensic_penalty then multiplies composite_score and re-derives
+    # `rank` WITHOUT re-sorting the frame. So `filt` arrives in stale pre-penalty ROW order while
+    # its `rank` column is post-penalty (verified live 2026-08-24: rank is non-monotonic in frame
+    # order, though it matches the composite ranking exactly). Dropping this sort would render
+    # cards in an order contradicting their own #rank badge. Pinned by tests/test_page_order.py.
+    _disc_df = (filt.sort_values("composite_score", ascending=False)
+                if "composite_score" in filt.columns else filt.copy())
+    _shown_n = int(_disc_n or 20)
 
     # ── No-match dead-end → actionable empty-state (filters can narrow to zero; the engine and
     # the non-empty path below are untouched — this only ADDS the empty branch) ──
@@ -458,8 +453,7 @@ with tabs[0]:
                 clear_all_filters()
     else:
         st.markdown(
-            f'<div class="sec-head">🏆 Top Picks — {len(_disc_df)} stocks'
-            f'{"" if _disc_sort == "🏆 Score" else f" &nbsp;·&nbsp; sorted by {_disc_sort}"}</div>',
+            f'<div class="sec-head">🏆 Top Picks — {len(_disc_df)} stocks</div>',
             unsafe_allow_html=True,
         )
 
