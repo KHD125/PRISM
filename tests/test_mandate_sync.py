@@ -1,56 +1,54 @@
-"""Contract: the mandate↔override sync — sel_mandate is DERIVED from the active (mode, profile).
+"""Contract: the scoring controls after the Command Center removal (2026-08-24).
 
-Before this fix, sel_mandate was set only by the mandate buttons and never reconciled with the
-Advanced Override, so using the override to pick a profile that didn't match the clicked mandate left
-the button highlight + the card showing a stale, contradictory mandate (e.g. "Coffee Can · Growth").
-Now the highlighted mandate is whichever one's (mode, profile) matches the active combo, or None =
-"⚙️ Custom". These tests pin the reverse-map (round-trip + uniqueness + Custom) and that app.py wires
-it None-safely (no bare _MANDATES[None] KeyError path).
+The six-mandate Command Center was REMOVED as a measured false promise: the three Hybrid
+mandates (QGLP Balanced / Lynch GARP / Deep Value) produced BIT-IDENTICAL composite_score,
+rank, conviction_tier, gate_pass and quality_score — the profile feeds ONLY the QGLP screen
+(qglp_score / qglp_pass), never the composite — while the Q/G/L/P weights strip implied
+engine re-weighting that never happened. What remains: two plain selectboxes in ⚙️ Config
+with widget-owned keys (cfg_mode / cfg_profile) and NO callbacks — the canonical/mirror
+machinery they replace caused the 2026-08-24 production KeyError crash.
+
+These tests pin the NEW architecture (this file previously pinned the mandate↔override sync;
+updated per §6: stale tests follow the architecture, they don't die).
 """
-import ast
 import re
 from pathlib import Path
 
 _APP = Path(__file__).resolve().parent.parent / "app.py"
 
 
-def _mandates() -> dict:
-    """Extract the inline _MANDATES dict from app.py via AST (no Streamlit import / no app run)."""
-    for node in ast.walk(ast.parse(_APP.read_text(encoding="utf-8"))):
-        if (isinstance(node, ast.Assign)
-                and any(isinstance(t, ast.Name) and t.id == "_MANDATES" for t in node.targets)):
-            return ast.literal_eval(node.value)
-    raise AssertionError("_MANDATES not found in app.py")
-
-
-def test_reverse_map_round_trips_and_is_unique():
-    """Every mandate's (mode, profile) must resolve back to that mandate, and no two mandates may
-    share a combo (else the derived highlight would be ambiguous)."""
-    M = _mandates()
-    combo = {(v["mode"], v["profile"]): k for k, v in M.items()}
-    assert len(combo) == len(M), "two mandates share a (mode, profile) combo — reverse-map ambiguous"
-    for k, v in M.items():
-        assert combo[(v["mode"], v["profile"])] == k, f"{k} does not round-trip"
-
-
-def test_override_only_combos_are_custom():
-    """Combos no mandate uses (Growth, Defensive, or a cross-mode pair) must map to None → the card
-    shows '⚙️ Custom', never a stale mandate name."""
-    M = _mandates()
-    combo = {(v["mode"], v["profile"]): k for k, v in M.items()}
-    for c in [("Fundamental", "Growth"), ("Hybrid", "Defensive"), ("Technical", "Quality")]:
-        assert combo.get(c) is None, f"{c} should be a Custom combo (None), got {combo.get(c)}"
-
-
-def test_app_wires_derived_mandate_none_safely():
-    """app.py must derive sel_mandate from the reverse-map, expose a '⚙️ Custom' label for None, and
-    never bare-index _MANDATES[_sel_mandate] without a truthiness guard (None would KeyError)."""
+def test_command_center_stays_removed():
+    """Tombstone: no zombie resurrection of the mandate machinery (e.g. from an old branch or a
+    half-revert). Every one of these names was part of the removed false-promise layer."""
     src = _APP.read_text(encoding="utf-8")
-    assert "_MANDATE_BY_COMBO" in src, "app.py must build the (mode,profile)->mandate reverse-map"
-    assert "_MANDATE_BY_COMBO.get(" in src, "sel_mandate must be DERIVED from the reverse-map"
-    assert '_sel_mandate or "Custom"' in src, "must expose a Custom label for None (icon supplies the gear)"
-    for m in re.finditer(r"_MANDATES\[_sel_mandate\]", src):
-        window = src[m.start(): m.start() + 80]
-        assert "if _sel_mandate" in window, (
-            f"unguarded _MANDATES[_sel_mandate] (None would KeyError) near: {window!r}"
+    for name in ["_MANDATES", "_MANDATE_BY_COMBO", "_pick_mandate", "_sel_mandate",
+                 "_sync_mode", "_sync_profile", "adv_mode", "adv_profile", "_w_mode", "_w_profile"]:
+        assert name not in src, (
+            f"{name!r} is back in app.py — the Command Center was removed 2026-08-24 because "
+            "three of six mandates were ranking-identical (profile feeds only the QGLP screen). "
+            "Reintroducing it requires the evidence-gated composite rewire, not a revert."
         )
+
+
+def test_scoring_controls_are_plain_config_widgets():
+    """The two live knobs must be plain widget-owned selectboxes (key=cfg_mode / cfg_profile),
+    initialized via setdefault and read from session_state at the top — no on_change callbacks,
+    no canonical/mirror keys (the pattern that produced the prod KeyError)."""
+    src = _APP.read_text(encoding="utf-8")
+    assert 'st.session_state.setdefault("cfg_mode", "Hybrid")' in src
+    assert 'st.session_state.setdefault("cfg_profile", "Balanced")' in src
+    assert 'key="cfg_mode"' in src and 'key="cfg_profile"' in src
+    # plain widgets: neither control may wire a callback
+    for m in re.finditer(r'key="cfg_(?:mode|profile)"[^)]*', src):
+        assert "on_change" not in m.group(0), "cfg_* selectboxes must stay callback-free"
+
+
+def test_profile_snaps_into_the_active_modes_allowed_set():
+    """A mode change can orphan the profile (e.g. Technical allows only Momentum/Turnaround).
+    The top-of-script guard must snap cfg_profile into ANALYSIS_MODES[mode]['allowed_profiles']
+    BEFORE anything reads it — and the Config selectbox must offer exactly that allowed list."""
+    src = _APP.read_text(encoding="utf-8")
+    assert '_allowed_profiles = ANALYSIS_MODES[st.session_state["cfg_mode"]]["allowed_profiles"]' in src
+    assert 'if st.session_state["cfg_profile"] not in _allowed_profiles:' in src
+    assert 'st.session_state["cfg_profile"] = _allowed_profiles[0]' in src
+    assert "options=_allowed_profiles" in src, "profile selectbox must offer the mode's allowed set"

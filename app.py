@@ -237,138 +237,34 @@ with st.spinner("🔄 Loading data..."):
 render_hero_banner(compact=True)
 
 # ═══════════════════════════════════════════════════════════════
-# 🏛️ THE COMMAND CENTER — Mandate-Driven Investment Philosophy
+# SCORING CONTROLS — two plain widgets, living in the ⚙️ Config tab
 # ═══════════════════════════════════════════════════════════════
-_MANDATES = {
-    "QGLP Balanced": {
-        "icon": "🎯", "mode": "Hybrid", "profile": "Balanced",
-        "desc": "Raamdeo's all-weather formula — Quality · Growth · Longevity · Price in harmony",
-    },
-    "Coffee Can": {
-        "icon": "🛡️", "mode": "Fundamental", "profile": "Quality",
-        "desc": "Buffett / Mukherjea: ROCE 20%+ sustained, zero debt stress — buy and hold forever",
-    },
-    "Lynch GARP": {
-        "icon": "📈", "mode": "Hybrid", "profile": "GARP",
-        "desc": "Peter Lynch: PEG ≤ 1.0 mandatory — earnings growth at a price no one else will pay",
-    },
-    "Deep Value": {
-        "icon": "💰", "mode": "Hybrid", "profile": "Value",
-        "desc": "Howard Marks / Vijay Kedia: beaten-down quality at maximum margin of safety",
-    },
-    "Breakout": {
-        "icon": "⚡", "mode": "Technical", "profile": "Momentum",
-        "desc": "O'Neil CAN-SLIM: institutional accumulation into Stage 2 breakouts — follow smart money",
-    },
-    "Turnaround": {
-        "icon": "🔄", "mode": "Technical", "profile": "Turnaround",
-        "desc": "QoQ earnings revival + promoter buying + volume surge — asymmetric risk/reward",
-    },
-}
-_MANDATE_KEYS = list(_MANDATES.keys())
+# The old Command Center (six mandate buttons + weights strip + Advanced Override) was REMOVED
+# 2026-08-24 after measurement proved it a false promise: three of six mandates were ranking-
+# identical (the profile feeds ONLY the QGLP screen — qglp_score/qglp_pass — never the
+# composite), and the prominent Q/G/L/P weights strip implied engine re-weighting that never
+# happened. The two REAL knobs remain as plain selectboxes in ⚙️ Config (widget-owned keys, no
+# callbacks, no canonical/mirror dance — the machinery that caused the prod KeyError crash).
+#
+# Reading the widget keys HERE — before the Config tab renders them — is correct and current:
+# Streamlit commits a changed widget's value to session_state BEFORE the rerun starts. Fresh
+# cfg_* keys on purpose: resurrected sessions carrying the old adv_*/_w_* keys are ignored.
+st.session_state.setdefault("cfg_mode", "Hybrid")
+st.session_state.setdefault("cfg_profile", "Balanced")
+# Snap the profile into the active mode's allowed set (a mode change can orphan the profile).
+# Writing a widget's key before the widget instantiates is legal; the selectbox renders the value.
+_allowed_profiles = ANALYSIS_MODES[st.session_state["cfg_mode"]]["allowed_profiles"]
+if st.session_state["cfg_profile"] not in _allowed_profiles:
+    st.session_state["cfg_profile"] = _allowed_profiles[0]
 
-# ── Mandate Selector — button row ─────────────────────────────
-# Single source of truth = (adv_mode, adv_profile). sel_mandate is DERIVED: the mandate whose
-# (mode, profile) matches the active combo, or None = a "⚙️ Custom" override combo (e.g. Growth/
-# Defensive, or any pair no mandate uses). Streamlit writes a changed widget's value into
-# session_state BEFORE the script reruns, so deriving here (at the top) reflects the user's latest
-# override and keeps the button highlight + the card consistent in a single pass.
-_MANDATE_BY_COMBO = {(v["mode"], v["profile"]): k for k, v in _MANDATES.items()}
-
-# Mandate state lives in CANONICAL keys adv_mode / adv_profile — which are deliberately NOT widget
-# keys. Streamlit forbids sharing one key between a widget and your own programmatic writes: the
-# selectbox then reverts / needs two clicks, version-dependently (streamlit#7649 + the widget-behavior
-# docs). So: buttons mutate canonical state in on_click CALLBACKS; the Override selectboxes own their
-# OWN keys (_w_mode/_w_profile) and write back via on_change; and we MIRROR canonical → those widget
-# keys each run. Callbacks run BEFORE the rerun — the only safe moment to set state a widget reads.
-if "adv_mode" not in st.session_state:                  # first load → default mandate (QGLP Balanced)
-    _d = _MANDATE_KEYS[0]
-    st.session_state["adv_mode"]    = _MANDATES[_d]["mode"]
-    st.session_state["adv_profile"] = _MANDATES[_d]["profile"]
-# Guard FIRST: snap the active profile into the active mode's allowed set (so a mode change that
-# orphans the profile resolves cleanly AND the Scoring-Profile selectbox value stays valid below).
-_allowed_now = ANALYSIS_MODES[st.session_state["adv_mode"]]["allowed_profiles"]
-if st.session_state["adv_profile"] not in _allowed_now:
-    st.session_state["adv_profile"] = _allowed_now[0]
-_sel_mandate = _MANDATE_BY_COMBO.get((st.session_state["adv_mode"], st.session_state["adv_profile"]))
-st.session_state["sel_mandate"] = _sel_mandate          # None = ⚙️ Custom
-_mandate_label = _sel_mandate or "Custom"
-# Mirror canonical → the selectbox widget keys BEFORE those widgets render below, so a button-driven
-# change is reflected in the Override selectboxes too (safe: writing a widget key before its widget).
-st.session_state["_w_mode"]    = st.session_state["adv_mode"]
-st.session_state["_w_profile"] = st.session_state["adv_profile"]
-
-def _pick_mandate(_mode, _profile):                     # button on_click — runs before the rerun
-    st.session_state["adv_mode"]    = _mode
-    st.session_state["adv_profile"] = _profile
-
-_mb_cols = st.columns(len(_MANDATES))
-for _mi, (_mk, _mv) in enumerate(_MANDATES.items()):
-    with _mb_cols[_mi]:
-        st.button(
-            f"{_mv['icon']} {_mk}",
-            key=f"_mb_{_mk}",
-            type="primary" if _sel_mandate == _mk else "secondary",
-            use_container_width=True,
-            on_click=_pick_mandate, args=(_mv["mode"], _mv["profile"]),
-        )
-
-# Mandate description strip — None-safe (a Custom override shows the active profile's description)
-_desc = (_MANDATES[_sel_mandate]["desc"] if _sel_mandate
-         else f"⚙️ Custom override — {MASTER_PROFILES[st.session_state['adv_profile']]['description']}")
-st.markdown(
-    f'<div style="font-size:0.75rem;color:{COLORS["text_secondary"]};'
-    f'padding:4px 2px 10px 2px;border-bottom:1px solid {COLORS["border"]};margin-bottom:6px;">'
-    f'{_desc}</div>',
-    unsafe_allow_html=True,
-)
-
-# ── Advanced Override (collapsed — power users only) ───────────
-# The selectboxes own SEPARATE keys (_w_mode/_w_profile, mirrored from canonical above) and push the
-# user's pick back into canonical via on_change — never sharing a key with the buttons' writes.
-# GUARDED reads (prod KeyError, fixed 2026-08-24): on Streamlit Cloud the app hibernates and
-# restarts with a FRESH empty session while the user's browser still shows the old page. Their
-# next interaction with an Override selectbox fires this callback BEFORE any script line runs —
-# on a session_state that holds nothing — so the raw ["_w_mode"] read crashed the whole app.
-# On a missing key: no-op. The following run re-initializes canonical state and re-mirrors; the
-# one stale click is correctly discarded (it belonged to a session that no longer exists).
-def _sync_mode():
-    if "_w_mode" in st.session_state:
-        st.session_state["adv_mode"] = st.session_state["_w_mode"]
-
-def _sync_profile():
-    if "_w_profile" in st.session_state:
-        st.session_state["adv_profile"] = st.session_state["_w_profile"]
-
-with st.expander("⚙️ Advanced: Override Mandate Defaults", expanded=False):
-    st.selectbox(
-        "Analysis Mode",
-        options=list(ANALYSIS_MODES.keys()),
-        format_func=lambda k: ANALYSIS_MODES[k]["label"],
-        key="_w_mode", on_change=_sync_mode,
-    )
-    st.caption(ANALYSIS_MODES[st.session_state["adv_mode"]]["description"])
-
-    _ov_allowed = ANALYSIS_MODES[st.session_state["adv_mode"]]["allowed_profiles"]
-    # (the top guard already snapped adv_profile into _ov_allowed, so the value below is always valid)
-    st.selectbox(
-        "Scoring Profile",
-        options=_ov_allowed,
-        format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
-        key="_w_profile", on_change=_sync_profile,
-    )
-    st.caption(MASTER_PROFILES[st.session_state["adv_profile"]]["description"])
-
-# Canonical state drives scoring + display (the selectbox returns can lag a rerun behind canonical).
-analysis_mode   = st.session_state["adv_mode"]
-scoring_profile = st.session_state["adv_profile"]
+analysis_mode   = st.session_state["cfg_mode"]
+scoring_profile = st.session_state["cfg_profile"]
 profile_cfg = MASTER_PROFILES[scoring_profile]
 
 # ── Scoring ────────────────────────────────────────────────────
 _score_key = f"{file_sig}::{analysis_mode}::{scoring_profile}"
 if st.session_state.get("_score_key") != _score_key or "_scored_df" not in st.session_state:
-    _spin_icon = _MANDATES.get(_sel_mandate, {}).get("icon", "🧭")
-    with st.spinner(f"{_spin_icon} Running {_mandate_label} mandate — {scoring_profile}..."):
+    with st.spinner(f"🧭 Scoring — {analysis_mode} / {scoring_profile}..."):
         try:
             _df_scored = get_scored_data(clean_df, analysis_mode, scoring_profile)
             st.session_state["_scored_df"] = _df_scored
@@ -386,11 +282,6 @@ adaptive_w = df.attrs.get("adaptive_weights", {})
 # Key metrics
 total = len(df)
 gate_passed = int(df["gate_pass"].sum())
-# Mandate Fit = clears the universal safety floor (gate_pass) AND fits the selected mandate's
-# per-profile thesis screen (qglp_pass: ROCE/Growth/PEG) — the mandate-responsive qualified count
-# (gate_pass is profile-invariant; qglp_pass alone can exceed it by including unsafe names).
-mandate_fit = int(((df["gate_pass"] == 1) &
-                   (df.get("qglp_pass", pd.Series(0, index=df.index)) == 1)).sum())
 tier1 = int((df["conviction_tier"] == 1).sum())
 tier2 = int((df["conviction_tier"] == 2).sum())
 tsunami_count = int(df["tsunami_signal"].sum())
@@ -464,7 +355,7 @@ with _scored_dl_ph.container():
 
 
 # ═══════════════════════════════════════════════════════════════
-# STATS STRIP (above tabs — reflects the selected mandate)
+# STATS STRIP (above tabs)
 # ═══════════════════════════════════════════════════════════════
 render_metric_strip([
     (f"{total}", "Universe", "m-blue"),
@@ -475,61 +366,8 @@ render_metric_strip([
     (f"{avg_quality:.0f}", "Avg Quality", "m-blue"),
 ])
 
-# ── Live Engine Weights Strip (always visible) ────────────────
-if adaptive_w:
-    _qw         = adaptive_w.get("quality_w", 0)
-    _gw         = adaptive_w.get("growth_w", 0)
-    _lw         = adaptive_w.get("longevity_w", 0)
-    _pw         = adaptive_w.get("price_w", 0)
-    _det_regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
-    _reg_clr    = COLORS["green"] if _det_regime == "BULL" else COLORS["red"] if _det_regime == "BEAR" else COLORS["gold"]
-    _reg_emoji  = "🟢" if _det_regime == "BULL" else "🔴" if _det_regime == "BEAR" else "🟡"
-    _m_icon     = _MANDATES.get(_sel_mandate, {}).get("icon", "⚙️")
-    _prof_icon  = profile_cfg.get("icon", "⚖️")
-    _wbars = [
-        ("⚡ Quality",     _qw, COLORS["purple"]),
-        ("🌱 Growth",      _gw, COLORS["green"]),
-        ("🏛️ Longevity",  _lw, COLORS["blue"]),
-        ("💰 Price",       _pw, COLORS["gold"]),
-    ]
-    _bars_html = "".join(
-        f'<div style="flex:1;min-width:55px;">'
-        f'<div style="font-size:0.57rem;color:{COLORS["text_muted"]};text-transform:uppercase;'
-        f'letter-spacing:0.6px;margin-bottom:4px;font-weight:600;">{lbl}</div>'
-        f'<div style="background:{COLORS["bg_tertiary"]};border-radius:4px;height:5px;overflow:hidden;">'
-        f'<div style="width:{pct*100:.0f}%;height:5px;border-radius:4px;background:{clr};"></div>'
-        f'</div>'
-        f'<div style="font-size:0.7rem;font-weight:700;color:{clr};margin-top:3px;">{pct:.0%}</div>'
-        f'</div>'
-        for lbl, pct, clr in _wbars
-    )
-    st.markdown(f"""
-    <div style="background:linear-gradient(135deg,{COLORS['bg_secondary']},{COLORS['bg_tertiary']});
-         border:1px solid {COLORS['border']};border-radius:10px;padding:12px 18px;margin:8px 0 16px 0;">
-      <div style="display:flex;align-items:center;justify-content:space-between;
-           margin-bottom:10px;flex-wrap:wrap;gap:6px;">
-        <span style="font-size:0.8rem;font-weight:700;color:{COLORS['text_primary']};">
-          {_m_icon} {_mandate_label}
-          <span style="color:{COLORS['text_muted']};font-weight:400;"> · </span>
-          <span style="color:{COLORS['text_secondary']};font-weight:400;font-size:0.74rem;">
-            {_prof_icon} {scoring_profile}
-          </span>
-        </span>
-        <span style="font-size:0.71rem;font-weight:700;padding:2px 10px;border-radius:20px;
-             background:{_reg_clr}18;color:{_reg_clr};border:1px solid {_reg_clr}50;">
-          {_reg_emoji} {_det_regime}
-        </span>
-      </div>
-      <div style="display:flex;gap:12px;margin-bottom:8px;">{_bars_html}</div>
-      <div style="font-size:0.62rem;color:{COLORS['text_muted']};">
-        🎯 Mandate Screen — ROCE≥{adaptive_w.get('roce_gate', 15):.0f}% ·
-        Growth≥{adaptive_w.get('growth_gate', 15):.0f}% ·
-        PEG≤{adaptive_w.get('peg_gate', 1.5):.1f}
-        &nbsp;→&nbsp;<span style="color:{COLORS['gold']};font-weight:700;">{mandate_fit} fit</span>
-        <span style="color:{COLORS['text_muted']};">(of {gate_passed} gate-passed)</span>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+# (The Q/G/L/P weights strip was removed with the Command Center — those weights only ever
+# drove the QGLP screen, not the composite; the screen line now lives beside its knobs in ⚙️ Config.)
 
 # ═══════════════════════════════════════════════════════════════
 # TABS
@@ -877,17 +715,15 @@ with tabs[1]:
         # and it's ~10x smaller to serialize on every rerun. ──
         _export_cols = [c for c in dict.fromkeys(_c for _v in _DS_VIEWS.values() for _c in _v)
                         if c in ds_df.columns]
-        # _mandate_label is _sel_mandate-or-"Custom": _sel_mandate is None for the Custom mandate
-        # (and when a profile switch clears it), so derive the filename from the None-safe label.
-        _safe_mandate = _mandate_label.replace(" ", "_").lower()
+        _safe_mode = analysis_mode.replace(" ", "_").lower()
         # Encode via the shared _to_csv_bytes (UTF-8-with-BOM) — the SAME Excel-safe path the sidebar
         # full-dump uses — so the export's emoji decision-columns (moat_growth_quad ⭐💀, smart_money_flow
         # ⚪✅❌, weinstein_stage, buy_zone_label) render in Excel instead of mojibaking on a BOM-less file.
         from ui.ui_export import _to_csv_bytes
         st.download_button(
-            f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {_mandate_label} / {scoring_profile}",
+            f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {analysis_mode} / {scoring_profile}",
             data=_to_csv_bytes(ds_df[_export_cols]),
-            file_name=f"scan_{_safe_mandate}_{scoring_profile.lower()}.csv",
+            file_name=f"scan_{_safe_mode}_{scoring_profile.lower()}.csv",
             mime="text/csv",
             use_container_width=True,
         )
@@ -1502,9 +1338,41 @@ with tabs[3]:
 with tabs[4]:
     st.markdown(f"<div class='sec-head'>⚙️ System Configuration — The Engine Rulebook</div>", unsafe_allow_html=True)
     st.markdown(
-        f"<div class='sec-cap'>Read-only view of the live, deterministic scoring weights and hard "
-        f"gates every stock is measured against. To change them, edit <code>config.py</code> — the "
-        f"single source of truth.</div>",
+        f"<div class='sec-cap'>The two live scoring controls, then a read-only view of the "
+        f"deterministic weights and hard gates every stock is measured against. To change the "
+        f"constants, edit <code>config.py</code> — the single source of truth.</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Live scoring controls (moved from the front-page Command Center, 2026-08-24) ──
+    # Plain widget-owned keys — the top of the script reads them next rerun. Honest labels:
+    # only Analysis Mode re-ranks; the profile drives the QGLP screen, never the composite.
+    _cfg_c1, _cfg_c2 = st.columns(2)
+    with _cfg_c1:
+        st.selectbox(
+            "Analysis Mode", options=list(ANALYSIS_MODES.keys()),
+            format_func=lambda k: ANALYSIS_MODES[k]["label"], key="cfg_mode",
+            help="Fundamental-vs-momentum blend of the composite — the one control that re-ranks "
+                 "the universe (Hybrid 70/30 · Fundamental 100/0 · Technical 10/90).",
+        )
+        st.caption(ANALYSIS_MODES[analysis_mode]["description"])
+    with _cfg_c2:
+        st.selectbox(
+            "Scoring Profile", options=_allowed_profiles,
+            format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
+            key="cfg_profile",
+            help="Drives the QGLP screen — its gates, fit count and the tearsheet QGLP card. "
+                 "It does NOT re-rank the composite (measured 2026-08-24).",
+        )
+        st.caption(MASTER_PROFILES[scoring_profile]["description"])
+    _fit_cfg = int(((df["gate_pass"] == 1)
+                    & (df.get("qglp_pass", pd.Series(0, index=df.index)) == 1)).sum())
+    st.markdown(
+        f'<div style="font-size:0.72rem;color:{COLORS["text_muted"]};margin:2px 0 14px 2px;">'
+        f'🎯 QGLP screen ({scoring_profile}) — ROCE≥{adaptive_w.get("roce_gate", 15):.0f}% · '
+        f'Growth≥{adaptive_w.get("growth_gate", 15):.0f}% · PEG≤{adaptive_w.get("peg_gate", 1.5):.1f} '
+        f'&nbsp;→&nbsp;<span style="color:{COLORS["gold"]};font-weight:700;">{_fit_cfg} fit</span> '
+        f'(of {gate_passed} gate-passed)</div>',
         unsafe_allow_html=True,
     )
 

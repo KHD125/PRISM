@@ -54,19 +54,23 @@ def test_app_has_first_party_imports():
     assert _IMPORTS, "parsed zero first-party imports from app.py — the path or parser is wrong"
 
 
-def test_sel_mandate_never_dereferenced_unguarded():
-    """`_sel_mandate` is None for the ⚙️ Custom mandate (and when switching to a profile that clears
-    it), so a bare `_sel_mandate.<attr>` / `_sel_mandate[...]` raises AttributeError on the RUNNING
-    app — invisible to render tests that never hit that branch. Shipped once: the Momentum profile
-    cleared the mandate, and the Deep Scanner export's `_sel_mandate.replace(...)` crashed the deploy
-    (2026-06-20). Every use must go through a None-safe form: `_sel_mandate or 'Custom'`,
-    `_MANDATES.get(_sel_mandate, ...)`, or an `if _sel_mandate` guard."""
+def test_scoring_state_read_before_tabs_render():
+    """The Config-tab selectboxes (cfg_mode/cfg_profile) render AFTER scoring consumes their
+    values, which is only correct because the values are read from SESSION STATE at the top of
+    the script (Streamlit commits a changed widget's value before the rerun). Pin the ordering:
+    the session-state reads must appear BEFORE `st.tabs(` in app.py — reading the widget RETURN
+    instead would lag one rerun and score with the previous selection.
+    (Replaces the retired _sel_mandate None-guard: the Command Center it guarded was removed
+    2026-08-24; its tombstone lives in test_mandate_sync.py.)"""
     src = _APP.read_text(encoding="utf-8")
-    bad = re.findall(r"\b_sel_mandate\b\s*(?:\.\w+|\[)", src)
-    assert not bad, (
-        f"_sel_mandate dereferenced unguarded (it can be None): {bad}. "
-        f"Use `_sel_mandate or 'Custom'` / `_MANDATES.get(_sel_mandate, {{}})` instead."
-    )
+    tabs_at = src.index("st.tabs(")
+    for read in ['analysis_mode   = st.session_state["cfg_mode"]',
+                 'scoring_profile = st.session_state["cfg_profile"]']:
+        assert read in src, f"missing top-of-script state read: {read!r}"
+        assert src.index(read) < tabs_at, (
+            f"{read!r} must execute BEFORE st.tabs() — scoring runs above the tabs, so reading "
+            "the widget return (rendered inside Config) would score with a stale selection."
+        )
 
 
 @pytest.mark.parametrize("module,name", _IMPORTS, ids=[f"{m}.{n}" for m, n in _IMPORTS])

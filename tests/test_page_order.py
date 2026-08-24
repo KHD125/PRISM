@@ -10,15 +10,16 @@ from pathlib import Path
 _APP = Path(__file__).resolve().parent.parent / "app.py"
 
 
-def test_banner_renders_above_mandate_selector():
+def test_banner_renders_above_the_tabs():
+    """IA: identity first. The compact brand strip renders before the stats strip and the tabs.
+    (The old anchor was the mandate selector — removed 2026-08-24 with the Command Center.)"""
     src = _APP.read_text(encoding="utf-8")
     banner = src.find("render_hero_banner(compact=True)")
-    # Stable anchor = the mandate-selector section header (the old `if "sel_mandate" not in
-    # st.session_state` anchor was removed when sel_mandate became derived from the active combo).
-    selector = src.find("# ── Mandate Selector — button row")
+    stats  = src.find("render_metric_strip(")
+    tabs   = src.find("st.tabs(")
     assert banner != -1, "compact PRISM brand strip call is missing from app.py"
-    assert selector != -1, "mandate selector anchor not found in app.py"
-    assert banner < selector, "compact banner must render above the mandate selector"
+    assert stats != -1 and tabs != -1, "stats strip / tabs anchors not found in app.py"
+    assert banner < stats < tabs, "page order must be brand strip -> stats strip -> tabs"
 
 
 def test_old_big_hero_call_is_removed():

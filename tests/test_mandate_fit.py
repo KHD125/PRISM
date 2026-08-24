@@ -48,14 +48,16 @@ def test_mandate_fit_is_subset_of_floor_and_responsive():
     )
 
 
-def test_app_surfaces_mandate_fit_and_drops_hard_gates_mislabel():
-    """app.py must compute Mandate Fit (gate_pass ∩ qglp_pass) and label the per-profile gate line
-    'Mandate Screen' — not the bare 'Hard Gates — ROCE' that collided with the global HARD_GATES."""
+def test_app_surfaces_the_fit_count_beside_its_knobs():
+    """After the Command Center removal (2026-08-24) the fit count lives in ⚙️ Config, beside the
+    profile selectbox that drives it: _fit_cfg = gate_pass ∩ qglp_pass, labelled 'QGLP screen'
+    (honest name — it IS the QGLP screen, not the engine's hard gates). The old front-page
+    'Mandate Screen' banner is gone with the mandates."""
     src = (Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8")
-    assert "mandate_fit" in src, "app.py must compute mandate_fit"
-    assert "qglp_pass" in src and "gate_pass" in src, "mandate_fit must intersect floor & thesis"
-    assert "Mandate Screen" in src, "the card must call the per-profile gates 'Mandate Screen'"
-    assert "Hard Gates — ROCE" not in src, (
-        "the mislabeled 'Hard Gates — ROCE' must be gone from the card (the global HARD_GATES "
-        "card legitimately keeps 'Hard Gates · N Criteria')"
+    assert "_fit_cfg" in src, "Config must compute the fit count (gate_pass ∩ qglp_pass)"
+    assert 'df.get("qglp_pass"' in src and '(df["gate_pass"] == 1)' in src, (
+        "the fit count must intersect the safety floor with the per-profile thesis screen"
     )
+    assert "QGLP screen" in src, "the fit line must be honestly labelled 'QGLP screen'"
+    assert "Mandate Screen" not in src, "the front-page mandate banner is removed — no stale label"
+    assert "Hard Gates — ROCE" not in src, "the old mislabel must stay gone"
