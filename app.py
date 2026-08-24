@@ -673,12 +673,12 @@ with tabs[1]:
                          "data_coverage_pct","conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
         "📊 Quality":   ["name","quality_score","moat_score","growth_score","cash_score",
                          "governance_bonus","piotroski_fscore","roce","opm","cfo_to_pat"],
-        "💰 Valuation": ["name","valuation_score","expected_excess_return","pe","pb_ratio","peg",
-                         "earnings_yield","fcf_yield","market_cap","buy_zone_label"],
+        "💰 Valuation": ["name","close_price","fair_value_qglp","valuation_score","expected_excess_return",
+                         "pe","pb_ratio","peg","earnings_yield","fcf_yield","market_cap","buy_zone_label"],
         "🔬 Forensic":  ["name","red_flag_count","piotroski_fscore","forensic_score","forensic_multiplier",
                          "cfo_to_pat","accruals_ratio","debt_to_equity","promoter_holdings","pledged_percentage"],
-        "📈 Technical": ["name","momentum_score","rsi_14d","dist_52wh","crs_52w","weinstein_stage",
-                         "breakout_score","smart_money_flow","tsunami_signal","vstop_green"],
+        "📈 Technical": ["name","close_price","dist_to_vstop","momentum_score","rsi_14d","dist_52wh",
+                         "crs_52w","weinstein_stage","breakout_score","smart_money_flow","tsunami_signal","vstop_green"],
     }
     _DS_SORTS = {
         "Score ↓":    ("composite_score", False),
@@ -793,6 +793,9 @@ with tabs[1]:
         "accruals_ratio":  ("Accruals", "%.2f"),
         "crs_52w":         ("RS 52W",   "%.0f"),
         "expected_excess_return": ("Edge %", "%.1f%%"),
+        "close_price":     ("Price ₹",  "%.2f"),     # Valuation+Technical: the number every ₹ column is measured against
+        "fair_value_qglp": ("Fair ₹",   "%.0f"),     # Valuation: QGLP fair PE × EPS (blank = loss-maker, undefined)
+        "dist_to_vstop":   ("Stop Δ",   "%.1f%%"),   # Technical: % above(+)/below(−) the Volatility Stop
         "data_coverage_pct":      ("Evidence",   "%.0f%%"),   # Core: score-confidence % (high score on thin data = trap)
         "forensic_multiplier":    ("Forensic ×", "%.2f"),     # Forensic: the penalty cutting composite (1.00 clean → 0.50 high-risk)
     }
