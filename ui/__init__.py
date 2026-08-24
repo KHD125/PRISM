@@ -75,7 +75,6 @@ from .ui_components import (
     render_stock_card,
     render_radar_chart,
     render_tier_summary,
-    render_score_bar,
     render_sidebar_brand,
     help_chip,
 )
@@ -116,7 +115,6 @@ __all__ = [
     "render_stock_card",
     "render_radar_chart",
     "render_tier_summary",
-    "render_score_bar",
     "render_sidebar_brand",
     "help_chip",
     "render_reference",

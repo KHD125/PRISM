@@ -132,18 +132,6 @@ def inject_css():
         border-color: {COLORS['border_hover']};
         box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     }}
-    .stock-card-gold {{ border-left: 3px solid {COLORS['gold']}; }}
-    .stock-card-green {{ border-left: 3px solid {COLORS['green']}; }}
-    .stock-card-blue {{ border-left: 3px solid {COLORS['blue']}; }}
-
-    /* ── Score Bar ── */
-    .score-bar-wrap {{
-        background: {COLORS['bg_tertiary']}; border-radius: 4px; height: 6px;
-        margin-top: 4px; overflow: hidden;
-    }}
-    .score-bar {{
-        height: 6px; border-radius: 4px; transition: width 0.5s ease;
-    }}
 
     /* ── Pill Tags ── */
     .pill {{
@@ -249,25 +237,6 @@ def inject_css():
         border-radius: 10px; margin-top: 6px; position: relative;
     }}
 
-    /* ── Tsunami Card ── */
-    .tsunami-card {{
-        background: linear-gradient(135deg, {COLORS['gradient_start']} 0%, {COLORS['gradient_mid']} 100%);
-        border: 1px solid rgba(139,92,246,0.4); border-radius: 14px;
-        padding: 18px 20px; margin-bottom: 10px;
-        box-shadow: 0 4px 20px rgba(139,92,246,0.15);
-    }}
-    .tsunami-card:hover {{ box-shadow: 0 8px 32px rgba(139,92,246,0.25); }}
-
-    /* ── Forensic Risk Badge ── */
-    .risk-clean {{ color: {COLORS['green']}; background: rgba(63,185,80,0.1);
-                   border: 1px solid rgba(63,185,80,0.3); }}
-    .risk-watch {{ color: {COLORS['gold']}; background: rgba(228,179,65,0.1);
-                   border: 1px solid rgba(228,179,65,0.3); }}
-    .risk-caution {{ color: {COLORS['orange']}; background: rgba(255,107,53,0.1);
-                     border: 1px solid rgba(255,107,53,0.3); }}
-    .risk-high {{ color: {COLORS['red']}; background: rgba(248,81,73,0.1);
-                  border: 1px solid rgba(248,81,73,0.3); }}
-
     /* ══════════════════════════════════════════════
        TEARSHEET — Premium section styles
        ══════════════════════════════════════════════ */
@@ -355,7 +324,6 @@ def inject_css():
     }}
     .ts-flag-sev {{ font-size: 1rem; flex-shrink: 0; margin-top: 1px; }}
     .ts-flag-title {{ font-size: 0.78rem; font-weight: 600; line-height: 1.3; }}
-    .ts-flag-sub {{ font-size: 0.66rem; color: {COLORS['text_muted']}; margin-top: 2px; line-height: 1.4; }}
 
     /* Fisher proxy cards */
     .ts-fisher-grid {{
@@ -632,24 +600,6 @@ def render_pulse_band(df) -> None:
     st.markdown(_pulse_band_html(_pulse_stats(df)), unsafe_allow_html=True)
 
 
-def render_score_bar(score: float, color: str = "#3fb950", label: str = ""):
-    """Render a horizontal score bar. Clamps width to [0, 100] so bars never overflow.
-    Negative values (e.g. governance_bonus < 0) show a red penalty badge instead of invisible bar."""
-    _width = min(100, max(0, float(score or 0)))
-    _is_negative = float(score or 0) < 0
-    _display_val = f'<span style="color:{COLORS["red"]};font-weight:700;">⚠ {score:.0f}</span>' if _is_negative else f'<span style="font-size:0.75rem;font-weight:700;color:{color};min-width:30px;">{score:.0f}</span>'
-    html = f"""
-    <div style="display:flex; align-items:center; gap:8px; margin:2px 0;">
-        <span style="font-size:0.7rem; color:{COLORS['text_secondary']}; min-width:50px;">{label}</span>
-        <div class="score-bar-wrap" style="flex:1;">
-            <div class="score-bar" style="width:{_width:.1f}%; background:{color};"></div>
-        </div>
-        {_display_val}
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-
 # ═══════════════════════════════════════════════════════════════
 # PLAIN-LANGUAGE "?" HELP — single home of the .ts-help chip + glossary
 # ═══════════════════════════════════════════════════════════════
@@ -874,8 +824,6 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     """Render a premium stock card."""
     tier = int(row.get("conviction_tier", 5))
     tc = TIER_COLORS.get(tier, TIER_COLORS[5])
-
-    gate_status = "✅ All gates passed" if row.get("gate_pass", 0) == 1 else f"❌ {int(row.get('gates_failed', 0))} gates failed"
 
     pills = ""
     # Catalysts

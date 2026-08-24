@@ -77,7 +77,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_pulse_band,
                 render_stock_card, help_chip,
-                render_radar_chart, render_score_bar, render_sidebar_brand,
+                render_radar_chart, render_sidebar_brand,
                 render_reference, render_concepts, render_flags, build_reference_markdown)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS

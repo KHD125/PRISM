@@ -606,7 +606,6 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         v = _v("expense_ratio", "{:.1f}%")
         return f"expense_ratio: {v}  ·  rose >3pp" if v else ""
     if rf_col == "rf_dilution":
-        dil = _v("dilution_flag", "{:.0f}")
         shares_gr = _v("shares_gr_yoy", "{:.1f}%")
         return f"share count grew: {shares_gr}  ·  Tier 2+ dilution (>3%)" if shares_gr else ""
     if rf_col == "rf_itr_declining":
