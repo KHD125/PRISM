@@ -326,11 +326,19 @@ st.markdown(
 # ── Advanced Override (collapsed — power users only) ───────────
 # The selectboxes own SEPARATE keys (_w_mode/_w_profile, mirrored from canonical above) and push the
 # user's pick back into canonical via on_change — never sharing a key with the buttons' writes.
+# GUARDED reads (prod KeyError, fixed 2026-08-24): on Streamlit Cloud the app hibernates and
+# restarts with a FRESH empty session while the user's browser still shows the old page. Their
+# next interaction with an Override selectbox fires this callback BEFORE any script line runs —
+# on a session_state that holds nothing — so the raw ["_w_mode"] read crashed the whole app.
+# On a missing key: no-op. The following run re-initializes canonical state and re-mirrors; the
+# one stale click is correctly discarded (it belonged to a session that no longer exists).
 def _sync_mode():
-    st.session_state["adv_mode"] = st.session_state["_w_mode"]
+    if "_w_mode" in st.session_state:
+        st.session_state["adv_mode"] = st.session_state["_w_mode"]
 
 def _sync_profile():
-    st.session_state["adv_profile"] = st.session_state["_w_profile"]
+    if "_w_profile" in st.session_state:
+        st.session_state["adv_profile"] = st.session_state["_w_profile"]
 
 with st.expander("⚙️ Advanced: Override Mandate Defaults", expanded=False):
     st.selectbox(

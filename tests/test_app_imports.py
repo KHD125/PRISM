@@ -79,3 +79,48 @@ def test_app_first_party_import_resolves(module, name):
         f"This crashes the app at startup yet passes every render test — re-export it "
         f"(e.g. add it to {module}'s __init__ / module namespace)."
     )
+
+
+def test_widget_callbacks_never_read_session_keys_unguarded():
+    """PROD CRASH CLASS (KeyError '_w_mode', Streamlit Cloud 2026-08-24): a widget on_change/on_click
+    callback runs BEFORE any script line of the rerun. When Cloud hibernates and restarts the app,
+    the session is fresh and EMPTY while the user's browser still shows the old page — their first
+    interaction fires the callback on a session_state holding nothing, so a raw
+    st.session_state["key"] read crashes the whole app. Pytest cannot execute this path (it lives
+    in the session lifecycle), so this static contract walks every function wired to on_change= /
+    on_click= in app.py + ui/ and rejects any UNGUARDED subscript READ of st.session_state.
+    Writes are safe (they run first and create the key); .get()/.pop(k, default) are safe; a read
+    nested under an `if "key" in st.session_state` guard is safe."""
+    import ast
+    import os
+
+    _root = os.path.join(os.path.dirname(__file__), "..")
+    offenders = []
+    for rel in ["app.py", os.path.join("ui", "ui_discovery.py"), os.path.join("ui", "ui_components.py")]:
+        src = open(os.path.join(_root, rel), encoding="utf-8").read()
+        tree = ast.parse(src)
+        # names wired as callbacks: on_change=NAME / on_click=NAME keywords
+        cb_names = {kw.value.id
+                    for node in ast.walk(tree) if isinstance(node, ast.Call)
+                    for kw in node.keywords
+                    if kw.arg in ("on_change", "on_click") and isinstance(kw.value, ast.Name)}
+        funcs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+        for name in sorted(cb_names & set(funcs)):
+            fn = funcs[name]
+            guarded_spans = [
+                (g.lineno, max(x.lineno for x in ast.walk(g) if hasattr(x, "lineno")))
+                for g in ast.walk(fn)
+                if isinstance(g, ast.If) and isinstance(g.test, ast.Compare)
+                and any(isinstance(op, ast.In) for op in g.test.ops)
+                and "session_state" in ast.dump(g.test)
+            ]
+            for node in ast.walk(fn):
+                if (isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load)
+                        and "session_state" in ast.dump(node.value)):
+                    if not any(a <= node.lineno <= b for a, b in guarded_spans):
+                        offenders.append(f"{rel}::{name} line {node.lineno}")
+    assert not offenders, (
+        "Unguarded st.session_state[...] READ inside a widget callback — this crashed prod "
+        f"(KeyError on a hibernation-resurrected session): {offenders}. "
+        'Wrap the read in `if "key" in st.session_state:` or use .get().'
+    )
