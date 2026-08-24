@@ -95,6 +95,7 @@ CONCEPT_REFERENCE = {
         ("Sensitive / Structural-Growth", "A secular, structural grower — driven more by a long-run growth theme than by the macro cycle."),
         ("Financials", "Banks, NBFCs and insurers — they ride their own credit and interest-rate cycle, judged differently from operating companies."),
         ("Catch-all", "Heterogeneous or hard-to-classify (conglomerates, trading, diversified) — no single cyclicality label fits."),
+        ("earn-DD (Earnings Drawdown)", "The number beside the tier badge: the deepest peak-to-trough fall in annual net profit over the last 6 years — a drawdown applied to PROFITS instead of price. ~0% = profits only ever rose (steady compounder); ~50% = profits once halved (cyclical signature); above 100% = the trough year was an outright loss (capped at 300% where the math turns to noise). The tier is the business's REPUTATION by industry; earn-DD is its RECORD — a 'Defensive' name carrying a big earn-DD is behaving cyclically despite its label. Needs 4 of 6 years reported; display-only, never scored."),
     ],
     # ── sector_capital_phase — core/data_engine.py:2004 (Chancellor capital cycle, sector asset growth)
     "❄️ Sector Capital Phase": [
