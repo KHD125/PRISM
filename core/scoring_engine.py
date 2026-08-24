@@ -249,6 +249,18 @@ GROWTH_SIGNAL_WEIGHTS = {
     "ebitda_acceleration": 0.04,
 }   # sums to 0.94; quarterly freshness layer carries the remaining 0.06
 GROWTH_Q_COLS = ("q_pat_yoy", "q_rev_yoy")
+# Valuation / Balance evidence lists (2026-08-23): these two scorers are sequential blocks (mixed
+# rank types), not weight dicts, so the constants list their REAL inputs and a contract test pins
+# every name into the scorer source. EXCLUDED as evidence on purpose:
+#   net_debt_negative — never-NaN binary; a 1 proves real debt/cash data (counted via the ==1 term
+#     in compute_quality_score), but a 0 is unprovable (data_engine emits 0 for missing inputs).
+#   cwip_conversion — sentinel difference fillna(0)-fillna(0): missing data fabricates "0 expansion"
+#     (never NaN; would make the blind test vacuous — it hid 87 blind-balance rows).
+#   pe_below_roe / valuation_multiple_trap / cyclical_peak_trap — modifiers on other signals, not
+#     evidence a valuation exists.
+VALUATION_SIGNAL_COLS = ("pe_discount", "pe_discount_to_quality", "peg", "ev_compression",
+                         "fcf_yield", "debt_to_equity", "payback_ratio", "payback_ratio_proxy")
+BALANCE_SIGNAL_COLS = ("debt_slope_3y", "reserves_growth", "cash_change", "nfat")
 
 
 def _compute_moat_score(df: pd.DataFrame) -> pd.Series:
@@ -536,6 +548,18 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     df["margin_score"] = _compute_margin_score(df)
     df["balance_sheet_score"] = _compute_balance_sheet_score(df)
     df["valuation_score"] = _compute_valuation_score(df)
+    # Same evidence-count contract for the remaining two numeric axes (87 blind-balance /
+    # 2 blind-valuation live rows were rendering fabricated pills — "Balance 🔴 36" is an
+    # ACCUSATION built purely from neutral fills). net_debt_negative==1 counts as genuine
+    # balance evidence: a 1 requires real debt/cash figures; a 0 proves nothing (see the
+    # constants' exclusion notes above).
+    df["valuation_signals_available"] = (
+        df.reindex(columns=list(VALUATION_SIGNAL_COLS)).notna().sum(axis=1).astype(int)
+    )
+    df["balance_signals_available"] = (
+        df.reindex(columns=list(BALANCE_SIGNAL_COLS)).notna().sum(axis=1)
+        + (df.get("net_debt_negative", pd.Series(0, index=df.index)).fillna(0) == 1).astype(int)
+    ).astype(int)
 
     # Weighted composite
     df["quality_score"] = (

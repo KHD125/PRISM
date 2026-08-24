@@ -24,8 +24,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 import numpy as np
 import pandas as pd
 
-from core.scoring_engine import (GROWTH_Q_COLS, GROWTH_SIGNAL_WEIGHTS, MOAT_SIGNAL_WEIGHTS,
-                                 run_full_scoring)
+from core.scoring_engine import (BALANCE_SIGNAL_COLS, GROWTH_Q_COLS, GROWTH_SIGNAL_WEIGHTS,
+                                 MOAT_SIGNAL_WEIGHTS, VALUATION_SIGNAL_COLS, run_full_scoring)
 from core.verdict_engine import compute_verdict
 
 _DEFAULTS = {
@@ -157,3 +157,74 @@ def test_forensics_fired_flags_outrank_unverified():
     assert "🟡" in watch["verdict_axis_forensics"].iloc[0]
     flagged = compute_verdict(_frame(red_flag_count=0, data_coverage_pct=25.0, forensic_score=40.0))
     assert "🔴" in flagged["verdict_axis_forensics"].iloc[0]
+
+
+# ── 4. valuation + balance: the remaining two numeric axes (guarded 2026-08-23) ──────────
+# Balance was the LARGEST fabrication cohort (87 live rows showing "Balance 🔴 36" — a red
+# ACCUSATION built purely from neutral fills) and it hid behind two never-NaN sentinel columns
+# (net_debt_negative, cwip_conversion) that made the naive all-NaN blindness test vacuous.
+
+
+def test_valuation_balance_constants_name_real_scorer_inputs():
+    """Anti-drift for the two sequential-block scorers (no weight dict to share): every column in
+    the constant must appear in its scorer's source, so a renamed/removed signal fails here."""
+    import inspect
+
+    from core import scoring_engine as se
+
+    val_src = inspect.getsource(se._compute_valuation_score)
+    for c in VALUATION_SIGNAL_COLS:
+        assert c in val_src, f"{c} not in _compute_valuation_score — constant drifted"
+    bal_src = inspect.getsource(se._compute_balance_sheet_score)
+    for c in BALANCE_SIGNAL_COLS:
+        assert c in bal_src, f"{c} not in _compute_balance_sheet_score — constant drifted"
+    # the sentinels must stay EXCLUDED (they would make the blind test vacuous)
+    assert "net_debt_negative" not in BALANCE_SIGNAL_COLS
+    assert "cwip_conversion" not in BALANCE_SIGNAL_COLS
+
+
+def test_blind_valuation_and_balance_mask_to_na():
+    df = compute_verdict(_frame(valuation_score=46.0, valuation_signals_available=0,
+                                balance_sheet_score=36.1, balance_signals_available=0))
+    assert "N/A" in df["verdict_axis_valuation"].iloc[0]
+    assert "⚪" in df["verdict_axis_valuation"].iloc[0]
+    assert "N/A" in df["verdict_axis_balance"].iloc[0]
+    assert "36" not in df["verdict_axis_balance"].iloc[0]
+    # one real signal keeps the pill — and absent count columns keep old behavior
+    keep = compute_verdict(_frame(valuation_score=46.0, valuation_signals_available=1,
+                                  balance_sheet_score=61.1, balance_signals_available=1))
+    assert "46" in keep["verdict_axis_valuation"].iloc[0]
+    assert "61" in keep["verdict_axis_balance"].iloc[0]
+    old = compute_verdict(_frame(valuation_score=46.0, balance_sheet_score=36.1))
+    assert "46" in old["verdict_axis_valuation"].iloc[0]
+    assert "36" in old["verdict_axis_balance"].iloc[0]
+
+
+def test_net_cash_counts_as_genuine_balance_evidence():
+    """net_debt_negative == 1 requires real debt/cash figures, so it counts as evidence and keeps
+    the pill; a 0 proves nothing (data_engine emits 0 for missing inputs) and must NOT count.
+    Exercised through the real pipeline path so the ==1 term itself is under test."""
+    import numpy as np
+
+    from data_engine import compute_derived_signals
+    from forensic_engine import compute_forensic_signals
+    from test_data_quality_fixes import _frame as _dq_frame
+
+    f = _dq_frame(n=6)
+    out = run_full_scoring(compute_forensic_signals(compute_derived_signals(f))).set_index("name")
+    ranked_nan = out.reindex(columns=list(BALANCE_SIGNAL_COLS)).notna().sum(axis=1)
+    ndn = (out["net_debt_negative"] == 1).astype(int)
+    assert list(out["balance_signals_available"]) == list((ranked_nan + ndn).astype(int)),         "balance count must be notna(ranked signals) + (net_debt_negative == 1)"
+
+
+def test_narrative_untouched_by_masking():
+    """The masked series feed ONLY the pills: g_hi uses fillna(0), and a fabricated 50 was already
+    below the 60 bar, so blind rows keep the same narrative with and without the counts."""
+    a = compute_verdict(_frame(growth_score=50.0, moat_score=50.0,
+                               valuation_score=46.0, balance_sheet_score=36.1))
+    b = compute_verdict(_frame(growth_score=50.0, moat_score=50.0,
+                               valuation_score=46.0, balance_sheet_score=36.1,
+                               growth_signals_available=0, moat_signals_available=0,
+                               valuation_signals_available=0, balance_signals_available=0))
+    assert a["verdict_narrative"].iloc[0] == b["verdict_narrative"].iloc[0]
+    assert a["verdict_direction"].iloc[0] == b["verdict_direction"].iloc[0]

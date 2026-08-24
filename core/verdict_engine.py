@@ -63,6 +63,8 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     # pre-2026-08-23 behavior — the mask can only default OFF, never ON.
     moat = moat.mask(_col("moat_signals_available", np.nan) == 0)
     g    = g.mask(_col("growth_signals_available", np.nan) == 0)
+    valn = valn.mask(_col("valuation_signals_available", np.nan) == 0)
+    bal  = bal.mask(_col("balance_signals_available", np.nan) == 0)
 
     # ── Hard-risk veto masks (cap downward only) ──
     # CALIBRATED 2026-06-14: forensic_label is "🚨" for 98.6% of the universe (only 29 "Clean") →
@@ -125,6 +127,9 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
         np.where(rflags >= 5, "Forensics 🟡 Watch",
         np.where(_forensics_unverified, "Forensics ⚪ Unverified", "Forensics 🟢 Clean")),
     )
+    # Governance needs no evidence mask (measured 2026-08-23): zero live rows have all four
+    # promoter columns missing — the Shareholdings sheet populates them universally. Re-measure
+    # if that sheet's coverage ever changes.
     df["verdict_axis_governance"] = np.select(
         [govmult < 0.85, govmult < 1.0], ["Govern 🔴 Risk", "Govern 🟡 Caution"],
         default="Govern 🟢 Safe",
