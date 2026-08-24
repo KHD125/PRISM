@@ -675,8 +675,9 @@ with tabs[1]:
                          "governance_bonus","piotroski_fscore","roce","opm","cfo_to_pat"],
         "💰 Valuation": ["name","close_price","fair_value_qglp","valuation_score","expected_excess_return",
                          "pe","pb_ratio","peg","earnings_yield","fcf_yield","market_cap","buy_zone_label"],
-        "🔬 Forensic":  ["name","red_flag_count","piotroski_fscore","forensic_score","forensic_multiplier",
-                         "cfo_to_pat","accruals_ratio","debt_to_equity","promoter_holdings","pledged_percentage"],
+        "🔬 Forensic":  ["name","red_flag_count","red_flag_list","piotroski_fscore","forensic_score",
+                         "forensic_multiplier","cfo_to_pat","accruals_ratio","debt_to_equity",
+                         "promoter_holdings","pledged_percentage"],
         "📈 Technical": ["name","close_price","dist_to_vstop","momentum_score","rsi_14d","dist_52wh",
                          "crs_52w","weinstein_stage","breakout_score","smart_money_flow","tsunami_signal","vstop_green"],
     }
@@ -808,6 +809,7 @@ with tabs[1]:
         "verdict_direction": "Verdict", "weinstein_stage": "Trend",
         "moat_growth_quad": "Moat·Growth", "smart_money_flow": "Smart Money",
         "buy_zone_label": "Buy Zone",
+        "red_flag_list": "Which Flags",
     }.items():
         if _tc in _display_df.columns:
             _CC[_tc] = st.column_config.TextColumn(_tl, help=_SCANNER_HEADER_TIPS.get(_tc))
