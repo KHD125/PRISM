@@ -119,14 +119,27 @@ def test_ssgr_unknown_is_neutral_never_an_accusation():
 
 def test_ssgr_states_the_gap_not_just_the_level():
     """The old fail text said only the level in a sentence parsed as the gap ('exceeds SSGR 13.5%'
-    reads as 'exceeds BY 13.5%'). Sarda: SSGR 13.5%, shortfall −7.4%. Both branches must now state
-    the level AND the gap."""
+    reads as 'exceeds BY 13.5%'). Sarda: SSGR 13.5%, shortfall −7.4%. Both branches must state the
+    level AND the gap."""
     icon, body = _one_row(_base_stock(ssgr=13.5, ssgr_cushion=-7.4), "Growth Funding")
     assert icon == "❌"
     assert "13.5" in body and "7.4" in body, f"must state level AND gap: {body!r}"
     icon2, body2 = _one_row(_base_stock(ssgr=25.0, ssgr_cushion=4.0), "Growth Funding")
     assert icon2 == "✅"
     assert "25.0" in body2 and "4.0" in body2
+
+
+def test_ssgr_keeps_the_short_value_long_context_shape():
+    """LAYOUT REGRESSION GUARD. _row renders [icon][label][value nowrap][context ellipsis]: a
+    sentence in the VALUE slot consumes the row and pushes the context off the screen entirely —
+    which the first version of the SSGR fix did (user-reported from a live screenshot). The value
+    must stay a bare number like every sibling row; the prose belongs in the context."""
+    html = _render(ts.render_financial_insights, _base_stock(ssgr=13.5, ssgr_cushion=-7.4))
+    m = re.search(r"Growth Funding \(SSGR\)</span>\s*<span[^>]*>([^<]*)</span>", html)
+    assert m, "SSGR value span not found — the row structure changed"
+    value = m.group(1).strip()
+    assert value == "13.5%", f"value slot must hold the bare level, got {value!r}"
+    assert len(value) <= 8, "a sentence in the value slot squeezes the context off the row"
 
 
 def test_sales_profit_conversion_names_its_real_basis():

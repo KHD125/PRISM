@@ -1144,7 +1144,7 @@ def render_financial_insights(stock: pd.Series):
     Replaces the raw metric grid rows in the Tear-Sheet main view.
     """
 
-    def _row(label: str, passed, value_str: str, context: str = "") -> str:
+    def _row(label: str, passed, value_str: str, context: str = "", tip: str = "") -> str:
         # NUMPY BOOL TRAP (fixed 2026-08-24): every threshold here compares a NumPy float, and
         # `np.float64(18.4) >= 15` returns np.bool_ — for which `x is True` is FALSE. The identity
         # checks below therefore fell through to the neutral ⚪ branch for 13 of 17 rows on EVERY
@@ -1162,7 +1162,14 @@ def render_financial_insights(stock: pd.Series):
             ico, clr = "⚪", COLORS["text_muted"]
         c_sec = COLORS["text_secondary"]
         c_mut = COLORS["text_muted"]
-        # Context truncates with ellipsis — value NEVER wraps (white-space:nowrap;flex-shrink:0)
+        # TRUNCATION FIX (2026-08-24): the context column is flex:1 with ellipsis, so in a
+        # half-width card every multi-band rule died mid-sentence ("≥70%: real cash | 50-70%:
+        # watch | <50%: accr…"). That was tolerable while the icons were meaningless; once ✅/❌
+        # became driven by exactly those rules, hiding them broke the panel's own logic. Rules are
+        # now SPLIT: the operative threshold stays visible in `context` (short enough never to
+        # clip), and the full multi-band explanation moves into `tip` — rendered via the same
+        # help_chip "?" affordance the scorecard and All-Data cells already use.
+        _tip = help_chip("", tip) if tip else ""
         ctx = (
             f'<span style="color:{c_mut};font-size:0.68rem;flex:1;min-width:0;'
             f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
@@ -1173,7 +1180,7 @@ def render_financial_insights(stock: pd.Series):
             f'border-bottom:1px solid rgba(255,255,255,0.04);">'
             f'<span style="font-size:0.85rem;width:18px;flex-shrink:0;">{ico}</span>'
             f'<span style="font-size:0.76rem;color:{c_sec};width:155px;flex-shrink:0;">'
-            f'{_esc(label)}</span>'
+            f'{_esc(label)}{_tip}</span>'
             f'<span style="font-size:0.80rem;font-weight:700;color:{clr};'
             f'white-space:nowrap;flex-shrink:0;">'
             f'{_esc(value_str)}</span>'
@@ -1209,6 +1216,8 @@ def render_financial_insights(stock: pd.Series):
         roce_10y >= 15,
         f"{roce_10y:.1f}%",
         f"Current {roce_curr:.1f}% · {'Accelerating ↑' if roce_curr >= roce_10y else 'Decelerating ↓'}",
+        "Bar: 10-year median ROCE ≥ 15%. The decade median proves durability — a single good "
+        "year does not. 'Accelerating' compares the CURRENT ROCE against that median.",
     )
     bq += _row(
         "Profit CAGR — 5 Years",
@@ -1227,7 +1236,10 @@ def render_financial_insights(stock: pd.Series):
         "Sales→Profit Conversion",
         (float(_spc) > 0) if _spc_known else None,
         (f"{float(_spc):+.1f}pp" if _spc_known else "Not reported"),
-        "EBIT 3Y vs Revenue 3Y (PAT 5Y fallback) — profit engine scaling faster than sales",
+        "EBIT 3Y vs Revenue 3Y",
+        "Operating leverage: how many percentage points faster the profit engine grew than "
+        "sales. Measured on EBIT over 3 years (capital-structure-neutral); falls back to PAT "
+        "over 5 years when EBIT history is unavailable. Positive = a scalable cost structure.",
     )
     bq += _row(
         "Net Margin — 5Y Median",
@@ -1249,7 +1261,9 @@ def render_financial_insights(stock: pd.Series):
         "Cash Earnings (CFO/PAT)",
         cfo_pat >= 70,
         f"{cfo_pat:.1f}%",
-        "≥70%: real cash  |  50–70%: watch  |  <50%: accrual risk",
+        "Bar: ≥70%",
+        "Cash Earnings = CFO ÷ PAT. ≥70%: profits arrive as real cash. 50–70%: watch. "
+        "<50%: accrual risk — reported profit is not converting to cash.",
     )
     # SSGR — three HONEST states (fixed 2026-08-24):
     #  * UNKNOWN: 428 live rows (20.2%) carry a NaN SSGR, and the old `_g(..., 0)` default printed
@@ -1263,15 +1277,19 @@ def render_financial_insights(stock: pd.Series):
         cd += _row("Growth Funding (SSGR)", None, "SSGR unavailable",
                    "Needs net margin, asset turnover and payout — one or more not reported")
     else:
+        # LAYOUT (fixed 2026-08-24): _row lays out [icon][label][value nowrap][context ellipsis],
+        # so a sentence in the VALUE slot eats the whole row and pushes the context off entirely —
+        # which is what the first version of this fix did. Every sibling row is short-value +
+        # explanatory-context; this one now matches: the SSGR level is the value, the gap and the
+        # verdict are the context.
         _ssgr_v, _cush_v = float(_ssgr_raw), float(_cush_raw)
         _self_funded = _cush_v > 0
         cd += _row(
             "Growth Funding (SSGR)",
             _self_funded,
-            (f"Self-Funded — SSGR {_ssgr_v:.1f}% · covers growth by {_cush_v:.1f}%"
-             if _self_funded else
-             f"External Capital — SSGR {_ssgr_v:.1f}% · growth exceeds it by {abs(_cush_v):.1f}%"),
-            "Malik: growth above the self-sustainable rate must be funded externally",
+            f"{_ssgr_v:.1f}%",
+            (f"Self-funded — covers growth by {_cush_v:.1f}%" if _self_funded else
+             f"Growth exceeds it by {abs(_cush_v):.1f}% — externally funded"),
         )
     # Distinguish truly debt-free (int_cov data absent AND D/E near zero) from
     # missing coverage data (company has debt but interest_coverage not in CSV).
@@ -1289,14 +1307,19 @@ def render_financial_insights(stock: pd.Series):
         "Debt Safety",
         int_pass,
         int_str,
-        f"D/E {de:.2f}  |  Safe: Int.Cov ≥3× or near-zero debt",
+        f"D/E {de:.2f} · Bar: ≥3×",
+        "Interest coverage = EBIT ÷ interest expense (Malik Parameter 4: >3). A company with "
+        "near-zero debt passes regardless — there is nothing to cover.",
     )
     tax_ok = (30 <= tax <= 55) if tax > 5 else None
     cd += _row(
         "Tax Rate — Malik P3 proxy",
         tax_ok,
         f"{tax:.1f}%",
-        "Normal band 30–55%  |  <10%: Sharp Practices flag",
+        "Normal band 30–55%",
+        "Effective tax rate (Malik Parameter 3). It should sit near the general corporate tax "
+        "rate unless a specific incentive applies; abnormally low payouts (<10%) raise a "
+        "sharp-practices flag.",
     )
 
     # ── Valuation ──
@@ -1320,21 +1343,26 @@ def render_financial_insights(stock: pd.Series):
         "PEG Ratio",
         (0 < peg <= 1.0) if peg > 0 else None,
         f"{peg:.2f}×" if peg > 0 else "N/A",
-        (f"{peg_zone}  |  " if peg_zone else "")
-        + "Lynch rule: ≤1.0 = growth at bargain price",
+        (peg_zone or "Bar: ≤1.0"),
+        "PEG = P/E ÷ earnings growth. Peter Lynch's rule: ≤1.0 means you are paying no more "
+        "for the growth than the growth rate itself — a bargain. Above 2.0 is expensive.",
     )
     vl += _row(
         "Earnings Yield",
         ey >= 4,
         f"{ey:.1f}%",
-        "Bond-equity benchmark: ≥4% justifies equity risk",
+        "Bar: ≥4%",
+        "Earnings Yield = EPS ÷ price. Malik's rule is that it should beat the 10-year "
+        "government bond yield — otherwise you are taking equity risk for a bond-like return.",
     )
     if fcf_y > 0:
         vl += _row(
             "FCF Yield",
             fcf_y >= 3,
             f"{fcf_y:.1f}%",
-            "≥4%: excellent  |  2–4%: reasonable  |  <2%: low",
+            "Bar: ≥3%",
+            "Free-cash-flow yield = FCF ÷ market cap. ≥4%: excellent. 2–4%: reasonable. "
+            "<2%: low — little owner cash generated per rupee of price.",
         )
 
     # ── Ownership Alignment ──
@@ -1352,11 +1380,17 @@ def render_financial_insights(stock: pd.Series):
     )
     ow = ""
     ow += _row("Promoter Holding", prom >= 50, f"{prom:.1f}%", prom_ctx)
-    ow += _row("Promoter Pledge",  pledge <= 10, f"{pledge:.1f}%",
-               "0%: clean  |  <5%: low risk  |  >10%: red flag")
+    ow += _row("Promoter Pledge",  pledge <= 10, f"{pledge:.1f}%", "Bar: ≤10%",
+               "Percentage of promoter shares pledged as loan collateral. 0%: clean. <5%: low "
+               "risk. >10%: a red flag — a price fall can force lender selling.")
+    # Presence (the icon's test) and FLOW (the label) are different measurements — stating both
+    # explicitly stops the row reading as a contradiction when a ❌ presence sits beside a ✅ flow.
     ow += _row("FII + DII Holdings", fii >= 5 or dii >= 5,
                f"FII {fii:.1f}%  ·  DII {dii:.1f}%",
-               f"Smart Money: {smart}")
+               f"Presence bar: ≥5% · Flow: {smart}",
+               "The icon judges institutional PRESENCE (FII or DII holding ≥5%). The flow label "
+               "is a separate read of whether institutions are currently accumulating or "
+               "distributing — a low holding can still show positive flow, and vice versa.")
 
     # ── Render in a balanced 2×2 CSS grid (no st.columns gutter padding) ──
     # FIXED 2 columns so the 4 cards always lay out 2×2 — auto-fit fit 3 per row on wide desktops,
