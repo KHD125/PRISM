@@ -178,7 +178,46 @@ def test_corporate_actions_are_exempt_from_the_tier1_esop_deduction(live):
     )
 
 
-# ── 5. The contained false negative — pinned so it stays contained ──────────────────────
+# ── 5. Piotroski F7 must answer the same question the same way ──────────────────────────
+def test_piotroski_f7_exempts_corporate_actions(live):
+    """F7 is "the firm did not ISSUE common equity" — an OFFERING. A bonus issue sells nothing
+    and raises nothing. Before this fix, `_eq <= _eq_1yb` docked a point from 286 companies for
+    handing shareholders free stock, and the engine held two OPPOSITE answers to "did this
+    company issue equity?" — dilution_flag saying no, F7 saying yes, on the same rows."""
+    corp = live[live["dilution_is_corporate_action"] == 1]
+    assert len(corp) > 50, "sanity: the corporate-action arm should be firing on live data"
+    assert (corp["f_no_dilution"] == 1).all(), (
+        f"{int((corp['f_no_dilution'] == 0).sum())} corporate actions still lose the Piotroski "
+        f"F7 point — F7 and dilution_flag disagree about the same event"
+    )
+
+
+def test_piotroski_f7_still_penalises_real_issuance():
+    """The exemption must not become a blanket pass: sub-1.5x issuance still fails F7."""
+    out = compute_derived_signals(_frame(n=2, equity_shares_1yb=[1_000_000.0] * 2,
+                                         equity_shares=[1_200_000.0] * 2))
+    from forensic_engine import compute_forensic_signals
+    with contextlib.redirect_stdout(_io.StringIO()):
+        scored = compute_forensic_signals(out)
+    assert scored["dilution_is_corporate_action"].iloc[0] == 0
+    assert scored["f_no_dilution"].iloc[0] == 0, "a 20% placement must still fail F7"
+
+
+def test_piotroski_f7_degrades_safely_without_the_column():
+    """Old snapshots and minimal fixtures predate `dilution_is_corporate_action`; F7 must fall
+    back to the original comparison rather than exempting everything."""
+    from forensic_engine import compute_forensic_signals
+    out = compute_derived_signals(_frame(n=2, equity_shares_1yb=[1_000_000.0] * 2,
+                                         equity_shares=[2_000_000.0] * 2))
+    out = out.drop(columns=["dilution_is_corporate_action"])
+    with contextlib.redirect_stdout(_io.StringIO()):
+        scored = compute_forensic_signals(out)
+    assert scored["f_no_dilution"].iloc[0] == 0, (
+        "without the column the exemption must NOT apply — absent evidence is not an exemption"
+    )
+
+
+# ── 6. The contained false negative — pinned so it stays contained ──────────────────────
 def test_known_false_negative_remains_rejected_by_other_signals(live):
     """Sumeet Industries: NCLT debt-to-equity, 6.70x — real dilution this rule cannot see.
     It is acceptable ONLY because the engine rejects it on independent grounds."""

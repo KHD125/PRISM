@@ -130,9 +130,26 @@ def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # F7: No dilution — shares not increased YoY (benefit of doubt if data missing)
+    #
+    # CORPORATE ACTIONS EXEMPT (2026-08-25). Piotroski's F7 is "the firm did not ISSUE common
+    # equity in the year preceding portfolio formation" — an OFFERING. A bonus issue or a split
+    # is not an offering: no shares are sold, no capital is raised, and every holder's stake is
+    # unchanged. The raw `_eq <= _eq_1yb` test cannot tell the two apart, so it docked a point
+    # from 286 companies for handing their shareholders free stock — Nestle India, Pidilite,
+    # Ashok Leyland, Trent, Bharat Dynamics among them.
+    #
+    # This mirrors `dilution_is_corporate_action` (data_engine, the >=1.5x arm) rather than
+    # re-deriving the threshold, so the two can never drift — and it removes a genuine
+    # contradiction: without it the engine held two opposite answers to "did this company issue
+    # equity?", with dilution_flag saying no and F7 saying yes on the same 286 rows.
+    # Book fidelity, not a deviation (CLAUDE.md §5): the criterion's own word is "issue".
+    # `.get()` keeps this crash-proof on frames that predate the column (old snapshots, minimal
+    # fixtures), where it degrades to the original behaviour rather than exempting anything.
+    _corp_action_f7 = df.get("dilution_is_corporate_action",
+                             pd.Series(0, index=df.index)).fillna(0) == 1
     df["f_no_dilution"] = np.where(
         _eq.notna() & _eq_1yb.notna(),
-        (_eq <= _eq_1yb).astype(int),
+        ((_eq <= _eq_1yb) | _corp_action_f7).astype(int),
         1,
     )
 
