@@ -781,16 +781,66 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         0.0  # no data = benefit of doubt
     )
 
+    # ── CORPORATE ACTIONS ARE NOT DILUTION (fixed 2026-08-25) ───────────────────────────
+    # A share count that grows >= 1.5x in ONE year is a structural corporate action — a bonus
+    # issue, a split, a rights issue, or an IPO re-basing — not ordinary equity issuance. You
+    # cannot place more than half your own share capital with third parties: a QIP that size is
+    # not a thing. Below 1.5x is the real placement zone and stays Tier 3.
+    #
+    # WHY THIS EXISTS. dilution_pct is a raw share-count delta, so a 1:1 BONUS (+100%) scored
+    # worse than a predatory 15% QIP. 492 stocks failed the Tier-3 hard gate; 145 of them had a
+    # share multiple within 0.5% of a clean bonus/split ratio — Nestle India 2.000x, Adani Power
+    # 5.000x, Trent 1.500x, Ashok Leyland 2.000x, Pidilite 2.001x. Every one was being penalised
+    # for REWARDING its shareholders. 31 of them lost a forensic-multiplier tier to the spurious
+    # rf_dilution flag — a ~32% composite haircut.
+    #
+    # VALIDATED AGAINST PUBLIC RECORD, not inferred (12 names, both directions):
+    #   reclassified  BSE 3.009x (2:1 bonus) · Indraprastha Gas 2.000x (1:1) · Shilchar 1.500x
+    #                 (1:2) · Samvardhana Motherson 1.500x (1:2) · Sigma Solve 10.0x (1:10 split)
+    #                 NDTV 1.750x (3:4 rights) · Ola Electric 2.370x (CCPS conversion at IPO)
+    #   stays Tier 3  Vraj Iron 1.334x (IPO fresh issue, real cash) · Saraswati Saree 1.196x (IPO)
+    # Plus 85 recent IPOs whose equity_shares_1yb is a PRE-LISTING shell count (Unified Data-Tech:
+    # 5,010 prior shares => an implied prior book value of Rs 155,289/share vs a universe median
+    # of Rs 112). Comparing today's float to a pre-IPO shell is a category error, and all 85 sit
+    # at >= 8.15x, well clear of this threshold.
+    #
+    # TWO REJECTED ALTERNATIVES, both killed by the same evidence:
+    #   - Matching "clean" bonus ratios (2.000x, 1.500x...): 26.3% of multiples land within 0.5%
+    #     of one, but a scale-preserving jitter null puts 10.0% there BY CHANCE — ~38% of matches
+    #     are coincidence. Maruti Interior's 4.000x is a rights issue raising real cash.
+    #   - The accounting identity (raise ~ dNW - PAT): it ignores dividends, so the classes
+    #     overlap. Vraj (a confirmed IPO CASH raise) reads +3.8%, BELOW Shilchar's bonus at +4.2%.
+    #
+    # KNOWN FALSE NEGATIVE (contained, deliberate): a distressed debt-to-equity conversion can
+    # exceed 1.5x and IS real dilution — Sumeet Industries 6.70x, banks taking equity under an
+    # NCLT plan. It is unreachable in practice: 100% of the 286 stocks this arm reclassifies
+    # already fail gate_pass and 95% already carry an AVOID verdict; Sumeet itself is composite
+    # 10.2, tier 5, 14 red flags, Piotroski 1/9, corporate_class GRUESOME. See docs/known-issues.md.
+    #
+    # TIER 1, NOT TIER 0 — deliberate. Tier 1 clears rf_dilution (needs >= 2) and passes
+    # gate_no_dilution (needs 3), but still FAILS the `dilution_flag == 0` pillars (Fisher P13
+    # "zero equity dilution", Outsider CEO pillar S). A bonus issuer did change its share count,
+    # so it must never be certified zero-dilution. Accepted consequence: Tier 1 carries the -5
+    # GOVERNANCE_BONUS["dilution_tier1_minor"] additive that Tier 3 did not — small, and the
+    # right sign for "the share count moved".
+    # Equivalence note: dilution_pct = (multiple - 1) x 100, so >= 50.0 IS multiple >= 1.5.
+    # Expressed in percent to reuse the already-guarded column rather than re-divide (§5).
+    _corp_action = shares_valid & (df["dilution_pct"] >= 50.0)
+
     df["dilution_flag"] = np.select(
         [
             ~shares_valid,                          # No data → benefit of doubt
             df["dilution_pct"] <= 0,                # Stable or buyback → perfectly clean
             df["dilution_pct"] <= 3.0,              # ≤3% → ESOP/minor → Watch tier
             df["dilution_pct"] <= 10.0,             # 3-10% → Meaningful → Caution tier
+            _corp_action,                           # ≥50% → bonus/split/rights/IPO → not dilution
         ],
-        [0, 0, 1, 2],
-        default=3                                   # >10% → Predatory QIP → Hard Reject
+        [0, 0, 1, 2, 1],
+        default=3                                   # 10-50% → Predatory QIP → Hard Reject
     )
+    # Mirrored for the UI so the tearsheet never re-derives this threshold and drifts from it
+    # (the Fisher module/engine precedent, commit 7fff308).
+    df["dilution_is_corporate_action"] = _corp_action.astype(int)
 
     # ── INCOME DERIVED ──
     # Year-by-year revenue growth for Coffee Can / Baid individual-year consistency checks.

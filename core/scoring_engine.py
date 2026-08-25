@@ -1051,9 +1051,20 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
     # Dilution: Tier 3 (>10%) is hard-gated and never reaches here.
     # Tier 1 (<3% ESOP) = -5 additive (routine noise). Tier 2 (3-10%) is a HARD RISK
     # SIGNAL — handled below via the governance risk multiplier, not additive points.
+    #
+    # CORPORATE ACTIONS ARE EXEMPT (2026-08-25). Tier 1 now also holds bonus issues, splits,
+    # rights and IPO re-basings (dilution_flag's >=1.5x arm — see data_engine). This deduction
+    # is explicitly "<3% ESOP dilution: minor deduction vs zero-dilution", and a 1:1 bonus is
+    # NOT ESOP dilution — every holder's stake is unchanged. Measured: without this exemption
+    # the reclassification made 269 stocks WORSE, because a stock that moved 3->1 shed the
+    # rf_dilution red flag but only benefits if that crossed a forensic-multiplier tier
+    # boundary, while picking up this -5 unconditionally. Penalising a company for rewarding
+    # its shareholders was the original bug; re-applying it here in miniature would keep it.
     dilution = df.get("dilution_flag", pd.Series(0, index=df.index)).fillna(0)
+    _corp_act = df.get("dilution_is_corporate_action", pd.Series(0, index=df.index)).fillna(0)
     if "dilution_flag" in df.columns:
-        bonus += (dilution == 1).astype(float) * GOVERNANCE_BONUS["dilution_tier1_minor"]
+        bonus += (((dilution == 1) & (_corp_act == 0)).astype(float)
+                  * GOVERNANCE_BONUS["dilution_tier1_minor"])
 
     # G3 FIX heritage: penalties must never be silently erased. The additive bonus keeps the
     # clip(lower=-50) floor for the tier-1 deduction; the four HARD risk signals now act

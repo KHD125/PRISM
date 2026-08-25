@@ -1584,6 +1584,28 @@ def render_verdict_scorecard(stock: pd.Series):
     def _pill(k):
         return str(stock.get(k, "") or "")
 
+    def _share_change_str():
+        """Share-count change, named for what it actually is.
+
+        "Dilution 2496.6%" was an interpretation the data cannot support: EPack Prefab's share
+        count went 3.9M → 100.6M because it LISTED, and 85% of that increase was pre-IPO
+        restructuring, not issuance. Bonus issues read the same way — Nestle's 1:1 printed
+        "Dilution 100%" for handing shareholders free stock. When the engine has classified the
+        move as a corporate action (bonus/split/rights/IPO re-basing, `dilution_is_corporate
+        _action`), show the raw counts and say so; only ordinary issuance keeps the percentage.
+        Mirrors the engine's own flag — never re-derives the 1.5x threshold here.
+        """
+        if _v("dilution_is_corporate_action", 0) == 1:
+            _a, _b = stock.get("equity_shares_1yb"), stock.get("equity_shares")
+            if pd.notna(_a) and pd.notna(_b) and float(_a) > 0:
+                def _cmpct(n):
+                    n = float(n)
+                    return (f"{n/1e7:.1f}Cr" if n >= 1e7 else
+                            f"{n/1e5:.1f}L"  if n >= 1e5 else f"{n:,.0f}")
+                return f"Shares {_cmpct(_a)} → {_cmpct(_b)} (restructuring)"
+            return "Shares restructured"
+        return f"Dilution {_n('dilution_pct', '{:.1f}', suf='%')}"
+
     _emerg = "🌱 Emerging VC" if _v("emerging_vc_flag", 0) == 1 else "Mature"
     _snoa  = "⚠ bloating" if _v("rf_snoa", 0) == 1 else "✓ clean"
     _netcash = "✓ net cash" if _v("net_debt_negative", 0) == 1 else "net debt"
@@ -1599,7 +1621,7 @@ def render_verdict_scorecard(stock: pd.Series):
         ("Balance Axis", _pill("verdict_axis_balance"),
          f"D/E {_n('debt_to_equity', '{:.2f}')} · Int-Cov {_n('interest_coverage', '{:.1f}', suf='x')} · {_netcash}"),
         ("Governance Axis", _pill("verdict_axis_governance"),
-         f"Promoter {_n('promoter_holdings', suf='%')} · Pledge {_n('pledged_percentage', suf='%')} · Dilution {_n('dilution_pct', '{:.1f}', suf='%')}"),
+         f"Promoter {_n('promoter_holdings', suf='%')} · Pledge {_n('pledged_percentage', suf='%')} · {_share_change_str()}"),
         ("Forensics Axis", _pill("verdict_axis_forensics"),
          f"Piotroski {_n('piotroski_fscore')}/9 · Red flags {_n('red_flag_count')} · SNOA {_snoa}"),
     ]
