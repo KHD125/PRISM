@@ -291,3 +291,73 @@ def test_clean_verdict_respects_severity():
     assert not is_clean2 and "Elevated" in elev_txt, "a critical flag must block the Clean verdict"
     # a genuinely bad stock still reads Sharp Practices regardless of severity flag
     assert "Sharp" in _forensic_status(39.0, 17, has_critical=True)[0]
+
+
+@pytest.mark.skipif(not os.path.isdir(_DATA_DIR), reason="local CSV data absent")
+def test_every_stated_threshold_is_actually_breached():
+    """GENERAL wrong-metric net (2026-08-24). Supersedes the two hand-picked flags above.
+
+    Four flags were caught displaying a column their engine condition never tested — evidence that
+    APPEARS TO REFUTE its own accusation, which is worse than showing nothing because it teaches
+    the reader to distrust a flag that is actually correct:
+      * rf_ssgr_deficit   showed pat_gr_yoy (profit) — engine uses revenue growth
+      * rf_opm_volatile   showed current opm       — engine uses opm_1yb
+      * rf_high_cash_debt showed D/E               — engine tests cash vs debt×0.3 (443/878 rows
+                                                     had D/E<0.1, i.e. "high debt · D/E: 0.01")
+      * rf_inventory_bloat showed rev_gr_yoy       — engine tests inv_vs_rev_gap
+
+    Every evidence string that states "threshold: <op><number>" now states the TRIGGER (what makes
+    the flag fire), so this test can mechanically verify the leading value actually satisfies it.
+    Any future handler that shows the wrong metric will almost always fail this.
+    """
+    import contextlib
+    import io as _io
+
+    from core import run_scoring_pipeline
+    from core.data_engine import (coerce_numeric_columns, compute_derived_signals,
+                                  load_all_csvs, merge_datasets)
+    from ui.ui_tearsheet import _FLAG_DISPLAY, _get_flag_context
+
+    with contextlib.redirect_stdout(_io.StringIO()):
+        df = run_scoring_pipeline(compute_derived_signals(coerce_numeric_columns(
+            merge_datasets(load_all_csvs("local")))))
+
+    # "…: <value><unit> … threshold: <op><number>" — take the LAST number before 'threshold'
+    THRESH = re.compile(r"threshold:\s*([<>])\s*([\d.]+)")
+    VALUE = re.compile(r"(-?[\d,]+\.?\d*)\s*(?:%|×|d|pp|cr)?(?=[^0-9]*$)")
+
+    violations, checked = [], 0
+    for col in _FLAG_DISPLAY:
+        if col not in df.columns:
+            continue
+        fired = df[df[col].fillna(0) == 1]
+        if fired.empty:
+            continue
+        step = max(1, len(fired) // 25)
+        for i in range(0, len(fired), step):
+            ctx = _get_flag_context(fired.iloc[i], col) or ""
+            tm = THRESH.search(ctx)
+            if not tm:
+                continue
+            op, thr = tm.group(1), float(tm.group(2))
+            head = ctx[: tm.start()]
+            nums = re.findall(r"(-?[\d,]+\.?\d*)", head.replace(",", ""))
+            if not nums:
+                continue
+            val = float(nums[-1])          # the measured quantity sits immediately before it
+            # EPS absorbs display rounding only (NFAT 1.497 renders "1.50"; a 30.04% deviation
+            # renders "30.0"). Wrong-metric bugs miss by whole units, never by 0.05.
+            _EPS = 0.05
+            ok = (val > thr - _EPS) if op == ">" else (val < thr + _EPS)
+            checked += 1
+            if not ok:
+                violations.append(
+                    f"{col} [{fired.iloc[i]['name'][:26]}]: shows {val} but claims "
+                    f"'threshold: {op}{thr}' — evidence does not breach its own threshold "
+                    f"| ctx={ctx[:90]!r}")
+                break                      # one example per flag is enough
+
+    assert checked >= 8, f"only {checked} threshold statements found — the net went blind"
+    assert not violations, (
+        f"{len(violations)} flag(s) display evidence that does not satisfy the threshold they "
+        "state — the wrong-metric class:\n  " + "\n  ".join(violations))

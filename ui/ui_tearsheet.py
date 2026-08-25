@@ -530,13 +530,20 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
 
     if rf_col == "rf_low_cfo_pat":
         v = _v("cfo_to_pat", "{:.1f}%")
-        return f"cfo_to_pat: {v}  ·  threshold: ≥70%" if v else ""
+        return f"CFO/PAT: {v}  ·  threshold: <70%" if v else ""
     if rf_col == "rf_high_receivables":
         v = _v("days_receivable", "{:.0f}d")
         return f"DSO: {v}  ·  threshold: >75d (products) / >120d (services)" if v else ""
     if rf_col == "rf_inventory_bloat":
-        rg = _v("rev_gr_yoy", "{:.1f}%")
-        return f"rev_gr: {rg}  ·  inventory grew faster than revenue" if rg else ""
+        # WRONG METRIC (fixed 2026-08-24): showed rev_gr_yoy while the engine tests
+        # inv_vs_rev_gap > 10 (median 31.7pp on firing rows). It also rendered a broken "+-4.2%"
+        # on the 189 firing stocks whose revenue growth is NEGATIVE, because the format hardcoded
+        # a "+" prefix. The gap IS the tested quantity, so show it.
+        _gap_i = stock.get("inv_vs_rev_gap")
+        if pd.isna(_gap_i):
+            return ""
+        return (f"inventory outgrew revenue by {float(_gap_i):.1f}pp"
+                f"  ·  threshold: >10pp")
     if rf_col == "rf_rising_debt":
         de = _v("debt_to_equity", "{:.2f}")
         de1 = _v("debt_to_equity_1yb", "{:.2f}")
@@ -587,7 +594,7 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         _cmp = float(_o1) if pd.notna(_o1) else float(_o5)
         _dev = abs(_cmp - float(_o5)) / float(_o5) * 100.0
         return (f"OPM {_cmp:.1f}% vs 5Y median {float(_o5):.1f}%"
-                f"  ·  deviation {_dev:.0f}%  ·  threshold: >30%")
+                f"  ·  deviation {_dev:.1f}%  ·  threshold: >30%")
     if rf_col == "rf_high_accruals":
         # engine (forensic_engine ~L311): (PAT − OCF) / avg_total_assets > 0.05
         _pat_a = stock.get("pat"); _ocf_a = stock.get("operating_cash_flow")
@@ -653,17 +660,37 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         v = _v("fcf_to_ebitda_pct", "{:.1f}%")
         return f"FCF/EBITDA: {v}  ·  threshold: <30%" if v else ""
     if rf_col == "rf_high_cash_debt":
-        de = _v("debt_to_equity", "{:.2f}")
-        return f"D/E: {de}  ·  high cash + high debt simultaneously" if de else ""
+        # WRONG METRIC (fixed 2026-08-24): showed D/E, but the engine tests
+        # cash > 0 AND debt > 0 AND cash > debt × 0.3 (data_engine ~L1690). D/E never determines
+        # it — 443 of the 878 firing stocks have D/E < 0.1, so the row read "High cash + high
+        # debt · D/E: 0.01", contradicting its own title (Kothari: cash ₹18cr vs debt ₹2cr).
+        _cash_h, _debt_h = stock.get("cash_equivalents"), stock.get("debt")
+        if pd.isna(_cash_h) or pd.isna(_debt_h) or float(_debt_h) <= 0:
+            return ""
+        return (f"cash ₹{float(_cash_h):,.0f}cr vs debt ₹{float(_debt_h):,.0f}cr"
+                f"  ·  cash is {100.0 * float(_cash_h) / float(_debt_h):.0f}% of debt"
+                f"  ·  threshold: >30%")
     if rf_col == "rf_receivables_bloat":
-        v = _v("days_receivable", "{:.0f}d")
-        return f"DSO: {v}  ·  sector-relative expansion >20d" if v else ""
+        # The engine tests (DSO − DSO_1yb) > sector-median expansion + 20 — an EXPANSION vs peers,
+        # not an absolute level (that is rf_high_receivables). Show the expansion the flag measured.
+        _d_now, _d_prev = stock.get("days_receivable"), stock.get("days_receivable_1yb")
+        if pd.isna(_d_now) or pd.isna(_d_prev):
+            return ""
+        return (f"DSO {float(_d_now):.0f}d vs {float(_d_prev):.0f}d prior"
+                f"  ·  expanded {float(_d_now) - float(_d_prev):+.0f}d"
+                f"  ·  fires at >20d above the SECTOR median expansion")
     if rf_col == "rf_high_accruals":
         v = _v("accruals_to_assets", "{:.1f}%")
         return f"accruals/assets: {v}  ·  threshold: >5%" if v else ""
     if rf_col == "rf_ccc_worsening":
-        v = _v("ccc", "{:.0f}d")
-        return f"CCC: {v}  ·  worsened >10 days YoY" if v else ""
+        # The engine tests ccc > ccc_1yb + 10 — a DELTA. Showing only the current value left the
+        # reader unable to see the change the flag measured.
+        _c_now, _c_prev = stock.get("ccc"), stock.get("ccc_1yb")
+        if pd.isna(_c_now) or pd.isna(_c_prev):
+            return ""
+        return (f"CCC {float(_c_now):.0f}d vs {float(_c_prev):.0f}d prior"
+                f"  ·  worsened {float(_c_now) - float(_c_prev):.0f}d"
+                f"  ·  threshold: >10d")
     if rf_col == "rf_expense_rising":
         v = _v("expense_ratio", "{:.1f}%")
         return f"expense_ratio: {v}  ·  rose >3pp" if v else ""
@@ -699,7 +726,7 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         return f"EBITDA-level OPM: {opm}  ·  Ind AS 116 RoU removes operating lease costs from EBITDA" if opm else ""
     if rf_col == "rf_low_cfo_ebitda":
         v = _v("cfo_to_ebitda", "{:.1f}%")
-        return f"cfo_to_ebitda: {v}  ·  threshold: ≥50%" if v else ""
+        return f"CFO/EBITDA: {v}  ·  threshold: <50%" if v else ""
     if rf_col == "rf_wc_double_squeeze":
         dso = _v("days_receivable", "{:.0f}d")
         dpo = _v("days_payable",    "{:.0f}d")
@@ -708,7 +735,7 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         if dpo: parts.append(f"DPO: {dpo} (falling >10d)")
         return "  ·  ".join(parts)
     if rf_col == "rf_snoa":
-        v = _v("scaled_net_operating_assets", "{:.2f}")
+        v = _v("scaled_net_operating_assets", "{:.3f}")
         return f"SNOA: {v}  ·  threshold: >1.0 (net op assets exceed lagged asset base)" if v else ""
     return ""
 
