@@ -290,7 +290,22 @@ def test_undefined_ep_is_not_rendered_as_zero_rupees():
 
 
 def test_undefined_ep_is_not_rendered_as_a_value_trap():
-    assert "Value Trap" not in _render_ep_card(_undefined_ep_stock())
+    """Checks the VALUE slots, not the whole HTML blob.
+
+    A plain substring scan used to be enough, but the EP Trajectory card now carries a "?"
+    tooltip that legitimately names all four curve states ("...📉 Value Trap = negative and not
+    improving") to explain the 2x2. That text is documentation, not a verdict about THIS stock.
+    What must never regress is the claim the card actually makes — so assert on the rendered
+    value elements (font-weight:900 divs), where an undefined EP must read "Not reported".
+    """
+    import re
+    html = _render_ep_card(_undefined_ep_stock())
+    values = re.findall(r'font-weight:900;[^>]*>([^<]*)<', html)
+    assert values, "no value elements found — the card structure changed"
+    assert not any("Value Trap" in v for v in values), (
+        f"an undefined economic profit was rendered as a verdict: {values}"
+    )
+    assert any("Not reported" in v for v in values), f"expected an explicit unknown: {values}"
 
 
 def test_undefined_ep_says_why_it_is_blank():

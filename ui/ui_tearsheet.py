@@ -295,13 +295,23 @@ def render_ep_power_curve_module(stock: pd.Series):
     ep_clr  = COLORS["green"] if ep_positive else COLORS["red"]
     vel_clr = COLORS["green"] if ep_vel > 0 else COLORS["red"]
 
-    def _ep_metric(label: str, value: str, sub: str, val_clr: str, sub_clr: str) -> str:
+    def _ep_metric(label: str, value: str, sub: str, val_clr: str, sub_clr: str,
+                   tip: str = "") -> str:
+        # Value type-size follows value LENGTH. Three of these cards hold short numbers
+        # ("₹4 Cr", "Q2") but EP Trajectory holds a text label, and at a shared 1.3rem the
+        # 25-character "➖ EP Positive, Not Rising" ran to the card edge and visually outweighed
+        # the measurements beside it — a label shouting louder than the numbers it annotates.
+        # Scaling by length keeps every card balanced and handles all four curve labels
+        # ("🚀 Hockey Stick", "📈 Improving", "📉 Value Trap") without a per-card special case.
+        _vl = len(value)
+        _fs = "1.3rem" if _vl <= 14 else "1.02rem" if _vl <= 20 else "0.88rem"
         return (
             f'<div style="flex:1;min-width:120px;background:{COLORS["bg_secondary"]};'
             f'border:1px solid {COLORS["border"]};border-radius:10px;padding:10px 14px;">'
             f'<div style="font-size:0.56rem;font-weight:700;color:{COLORS["text_muted"]};'
-            f'text-transform:uppercase;letter-spacing:0.7px;">{_esc(label)}</div>'
-            f'<div style="font-size:1.3rem;font-weight:900;color:{val_clr};'
+            f'text-transform:uppercase;letter-spacing:0.7px;">{_esc(label)}'
+            f'{help_chip(label, tip)}</div>'
+            f'<div style="font-size:{_fs};font-weight:900;color:{val_clr};'
             f'line-height:1.15;margin-top:3px;white-space:nowrap;">{_esc(value)}</div>'
             f'<div style="font-size:0.62rem;font-weight:600;color:{sub_clr};'
             f'margin-top:2px;white-space:nowrap;">{_esc(sub)}</div>'
@@ -314,17 +324,34 @@ def render_ep_power_curve_module(stock: pd.Series):
                    ("EP Positive ✅" if ep_positive else "EP Negative ❌")
                        if ep_known else "Equity or RoE not reported",
                    ep_clr if ep_known else COLORS["text_muted"],
-                   ep_clr if ep_known else COLORS["text_muted"]) +
+                   ep_clr if ep_known else COLORS["text_muted"],
+                   tip="Profit left after charging for ALL capital, equity included: "
+                       "net worth × (RoE − cost of equity). Accounting profit can be healthy "
+                       "while economic profit is negative — that is a company earning less than "
+                       "its shareholders' money costs.") +
         _ep_metric("EP Velocity (YoY)",
                    f"{vel_sign}₹{ep_vel:,.0f} Cr" if ep_vel_known else "—",
                    ("Ascending ↑" if ep_vel > 0 else "Descending ↓")
                        if ep_vel_known else "No prior-year equity",
                    vel_clr if ep_vel_known else COLORS["text_muted"],
-                   vel_clr if ep_vel_known else COLORS["text_muted"]) +
+                   vel_clr if ep_vel_known else COLORS["text_muted"],
+                   tip="Change in economic profit versus a year ago, in rupees. The 28th WCS's "
+                       "finding is that DIRECTION matters more than level: a company climbing "
+                       "from a low base has historically outperformed a high earner sliding "
+                       "backwards.") +
         _ep_metric("Quintile Position", f"Q{ep_q_int}" if ep_q_int else "N/A",
-                   q_label, q_color, q_color) +
+                   q_label, q_color, q_color,
+                   tip="Where this company sits when the whole universe is ranked by ABSOLUTE "
+                       "economic profit. Q1 = top 20% of earners, Q5 = the deepest destroyers. "
+                       "The 28th WCS's best starting point is Q2/Q3, not Q1 — the launch zone, "
+                       "where there is still room to climb.") +
         _ep_metric("EP Trajectory", ep_curve, "28th WCS curve position",
-                   COLORS["blue"], COLORS["text_muted"])
+                   COLORS["blue"], COLORS["text_muted"],
+                   tip="A 2×2 of economic-profit LEVEL against its DIRECTION. "
+                       "🚀 Hockey Stick = positive AND rising (the best state) · "
+                       "➖ EP Positive, Not Rising = positive but not growing · "
+                       "📈 Improving = still negative, but turning up · "
+                       "📉 Value Trap = negative and not improving.")
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{ep_strip}</div>',
@@ -3452,7 +3479,10 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
         _cockpit_card("👑 Expected Return Estimate", f"{exp_cagr:+.1f}% /yr",
                       f"Growth {_id_g:+.0f} · Cash {_id_y:+.0f} · Re-rating {_id_r:+.0f} (capped)",
                       COLORS["green"] if cagr_good else COLORS["orange"],
-                      COLORS["text_muted"]) +
+                      COLORS["text_muted"],
+                      tip="A decomposition, not a forecast: earnings growth + cash yield + the "
+                          "re-rating available if the P/E moved to fair value. Each leg is "
+                          "capped — the uncapped sum reached ±300%/yr on degenerate inputs.") +
         _cockpit_card("⏳ Margin Trend (5Y Tau)",
                       f"{float(moat_tau):+.2f}" if _tau_known else "—",
                       ("Operating margins trending up" if tau_good
@@ -3461,8 +3491,14 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
                       COLORS["green"] if tau_good
                       else COLORS["orange"] if _tau_known else COLORS["text_muted"],
                       COLORS["green"] if tau_good
-                      else COLORS["orange"] if _tau_known else COLORS["text_muted"]) +
-        _cockpit_card("📊 Price vs Fundamentals", _val_txt, _val_sub, _val_clr, _val_clr)
+                      else COLORS["orange"] if _tau_known else COLORS["text_muted"],
+                      tip="Kendall's tau over roughly five years of OPERATING MARGINS — a rank "
+                          "measure of trend direction, +1 (rising every year) to −1 (falling "
+                          "every year). It measures margins, not returns on capital.") +
+        _cockpit_card("📊 Price vs Fundamentals", _val_txt, _val_sub, _val_clr, _val_clr,
+                      tip="How much of the fundamentally-matched peer group this stock is "
+                          "cheaper than — a bounded cross-sectional percentile, not a raw "
+                          "valuation residual. 50% is the middle of the pack, not a bargain.")
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{row1}</div>',
@@ -3488,15 +3524,33 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     # its right correctly said "+34.2% vs stop" — the same row contradicting itself. Compute it.
     # ~26% of the universe trades AT or BELOW its stop, where a negative "distance" would be a lie
     # in the other direction, so that state gets its own wording.
+    # A STOP ABOVE THE PRICE IS NOT A STOP (fixed 2026-08-25). A stop-loss is the level you exit
+    # at to cap a loss, so it must sit BELOW the position — one above the price would trigger
+    # instantly. A volatility stop flips to the short side once price breaks down, so for 876
+    # stocks (41.4% of the universe, every one "🔻 Below Stop (Trend Broken)") this card printed
+    # a short-side level under a long-side label: Avanti Feeds, price ₹861.40, headline
+    # "HARD VOLATILITY STOP-LOSS LEVEL ₹1,153.36". The number is real — it is the level price must
+    # RECLAIM — but calling it your stop is wrong, so the label changes with the state.
+    #
+    # It also states the gap from the SAME side as the price card. The first version of this
+    # subtitle recomputed the distance against the price ((vstop-close)/close) while the price
+    # card uses the engine's dist_to_vstop ((close-vstop)/vstop), so one screen showed "33.9%
+    # ABOVE price" and "-25.3% vs stop" for a single gap — arithmetically fine, visibly
+    # contradictory. Mirror the engine's column instead of inventing a second denominator.
     _cp_stop, _vs_stop = stock.get("close_price"), stock.get("vstop_value")
+    _dist_stop = stock.get("dist_to_vstop")
+    _stop_lbl = "🚨 Hard Volatility Stop-Loss Level"
     if pd.isna(_cp_stop) or pd.isna(_vs_stop) or float(_cp_stop) <= 0 or float(_vs_stop) <= 0:
         _stop_sub, _stop_clr = "", COLORS["red"]          # no verdict from a data hole
+    elif float(_vs_stop) > float(_cp_stop):
+        _stop_lbl  = "⚠️ Volatility Stop — Trend Broken"
+        _stop_sub  = (f"price sits {abs(float(_dist_stop)):.1f}% below it · no long stop to set"
+                      if pd.notna(_dist_stop) else "price is below it · no long stop to set")
+        _stop_clr  = COLORS["orange"]
     else:
-        _stop_gap = (float(_vs_stop) - float(_cp_stop)) / float(_cp_stop) * 100.0
-        if _stop_gap < 0:
-            _stop_sub, _stop_clr = f"{abs(_stop_gap):.1f}% below price · trailing perimeter", COLORS["red"]
-        else:
-            _stop_sub, _stop_clr = f"{_stop_gap:.1f}% ABOVE price · trend broken", COLORS["orange"]
+        _stop_sub = (f"price sits {abs(float(_dist_stop)):.1f}% above it · trailing perimeter"
+                     if pd.notna(_dist_stop) else "trailing perimeter")
+        _stop_clr = COLORS["red"]
 
     # ── Thesis vs Executable reconciliation (mirror-and-explain — Fisher precedent, 7fff308) ──
     # The tearsheet carries TWO sizes for one stock: the Mauboussin EV verdict (the THESIS size —
@@ -3557,8 +3611,12 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
                       "Fractional-Kelly heuristic · proxy odds", COLORS["blue"], COLORS["text_muted"]) +
         _cockpit_card("💰 Capital Deployment (10L Base)", f"₹ {allocation:,.2f}",
                       "", COLORS["gold"], COLORS["text_muted"]) +
-        _cockpit_card("🚨 Hard Volatility Stop-Loss Level", f"₹ {stop_loss:,.2f}",
-                      _stop_sub, COLORS["red"], _stop_clr)
+        _cockpit_card(_stop_lbl, f"₹ {stop_loss:,.2f}", _stop_sub, _stop_clr, _stop_clr,
+                      tip="The volatility stop (Chandelier-style trailing level). While price is "
+                          "ABOVE it, this is your exit level — the most you intend to lose. Once "
+                          "price falls BELOW it the trend is broken and it stops being a stop: "
+                          "it becomes the level price must reclaim, which is why the label "
+                          "changes. A long stop above the market would trigger instantly.")
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{row2}</div>',

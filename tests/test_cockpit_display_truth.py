@@ -58,7 +58,7 @@ class _Recorder:
 def _render(**over):
     """Render the sizing cockpit for one synthetic stock and return everything it emitted."""
     base = {
-        "close_price": 268.50, "vstop_value": 200.01,
+        "close_price": 268.50, "vstop_value": 200.01, "dist_to_vstop": 34.24,
         "optimal_portfolio_weight_pct": 3.92, "rupee_capital_allocation": 39202.80,
         "value_creation_velocity": 6.27, "expectations_gap": -0.94,
         "sepa_vcp_dryup": 0, "sepa_profile_score": 1, "sepa_pass": 0,
@@ -77,26 +77,38 @@ def _render(**over):
 def test_stop_distance_is_computed_not_hardcoded():
     html = _render()
     assert "-7-8" not in html, "the hardcoded '-7-8%' stop-loss subtitle is back"
-    m = re.search(r"([\d.]+)% below price", html)
+    m = re.search(r"price sits ([\d.]+)% above it", html)
     assert m, "the stop card no longer states a computed distance"
-    # (268.50 - 200.01) / 268.50 = 25.51%
-    assert abs(float(m.group(1)) - 25.5) < 0.1, f"wrong distance: {m.group(1)}"
+    assert abs(float(m.group(1)) - 34.24) < 0.1, f"wrong distance: {m.group(1)}"
 
 
-def test_stop_distance_tracks_the_actual_stock():
-    """Two stocks, two distances — a constant string cannot pass this."""
-    a = re.search(r"([\d.]+)% below price", _render(close_price=100.0, vstop_value=90.0))
-    b = re.search(r"([\d.]+)% below price", _render(close_price=100.0, vstop_value=50.0))
-    assert a and b
-    assert abs(float(a.group(1)) - 10.0) < 0.1
-    assert abs(float(b.group(1)) - 50.0) < 0.1
+def test_stop_card_and_price_card_quote_the_SAME_number():
+    """One gap, one number. The first version of this subtitle recomputed against the price
+    ((vstop-close)/close) while the price card uses the engine's dist_to_vstop, so Avanti Feeds
+    showed "33.9% ABOVE price" beside "-25.3% vs stop" — two numbers for one relationship.
+    The stop card must mirror dist_to_vstop, never re-derive a second denominator."""
+    for dist in (34.24, -25.31, 7.0):
+        html = _render(close_price=861.40, vstop_value=1153.36 if dist < 0 else 700.0,
+                       dist_to_vstop=dist)
+        m = re.search(r"price sits ([\d.]+)% (above|below) it", html)
+        assert m, f"no gap stated for dist={dist}"
+        assert abs(float(m.group(1)) - abs(dist)) < 0.05, (
+            f"stop card says {m.group(1)}% but the engine's dist_to_vstop is {dist}"
+        )
 
 
-def test_stop_above_price_is_not_reported_as_a_distance_below():
-    """~26% of the universe sits at or below its stop — that must read as trend-broken."""
-    html = _render(close_price=100.0, vstop_value=120.0)
-    assert "ABOVE price" in html and "trend broken" in html
-    assert "below price" not in html
+def test_a_stop_above_the_price_is_not_called_a_stop_loss():
+    """Avanti Feeds: price Rs 861.40, volatility stop Rs 1,153.36. A stop-loss is where you exit
+    to CAP a loss, so it must sit below the position — one 34% above would trigger instantly.
+    A volatility stop flips to the short side on a breakdown, and 876 stocks (41.4%) sit there.
+    The number is real (it is the reclaim level); calling it a stop-loss is not."""
+    html = _render(close_price=861.40, vstop_value=1153.36, dist_to_vstop=-25.31)
+    assert "Trend Broken" in html, "a stop above the price must not keep the stop-loss label"
+    assert "Stop-Loss Level" not in html, "still labelled a stop-loss while sitting above price"
+    assert "no long stop to set" in html
+    # and the healthy case keeps the real label
+    ok = _render(close_price=268.50, vstop_value=200.01, dist_to_vstop=34.24)
+    assert "Stop-Loss Level" in ok and "Trend Broken" not in ok
 
 
 @pytest.mark.parametrize("over", [
