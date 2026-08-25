@@ -2996,8 +2996,14 @@ def render_lynch_radar(stock: pd.Series):
          "Skin In The Game Shield: conservative balance sheet and owner conviction by level or active buying"),
     ]
 
-    _LYNCH_RED  = "#e74c3c"
-    hdr_color   = _LYNCH_RED if l_pass else COLORS["text_muted"]
+    # COLOUR INVERSION (fixed 2026-08-25): this radar used Lynch's brand red (#e74c3c) for a
+    # PASSING pillar while six of the eight radars (CAN SLIM, SEPA, Dorsey, Outsider, Marks,
+    # Malik) use red for FAILURE. On NALCO the two ✅ pillars rendered in red boxes and the two
+    # ❌ pillars in neutral grey — the tab's colour language flipped on one panel, so a scan read
+    # the passes as failures. Red now means exactly one thing across the whole Frameworks tab.
+    _LYNCH_GREEN = COLORS["green"]      # pass — matches Malik / CAN SLIM
+    _LYNCH_FAIL  = "#f85149"            # fail — the shared red used by the other radars
+    hdr_color   = _LYNCH_GREEN if l_pass else COLORS["text_muted"]
     status_msg  = "LYNCH TENBAGGER CERTIFIED" if l_pass else "Lynch Fast Grower Criteria Not Met"
 
     st.markdown(f"""
@@ -3027,7 +3033,7 @@ def render_lynch_radar(stock: pd.Series):
 
     _ly_grid = ""
     for letter, title, passed, baseline in pillars:
-        clr_ly  = _LYNCH_RED if passed else COLORS["text_muted"]
+        clr_ly  = _LYNCH_GREEN if passed else _LYNCH_FAIL
         bg_ly   = "18" if passed else "08"
         ico_ly  = "✅" if passed else "❌"
 
@@ -3262,7 +3268,10 @@ def render_mauboussin_radar(stock: pd.Series):
 
     _mb_grid = ""
     for letter, title, passed, baseline in pillars:
-        clr_mb = _MAUB_COLOR if passed else COLORS["text_muted"]
+        # Fail was grey — but grey is this codebase's honest-blank/unknown signal everywhere else
+        # (⚪ N/A pills, neutral rows), so a FAILED gate read as "no data". Red = failed, matching
+        # the other radars; the purple brand colour still marks a pass.
+        clr_mb = _MAUB_COLOR if passed else "#f85149"
         bg_mb  = "18" if passed else "08"
         ico_mb = "✅" if passed else "❌"
 
