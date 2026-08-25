@@ -361,3 +361,54 @@ def test_every_stated_threshold_is_actually_breached():
     assert not violations, (
         f"{len(violations)} flag(s) display evidence that does not satisfy the threshold they "
         "state — the wrong-metric class:\n  " + "\n  ".join(violations))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BOOK + ENGINE FIDELITY (2026-08-25) — the display must not contradict either
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_earnings_yield_uses_the_live_gsec_constant_not_a_literal():
+    """FALSE-GREEN GUARD. The bar was a hardcoded 4%, so a 6.0% yield printed '✅ justifies equity
+    risk' while risk-free G-Secs paid 7% — the panel endorsing a sub-risk-free return. Malik's rule
+    is RELATIVE ('greater than long-term government bond yields') and config already carries
+    INDIA_GSEC_YIELD. Pinned so the literal can never come back."""
+    import inspect
+
+    from config import INDIA_GSEC_YIELD
+
+    src = inspect.getsource(ts.render_financial_insights)
+    assert "ey >= INDIA_GSEC_YIELD" in src, "Earnings Yield must compare against the live constant"
+    assert "ey >= 4" not in src, "the hardcoded 4% bar is back — it endorses sub-risk-free returns"
+    # behaviour: a yield BELOW the G-Sec must fail, one above must pass
+    below, _ = _one_row(_base_stock(earnings_yield=INDIA_GSEC_YIELD - 1.0), "Earnings Yield")
+    above, _ = _one_row(_base_stock(earnings_yield=INDIA_GSEC_YIELD + 1.0), "Earnings Yield")
+    assert below == "❌", "a yield under the risk-free rate must not read as a pass"
+    assert above == "✅"
+
+
+def test_tax_band_matches_the_post_2019_indian_regime():
+    """Malik's '>30%' was the statutory rate's value when he wrote it ('In India, the corporate tax
+    rate is 30%', p.45). India cut it in 2019 to ~25.17%; the live median effective rate is 25.4%.
+    The old 30–55% band failed 88.1% of the universe — 1,496 stocks flagged for paying the current
+    legal rate. 20–40% spans both regimes and restores the book's actual (relative) rule."""
+    import inspect
+
+    src = inspect.getsource(ts.render_financial_insights)
+    assert "(20 <= tax <= 40)" in src, "tax band must span both post-2019 regimes"
+    assert "(30 <= tax <= 55)" not in src, "the pre-2019 band is back"
+    assert _one_row(_base_stock(tax_rate_est=25.4), "Tax Rate")[0] == "✅", \
+        "the median Indian company (25.4%) pays the statutory rate and must pass"
+    assert _one_row(_base_stock(tax_rate_est=34.9), "Tax Rate")[0] == "✅", "old regime must pass"
+    assert _one_row(_base_stock(tax_rate_est=8.0), "Tax Rate")[0] == "❌", \
+        "a sharp-practices-level rate must still fail"
+
+
+def test_net_margin_bar_matches_the_engines_own_malik_pillar():
+    """The row demanded NPM ≥10 while the engine's malik_profit_stability uses ≥8 (the book's
+    number) — the panel was stricter than the engine beside it."""
+    import inspect
+
+    assert "npm_5y >= 8," in inspect.getsource(ts.render_financial_insights)
+    assert _one_row(_base_stock(npm_med_5y=8.5), "Net Margin")[0] == "✅", \
+        "8.5% clears Malik's >8% bar and must pass"
+    assert _one_row(_base_stock(npm_med_5y=6.0), "Net Margin")[0] == "❌"

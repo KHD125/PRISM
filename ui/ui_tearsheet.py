@@ -13,7 +13,8 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import html as _html
-from config import COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS, FRAMEWORK_CATEGORIES, MASTER_PROFILES
+from config import (COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS,
+                    FRAMEWORK_CATEGORIES, MASTER_PROFILES, INDIA_GSEC_YIELD)
 # Single source of truth for the "?" help chip lives in ui_components (which owns the .ts-help CSS).
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
@@ -1351,9 +1352,13 @@ def render_financial_insights(stock: pd.Series):
     )
     bq += _row(
         "Net Margin — 5Y Median",
-        npm_5y >= 10,
+        # Book + ENGINE parity (fixed 2026-08-25): Malik's checklist says NPM >8% and the engine's
+        # own malik_profit_stability pillar uses 8 — this row demanded 10, so the panel was
+        # stricter than the engine sitting beside it.
+        npm_5y >= 8,
         f"{npm_5y:.1f}%",
-        f"Current {npm:.1f}% · {'Stable/Improving' if npm >= npm_5y * 0.95 else 'Declining'}",
+        f"Current {npm:.1f}% · Bar: ≥8% · "
+        f"{'Stable/Improving' if npm >= npm_5y * 0.95 else 'Declining'}",
     )
 
     # ── Cash & Debt Quality ──
@@ -1419,15 +1424,25 @@ def render_financial_insights(stock: pd.Series):
         "Interest coverage = EBIT ÷ interest expense (Malik Parameter 4: >3). A company with "
         "near-zero debt passes regardless — there is nothing to cover.",
     )
-    tax_ok = (30 <= tax <= 55) if tax > 5 else None
+    # STALE REGIME (fixed 2026-08-25). Malik's rule is RELATIVE — "the tax rate should be near
+    # general corporate tax rate" — and his ">30%" was simply that rate's value when he wrote it
+    # ("In India, the corporate tax rate is 30%", Peaceful Investing p.45). India cut it in 2019 to
+    # 22% + surcharge + cess ≈ 25.17%, and the live data confirms the migration completed: median
+    # effective rate 25.4%, p25–p75 = 23.4–27.4%. The old 30–55% band therefore FAILED 88.1% of the
+    # universe — 1,496 stocks flagged purely for paying the current legal rate, a fire rate the
+    # census discipline calls noise. 20–40% spans both regimes (new ≈25%, old ≈35%) and passes
+    # 81%. This RESTORES the book's rule rather than overriding it; <10% sharp-practices is
+    # untouched and remains the real forensic signal (rf_tax_panic, fires 8.9%).
+    tax_ok = (20 <= tax <= 40) if tax > 5 else None
     cd += _row(
         "Tax Rate — Malik P3 proxy",
         tax_ok,
         f"{tax:.1f}%",
-        "Normal band 30–55%",
-        "Effective tax rate (Malik Parameter 3). It should sit near the general corporate tax "
-        "rate unless a specific incentive applies; abnormally low payouts (<10%) raise a "
-        "sharp-practices flag.",
+        "Normal band 20–40%",
+        "Effective tax rate (Malik Parameter 3). Malik's rule is that it should sit NEAR the "
+        "general corporate tax rate — which India cut in 2019 to ~25% (22% + surcharge + cess), "
+        "with the older regime near 35%. The 20–40% band spans both. Abnormally low payouts "
+        "(<10%) raise a separate sharp-practices flag.",
     )
 
     # ── Valuation ──
@@ -1443,7 +1458,9 @@ def render_financial_insights(stock: pd.Series):
                    f"{pe_disc:.1f}% below avg", "≥20%: historically cheap  |  0–20%: fair")
     elif pe_disc < -1:
         vl += _row("P/E vs 10Y Average", False,
-                   f"{abs(pe_disc):.1f}% above avg", "Trading at premium to historical mean")
+                   f"{abs(pe_disc):.1f}% above avg", "Premium to 10Y median",
+                   "P/E measured against the stock's OWN 10-year median, not the market's — a "
+                   "premium here means it is expensive versus its own history.")
     else:
         vl += _row("P/E vs 10Y Average", None, "At median", "Fair value territory")
 
@@ -1455,13 +1472,19 @@ def render_financial_insights(stock: pd.Series):
         "PEG = P/E ÷ earnings growth. Peter Lynch's rule: ≤1.0 means you are paying no more "
         "for the growth than the growth rate itself — a bargain. Above 2.0 is expensive.",
     )
+    # FALSE GREEN (fixed 2026-08-25): the bar was a hardcoded 4%, so a stock yielding 4–7%
+    # printed "✅ justifies equity risk" while risk-free G-Secs paid 7% — the panel endorsing a
+    # sub-risk-free return (Sarda: ✅ at 6.0%). Malik states the rule RELATIVELY — "EY should be
+    # greater than long-term government bond yields" — and config already carries the constant
+    # (INDIA_GSEC_YIELD, maintained, used by two engine formulas) which this row simply ignored.
     vl += _row(
         "Earnings Yield",
-        ey >= 4,
+        ey >= INDIA_GSEC_YIELD,
         f"{ey:.1f}%",
-        "Bar: ≥4%",
-        "Earnings Yield = EPS ÷ price. Malik's rule is that it should beat the 10-year "
-        "government bond yield — otherwise you are taking equity risk for a bond-like return.",
+        f"Bar: ≥{INDIA_GSEC_YIELD:.0f}% (10Y G-Sec)",
+        f"Earnings Yield = EPS ÷ price. Malik's rule is RELATIVE: it must beat the 10-year "
+        f"government bond yield (currently {INDIA_GSEC_YIELD:.1f}%, config.INDIA_GSEC_YIELD) — "
+        f"below that you are taking equity risk for less than a risk-free return.",
     )
     if fcf_y > 0:
         vl += _row(
@@ -1495,7 +1518,7 @@ def render_financial_insights(stock: pd.Series):
     # explicitly stops the row reading as a contradiction when a ❌ presence sits beside a ✅ flow.
     ow += _row("FII + DII Holdings", fii >= 5 or dii >= 5,
                f"FII {fii:.1f}%  ·  DII {dii:.1f}%",
-               f"Presence bar: ≥5% · Flow: {smart}",
+               f"≥5% · Flow: {smart}",
                "The icon judges institutional PRESENCE (FII or DII holding ≥5%). The flow label "
                "is a separate read of whether institutions are currently accumulating or "
                "distributing — a low holding can still show positive flow, and vice versa.")
