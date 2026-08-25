@@ -333,8 +333,13 @@ def test_every_stated_threshold_is_actually_breached():
         fired = df[df[col].fillna(0) == 1]
         if fired.empty:
             continue
-        step = max(1, len(fired) // 25)
-        for i in range(0, len(fired), step):
+        # EVERY fired row, not a sample. This net previously walked 25 rows per flag, which made
+        # it a coin flip against a sparse offender: rf_high_receivables stated a stale ">75d" that
+        # was wrong for just 14 of its 664 firing stocks (~2%), so a 25-row sample missed it for
+        # months and only surfaced when an unrelated scoring change reshuffled `rank` — i.e. row
+        # order, i.e. which rows the sample happened to land on. A correctness net must not depend
+        # on that. Full scan costs a few seconds; a wrong-metric bug shipped costs a user's trust.
+        for i in range(len(fired)):
             ctx = _get_flag_context(fired.iloc[i], col) or ""
             tm = THRESH.search(ctx)
             if not tm:

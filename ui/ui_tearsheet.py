@@ -19,6 +19,10 @@ from config import (COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS,
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
 from ui.ui_components import help_chip, _RAW_GLOSSARY
+# MIRROR, never restate: rf_high_receivables fires on a PER-SECTOR DSO gate, so the evidence row
+# reads the engine's own table. A local copy would drift the moment a sector norm is retuned —
+# which is exactly how the ">75d / >120d" string below got stranded (see the handler's comment).
+from core.forensic_engine import _SECTOR_DSO_THRESHOLDS, _DEFAULT_DSO_THRESHOLD
 
 
 # ─── Display Utilities ──────────────────────────────────────────────────────
@@ -58,7 +62,7 @@ def _parse_frameworks(fw_str, exclude: set = None) -> list:
 # ─── Forensic flag badge registry (mirrors flag_descriptions in forensic_engine) ──
 _FLAG_DISPLAY = {
     "rf_low_cfo_pat":       ("Low CFO/PAT (<70%) — earnings not backed by cash",           "🔴"),
-    "rf_high_receivables":  ("High DSO: >120d (services) / >75d (products)",                "🟠"),
+    "rf_high_receivables":  ("High DSO for its sector (45–120d gate)",                    "🟠"),
     "rf_inventory_bloat":   ("Inventory growing faster than revenue",                        "🟡"),
     "rf_rising_debt":       ("D/E rising materially (>10% relative rise AND D/E >0.3)",     "🟠"),
     "rf_ccc_worsening":     ("Cash conversion cycle worsening by >10 days",                 "🟡"),
@@ -533,8 +537,24 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         v = _v("cfo_to_pat", "{:.1f}%")
         return f"CFO/PAT: {v}  ·  threshold: <70%" if v else ""
     if rf_col == "rf_high_receivables":
-        v = _v("days_receivable", "{:.0f}d")
-        return f"DSO: {v}  ·  threshold: >75d (products) / >120d (services)" if v else ""
+        # STALE THRESHOLD (fixed 2026-08-25): this printed a fixed ">75d (products) / >120d
+        # (services)" — the binary rule the engine REPLACED in BUG #11 with an per-sector lookup
+        # (_SECTOR_DSO_THRESHOLDS). Seven distinct gates are live on firing rows (45/70/75/80/
+        # 90/110/120d), so the sentence was wrong for 14 of 664 firing stocks outright — JTL
+        # Industries, Steel, gate 70d, showed "DSO: 71d · threshold: >75d", a flag apparently
+        # contradicting itself — and uninformative for the rest, since it never named the gate
+        # actually applied. Read the engine's table so the two can never drift again.
+        _dso = stock.get("days_receivable")
+        if pd.isna(_dso):
+            return ""
+        _sec = str(stock.get("sector") or "Unknown")
+        _gate = _SECTOR_DSO_THRESHOLDS.get(_sec, _DEFAULT_DSO_THRESHOLD)
+        # Name the sector only when it HAS a calibrated norm. On the fallback, "(Infrastructure
+        # Developers & Operators default)" ran to 77 chars, named a sector that is precisely the
+        # one NOT calibrated (so the name carries no information), risked clipping in this narrow
+        # column, and pushed a raw "&" into the inline HTML. "(default)" says the same thing.
+        _band = (f"({_sec})" if _sec in _SECTOR_DSO_THRESHOLDS else "(sector default)")
+        return f"DSO: {float(_dso):.0f}d  ·  threshold: >{_gate:.0f}d {_band}"
     if rf_col == "rf_inventory_bloat":
         # WRONG METRIC (fixed 2026-08-24): showed rev_gr_yoy while the engine tests
         # inv_vs_rev_gap > 10 (median 31.7pp on firing rows). It also rendered a broken "+-4.2%"

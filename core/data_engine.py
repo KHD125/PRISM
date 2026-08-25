@@ -2552,12 +2552,40 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── Volatile Flag (27th Study — counterpart to consistency_champion) ──
     # A Volatile is the structural opposite of a Consistent.
-    # Criterion A: severe recent PAT crash (>20% fall YoY) — earnings are unreliable.
+    # Criterion A: severe ANNUAL PAT crash (>20% fall YoY) — earnings are unreliable.
     # Criterion B: 5Y PAT CAGR negative — earnings have contracted over the medium term.
-    # Either condition alone is sufficient to classify as Volatile.
+    # Criterion C: a loss inside the YoY window — the strongest volatility evidence there is.
+    # Any one condition is sufficient to classify as Volatile.
+    #
+    # WRONG-BASIS BUG (fixed 2026-08-25): leg A read `pat_gr_yoy`, whose name says annual but
+    # whose VALUES are quarterly — it matches (pat_lq vs pat_pyq) on 99.2% of rows at a median
+    # gap of 0.00pp, and the annual level series on just 1.9% (median gap 31.95pp). Verified in
+    # the raw Income Statement sheet, so this is a source-column naming hazard, not an export
+    # artifact (see docs/known-issues.md — ~30 other consumers, some of which legitimately WANT
+    # quarterly, e.g. CAN SLIM's "C" is by definition current-quarter earnings).
+    # Effect of the bug: a single soft QUARTER branded a company structurally Volatile — a
+    # 10-to-15-year classification in the study — so 193 stocks carried a -10 quality penalty
+    # for a quarterly wobble, and 81 were certified Consistency Champion AND Volatile at once,
+    # both cells rendering side by side in the tearsheet. Triveni Turbine: annual PAT -3.8%,
+    # quarter -20.6% -> flagged Volatile while also a certified Consistent.
+    # Leg A now reads the SAME annual PAT level series consistency_champion uses, which is what
+    # makes the two labels genuine opposites rather than measurements of different quantities.
+    #
+    # WHY leg C exists: leg A is a ratio, so it is undefined when the prior year was a loss
+    # (pat_1yb <= 0) — and dropping those rows would have SILENTLY UN-FLAGGED 18 of the most
+    # volatile names in the universe (IndiGo -4,808cr from -2,394cr; Aequs, loss deepening).
+    # A loss year IS a >100% fall; the evidence exists, it just cannot be written as a ratio, so
+    # it is asserted directly rather than let an undefined denominator suppress a known fact.
+    # Leg C also cannot ever collide with consistency_champion, which requires all 6 PAT > 0.
+    _vol_pat, _vol_pat1 = df["pat"], df["pat_1yb"]
+    _vol_yoy = pd.Series(                      # guarded denominator (§5): NaN, never a sentinel
+        np.where(_vol_pat1 > 0.0, (_vol_pat - _vol_pat1) / _vol_pat1 * 100.0, np.nan),
+        index=df.index,
+    )
     df["mosl_volatile_flag"] = (
-        (df["pat_gr_yoy"].fillna(0)    < -20.0) |    # A: sharp recent collapse
-        (df["pat_gr_5y"].fillna(999)   <   0.0)      # B: 5Y earnings contraction
+        (_vol_yoy.fillna(0)          < -20.0) |    # A: sharp ANNUAL collapse
+        (df["pat_gr_5y"].fillna(999) <   0.0) |    # B: 5Y earnings contraction
+        ((_vol_pat <= 0.0) | (_vol_pat1 <= 0.0)).fillna(False)   # C: a loss in the window
     ).astype(int)
 
     # ── 100x Candidate Screen (19th Study, 2014 — "100x: The Power of Growth") ──
