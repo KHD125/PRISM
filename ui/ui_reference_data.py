@@ -145,7 +145,7 @@ CONCEPT_REFERENCE = {
     # ── ep_power_curve — core/data_engine.py:1506 (economic profit level × its velocity)
     "📊 Economic-Profit Power Curve": [
         ("🚀 Hockey Stick", "Earns above its cost of equity AND that economic profit is larger than a year ago — climbing the Power Curve. The best state."),
-        ("✅ EP Positive", "Earns above its cost of equity, but the profit is not larger than last year — or the prior year isn't reported. Value-creating, not yet climbing."),
+        ("➖ EP Positive, Not Rising", "Earns above its cost of equity, but the profit is not larger than last year — or the prior year isn't reported. Value-creating, not yet climbing."),
         ("📈 Improving", "Economic profit still negative but larger than a year ago — below its cost of equity, yet the trend is turning up."),
         ("📉 Value Trap", "Negative economic profit and no larger than a year ago — earns below its cost of equity with no upturn."),
     ],

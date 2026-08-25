@@ -3389,16 +3389,20 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
 
     # Compact inline flex card — mirrors the EP-strip idiom (no st.columns/st.metric padding,
     # CLAUDE.md §5). The sub-line is dropped when empty so single-value cards stay clean.
-    def _cockpit_card(label: str, value: str, sub: str, val_clr: str, sub_clr: str) -> str:
+    def _cockpit_card(label: str, value: str, sub: str, val_clr: str, sub_clr: str,
+                      tip: str = "") -> str:
         sub_html = (
             f'<div style="font-size:0.62rem;font-weight:600;color:{sub_clr};'
-            f'margin-top:2px;white-space:nowrap;">{_esc(sub)}</div>'
+            f'margin-top:2px;white-space:normal;">{_esc(sub)}</div>'
         ) if sub else ""
+        # help_chip returns "" when there is nothing to explain, so no bare "?" ever renders.
+        # It must sit OUTSIDE _esc() — it is markup, not text.
         return (
             f'<div style="flex:1;min-width:150px;background:{COLORS["bg_secondary"]};'
             f'border:1px solid {COLORS["border"]};border-radius:10px;padding:12px 16px;">'
             f'<div style="font-size:0.56rem;font-weight:700;color:{COLORS["text_muted"]};'
-            f'text-transform:uppercase;letter-spacing:0.7px;">{_esc(label)}</div>'
+            f'text-transform:uppercase;letter-spacing:0.7px;">{_esc(label)}'
+            f'{help_chip(label, tip)}</div>'
             f'<div style="font-size:1.35rem;font-weight:900;color:{val_clr};'
             f'line-height:1.15;margin-top:3px;white-space:nowrap;">{_esc(value)}</div>'
             f'{sub_html}</div>'
@@ -3454,6 +3458,23 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     weight_pct = _g(stock, "optimal_portfolio_weight_pct", 0.0)
     allocation = _g(stock, "rupee_capital_allocation", 0.0)
     stop_loss  = _g(stock, "vstop_value", 0.0)
+
+    # HARDCODED CLAIM (fixed 2026-08-25): this card's subtitle was the literal string
+    # "-7-8% Active Perimeter Shield" — a number stated as if measured but never computed. It is
+    # true for 95 of 2,117 stocks (4.5%); the real distance spans -20% to +27% (p10-p90). On EPack
+    # Prefab it read "-7-8%" while the stop sat 25.5% BELOW the price, and the card immediately to
+    # its right correctly said "+34.2% vs stop" — the same row contradicting itself. Compute it.
+    # ~26% of the universe trades AT or BELOW its stop, where a negative "distance" would be a lie
+    # in the other direction, so that state gets its own wording.
+    _cp_stop, _vs_stop = stock.get("close_price"), stock.get("vstop_value")
+    if pd.isna(_cp_stop) or pd.isna(_vs_stop) or float(_cp_stop) <= 0 or float(_vs_stop) <= 0:
+        _stop_sub, _stop_clr = "", COLORS["red"]          # no verdict from a data hole
+    else:
+        _stop_gap = (float(_vs_stop) - float(_cp_stop)) / float(_cp_stop) * 100.0
+        if _stop_gap < 0:
+            _stop_sub, _stop_clr = f"{abs(_stop_gap):.1f}% below price · trailing perimeter", COLORS["red"]
+        else:
+            _stop_sub, _stop_clr = f"{_stop_gap:.1f}% ABOVE price · trend broken", COLORS["orange"]
 
     # ── Thesis vs Executable reconciliation (mirror-and-explain — Fisher precedent, 7fff308) ──
     # The tearsheet carries TWO sizes for one stock: the Mauboussin EV verdict (the THESIS size —
@@ -3515,7 +3536,7 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
         _cockpit_card("💰 Capital Deployment (10L Base)", f"₹ {allocation:,.2f}",
                       "", COLORS["gold"], COLORS["text_muted"]) +
         _cockpit_card("🚨 Hard Volatility Stop-Loss Level", f"₹ {stop_loss:,.2f}",
-                      "-7-8% Active Perimeter Shield", COLORS["red"], COLORS["red"])
+                      _stop_sub, COLORS["red"], _stop_clr)
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{row2}</div>',
@@ -3567,26 +3588,56 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
 
     st.markdown("---")
 
-    # Secondary Structural Decomposition — _g() is NaN-safe ("x or 0.0" is NOT: NaN is
-    # truthy in Python, so the old pattern rendered "+nan%" for stocks missing the column)
-    vcv  = float(_g(stock, "value_creation_velocity", 0.0))
-    egap = float(_g(stock, "expectations_gap", 0.0))
-    st.write(f"**Value Creation Velocity (Reinvestment Rate × Capital Spread):** {vcv:+.2f}%")
-    st.write(f"**Market-Implied Expectations Gap (g_implied − g★):** {egap:+.2f}%")
+    # Secondary Structural Decomposition.
+    # UNSTYLED ORPHANS (fixed 2026-08-25): these three were raw st.write / st.markdown lines —
+    # the only content on the tab that was not a card, dangling under a polished grid and reading
+    # like debug output that never got designed. They now use the cockpit's own _cockpit_card.
+    # HONESTY (same edit): both numbers defaulted to 0.0 via _g(), so a MISSING value rendered as
+    # a confident "+0.00%". expectations_gap is only 68.4% populated — 669 stocks were shown a
+    # fabricated zero — and value_creation_velocity 96.0%. A data hole is not a measurement, so
+    # absent inputs now render "N/A" (§5 semantic truth).
+    _vcv_raw  = stock.get("value_creation_velocity")
+    _egap_raw = stock.get("expectations_gap")
+    _vcv_ok, _egap_ok = pd.notna(_vcv_raw), pd.notna(_egap_raw)
+    _vcv, _egap = (float(_vcv_raw) if _vcv_ok else 0.0), (float(_egap_raw) if _egap_ok else 0.0)
+    _vcp_on = int(_g(stock, "sepa_vcp_dryup", 0)) == 1
 
-    # VCP volume check — reads pre-materialized binary flag
-    if int(_g(stock, "sepa_vcp_dryup", 0)) == 1:
-        st.markdown(
-            "🔥 **⭐ Volatility Contraction Pattern Firing:** "
-            "10D Average Volume < 50D Average Volume. "
-            "Supply exhaustion verified inside consolidation base."
-        )
-    else:
-        st.markdown(
-            "⏳ **Consolidation Base Active:** "
-            "Volume accumulation phase tracking historical norms. "
-            "Watch for pocket pivot breakout volumes."
-        )
+    # Polarity per the engine's own definition (data_engine ~L3308): "Positive gap = priced for
+    # more than it can deliver (expectations risk); negative = pessimism / margin of safety."
+    _egap_clr = COLORS["text_muted"] if not _egap_ok else (
+        COLORS["green"] if _egap < 0 else COLORS["orange"])
+    _vcv_clr = COLORS["text_muted"] if not _vcv_ok else (
+        COLORS["green"] if _vcv > 0 else COLORS["red"])
+
+    _struct = (
+        _cockpit_card(
+            "🔄 Value Creation Velocity", f"{_vcv:+.2f}%" if _vcv_ok else "N/A",
+            "Reinvestment rate × capital spread" if _vcv_ok else "not reported",
+            _vcv_clr, COLORS["text_muted"],
+            tip="How fast the business compounds its own capital: the share of profit it "
+                "reinvests multiplied by the spread it earns above its cost of capital. "
+                "Positive means every retained rupee is creating value.") +
+        _cockpit_card(
+            "📊 Expectations Gap", f"{_egap:+.2f}%" if _egap_ok else "N/A",
+            ("priced above what it can deliver" if _egap > 0 else "margin of safety")
+            if _egap_ok else "needs P/B + RoE + SSGR",
+            _egap_clr, COLORS["text_muted"],
+            tip="Growth the market PRICES IN (g_implied, inverted from the P/B-Gordon identity) "
+                "minus the growth the business can SUSTAIN (g★, the lower of RoE×reinvestment "
+                "and SSGR). Positive = expectations risk; negative = pessimism you can buy.") +
+        _cockpit_card(
+            "⏳ Consolidation Base", "VCP Firing" if _vcp_on else "Active",
+            ("10D volume < 50D — supply exhaustion verified"
+             if _vcp_on else "Volume tracking historical norms"),
+            COLORS["gold"] if _vcp_on else COLORS["text_primary"], COLORS["text_muted"],
+            tip="Minervini's Volatility Contraction Pattern: volume drying up inside a "
+                "consolidation means sellers are exhausted — the setup that precedes a "
+                "pocket-pivot breakout.")
+    )
+    st.markdown(
+        f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{_struct}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════

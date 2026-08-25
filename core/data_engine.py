@@ -1547,7 +1547,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (df["economic_profit_velocity"] > 0)
     ).astype(int)
     # EP Power Curve position (McKinsey taxonomy applied to Indian equity universe).
-    # Conditions are ordered, so "✅ EP Positive" absorbs both a flat/falling EP and an unknown
+    # Conditions are ordered, so "➖ EP Positive, Not Rising" absorbs both a falling EP and an
+    # unknown prior year. RENAMED 2026-08-25: it was "✅ EP Positive", whose green check read as
+    # unambiguously good — but 285 of its 299 live rows have NEGATIVE ep velocity and the other
+    # 14 have no prior-year figure at all (zero are flat or rising). The tearsheet rendered it
+    # directly beside "EP VELOCITY ₹-12 Cr Descending ↓", so the same strip both praised and
+    # contradicted itself. The taxonomy was never wrong — "🚀 Hockey Stick" is 0-for-533 on
+    # negative velocity — only this label's wording was.
     # trend. Unknown EP (equity gone or RoE missing) falls through to "" — a blank, never a
     # verdict, the same convention earnings_power_box uses.
     _epc_known  = df["economic_profit"].notna()
@@ -1560,7 +1566,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             _epc_known & ~_epc_pos & _epc_rising,
             _epc_known & ~_epc_pos,
         ],
-        ["🚀 Hockey Stick", "✅ EP Positive", "📈 Improving", "📉 Value Trap"],
+        ["🚀 Hockey Stick", "➖ EP Positive, Not Rising", "📈 Improving", "📉 Value Trap"],
         default=""
     )
 

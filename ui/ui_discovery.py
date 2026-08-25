@@ -674,7 +674,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # are an OR-group (the same stable-column-name + live-count mechanic as 🔥 Catalysts).
         with _grp("🚀 Multibagger Setups", "sb_eppc", "sb_epbox", "sb_mbsetup", expanded=False):
             # EP Power Curve — economic-profit trajectory (the deepest "creates value" read)
-            _EPPC_ORDER = ["🚀 Hockey Stick", "✅ EP Positive", "📈 Improving", "📉 Value Trap"]
+            _EPPC_ORDER = ["🚀 Hockey Stick", "➖ EP Positive, Not Rising", "📈 Improving", "📉 Value Trap"]
             _eppc_opts = _ordered_present(_cf, "ep_power_curve", _EPPC_ORDER)
             sel_eppc = _ms_cascade(
                 "EP Power Curve", _eppc_opts, "sb_eppc", default=[],

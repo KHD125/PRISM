@@ -84,7 +84,7 @@ def test_negative_equity_is_not_flagged_economic_profit_positive():
 
 def test_negative_equity_is_not_labelled_a_value_creating_state():
     label = _negative_equity_frame()["ep_power_curve"].iloc[0]
-    assert label not in ("🚀 Hockey Stick", "✅ EP Positive")
+    assert label not in ("🚀 Hockey Stick", "➖ EP Positive, Not Rising")
 
 
 def test_negative_equity_is_excluded_from_the_ep_quintile_ranking():
@@ -112,7 +112,7 @@ def test_missing_roe_gives_undefined_economic_profit_not_a_loss():
 
 def test_missing_roe_is_not_labelled_a_value_trap():
     assert _missing_roe_frame()["ep_power_curve"].iloc[0] not in (
-        "📉 Value Trap", "🚀 Hockey Stick", "✅ EP Positive", "📈 Improving"
+        "📉 Value Trap", "🚀 Hockey Stick", "➖ EP Positive, Not Rising", "📈 Improving"
     )
 
 
@@ -185,7 +185,7 @@ def test_missing_prior_equity_does_not_manufacture_a_hockey_stick():
 
 
 def test_profitable_with_unknown_trend_is_ep_positive_not_a_value_trap():
-    assert _no_prior_equity_frame()["ep_power_curve"].iloc[0] == "✅ EP Positive"
+    assert _no_prior_equity_frame()["ep_power_curve"].iloc[0] == "➖ EP Positive, Not Rising"
 
 
 # ══════════════════════════════════════════════════════════════════════
