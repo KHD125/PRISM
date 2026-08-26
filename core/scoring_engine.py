@@ -1782,8 +1782,19 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # 6. CAN SLIM (William O'Neill) — earnings acceleration + technical leadership
     #    C: Quarterly EPS growth ≥ 25% YoY AND quarterly sales ≥ 25% YoY (Ch.3: top-line confirmation
     #       required — EPS spikes without revenue growth are value traps)
-    #    A: Annual EPS 5Y CAGR ≥ 25% + ROE ≥ 17% + 3-year consistency (eps_gr_3y ≥ 0 AND
-    #       eps_gr_yoy ≥ 0) — O'Neill specifies unbroken annual increases (Ch.4)
+    #    A: Annual EPS 5Y CAGR ≥ 25% + ROE ≥ 17% + consistency (eps_gr_3y ≥ 0 AND ANNUAL EPS
+    #       YoY ≥ 0). O'Neil Ch.4 is explicit: "Look for annual earnings per share that have
+    #       increased in EACH of the last three years", and the whole point of A is that it is
+    #       the ANNUAL counterpart to C — "the combination of strong earnings in the last several
+    #       QUARTERS plus a record of solid growth in recent YEARS".
+    #       WRONG BASIS (fixed 2026-08-26): this leg read `eps_gr_yoy`, whose name says annual but
+    #       whose values are QUARTERLY (it matches eps_lq-vs-eps_pyq, not the annual EPS levels —
+    #       see docs/known-issues.md). So O'Neil's annual-consistency proof was being decided by a
+    #       single quarter; 201 stocks (9.5%) flip when it is read annually.
+    #       PROXY, and deliberately labelled one: the CSV carries only `eps` and `eps_1yb`, so
+    #       "each of the last three years" cannot be tested literally. Annual YoY ≥ 0 alongside
+    #       eps_gr_3y ≥ 0 is the closest available reading — nearer the book than a quarter, but
+    #       not the book's exact test.
     #    N: Near 52W high — within 15% (book: "10-15% of 52-week high")
     #    S: Supply/Demand — vol_ratio ≥ 1.5 (book: "40-50% above average" = 1.4–1.5x)
     #       S-bonus: equity_shares <= equity_shares_1yb (float retraction / share buyback active)
@@ -1806,7 +1817,19 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     q_rev_cs     = df.get("q_rev_yoy",       pd.Series(np.nan, index=df.index)).fillna(0)    # C: sales gate
     eps_gr_cs    = df.get("eps_gr_5y",        pd.Series(np.nan, index=df.index)).fillna(0)
     eps_gr_3y_cs = df.get("eps_gr_3y",        pd.Series(np.nan, index=df.index)).fillna(-1)  # A: consistency
-    eps_yoy_cs   = df.get("eps_gr_yoy",       pd.Series(np.nan, index=df.index)).fillna(-1)  # A: consistency
+    # ANNUAL EPS YoY, derived from the LEVEL columns (§5 guarded denominator: NaN, never a
+    # sentinel). `eps_gr_yoy` is NOT used here — it is quarterly. fillna(-1) preserves the
+    # original conservative default: unknown history fails the >= 0 consistency gate.
+    _eps_a_cs    = df.get("eps",     pd.Series(np.nan, index=df.index))
+    _eps_a1_cs   = df.get("eps_1yb", pd.Series(np.nan, index=df.index))
+    eps_yoy_cs   = pd.Series(
+        np.where(_eps_a1_cs > 0, (_eps_a_cs - _eps_a1_cs) / _eps_a1_cs * 100.0, np.nan),
+        index=df.index,
+    ).fillna(-1)                                                                  # A: consistency (ANNUAL)
+    # The C+A acceleration bonus needs the QUARTERLY rate and must NOT share the annual series
+    # above. Keeping one variable for both silently converted the bonus to an annual basis when
+    # the A legs were corrected (caught 2026-08-26: 606 rows moved where only 201 should have).
+    eps_q_yoy_cs = df.get("eps_gr_yoy", pd.Series(np.nan, index=df.index)).fillna(-1)  # QUARTERLY
     roe_cs       = df.get("roe",              pd.Series(np.nan, index=df.index)).fillna(0)    # A: ROE ≥ 17%
     dist_wh_cs   = df.get("dist_52wh",        pd.Series(999.0,  index=df.index)).fillna(999)
     # S baseline = 50-DAY average (O'Neil playbook, stated 4×: Ch.2 S-criterion, Ch.4
@@ -1844,15 +1867,21 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         eq_shr_cs.notna() & eq_shr_1yb_cs.notna() &
         (eq_shr_cs <= eq_shr_1yb_cs)
     )
-    # C+A bonus: EPS annual acceleration — eps_gr_yoy > eps_gr_3y means the MOST RECENT annual
-    # EPS growth rate is HIGHER than the 3-year CAGR baseline, confirming the business is in
-    # an acceleration phase (not a decelerating compounder riding prior-year momentum).
+    # C+A bonus: EPS acceleration — the RECENT QUARTERLY rate running ahead of the 3-year annual
+    # CAGR baseline. This mixed basis is DELIBERATE and book-exact, not an oversight: O'Neil's
+    # section is titled "Look for Accelerating QUARTERLY Earnings Growth", and his worked example
+    # is precisely a quarterly spurt against an annual baseline — "If a company's earnings have
+    # been up 15% A YEAR and suddenly begin spurting 40% TO 50% or more ... this usually creates
+    # the conditions for important stock price improvement" (Ch.3).
+    # DO NOT "correct" eps_gr_yoy to an annual basis here. An earlier comment on this block called
+    # it "the MOST RECENT annual EPS growth rate", and that wording alone nearly caused exactly
+    # that change on 2026-08-26 — which would have destroyed a book-exact signal.
     # O'Neil Ch.3+Ch.4: "The rate of earnings increase should be getting larger in each of the
     # past few quarters or years — look for two or three periods of accelerating earnings growth."
     # Score bonus only (not fw_can_slim hard gate) — a great business can temporarily dip below
     # its 3Y CAGR while still growing 30%+ YoY (one-off high-base effect). Both series use the
-    # same fillna strategy already applied above: eps_yoy_cs = fillna(-1), eps_gr_3y_cs = fillna(-1).
-    eps_accel_cs = (eps_yoy_cs > eps_gr_3y_cs)   # C+A: current YoY EPS > 3Y CAGR = accelerating
+    # same fillna strategy already applied above: eps_q_yoy_cs = fillna(-1), eps_gr_3y_cs = fillna(-1).
+    eps_accel_cs = (eps_q_yoy_cs > eps_gr_3y_cs)  # C+A: QUARTERLY rate > 3Y annual CAGR (book-exact)
     # A bonus: OPM expansion — O'Neil Ch.4: "Look for annual pre-tax profit margins at new peak
     # levels. This confirms pricing power and cost discipline, not just topline revenue growth."
     # Uses annual OPM (operating profit margin %) vs its prior year level.

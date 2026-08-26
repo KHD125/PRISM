@@ -674,11 +674,37 @@ class TestCriterionCEPSAcceleration:
         assert "eps_accel_cs" in block, \
             "can_slim_score must include eps_accel_cs (EPS annual acceleration bonus, O'Neil Ch.3+4)"
 
-    def test_eps_accel_uses_yoy_vs_3y_cagr(self):
-        """EPS acceleration must compare eps_yoy_cs > eps_gr_3y_cs (recent beats 3Y baseline)."""
+    def test_eps_accel_uses_the_QUARTERLY_rate_vs_the_3y_cagr(self):
+        """EPS acceleration compares the RECENT QUARTERLY rate against the 3-year ANNUAL CAGR.
+
+        The mixed basis is book-exact, not an oversight. O'Neil Ch.3's section is titled "Look for
+        Accelerating QUARTERLY Earnings Growth", and his worked example is precisely a quarterly
+        spurt against an annual baseline: "If a company's earnings have been up 15% A YEAR and
+        suddenly begin spurting 40% TO 50% or more ... this usually creates the conditions for
+        important stock price improvement."
+
+        TIGHTENED 2026-08-26. This used to pin the variable NAME `eps_yoy_cs`, which the A
+        criterion shared. When the A legs were corrected to an annual basis (O'Neil Ch.4 requires
+        annual increases THERE), the shared name silently converted this bonus to annual too —
+        606 rows moved where only 201 should have. The series are now separate, and this asserts
+        the BASIS rather than a name."""
         block = _fw_can_slim_block(_scoring_src())
-        assert re.search(r"eps_yoy_cs\s*>\s*eps_gr_3y_cs", block), \
-            "eps_accel_cs must be defined as (eps_yoy_cs > eps_gr_3y_cs) — recent YoY beating 3Y CAGR"
+        assert re.search(r"eps_accel_cs\s*=\s*\(eps_q_yoy_cs\s*>\s*eps_gr_3y_cs\)", block), \
+            "eps_accel_cs must compare the QUARTERLY series (eps_q_yoy_cs) to eps_gr_3y_cs"
+        assert re.search(r'eps_q_yoy_cs\s*=\s*df\.get\(\s*"eps_gr_yoy"', block), \
+            "eps_q_yoy_cs must read eps_gr_yoy — the QUARTERLY column O'Neil's Ch.3 test needs"
+
+    def test_annual_A_legs_do_not_read_the_quarterly_column(self):
+        """O'Neil Ch.4: "annual earnings per share that have increased in EACH of the last three
+        years". `eps_gr_yoy` is quarterly despite its name, so the A consistency legs must derive
+        their YoY from the ANNUAL eps / eps_1yb levels instead."""
+        block = _fw_can_slim_block(_scoring_src())
+        assert re.search(r"eps_yoy_cs\s*=\s*pd\.Series\(", block), \
+            "the A-criterion series must be derived from annual levels, not read from eps_gr_yoy"
+        assert re.search(r"_eps_a1_cs\s*>\s*0", block), \
+            "the annual EPS YoY must use a guarded denominator (§5), never an unguarded divide"
+        assert not re.search(r'eps_yoy_cs\s*=\s*df\.get\(\s*"eps_gr_yoy"', block), \
+            "the A legs are reading the QUARTERLY eps_gr_yoy again — O'Neil Ch.4 requires annual"
 
     def test_eps_accel_not_a_hard_gate_in_fw_can_slim(self):
         """EPS acceleration must be a score bonus only — NOT inside the fw_can_slim hard gate chain."""
