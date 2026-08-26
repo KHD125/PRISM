@@ -652,12 +652,14 @@ _RAW_GLOSSARY = {
     # ── Growth ──
     "PAT 5Y CAGR":   "Net profit's smoothed yearly growth rate over 5 years (CAGR = compound annual growth rate).",
     "PAT 3Y CAGR":   "Net profit's smoothed yearly growth rate over the last 3 years.",
-    "PAT YoY":       "Net profit growth this year versus last year (year-on-year). Can be spiky for a single year.",
     "Rev 10Y CAGR":  "Sales' smoothed yearly growth rate over 10 years — the long-run top-line trend.",
     "Rev 5Y CAGR":   "Sales' smoothed yearly growth rate over 5 years.",
-    "Rev YoY":       "Sales growth this year versus last year.",
+    "Q Rev YoY":     "Sales in the latest quarter versus the same quarter a year earlier. This is a "
+                     "QUARTERLY figure despite the source column's annual-sounding name — do not read "
+                     "it against the 5Y/3Y CAGRs as if it were the latest full year.",
     "EPS 5Y CAGR":   "Earnings-per-share smoothed yearly growth over 5 years — profit growth on a per-share basis (accounts for dilution).",
-    "EPS YoY":       "Earnings-per-share growth this year versus last year.",
+    "Q EPS YoY":     "Earnings per share in the latest quarter versus the same quarter a year "
+                     "earlier — a QUARTERLY figure, not the latest full year.",
     "Q PAT YoY":     "Latest quarter's net profit versus the same quarter last year — the most recent profit trend.",
     "Op Leverage":   "Operating leverage — whether profit is growing faster than sales (a sign fixed costs are being spread over more revenue).",
     "Op Lev (3Y)":   "Operating leverage over 3 years — how much faster (or slower) profit grew than sales. Positive means profits are scaling faster than revenue.",

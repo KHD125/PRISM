@@ -2447,12 +2447,20 @@ def render_raw_signals(stock: pd.Series):
     _section("🌱 Growth", COLORS["green"],
         _cell("PAT 5Y CAGR",   g("pat_gr_5y"),      "{:.1f}%") +
         _cell("PAT 3Y CAGR",   g("pat_gr_3y"),      "{:.1f}%") +
-        _cell("PAT YoY",       g("pat_gr_yoy"),     "{:.1f}%") +
+        # "PAT YoY" REMOVED 2026-08-26 — it rendered pat_gr_yoy, which is IDENTICAL to the
+        # "Q PAT YoY" cell below on 2,029 of 2,085 rows (97.3%). Two cells, one number, and the
+        # unprefixed label implied the ANNUAL year beside "PAT 5Y/3Y CAGR" — so a reader comparing
+        # "PAT YoY 108.5%" against "3Y CAGR 39.0%" believed they were comparing annual to annual
+        # when the first figure was a single quarter. The honestly-named Q cell survives; nothing
+        # is lost. (`pat_gr_yoy` is quarterly under an annual-sounding name — docs/known-issues.md.)
         _cell("Rev 10Y CAGR",  g("rev_gr_10y"),     "{:.1f}%") +
         _cell("Rev 5Y CAGR",   g("rev_gr_5y"),      "{:.1f}%") +
-        _cell("Rev YoY",       g("rev_gr_yoy"),     "{:.1f}%") +
+        # Relabelled, NOT removed: q_rev_yoy is not rendered anywhere on this tab, so deleting
+        # this cell would drop the number entirely. rev_gr_yoy is quarterly (identical to q_rev_yoy
+        # on 97.3% of rows), so the "Q" prefix simply makes the existing label truthful.
+        _cell("Q Rev YoY",     g("rev_gr_yoy"),     "{:.1f}%") +
         _cell("EPS 5Y CAGR",   g("eps_gr_5y"),      "{:.1f}%") +
-        _cell("EPS YoY",       g("eps_gr_yoy"),     "{:.1f}%") +
+        _cell("Q EPS YoY",     g("eps_gr_yoy"),     "{:.1f}%") +   # quarterly, like the two above
         _cell("Q PAT YoY",     g("q_pat_yoy"),      "{:.1f}%") +
         _cell("Op Leverage",   "Yes" if g("operating_leverage") == 1 else "No", "") +
         _cell("Lynch Category", stock.get("lynch_category", "") or "", "") +  # Fast Grower / Stalwart / Slow Grower / Turnaround
@@ -2584,7 +2592,9 @@ def render_raw_signals(stock: pd.Series):
         _cell("PAT Falls >10%",   g("pat_decline_count_5y"), "{:.0f}/5") +
         _cell("Volatile Flag",    _yn("mosl_volatile_flag"), "") +
         # 28th — EP Power Curve quintile (1=highest EP)
-        _cell("EP Quintile",      stock.get("ep_quintile","") or "N/A", "") +
+        # ep_quintile is a float64, so it printed "1.0". Everywhere else the quintile reads "Q1".
+        _cell("EP Quintile",      (f"Q{int(float(stock['ep_quintile']))}"
+                                   if pd.notna(stock.get("ep_quintile")) else "N/A"), "") +
         _cell("EP Top Q1/Q2",     _yn("ep_top_quintile_flag"), "") +
         # 14th — Winner Category (sector tailwind) × Category Winner (leader)
         _cell("Winner Category",  _yn("winner_category_flag"), "") +
