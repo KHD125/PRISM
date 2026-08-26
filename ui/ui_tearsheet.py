@@ -119,7 +119,25 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
     - Stocks with Growth_X > viewport are fully RETAINED in the dataset; the axis range
       parameter clips the visual canvas only (G9 FIX). No rows are dropped for outliers.
     """
-    st.markdown("<div class='sec-head'>🧭 Moat-Growth Matrix (22nd WCS)</div>", unsafe_allow_html=True)
+    # Chip text is the STUDY'S OWN outcome language (22nd WCS, Exhibit 5 and the paragraph above
+    # it), which the glossary's mechanical definitions ("ROCE >= 15% and growth >= 15%") do not
+    # carry: the book's point is not where a company plots, it is what each quadrant DOES to you.
+    # Note the book draws Moat on X and Growth on Y; this chart transposes them, but every
+    # quadrant keeps the book's own name and meaning.
+    st.markdown(
+        "<div class='sec-head'>🧭 Moat-Growth Matrix (22nd WCS)"
+        + help_chip("Moat-Growth Matrix",
+                    "22nd WCS, Exhibit 5 — moat and growth are the two dimensions of longevity, "
+                    "split at MOSL's 15% cost of equity. The study's own reading of each corner: "
+                    "⭐ Wealth Creators are ENDURING multi-baggers · ⚡ Growth Traps are TRANSITORY "
+                    "multi-baggers that 'may slip all the way back to where they started off from, "
+                    "or even lower' unless sold at the right price · 🛡️ Quality Traps are "
+                    "underperformers — a real moat whose engine has stopped compounding · "
+                    "💀 Wealth Destroyers are permanent capital loss. "
+                    "\"Moat without growth will underperform; growth without moat will end soon.\"")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
     plot_df = _moat_growth_plot_frame(df)
 
@@ -127,8 +145,17 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
         st.warning("Not enough valid data to plot the matrix.")
         return
 
-    # G9 FIX: viewport clips at 300% Growth — all points retained, canvas just zoomed.
-    x_max = max(min(float(plot_df["Growth_X"].max()) * 1.05, 300), 50)  # floor 50 prevents axis collapse when all growth=0
+    # VIEWPORT FITS THE DATA (2026-08-26). This clipped at a flat 300% growth, but the universe's
+    # p99 is ~178% and its max ~1,568%, so the canvas stretched to 300 to accommodate under 1% of
+    # stocks — and 83.6% of the points (1,704 of 2,038) ended up inside a box worth 8.8% of the
+    # plot area, an unreadable solid mass exactly where the median stock lives (growth 11.9%).
+    # Clipping at the 98th percentile roughly triples the resolution where 96.6% of stocks sit.
+    # Rows are NEVER dropped — the axis range clips the CANVAS only (the original G9 fix) — and
+    # the count beyond the edge is stated on the chart, so nothing is hidden silently.
+    _x_p98  = float(plot_df["Growth_X"].quantile(0.98))
+    _x_true = float(plot_df["Growth_X"].max())
+    x_max   = max(min(_x_p98 * 1.02, 300.0), 50.0)   # floor 50 prevents axis collapse at zero growth
+    _beyond = int((plot_df["Growth_X"] > x_max).sum())
 
     fig = px.scatter(
         plot_df, x="Growth_X", y="Moat_Y",
@@ -142,6 +169,10 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
         hover_name="name",
         hover_data={"Growth_X": ":.1f", "Moat_Y": ":.1f", "moat_growth_quad": False},
         labels={"Growth_X": "Growth (PAT CAGR %)", "Moat_Y": "Moat (ROCE %)"},
+        # Fully opaque markers made the dense core a flat silhouette — you could not tell one
+        # stock from fifty in the very region holding five of every six. Alpha turns overlap
+        # into shading, so crowding becomes information instead of a blob.
+        opacity=0.55,
     )
     fig.add_vline(x=15, line_width=1, line_dash="dash", line_color=COLORS["border"])
     fig.add_hline(y=15, line_width=1, line_dash="dash", line_color=COLORS["border"])
@@ -166,7 +197,10 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
                 x=hl["Growth_X"], y=hl["Moat_Y"],
                 mode="markers+text",
                 marker=dict(color="white", size=15, line=dict(color="black", width=2)),
-                text=["🎯 " + _esc(highlight_stock)],
+                # No emoji in the text: 🎯 renders as a filled circular glyph indistinguishable
+                # from a plotted marker, so one stock appeared as two dots — a phantom point
+                # beside the real one. The white marker already marks the position.
+                text=[_esc(highlight_stock)],
                 textposition="top center",
                 name="Selected Stock",
                 showlegend=False,
@@ -177,6 +211,9 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
         font=dict(color=COLORS["text_primary"]),
         margin=dict(l=0, r=0, t=30, b=0), height=450,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        # px.scatter titles the legend with the COLUMN it colours by, so the chart printed the
+        # literal string "moat_growth_quad" above the swatches.
+        legend_title_text="Quadrant",
     )
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=COLORS["border"],
                      zeroline=True, zerolinewidth=2, zerolinecolor=COLORS["border"],
@@ -185,8 +222,65 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
                      zeroline=True, zerolinewidth=2, zerolinecolor=COLORS["border"],
                      range=[-25, 105])
     st.plotly_chart(fig, use_container_width=True)
+
+    # WHERE DOES *THIS* STOCK SIT — the question a single-stock tearsheet is actually asking.
+    # The scatter spends all its resolution on the other ~2,037 dots, and the quadrant label is
+    # already a pill elsewhere on the tearsheet, so the chart's unique job is placing this stock
+    # in the distribution. It also stays truthful where the quadrant label cannot: 51.6% of the
+    # universe sits within ±5pp of a 15/15 dividing line and the median stock is at (11.9, 12.9),
+    # essentially ON the crossing — so for half the universe the categorical verdict turns on
+    # noise, while a percentile does not. Ranked against the PLOTTED frame, so the numbers always
+    # describe exactly what is drawn above.
+    if highlight_stock:
+        _me = plot_df[plot_df["name"] == highlight_stock]
+        if not _me.empty:
+            _g, _m = float(_me["Growth_X"].iloc[0]), float(_me["Moat_Y"].iloc[0])
+            _gp = float((plot_df["Growth_X"] < _g).mean() * 100.0)
+            _mp = float((plot_df["Moat_Y"] < _m).mean() * 100.0)
+
+            def _ordinal(n: int) -> str:
+                """1st/2nd/3rd/4th — a hardcoded 'th' printed '93th percentile'.
+                The teens are the trap: 11/12/13 take 'th', not st/nd/rd."""
+                return "th" if 11 <= (n % 100) <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+
+            def _pct_cell(lbl, val, pct):
+                _c = (COLORS["green"] if pct >= 75 else
+                      COLORS["gold"] if pct >= 40 else COLORS["red"])
+                _p = int(round(pct))
+                return (
+                    f'<div style="flex:1;min-width:150px;">'
+                    f'<span style="font-size:0.56rem;font-weight:700;color:{COLORS["text_muted"]};'
+                    f'text-transform:uppercase;letter-spacing:0.7px;">{_esc(lbl)}</span><br>'
+                    f'<span style="font-size:1.0rem;font-weight:900;color:{_c};">{val:.1f}%</span>'
+                    f'<span style="font-size:0.72rem;font-weight:700;color:{COLORS["text_secondary"]};'
+                    f'margin-left:7px;">{_p}{_ordinal(_p)} percentile</span></div>'
+                )
+
+            st.markdown(
+                f'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;'
+                f'background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
+                f'border-radius:10px;padding:9px 14px;margin-top:2px;">'
+                f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["text_primary"]};'
+                f'min-width:150px;">🎯 {_esc(highlight_stock)}</div>'
+                f'{_pct_cell("Moat · ROCE", _m, _mp)}{_pct_cell("Growth · PAT CAGR", _g, _gp)}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    # Silent omission is the one thing this app refuses to do: name what is not on the chart.
+    _omitted = int(len(df) - len(plot_df))
+    _notes = []
+    if _omitted:
+        _notes.append(f"{_omitted:,} of {len(df):,} stocks are not plotted — no ROCE or no growth "
+                      f"figure to place them.")
+    if _beyond:
+        _notes.append(f"{_beyond:,} sit beyond {x_max:.0f}% growth (up to {_x_true:,.0f}%) and are "
+                      f"drawn at the right edge; the view is clipped so the crowded core stays "
+                      f"readable, never to drop a stock.")
+    _note_html = (" ".join(_notes) + " ") if _notes else ""
     st.markdown(
-        f"<div style='font-size:0.6rem;color:{COLORS['text_muted']};margin-top:-6px;margin-bottom:10px;'>"
+        f"<div style='font-size:0.6rem;color:{COLORS['text_muted']};margin-top:6px;margin-bottom:10px;'>"
+        f"{_note_html}"
         f"Moat (5Y-median ROCE) × Growth (5Y PAT CAGR), split at MOSL's 15% cost-of-equity line — "
         f"22nd WCS, Exhibit 5. Quadrant = position <b>today</b>; longevity (CAP/GAP duration) is a "
         f"separate measure this snapshot does not capture.</div>",
