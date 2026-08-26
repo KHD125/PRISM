@@ -1288,6 +1288,146 @@ def render_guru_frameworks(stock: pd.Series):
 
 
 # ═══════════════════════════════════════════════════════════════
+# PIOTROSKI F-SCORE CHECKLIST
+# ═══════════════════════════════════════════════════════════════
+
+# (column, label, operative rule, tooltip). Passable checks first, trend checks after; the score
+# itself is read from piotroski_fscore and never recounted here.
+_PIOTROSKI_9 = [
+    ("f_roa_positive",         "ROA positive",             "PAT > 0",
+     "Profitability, the first of Piotroski's nine. A company earning nothing cannot be a value "
+     "recovery — this is the floor the other eight build on."),
+    ("f_ocf_positive",         "Operating CF positive",    "CFO > 0",
+     "Cash from operations above zero. Reported profit can be an accounting opinion; operating "
+     "cash flow is much harder to manufacture."),
+    ("f_accrual_quality",      "Accruals clean",           "CFO > PAT",
+     "Cash flow exceeding reported profit. When profit runs ahead of cash the gap is accruals, "
+     "and Piotroski treats that as the clearest quality warning in the set."),
+    ("f_no_dilution",          "No equity issued",         "share count not up",
+     "Piotroski's wording is that the firm did not ISSUE common equity — an offering. A bonus "
+     "issue or a split is not an offering: no shares are sold, no capital is raised, and every "
+     "holder's stake is unchanged, so corporate actions are exempt from this check."),
+    ("f_roa_improving",        "ROA improving",            "vs last year",
+     "Return on assets higher than a year ago — the business is getting more out of what it owns."),
+    ("f_leverage_declining",   "Leverage declining",       "debt/assets down",
+     "Long-term debt falling as a share of assets. Rising leverage during a recovery is the "
+     "opposite of the deleveraging Piotroski looks for."),
+    ("f_margin_improving",     "Margin improving",         "gross margin up",
+     "Operating margin above last year's — pricing power or cost discipline, not volume alone."),
+    ("f_efficiency_improving", "Asset turnover improving", "revenue/assets up",
+     "Revenue per rupee of assets rising — the balance sheet is working harder."),
+    ("f_liquidity_improving",  "Liquidity improving",      "current ratio up",
+     "Current ratio above last year's. Needs a PRIOR-year current ratio to compare against."),
+]
+
+# A check whose two inputs are IDENTICAL cannot be evaluated — that is a data limitation, not a
+# company failure. Derived per stock from the same columns the engine compares, so it self-heals
+# the moment the source does; no column is hardcoded as "known broken".
+_UNEVALUABLE_WHEN_EQUAL = {"f_liquidity_improving": ("current_ratio", "current_ratio_1yb")}
+
+
+def _pio_row(label: str, passed, value_str: str, context: str = "", tip: str = "") -> str:
+    """Row renderer for the checklist.
+
+    Deliberately a SEPARATE function from `_row` in render_financial_insights: that one is nested
+    by design and five contracts assert it stays there, so promoting it to share would rewrite
+    working tests to suit a refactor. The two are pinned to behave identically instead —
+    test_piotroski_checklist.py drives both over every input shape and compares the icons.
+
+    NUMPY BOOL TRAP: `np.float64(1) == 1` yields np.bool_, for which `x is True` is FALSE. Coerce
+    once here so no caller can reintroduce the bug that silently greyed out 13 of 17 rows on every
+    stock in August 2026; None is preserved as the genuine unknown.
+    """
+    if passed is not None:
+        passed = bool(passed)
+    if passed is True:
+        ico, clr = "✅", COLORS["green"]
+    elif passed is False:
+        ico, clr = "❌", COLORS["red"]
+    else:
+        ico, clr = "⚪", COLORS["text_muted"]
+    _tip = help_chip("", tip) if tip else ""
+    ctx = (
+        f'<span style="font-size:0.68rem;color:{COLORS["text_muted"]};flex:1;'
+        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+        f'margin-left:6px;">{_esc(context)}</span>'
+    ) if context else ""
+    return (
+        f'<div style="display:flex;align-items:center;gap:6px;padding:5px 0;'
+        f'border-bottom:1px solid rgba(255,255,255,0.04);">'
+        f'<span style="font-size:0.85rem;width:18px;flex-shrink:0;">{ico}</span>'
+        f'<span style="font-size:0.76rem;color:{COLORS["text_secondary"]};width:175px;'
+        f'flex-shrink:0;">{_esc(label)}{_tip}</span>'
+        f'<span style="font-size:0.80rem;font-weight:700;color:{clr};'
+        f'white-space:nowrap;flex-shrink:0;">{_esc(value_str)}</span>'
+        f'{ctx}</div>'
+    )
+
+
+def render_piotroski_checklist(stock: pd.Series):
+    """The nine components behind the number already shown as "Piotroski n/9".
+
+    The F-Score is a CHECKLIST, not a score: "4/9" without the failing five is the least useful
+    form it can take. All nine columns are computed at 100% coverage and none of them reached the
+    screen — exactly the orphan class tools/ui_coverage.py exists to find.
+
+    The ⚪ state is the point of this panel. `f_liquidity_improving` passes for 0 of 2,117 stocks,
+    because the sheet's "Current Ratio 1 Year Back" equals the current ratio on every row and the
+    engine's `_cr != _cr_1yb` guard correctly refuses to score it. That caps the ENTIRE universe at
+    8/9 — the observed maximum is 8, reached by 93 stocks — and nothing on screen said so.
+    Rendering it ❌ would blame every company for a broken source column: "unverifiable is not
+    passed", applied in the other direction — do not CONDEMN on absent evidence either.
+    """
+    _score = stock.get("piotroski_fscore")
+    if pd.isna(_score):
+        return
+    _score = int(_score)
+
+    rows, n_dead = "", 0
+    for _col, _lbl, _ctx, _tip in _PIOTROSKI_9:
+        _v = stock.get(_col)
+        _pair = _UNEVALUABLE_WHEN_EQUAL.get(_col)
+        _blind = False
+        if _pair:
+            _a, _b = stock.get(_pair[0]), stock.get(_pair[1])
+            _blind = pd.isna(_a) or pd.isna(_b) or float(_a) == float(_b)
+        if _blind:
+            n_dead += 1
+            rows += _pio_row(
+                _lbl, None, "not evaluable", "source data cannot support this check",
+                _tip + " Here the prior-year figure is identical to the current one, so the "
+                       "comparison cannot run and the engine correctly declines to award the "
+                       "point. A DATA limitation, not a company failure — it clears itself when "
+                       "the source is fixed.")
+        else:
+            rows += _pio_row(_lbl, None if pd.isna(_v) else bool(_v), "", _ctx, _tip)
+
+    _max = 9 - n_dead
+    _clr = (COLORS["green"] if _score >= 7 else
+            COLORS["gold"] if _score >= 5 else
+            COLORS["orange"] if _score >= 3 else COLORS["red"])
+    _cap = (f'<span style="font-size:0.62rem;color:{COLORS["text_muted"]};margin-left:auto;'
+            f'text-align:right;">{n_dead} check{"s" if n_dead != 1 else ""} not evaluable · '
+            f'attainable maximum {_max}</span>') if n_dead else ""
+
+    st.markdown(
+        f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
+        f'border-left:3px solid {_clr};border-radius:10px;padding:14px 16px;margin-bottom:12px;">'
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+        f'<span style="font-size:0.68rem;font-weight:800;color:{_clr};letter-spacing:0.6px;">'
+        f'🧾 PIOTROSKI F-SCORE</span>'
+        f'<span style="font-size:1.0rem;font-weight:900;color:{_clr};">{_score}</span>'
+        f'<span style="font-size:0.68rem;color:{COLORS["text_muted"]};">of 9</span>'
+        f'{help_chip("Piotroski F-Score detail", "Joseph Piotroski\'s nine-point accounting "
+                    "checklist — profitability, leverage and liquidity, operating efficiency. It "
+                    "is a CHECKLIST: WHICH nine pass matters more than the total. 7-9 is strong, "
+                    "0-3 weak.")}'
+        f'{_cap}</div>{rows}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
 # SYSTEMATIC FISHER PROXY — 100% Automated from CSV
 # ═══════════════════════════════════════════════════════════════
 

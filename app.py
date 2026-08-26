@@ -73,6 +73,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_canslim_radar, render_sepa_radar, render_schilit_shield, render_dorsey_radar,
                 render_outsider_radar, render_marks_radar, render_malik_radar,
                 render_lynch_radar, render_mauboussin_radar, render_qglp_radar, render_mosl_wealth_matrix,
+                render_piotroski_checklist,
                 render_sector_peer_strip,
                 render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_pulse_band,
@@ -982,6 +983,13 @@ with tabs[2]:
                 unsafe_allow_html=True,
             )
             render_forensic_perimeter(stock)
+
+            # The F-Score is already shown as a NUMBER in the perimeter KPI row; this is the
+            # checklist behind it. All nine components are computed at 100% coverage and none of
+            # them reached the screen until now. Ordered weakest-to-strongest evidence:
+            # red flags -> Piotroski -> Fisher.
+            st.markdown("<br>", unsafe_allow_html=True)
+            render_piotroski_checklist(stock)
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown(

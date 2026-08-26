@@ -73,6 +73,7 @@ def _render_tearsheet_app():
         render_fisher_module, render_lynch_radar, render_malik_radar,
         render_moat_growth_matrix, render_multitrillioncap_card, render_outsider_radar,
         render_qglp_radar, render_raw_signals, render_schilit_shield, render_verdict_scorecard,
+        render_piotroski_checklist,
     )
     stock = st.session_state["stock_row"]
     render_stock_hero(stock)
@@ -82,6 +83,7 @@ def _render_tearsheet_app():
     render_sector_peer_strip(stock)
     render_financial_insights(stock)
     render_forensic_perimeter(stock)
+    render_piotroski_checklist(stock)
     render_schilit_shield(stock)
     render_guru_frameworks(stock)
     render_fisher_module(stock)

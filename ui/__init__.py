@@ -30,6 +30,7 @@ try:
         render_mauboussin_radar,
         render_qglp_radar,
         render_mosl_wealth_matrix,
+        render_piotroski_checklist,
         render_sector_peer_strip,
         render_valuation_inversion_and_sizing_cockpit,
     )
@@ -64,6 +65,7 @@ except ImportError as e:
     render_mauboussin_radar  = _stub
     render_qglp_radar = _stub
     render_mosl_wealth_matrix = _stub
+    render_piotroski_checklist = _stub
     render_sector_peer_strip = _stub
     render_valuation_inversion_and_sizing_cockpit = _stub
 
@@ -106,6 +108,7 @@ __all__ = [
     "render_mauboussin_radar",
     "render_qglp_radar",
     "render_mosl_wealth_matrix",
+    "render_piotroski_checklist",
     "render_sector_peer_strip",
     "render_valuation_inversion_and_sizing_cockpit",
     "inject_css",
