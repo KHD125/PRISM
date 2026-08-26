@@ -58,3 +58,9 @@ tests/test_snapshot_tool.py
 # PRISM must never track it — fully separate systems by owner decision (2026-08-23).
 alpha/
 Wave (2.0)/
+
+# RS-Stages is a SEPARATE project (github.com/Pareshking/RS-Stages) unzipped
+# inside this tree. It has no .git of its own, so PRISM sees it as untracked
+# files -- one "git add -A" would commit an entire other project into PRISM,
+# which auto-deploys. Same reason alpha/ and Wave (2.0)/ are ignored.
+RS-Stages/
