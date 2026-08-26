@@ -191,6 +191,51 @@ def test_percentile_ordinals_are_english(live):
     assert not wrong, f"bad ordinal suffixes: {wrong}"
 
 
+# ── 5. CAP / GAP — the 22nd WCS's other half ────────────────────────────────────────────
+def test_cap_and_gap_longevity_are_shown(live):
+    """The 22nd WCS is titled "CAP & GAP — Power of longevity in Wealth Creation": Exhibit 5 says
+    WHERE a company sits, CAP/GAP say HOW LONG it has stayed there. The chart used to disclaim
+    them outright while the engine computed both at 100% coverage, reachable only in the All Data
+    raw dump."""
+    name = "Shilchar Technologies Ltd"
+    if name not in set(T._moat_growth_plot_frame(live)["name"]):
+        pytest.skip("highlight stock not plotted")
+    _, md = _render(live, highlight=name)
+    found = dict((k, (int(a), int(b))) for k, a, b in re.findall(r">(CAP|GAP) (\d)/(\d)<", md))
+    assert "CAP" in found and "GAP" in found, f"longevity not rendered: {found}"
+    assert found["CAP"][1] == 5 and found["GAP"][1] == 3, "wrong window totals"
+    row = live[live["name"] == name].iloc[0]
+    assert found["CAP"][0] == int(row["cap_years_proxy"])
+    assert found["GAP"][0] == int(row["gap_years_proxy"])
+
+
+def test_longevity_is_labelled_windows_not_years(live):
+    """cap_years_proxy/gap_years_proxy are misnamed: they COUNT WINDOWS clearing the hurdle, not
+    years. CAP spans five ROCE lookbacks reaching back a DECADE (10y/7y/5y/prior/current), so
+    rendering "5 years" would be flatly wrong — and the study's own CAP is something different
+    again, "the successive number of years for which companies have clocked RoE higher than 15%"."""
+    name = "Shilchar Technologies Ltd"
+    if name not in set(T._moat_growth_plot_frame(live)["name"]):
+        pytest.skip("highlight stock not plotted")
+    _, md = _render(live, highlight=name)
+    assert "windows" in md, "the window framing is gone — 'years' would misstate the measure"
+    assert not re.search(r">(CAP|GAP) \d/\d<[^<]*years", md), "longevity rendered as YEARS"
+
+
+def test_caption_only_claims_longevity_when_it_rendered(live):
+    """On a frame without the proxy columns the caption must not point at an absent strip."""
+    stripped = live.drop(columns=["cap_years_proxy", "gap_years_proxy"])
+    _, md = _render(stripped, highlight="Shilchar Technologies Ltd")
+    assert not re.findall(r">(CAP|GAP) \d/\d<", md), "cells rendered without their columns"
+    assert "CAP/GAP above it" not in md, "caption claims a longevity strip that is not there"
+
+
+def test_missing_longevity_columns_do_not_crash(live):
+    """Old snapshots and minimal fixtures predate these columns."""
+    for drop in (["cap_years_proxy"], ["gap_years_proxy"], ["cap_years_proxy", "gap_years_proxy"]):
+        _render(live.drop(columns=drop), highlight="Shilchar Technologies Ltd")
+
+
 def test_no_percentile_strip_without_a_selected_stock(live):
     _, md = _render(live)
     assert "percentile" not in md, "the strip rendered with no stock selected"

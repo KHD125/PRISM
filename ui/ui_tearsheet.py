@@ -243,18 +243,73 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
                 The teens are the trap: 11/12/13 take 'th', not st/nd/rd."""
                 return "th" if 11 <= (n % 100) <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
 
-            def _pct_cell(lbl, val, pct):
+            def _pct_cell(lbl, val, pct, dur_html=""):
                 _c = (COLORS["green"] if pct >= 75 else
                       COLORS["gold"] if pct >= 40 else COLORS["red"])
                 _p = int(round(pct))
                 return (
-                    f'<div style="flex:1;min-width:150px;">'
+                    f'<div style="flex:1;min-width:180px;">'
                     f'<span style="font-size:0.56rem;font-weight:700;color:{COLORS["text_muted"]};'
                     f'text-transform:uppercase;letter-spacing:0.7px;">{_esc(lbl)}</span><br>'
                     f'<span style="font-size:1.0rem;font-weight:900;color:{_c};">{val:.1f}%</span>'
                     f'<span style="font-size:0.72rem;font-weight:700;color:{COLORS["text_secondary"]};'
-                    f'margin-left:7px;">{_p}{_ordinal(_p)} percentile</span></div>'
+                    f'margin-left:7px;">{_p}{_ordinal(_p)} percentile</span>'
+                    f'{dur_html}</div>'
                 )
+
+            # ── LONGEVITY: the 22nd WCS's other half ──────────────────────────────────
+            # "Longevity of Moat can be measured as CAP (Competitive Advantage Period), and
+            # longevity of earnings growth as GAP." Exhibit 5 says WHERE a company sits; CAP/GAP
+            # say HOW LONG it has stayed there. This caption used to disclaim CAP/GAP outright
+            # while the engine computed both at 100% coverage — they were only reachable in the
+            # All Data raw dump, two tabs away.
+            #
+            # NAMING HAZARD (the reason this is worded so carefully): cap_years_proxy and
+            # gap_years_proxy are NOT years despite their names. They COUNT WINDOWS clearing the
+            # hurdle — CAP over 5 ROCE lookbacks (10y/7y/5y/prior/current), GAP over 3 PAT-growth
+            # lookbacks (10y/5y/3y). A CAP of 5 therefore spans TEN years, not five, so rendering
+            # "5 years" would be flatly wrong. Say windows, and name them in the tooltip.
+            def _dur_html(kind, n, total, tip):
+                if n is None:
+                    return ""
+                _dc = (COLORS["green"] if n >= total else
+                       COLORS["gold"] if n > 0 else COLORS["text_muted"])
+                return (
+                    f'<br><span style="font-size:0.62rem;font-weight:700;color:{_dc};">'
+                    f'{_esc(kind)} {int(n)}/{total}</span>'
+                    f'<span style="font-size:0.62rem;color:{COLORS["text_muted"]};margin-left:5px;">'
+                    f'windows ≥15%</span>{help_chip(kind + " longevity", tip)}'
+                )
+
+            def _dur_val(col):
+                # Read from the highlighted ROW of the plotted frame — this renderer receives the
+                # universe plus a name, not a stock Series (the cockpit's `stock` does not exist here).
+                if col not in _me.columns:
+                    return None
+                v = _me[col].iloc[0]
+                return None if pd.isna(v) else int(v)
+
+            _cap_n = _dur_val("cap_years_proxy")
+            _gap_n = _dur_val("gap_years_proxy")
+            _shown_longevity = (_cap_n is not None) or (_gap_n is not None)
+            _cap_html = _dur_html(
+                "CAP", _cap_n, 5,
+                "Competitive Advantage Period — the 22nd WCS's measure of MOAT longevity: the "
+                "time a company earns above its cost of capital. The study defines it as the "
+                "SUCCESSIVE years of return above 15%, and found a median CAP of 9-11 years among "
+                "its wealth creators, with 171 of 223 clearing 5 years. This is a PROXY, not that "
+                "run: it counts how many of five ROCE lookbacks (10-year median, 7-year, 5-year, "
+                "prior year, current) clear the 15% line — so 5/5 spans a decade of evidence, but "
+                "is not a guarantee of an unbroken streak.")
+            _gap_html = _dur_html(
+                "GAP", _gap_n, 3,
+                "Growth Advantage Period — the 22nd WCS's measure of GROWTH longevity: the time "
+                "profits outgrow the benchmark. The study's hurdle is 15% PAT growth, deliberately "
+                "the same number as the cost of equity. Counted here as WINDOWS, not years: how "
+                "many of three PAT-growth lookbacks (10-year, 5-year, 3-year) clear 15%. Read it "
+                "against CAP — \"in most cases, CAP is the foundation for sustained GAP\", and "
+                "\"end of CAP is a certain cause for end of GAP\". A full CAP with a slipping GAP "
+                "is the shape to notice: the moat still holds, the compounding has stopped.")
 
             st.markdown(
                 f'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;'
@@ -262,7 +317,8 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
                 f'border-radius:10px;padding:9px 14px;margin-top:2px;">'
                 f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["text_primary"]};'
                 f'min-width:150px;">🎯 {_esc(highlight_stock)}</div>'
-                f'{_pct_cell("Moat · ROCE", _m, _mp)}{_pct_cell("Growth · PAT CAGR", _g, _gp)}'
+                f'{_pct_cell("Moat · ROCE", _m, _mp, _cap_html)}'
+                f'{_pct_cell("Growth · PAT CAGR", _g, _gp, _gap_html)}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -278,12 +334,19 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
                       f"drawn at the right edge; the view is clipped so the crowded core stays "
                       f"readable, never to drop a stock.")
     _note_html = (" ".join(_notes) + " ") if _notes else ""
+    # Only claim CAP/GAP when they were actually rendered — on a frame without those columns
+    # (an old snapshot, a minimal fixture) the caption must not point at an absent strip.
+    _longev_html = (
+        "The quadrant is position <b>today</b>; CAP/GAP above it are the study's longevity "
+        "measures — how many lookback windows have held the line, not how many years."
+        if locals().get("_shown_longevity") else
+        "Quadrant = position <b>today</b>; longevity (CAP/GAP duration) is a separate measure."
+    )
     st.markdown(
         f"<div style='font-size:0.6rem;color:{COLORS['text_muted']};margin-top:6px;margin-bottom:10px;'>"
         f"{_note_html}"
         f"Moat (5Y-median ROCE) × Growth (5Y PAT CAGR), split at MOSL's 15% cost-of-equity line — "
-        f"22nd WCS, Exhibit 5. Quadrant = position <b>today</b>; longevity (CAP/GAP duration) is a "
-        f"separate measure this snapshot does not capture.</div>",
+        f"22nd WCS, Exhibit 5. {_longev_html}</div>",
         unsafe_allow_html=True,
     )
 
