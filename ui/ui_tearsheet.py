@@ -1994,7 +1994,15 @@ def render_verdict_scorecard(stock: pd.Series):
     deep = "".join([
         _ds("WCS",            (f"{_wcs:.0f}/10" if _wcs  == _wcs  else "—"), (_wcs  >= 5)   if _wcs  == _wcs  else None),
         _ds("Econ-Profit",    _ep_str,                                       (_ep   > 0)    if _ep   == _ep   else None),
-        _ds("VCR",            (f"{_vcr:.1f}x"   if _vcr  == _vcr  else "—"), (_vcr  >= 1.0) if _vcr  == _vcr  else None),
+        # VCR prints TWO decimals, unlike its neighbours. The threshold here is not a noise floor
+        # but Buffett's one-dollar premise itself — >=1.00 is the whole test — so the exact side of
+        # 1.0 is the point. At one decimal, 150 stocks (7.1%) printed "1.0x" while being coloured
+        # from values as far apart as 1.0433 and 0.9542: the colours were right and the label was
+        # too coarse to show why two chips differed. Two decimals cuts that to 16 (0.8%).
+        # NOT the Trajectory-card fix (round-then-classify): that band WAS a noise floor, so
+        # collapsing its edge to neutral was correct. Here the boundary is real and must be shown,
+        # not blurred. Same symptom, opposite remedy — pinned by tests/test_deep_signal_chips.py.
+        _ds("VCR",            (f"{_vcr:.2f}x"  if _vcr  == _vcr  else "—"), (_vcr  >= 1.0) if _vcr  == _vcr  else None),
         _ds("Terms-of-Trade", (f"{_tot:+.0f}d"  if _tot  == _tot  else "—"), (_tot  > 0)    if _tot  == _tot  else None),
         _ds("Cash-Machine",   (f"{_cash:.0f}"   if _cash == _cash else "—"), (_cash >= 50)  if _cash == _cash else None),
     ])
@@ -2007,7 +2015,8 @@ def render_verdict_scorecard(stock: pd.Series):
 
     # ── ⏱️ Entry Timing: momentum reads — the WHEN, NOT part of the WHAT verdict above ──
     # The 6 axes weigh SELECTION and are blind to momentum (fundamentals select, technicals time).
-    # 4 orphans verified alive + orthogonal on live data (max pairwise corr 0.17): relative
+    # 4 orphans verified alive + orthogonal on live data (max pairwise corr 0.29, remeasured
+    # 2026-08-27 — this line previously claimed 0.17): relative
     # strength, price trajectory, earnings acceleration, volume confirmation. Thresholds are
     # quartile-grounded. Reuses the _ds() chip so it reads as auxiliary, not a 7th verdict axis.
     def _good(green: bool, red: bool):
