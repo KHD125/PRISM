@@ -554,7 +554,13 @@ def render_ep_power_curve_module(stock: pd.Series):
                        "🚀 Hockey Stick = positive AND rising (the best state) · "
                        "➖ EP Positive, Not Rising = positive but not growing · "
                        "📈 Improving = still negative, but turning up · "
-                       "📉 Value Trap = negative and not improving.")
+                       "📉 Value Trap = negative and not improving. "
+                       "Note: the 🏒 EP Hockey Stick FRAMEWORK is stricter — it also requires a "
+                       "P/E of 20x or less (the 28th WCS's TEM-P: Trends/Endowment/Moves lift "
+                       "economic profit, but the RETURN needs a cheap entry). 533 stocks show 🚀 "
+                       "here; 211 pass the framework. So a stock can be a Hockey Stick on this "
+                       "card and still have no pill in the Frameworks tab — that is the price "
+                       "gate, not a disagreement.")
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{ep_strip}</div>',
