@@ -87,17 +87,29 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     timing_poor   = bz.str.contains("Below|Avoid|Overextend|Stop", case=False)
 
     # ── Direction: base from post-penalty tier, then asymmetric caps ──
-    base = np.select([tier <= 2, tier == 3], ["BUY", "WATCH"], default="AVOID")
-    is_buy = pd.Series(base == "BUY", index=idx)
+    # VOCABULARY RENAMED 2026-08-27: BUY/WATCH/AVOID → SOUND/MIXED/FLAWED. Two reasons:
+    # (1) COLLISION — the wealth tier (below) deliberately speaks action words (BUY★/BUY/WATCH★/
+    #     WATCH/AVOID), so the same words meant two different things in adjacent columns: the
+    #     cf_triangle "Perfect — Buy Zone" defect class, rebuilt at vocabulary level.
+    # (2) HONESTY — with 18 BUYs against 93% AVOID this was never a buy call; it is a
+    #     qualification gate (quality + forensics + valuation + timing), so it now speaks
+    #     CONDITION words. Action words live only in the wealth tier, by the user's design.
+    # Alternatives audited and rejected: PASS/FAIL & QUALIFIED (conflate with gate_pass /
+    # "% Qualify"), STRONG/WEAK (verdict_strength's and a tier label's words), NEUTRAL
+    # (smart_money_flow + capital phase), UNSOUND (SOUND ⊂ UNSOUND substring nesting — the bug
+    # class hit four times on 2026-08-27 alone). Old snapshots keep the old strings;
+    # tools/validate.py maps them on load.
+    base = np.select([tier <= 2, tier == 3], ["SOUND", "MIXED"], default="FLAWED")
+    is_buy = pd.Series(base == "SOUND", index=idx)   # the vetoes cap the affirmative call
     _soft  = (schilit_fail | gov_veto | timing_poor) & is_buy   # soft downgrade BUY → WATCH
     direction = np.where(
-        forensic_veto | gruesome_veto, "AVOID",
-        np.where(_soft, "WATCH", base),
+        forensic_veto | gruesome_veto, "FLAWED",
+        np.where(_soft, "MIXED", base),
     )
     df["verdict_direction"] = direction
 
     df["verdict_emoji"] = np.select(
-        [direction == "BUY", direction == "WATCH"], ["🟢", "🟡"], default="🔴"
+        [direction == "SOUND", direction == "MIXED"], ["🟢", "🟡"], default="🔴"
     )
 
     # ── Conviction strength (from tier) ──
@@ -172,8 +184,8 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     # risk-adjusted quality dragging it — a classic value trap, e.g. Sarda Energy: q71 g66 cheap but
     # composite 42 / Stage-4) must NOT read "high-conviction core holding". AVOID is matched FIRST so
     # it can never fall through to a buy-toned line; the strongest BUY phrasing is reserved for BUYs.
-    dir_avoid = pd.Series(direction == "AVOID", index=idx)
-    dir_buy   = pd.Series(direction == "BUY",   index=idx)
+    dir_avoid = pd.Series(direction == "FLAWED", index=idx)
+    dir_buy   = pd.Series(direction == "SOUND",  index=idx)
 
     df["verdict_narrative"] = np.select(
         [
@@ -196,8 +208,8 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
             "Severe forensic / accounting-quality flags override the thesis — avoid until the accounts are clean.",
             "Capital allocation destroys value (Gruesome) — avoid regardless of how cheap it looks.",
             "Quality screens well, but Schilit forensic checkers flag it — verify the accounts before buying.",
-            "Cheap with decent quality on the screens — but the overall score is weak enough to land in AVOID; treat it as a value-trap watch, not a buy.",
-            "Overall score lands in AVOID — the weak axes outweigh the strengths; pass until they improve.",
+            "Cheap with decent quality on the screens — but the overall score is weak enough to land FLAWED; treat it as a value-trap watch, not a buy.",
+            "Overall score lands FLAWED — the weak axes outweigh the strengths; pass until they improve.",
             "Elite franchise, but priced for perfection — wonderful business, demanding price; wait for a pullback.",
             "Elite compounder at a reasonable price — high-conviction core holding.",
             "A high-quality compounder trading at a fair price — quality and value aligned.",

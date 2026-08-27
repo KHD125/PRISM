@@ -124,5 +124,5 @@ def test_forensic_multiplier_monotonic_in_red_flags(scored):
 def test_verdict_aligns_with_score(scored):
     """Aggregate sanity (verdict has its own logic): median composite must order BUY > WATCH > AVOID."""
     med = scored.groupby("verdict_direction")["composite_score"].median()
-    assert {"BUY", "WATCH", "AVOID"} <= set(med.index), f"missing a verdict bucket: {set(med.index)}"
-    assert med["BUY"] > med["WATCH"] > med["AVOID"], f"verdict medians not ordered BUY>WATCH>AVOID: {med.to_dict()}"
+    assert {"SOUND", "MIXED", "FLAWED"} <= set(med.index), f"missing a verdict bucket: {set(med.index)}"
+    assert med["SOUND"] > med["MIXED"] > med["FLAWED"], f"verdict medians not ordered SOUND>MIXED>FLAWED: {med.to_dict()}"

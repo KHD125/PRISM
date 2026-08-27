@@ -114,9 +114,9 @@ CONCEPT_REFERENCE = {
     ],
     # ── verdict_direction — core/verdict_engine.py:72 (conviction tier + forensic/governance vetoes)
     "⚖️ Verdict": [
-        ("BUY", "The engine's affirmative call — a high-conviction tier with no forensic or governance veto. Worth a deep look."),
-        ("WATCH", "A qualified call — promising but with a caveat (mid conviction, or a soft forensic/timing flag). Monitor, don't act yet."),
-        ("AVOID", "A negative call — low conviction, OR a hard veto from severe forensic red flags / governance risk. Stay away."),
+        ("SOUND", "The engine's affirmative gate — quality, clean books and a reasonable price all clear (tier 1–2, no forensic or governance veto). Renamed from BUY on 2026-08-27: with 18 passers against 93% of the universe failing, this was always a qualification gate, not a buy call — and the wealth tier now owns the action vocabulary. Condition words here, action words there, no word in both."),
+        ("MIXED", "The middle of the gate — promising but with a caveat: mid conviction, or a soft forensic/timing/governance downgrade from SOUND. Renamed from WATCH (the wealth tier owns WATCH/WATCH★ now)."),
+        ("FLAWED", "The gate found flaws — low conviction, OR a hard veto from severe forensic red flags / value-destroying capital allocation. Says nothing about direction: a FLAWED stock can be a confirmed turnaround on the wealth tier (WATCH★), and that pairing is exactly what the two lenses exist to surface. Renamed from AVOID."),
     ],
     # ── verdict_strength — core/verdict_engine.py:86 (.map over conviction_tier 1-5): the strength
     # WORD shown in the verdict band beside the direction. It mirrors the tier but uses different

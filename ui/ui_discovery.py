@@ -305,8 +305,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             if sel_tier:
                 _cf = _narrow(_cf, _label_mask(_cf["conviction_tier"], sel_tier), "Tier")
 
-            # 4b. Verdict — the engine's BUY/WATCH/AVOID decision (filter to the rare BUYs/WATCHes)
-            _verdict_opts = _ordered_present(_cf, "verdict_direction", ["BUY", "WATCH", "AVOID"])
+            # 4b. Verdict — the engine's SOUND/MIXED/FLAWED gate (filter to the rare SOUNDs)
+            _verdict_opts = _ordered_present(_cf, "verdict_direction", ["SOUND", "MIXED", "FLAWED"])
             sel_verdict = _ms_cascade("Verdict", _verdict_opts, "sb_verdict", default=[],
                                       help="The engine's top-line decision. Empty = all stocks.",
                                       count_col="verdict_direction")

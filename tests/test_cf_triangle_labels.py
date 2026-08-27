@@ -77,7 +77,7 @@ def test_no_positive_label_reads_as_a_recommendation(emitted, live):
     label that only ever co-occurs with AVOID is not making a false claim."""
     vd = live["verdict_direction"].astype(str)
     for lab in emitted:
-        on_avoid = ((live["cf_triangle"].astype(str) == lab) & vd.str.contains("AVOID")).sum()
+        on_avoid = ((live["cf_triangle"].astype(str) == lab) & vd.str.contains("FLAWED")).sum()
         if on_avoid == 0:
             continue                      # never shares a page with a contrary verdict
         low = lab.lower()
@@ -118,7 +118,7 @@ def test_negative_labels_never_contradict_their_page(live):
     cf, vd = live["cf_triangle"].astype(str), live["verdict_direction"].astype(str)
     trap = cf.str.contains("Debt Trap", na=False)
     assert trap.sum() > 0, "the Debt Trap label vanished"
-    on_buy = int((trap & vd.str.contains("BUY", na=False)).sum())
+    on_buy = int((trap & vd.str.contains("SOUND", na=False)).sum())
     assert on_buy == 0, (
         f"'Debt Trap — Avoid' now appears on {on_buy} tearsheets with a BUY verdict. It was left "
         f"unrenamed precisely because it never did; re-judge the wording."
@@ -170,7 +170,7 @@ def test_no_green_badge_claims_a_buy_on_an_avoid_page(live):
     """The end-to-end property, measured the way the bug was found."""
     cf, vd = live["cf_triangle"].astype(str), live["verdict_direction"].astype(str)
     green = cf.str.startswith("✅")
-    avoid = vd.str.contains("AVOID", na=False)
+    avoid = vd.str.contains("FLAWED", na=False)
     overlap = int((green & avoid).sum())
     assert overlap > 0, "no green cf_triangle label co-occurs with AVOID -- probe has gone stale"
     offending = [l for l in set(cf[green & avoid])

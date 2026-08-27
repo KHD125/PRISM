@@ -155,7 +155,7 @@ def test_the_caveats_numbers_are_still_true(live, lenses):
         f"universe ({live['red_flag_count'].median():.0f}). The caption warns the opposite; "
         f"remeasure and rewrite it."
     )
-    avoid = (hi["verdict_direction"].astype(str) == "AVOID").mean()
+    avoid = (hi["verdict_direction"].astype(str) == "FLAWED").mean()
     assert avoid > 0.5, (
         f"only {avoid:.1%} of the high-convergence cohort is AVOID; the caveat's premise has "
         f"changed and the wording needs revisiting"

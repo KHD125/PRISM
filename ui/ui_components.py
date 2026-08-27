@@ -955,10 +955,10 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     _esc_industry = _html.escape(str(row.get('industry', '') or ''))
     _esc_mcat     = _html.escape(str(row.get('market_category', '') or ''))
 
-    # ── Engine verdict chip: the card LEADS with the decision (scan the list by BUY/WATCH/AVOID) ──
+    # ── Engine verdict chip: the card LEADS with the decision (scan by SOUND/MIXED/FLAWED) ──
     _vdir   = str(row.get("verdict_direction", "") or "")
     _vemoji = str(row.get("verdict_emoji", "") or "")
-    _vclr = {"BUY": COLORS["green"], "WATCH": COLORS["gold"], "AVOID": COLORS["text_muted"]}.get(
+    _vclr = {"SOUND": COLORS["green"], "MIXED": COLORS["gold"], "FLAWED": COLORS["text_muted"]}.get(
         _vdir, COLORS["text_muted"])
     _verdict_chip = (
         f'<div style="display:inline-block;font-size:0.78rem;font-weight:900;color:{_vclr};'

@@ -778,7 +778,7 @@ with tabs[2]:
         # ── Verdict header: reads the pre-computed verdict_* columns (core/verdict_engine.py) ──
         # Hard overrides (gate fail / sell alert) take precedence; otherwise the engine's veto-aware
         # verdict drives the band. No verdict logic is computed here — single source of truth is the engine.
-        _vdir  = str(_sg("verdict_direction", "AVOID") or "AVOID")
+        _vdir  = str(_sg("verdict_direction", "FLAWED") or "FLAWED")
         _vstr  = str(stock.get("verdict_strength", "") or "")
         _vconf = str(stock.get("verdict_confidence", "") or "")
         _vnarr = str(stock.get("verdict_narrative", "") or "")
@@ -793,11 +793,11 @@ with tabs[2]:
             _verdict_reason = "One or more Baid sell triggers have fired — review Forensics tab."
         else:
             _dir_map = {
-                "BUY":   (COLORS["green"],      "rgba(63,185,80,0.08)"),
-                "WATCH": (COLORS["gold"],       "rgba(228,179,65,0.07)"),
-                "AVOID": (COLORS["text_muted"], "rgba(110,118,129,0.06)"),
+                "SOUND":  (COLORS["green"],      "rgba(63,185,80,0.08)"),
+                "MIXED":  (COLORS["gold"],       "rgba(228,179,65,0.07)"),
+                "FLAWED": (COLORS["text_muted"], "rgba(110,118,129,0.06)"),
             }
-            _verdict_clr, _verdict_bg = _dir_map.get(_vdir, _dir_map["AVOID"])
+            _verdict_clr, _verdict_bg = _dir_map.get(_vdir, _dir_map["FLAWED"])
             _verdict = f"{_vemoji} {_vdir}".strip()
             _verdict_reason = _vnarr or f"Tier {_tier_num} · Score {_comp_sc:.0f}/100"
 
@@ -828,7 +828,7 @@ with tabs[2]:
         # watchlist candidate, not a buy-now. Surface that tension (display only — the verdict
         # engine is untouched; this never changes the direction). Fires only on real conflict.
         _wstage = str(stock.get("weinstein_stage", "") or "")
-        _trend_conflict = (_gate_ok and not _sell_any and _vdir in ("BUY", "WATCH")
+        _trend_conflict = (_gate_ok and not _sell_any and _vdir in ("SOUND", "MIXED")
                            and ("Stage 4" in _wstage or "Stage 3" in _wstage))
         _trend_pill = (
             f'<span style="{_pill_css}background:rgba(228,179,65,0.15);color:{COLORS["gold"]};'
@@ -1177,7 +1177,7 @@ with tabs[3]:
             _ts_sel = st.dataframe(
                 _mp_ts[_ts_cols].reset_index(drop=True),
                 column_config={
-                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall BUY / WATCH / AVOID call — a Tsunami setup can still be WATCH/AVOID on valuation or entry timing."),
+                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall SOUND / MIXED / FLAWED gate — a Tsunami setup can still be MIXED/FLAWED on valuation or entry timing."),
                     "composite_score": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
                     "quality_score":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
                     "momentum_score":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
@@ -1245,7 +1245,7 @@ with tabs[3]:
             _q_sel = st.dataframe(
                 _mp_qglp[_q_cols].reset_index(drop=True),
                 column_config={
-                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall BUY / WATCH / AVOID call — most QGLP passers are WATCH/AVOID on valuation, so this surfaces the few that are buyable now."),
+                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall SOUND / MIXED / FLAWED gate — most QGLP passers are MIXED/FLAWED on valuation, so this surfaces the few that are buyable now."),
                     # width="small" on the five legs + the name column: reordering alone left
                     # Longevity and Price/PEG off-screen at a 1793px viewport (verified in the
                     # browser). The legs need room for a bar and 2-3 digits, nothing more, and
@@ -1426,7 +1426,7 @@ with tabs[3]:
                     "moat_score":        st.column_config.NumberColumn("Moat", format="%.0f", width="small"),
                     "growth_score":      st.column_config.NumberColumn("Gro",  format="%.0f", width="small"),
                     "red_flag_count":    st.column_config.NumberColumn("🚩",   format="%.0f", width="small"),
-                    "verdict_direction": st.column_config.TextColumn("Engine", width="small", help="The main verdict (level + forensics + valuation) beside the wealth tier (pure change). They answer DIFFERENT questions and disagreeing openly is the point: the engine's only BUYs include stocks this lens reads as decaying, and its AVOID pile hides confirmed turnarounds."),
+                    "verdict_direction": st.column_config.TextColumn("Engine", width="small", help="The main verdict (level + forensics + valuation) beside the wealth tier (pure change). They answer DIFFERENT questions and disagreeing openly is the point: the engine's rare SOUND names include stocks this lens reads as decaying, and its FLAWED pile hides confirmed turnarounds."),
                     "net_worth":         st.column_config.NumberColumn("NW ₹Cr", format="%.0f", width="small", help="The denominator behind EP% and Vel%. A tiny base can make the percentages explode — check this before believing an extreme EP%."),
                 },
                 use_container_width=True,

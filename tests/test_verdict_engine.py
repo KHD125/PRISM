@@ -31,12 +31,12 @@ def _frame(**overrides):
 # ── Direction validity + the happy path ──
 def test_direction_is_always_valid():
     df = compute_verdict(_frame())
-    assert df["verdict_direction"].iloc[0] in {"BUY", "WATCH", "AVOID"}
+    assert df["verdict_direction"].iloc[0] in {"SOUND", "MIXED", "FLAWED"}
 
 
 def test_clean_elite_is_buy():
     df = compute_verdict(_frame())
-    assert df["verdict_direction"].iloc[0] == "BUY"
+    assert df["verdict_direction"].iloc[0] == "SOUND"
     assert df["verdict_strength"].iloc[0] == "HIGH CONVICTION"
     assert "🟢" in df["verdict_axis_forensics"].iloc[0]
 
@@ -45,36 +45,36 @@ def test_clean_elite_is_buy():
 def test_severe_forensic_vetoes_to_avoid():
     # elite tier-1 but forensic_score < 50 → must NOT be BUY
     df = compute_verdict(_frame(forensic_score=40.0))
-    assert df["verdict_direction"].iloc[0] == "AVOID"
+    assert df["verdict_direction"].iloc[0] == "FLAWED"
     assert "forensic" in df["verdict_top_risk"].iloc[0].lower()
 
 
 def test_extreme_flag_count_vetoes_to_avoid():
     df = compute_verdict(_frame(red_flag_count=11))
-    assert df["verdict_direction"].iloc[0] == "AVOID"
+    assert df["verdict_direction"].iloc[0] == "FLAWED"
 
 
 def test_gruesome_vetoes_to_avoid():
     df = compute_verdict(_frame(corporate_class="💀 GRUESOME"))
-    assert df["verdict_direction"].iloc[0] == "AVOID"
+    assert df["verdict_direction"].iloc[0] == "FLAWED"
 
 
 def test_schilit_fail_softens_buy_to_watch():
     # elite + clean accounting score, but Schilit checker fails → BUY downgraded to WATCH (not AVOID)
     df = compute_verdict(_frame(schilit_pass=0))
-    assert df["verdict_direction"].iloc[0] == "WATCH"
+    assert df["verdict_direction"].iloc[0] == "MIXED"
     assert "schilit" in df["verdict_narrative"].iloc[0].lower()
 
 
 def test_poor_timing_softens_buy_to_watch():
     df = compute_verdict(_frame(buy_zone_label="Below Stop"))
-    assert df["verdict_direction"].iloc[0] == "WATCH"
+    assert df["verdict_direction"].iloc[0] == "MIXED"
     assert "timing" in df["verdict_top_risk"].iloc[0].lower()
 
 
 def test_low_tier_is_avoid():
     df = compute_verdict(_frame(conviction_tier=5, composite_score=20.0))
-    assert df["verdict_direction"].iloc[0] == "AVOID"
+    assert df["verdict_direction"].iloc[0] == "FLAWED"
 
 
 def test_avoid_narrative_is_never_buy_toned():
@@ -85,7 +85,7 @@ def test_avoid_narrative_is_never_buy_toned():
         conviction_tier=4, composite_score=42.0, quality_score=71.0, growth_score=66.0,
         pe=16.0, fair_pe_qglp=27.0, expected_excess_return=33.0,
     ))
-    assert df["verdict_direction"].iloc[0] == "AVOID"
+    assert df["verdict_direction"].iloc[0] == "FLAWED"
     narr = df["verdict_narrative"].iloc[0].lower()
     for phrase in ("high-conviction", "core holding", "elite compounder", "solid compounder"):
         assert phrase not in narr, f"AVOID narrative must not be buy-toned — got: {narr!r}"
@@ -125,7 +125,7 @@ def test_thin_data_lowers_confidence_only():
 # ── Crash-proof on a minimal frame (defensive _col) ──
 def test_minimal_frame_does_not_crash():
     df = compute_verdict(pd.DataFrame({"conviction_tier": [3]}))
-    assert df["verdict_direction"].iloc[0] in {"BUY", "WATCH", "AVOID"}
+    assert df["verdict_direction"].iloc[0] in {"SOUND", "MIXED", "FLAWED"}
     assert df["verdict_narrative"].notna().all()
 
 
@@ -145,7 +145,7 @@ def test_live_distribution_is_not_degenerate():
     counts = df["verdict_direction"].value_counts(normalize=True)
     # no single bucket may swallow the whole universe (the 99% AVOID calibration bug guard)
     assert counts.max() < 0.97, f"degenerate verdict distribution: {dict(counts)}"
-    assert (df["verdict_direction"] == "BUY").sum() >= 5
+    assert (df["verdict_direction"] == "SOUND").sum() >= 5
 
 
 @pytest.mark.slow
