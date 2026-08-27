@@ -1073,7 +1073,15 @@ with tabs[2]:
                 f"complete machine-readable row). Engine-computed; nothing is re-calculated on this tab.</div>",
                 unsafe_allow_html=True,
             )
-            render_raw_signals(stock)
+            # The search box lives HERE, not in ui_tearsheet: that module is bound by the
+            # stateless contract (app.py owns session_state). Same split as ds_search/ref_search.
+            _ad_q = st.text_input(
+                "Filter signals", value="", key="ad_search", label_visibility="collapsed",
+                placeholder="🔎 Filter signals — by name (roce) or by meaning (cost of equity)…",
+                help="Matches the signal's label AND its description, so you can search for what a "
+                     "number MEANS, not only what it is called. Every word must appear. Blank = all.",
+            )
+            render_raw_signals(stock, query=_ad_q)
             # Breathing room before the Export so it doesn't crowd the last data section.
             st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
             _stock_export = pd.DataFrame({

@@ -2377,12 +2377,35 @@ def render_sell_alerts_panel(stock: pd.Series):
 # scanner and the tests) keep resolving against the SAME objects — one definition, zero drift.
 
 
-def render_raw_signals(stock: pd.Series):
+_CELL_OPEN = '<div class="ts-raw-cell"'      # split marker AND each cell's opening tag
+
+
+def render_raw_signals(stock: pd.Series, query: str = ""):
     """
     Renders all raw numeric signals in a clean labeled grid.
     Grouped into logical clusters. Used inside the 'All Data' inner tab.
     Each label that appears in _RAW_GLOSSARY auto-renders a plain-language "?" hover tooltip.
+
+    `query` filters the grid — 143 signals across 9 sections is the densest surface in the app and
+    had no way to reach one except scrolling (the Deep Scanner and Reference tab both have search).
+    Empty query renders exactly as before: every cell, every section.
+
+    WHY A PARAMETER AND NOT A WIDGET HERE: this module is bound by the stateless contract
+    (CLAUDE.md §5, pinned by tests/test_tearsheet_stateless_contract.py) — app.py owns
+    st.session_state, so the text_input lives there and the string arrives as a plain argument.
     """
+    # Token-AND, the same matching the Reference tab's search uses: every word must appear in the
+    # cell's label OR its glossary text. Searching the MEANING is the point — "cost of equity"
+    # finds CAP Years, whose label contains none of those words.
+    _tokens = [t for t in (query or "").lower().split() if t]
+    _hidden_sections: list = []
+    _shown = [0]
+    _total = [0]
+
+    def _match(cell_html: str) -> bool:
+        m = re.search(r'data-s="([^"]*)"', cell_html)
+        return all(t in (m.group(1) if m else "") for t in _tokens)
+
     def _cell(label: str, val, fmt: str = "", help: str = "") -> str:
         if isinstance(val, float) and np.isnan(val):
             disp = "N/A"
@@ -2395,14 +2418,27 @@ def render_raw_signals(stock: pd.Series):
             disp = str(val) if val is not None else "N/A"
         # Plain-language "?" tooltip via the shared help_chip() (explicit help= overrides the glossary).
         help_html = help_chip(label, help)
+        # data-s carries what search matches on: the label PLUS its tooltip text. An attribute
+        # rather than a side-list because the 143 _cell() call sites concatenate into one string —
+        # the marker has to travel WITH the cell.
+        _hay = _esc(f"{label} {help or _RAW_GLOSSARY.get(label, '')}".lower())
         return (
-            f'<div class="ts-raw-cell">'
+            f'{_CELL_OPEN} data-s="{_hay}">'
             f'<div class="ts-raw-lbl">{_esc(label)}{help_html}</div>'
             f'<div class="ts-raw-val">{_esc(disp)}</div>'
             f'</div>'
         )
 
     def _section(title: str, color: str, cells_html: str):
+        _parts = [p for p in cells_html.split(_CELL_OPEN) if p.strip()]
+        _total[0] += len(_parts)
+        if _tokens:
+            _parts = [p for p in _parts if _match(_CELL_OPEN + p)]
+            if not _parts:
+                _hidden_sections.append(title)
+                return
+        _shown[0] += len(_parts)
+        cells_html = "".join(_CELL_OPEN + p for p in _parts)
         st.markdown(
             f'<div style="font-size:0.7rem;font-weight:800;color:{color};'
             f'text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px 0;">'
@@ -2650,6 +2686,27 @@ def render_raw_signals(stock: pd.Series):
 # ═══════════════════════════════════════════════════════════════
 # CAN SLIM® TACTICAL MOMENTUM RADAR — O'Neil
 # ═══════════════════════════════════════════════════════════════
+
+
+    # Search feedback. Naming the sections that matched NOTHING is the useful half — it says where
+    # the signal you wanted is not, rather than leaving a silently short page.
+    if _tokens:
+        if _shown[0] == 0:
+            st.markdown(
+                f'<div style="font-size:0.72rem;color:{COLORS["text_muted"]};padding:12px 0;">'
+                f'No signal matches <b>{_esc(query)}</b> — searched {_total[0]} signal names '
+                f'and their descriptions.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _hid = (f' &nbsp;·&nbsp; no match in {" · ".join(_esc(h) for h in _hidden_sections)}'
+                    if _hidden_sections else "")
+            st.markdown(
+                f'<div style="font-size:0.66rem;color:{COLORS["text_muted"]};margin-top:12px;">'
+                f'Showing <b>{_shown[0]}</b> of {_total[0]} signals for '
+                f'<b>{_esc(query)}</b>{_hid}</div>',
+                unsafe_allow_html=True,
+            )
 
 def render_canslim_radar(stock: pd.Series):
     """
