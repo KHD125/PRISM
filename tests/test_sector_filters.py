@@ -6,10 +6,14 @@ Contract for the Market Pulse → Sectors filter row.
 FOUR CONTROLS, TWO KINDS — and the difference is invisible on screen, which is why it is pinned
 here rather than left to whoever edits this next:
 
-    RE-AGGREGATING   Market-cap tier, Cyclicality tier
+    RE-AGGREGATING   Market-cap tier, Wealth Tier
                      filter the STOCKS, so every average and % Qualify is recomputed
     ROW FILTERS      Capital phase, Min stocks/sector
                      hide whole sectors and leave the survivors' numbers untouched
+
+REPLACED 2026-08-27 (user request): the re-aggregating slot held Cyclicality tier; it now holds
+the Wealth Tier. Same semantics, same slot, so every behavioural contract below carries over.
+Cyclicality filtering still exists in the Discovery sidebar (sb_cyc) — no capability was lost.
 
 Four identical-looking selectboxes that behave in two different ways is a trap. The tests below
 assert the behaviour, not the label.
@@ -70,7 +74,7 @@ def _agg(d, min_n=5):
 
 
 # -- 1. The controls exist, and the default changes nothing ---------------------------------
-@pytest.mark.parametrize("key", ["mp_sec_cap", "mp_sec_cyc", "mp_sec_phase", "mp_sec_minn"])
+@pytest.mark.parametrize("key", ["mp_sec_cap", "mp_sec_wealth", "mp_sec_phase", "mp_sec_minn"])
 def test_each_control_is_present_with_its_own_key(src, key):
     assert f'key="{key}"' in src, f"the {key} control is gone"
 
@@ -89,20 +93,33 @@ def test_the_hardcoded_floor_is_gone(src):
 
 
 # -- 2. THE SEMANTICS: which filters move the numbers, and which only hide rows --------------
-def test_cyclicality_is_a_stock_filter_that_re_aggregates(live):
-    """The premise for treating it as a stock filter: it varies WITHIN sectors, so slicing by it
-    genuinely changes what a sector's average is computed over."""
-    v = live.groupby("sector")["cyclicality_tier"].nunique()
+def test_wealth_tier_is_a_stock_filter_that_re_aggregates(live):
+    """The premise for the slot it inherited from cyclicality: wealth_tier varies WITHIN sectors,
+    so slicing by it genuinely changes what a sector's average is computed over."""
+    v = live.groupby("sector")["wealth_tier"].nunique()
     assert (v > 1).sum() > 10, (
-        f"cyclicality_tier now varies within only {int((v > 1).sum())} sectors -- if it became a "
+        f"wealth_tier now varies within only {int((v > 1).sum())} sectors -- if it became a "
         f"sector-constant attribute it should be a ROW filter like capital phase, not a stock one"
     )
     base = _agg(live)
-    sliced = _agg(live[live["cyclicality_tier"] == "Cyclical"])
+    sliced = _agg(live[live["wealth_tier"] == "BUY★"])
     common = base.index.intersection(sliced.index)
     assert len(common) > 5, "not enough overlap to compare"
     moved = (base.loc[common, "pct_qualify"] - sliced.loc[common, "pct_qualify"]).abs() > 0.01
-    assert moved.any(), "slicing by cyclicality changed no sector's % Qualify -- it is not re-aggregating"
+    assert moved.any(), "slicing by wealth tier changed no sector's % Qualify -- it is not re-aggregating"
+
+
+def test_the_wealth_filter_is_actually_applied_before_aggregation(src):
+    """STRUCTURAL, because the data-property test above is blind to app.py: it slices the live
+    frame itself, so gutting the filter application in the app leaves it green (a mutation run
+    proved exactly that). This pins that the selection reaches _sec_src BEFORE the groupby."""
+    i = src.index('key="mp_sec_wealth"')
+    j = src.index("_sec_stats = _sec_src.groupby", i)
+    between = src[i:j]
+    assert '_sec_src[_sec_src["wealth_tier"] == _wt_sec]' in between, (
+        "the Wealth Tier selection is no longer applied to _sec_src before aggregation -- the "
+        "control renders but filters nothing"
+    )
 
 
 def test_capital_phase_is_a_row_filter_that_moves_no_number(live):

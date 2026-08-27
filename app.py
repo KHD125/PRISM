@@ -1472,16 +1472,24 @@ with tabs[3]:
                 _cap = "All"
 
         with _c2:
-            if "cyclicality_tier" in df.columns:
-                _cyc_opts = ["All"] + sorted(df["cyclicality_tier"].dropna().unique().tolist())
-                _cyc = st.selectbox(
-                    "Cyclicality tier", _cyc_opts, key="mp_sec_cyc",
-                    help="Re-aggregates. The business-type tier varies WITHIN a sector (42 of 81 sectors "
-                         "hold more than one, up to 6), so this is a genuine stock-level slice — "
-                         "'Deep Cyclical names, grouped by sector'.",
+            # REPLACED 2026-08-27 (user request): Cyclicality tier → Wealth Tier. Same semantic
+            # slot — a RE-AGGREGATING stock-level filter — so the two-kinds architecture holds
+            # (re-aggregating: Market-cap + Wealth Tier · row filters: Capital phase + Min size).
+            # Nothing is lost overall: cyclicality filtering remains in the Discovery sidebar
+            # (sb_cyc). The win here is sector-level wealth concentration: "which sectors hold
+            # the most BUY★ stocks, and how do THOSE score" — the question the user's whole
+            # wealth lens exists to ask, now askable per sector.
+            _WT_SEC = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
+            if "wealth_tier" in df.columns:
+                _wt_sec_opts = ["All"] + [t for t in _WT_SEC if (df["wealth_tier"] == t).any()]
+                _wt_sec = st.selectbox(
+                    "Wealth tier", _wt_sec_opts, key="mp_sec_wealth",
+                    help="Re-aggregates: keeps only stocks in this wealth tier, then recomputes every "
+                         "sector average and % Qualify over the survivors. 'BUY★, grouped by sector' "
+                         "shows where the improving-wealth names concentrate.",
                 )
             else:
-                _cyc = "All"
+                _wt_sec = "All"
 
         with _c3:
             if "sector_capital_phase" in df.columns:
@@ -1519,10 +1527,10 @@ with tabs[3]:
 
         if _cap != "All":
             _sec_src = _sec_src[_sec_src["market_category"] == _cap]
-        if _cyc != "All":
-            _sec_src = _sec_src[_sec_src["cyclicality_tier"] == _cyc]
-        if _cap != "All" or _cyc != "All":
-            _bits = " · ".join(b for b in [_cap if _cap != "All" else "", _cyc if _cyc != "All" else ""] if b)
+        if _wt_sec != "All":
+            _sec_src = _sec_src[_sec_src["wealth_tier"] == _wt_sec]
+        if _cap != "All" or _wt_sec != "All":
+            _bits = " · ".join(b for b in [_cap if _cap != "All" else "", _wt_sec if _wt_sec != "All" else ""] if b)
             st.caption(f"📊 {len(_sec_src):,} stocks ({_bits}) across "
                        f"{_sec_src['sector'].nunique()} sectors — averages recomputed on this subset.")
 
