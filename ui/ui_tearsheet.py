@@ -3735,7 +3735,9 @@ def render_mauboussin_radar(stock: pd.Series):
         unsafe_allow_html=True,
     )
 
-    # ── Layer 3: Per-Stock Payoff Framework (Mauboussin Ch.13, stateless display) ──
+    # ── Layer 3: Per-Stock Payoff Framework (Mauboussin ch.7, stateless display) ──
+    # Citation corrected 2026-08-27: was "Ch.13"; the book has 12 chapters and the EV method is
+    # ch.7 "Buy, Sell, or Hold?". The SIZING BANDS are PRISM's own, not the book's.
     # Replaced the old STATIC 3-scenario matrix (identical hardcoded numbers for every
     # stock — decoration, not analysis). All values below are pre-materialized per stock
     # by the engine (MOD 5): P(up) = trajectory-calibrated win_rate_proxy; Upside% =
@@ -3745,7 +3747,7 @@ def render_mauboussin_radar(stock: pd.Series):
     up_pct = float(_g(stock, "mauboussin_ev_upside_pct", 0.0))
     dn_pct = float(_g(stock, "mauboussin_ev_downside_pct", 20.0))
     ev     = float(_g(stock, "expected_excess_return", 0.0))
-    # Verdict + sizing pre-materialized by the engine (Ch.13 table) — pure display here
+    # Verdict + sizing pre-materialized by the engine (PRISM's thesis table) — pure display here
     ev_verdict = str(_g(stock, "mauboussin_ev_verdict", "Insufficient Edge · No position"))
     ev_color   = "#e74c3c" if "Insufficient" in ev_verdict else _MAUB_COLOR
 
@@ -3934,7 +3936,7 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     # executable weight, and the REASON for any gap. Display-only: it reads engine columns and
     # names which engine constraint bound — zero sizing math is re-derived here.
     _ev_verdict = str(stock.get("mauboussin_ev_verdict", "") or "")
-    _EV_BANDS = {                                   # engine's Ch.13 verdict strings → thesis band
+    _EV_BANDS = {                                   # engine's EV verdict strings → thesis band
         "High Conviction · 8–12% position":           (8.0, 12.0),
         "Moderate-High · 5–8% position":              (5.0, 8.0),
         "Moderate · 3–5% position":                   (3.0, 5.0),

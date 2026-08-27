@@ -1,7 +1,15 @@
-"""Contract: the DISPLAY-ONLY cyclicality columns — max_earnings_drawdown_5y + cyclicality_tier.
+"""Contract: the cyclicality columns — max_earnings_drawdown_5y + cyclicality_tier.
 
-Two columns shipped into compute_derived_signals (core/data_engine.py), both display-only (never
-scored — pinned by the byte-identical composite test below):
+⚠️ SCOPE OF THE BYTE-IDENTICAL TEST BELOW (clarified 2026-08-24). It poisons these columns AFTER
+fetch_and_clean_data has run, so it proves only that NOTHING DOWNSTREAM OF THE DATA STAGE reads
+them. It does NOT prove the columns are score-free: within the data stage, cyclicality_tier caps
+fair_pe_qglp at 18.0 for 'Deep Cyclical / Commodity' (data_engine ~L3672), and that flows into
+pe_discount_to_quality → the valuation axis → composite_score. Measured 2026-08-24: re-tiering ONE
+industry AT SOURCE moved 28 stocks' composite_score (max 0.28 pts), spilling to sector peers via the
+sector-relative rank. Re-tier only behind /census + /verify.
+
+Two columns shipped into compute_derived_signals (core/data_engine.py); no consumer downstream of
+the data stage scores them (pinned by the byte-identical composite test below):
 
   max_earnings_drawdown_5y — deepest TIME-ORDERED peak-to-trough fall in annual PAT over the 6
       available years (current + 5 back). A monotone compounder scores ~0; a commodity that

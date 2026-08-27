@@ -2157,11 +2157,22 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #   loss-makers — is untouched; only the ~4% artifact tail is clipped). NaN when <4 of 6 present.
     #   Way-1 validated on MEDIANS (cap-immune): A 0.59 > B 0.43 > C 0.36 > D 0.31 across expert tiers.
     # cyclicality_tier(_code): the a-priori business TYPE from the committed industry map (sector
-    #   fallback, then "F"). This is the FINER, industry-level DISPLAY sibling of the SECTOR-level
-    #   cyclical_peak_trap (above, ~L1760) which DOES feed scoring (×0.70 valuation clawback,
-    #   scoring_engine ~L476). This column is INERT — it never touches a score (pinned by the
-    #   display-only byte-identical test). Unifying the coarse scoring signal with this finer view is
-    #   a deliberate FUTURE, /census-gated change, not done here.
+    #   fallback, then "F"). The FINER, industry-level sibling of the SECTOR-level cyclical_peak_trap
+    #   (above, ~L1760) which feeds scoring via the ×0.70 valuation clawback (scoring_engine ~L476).
+    # ⚠️ NOT INERT — this column DOES reach composite_score. Corrected 2026-08-24 (it previously
+    #   claimed "INERT — never touches a score"). The live path is:
+    #       cyclicality_tier == "Deep Cyclical / Commodity"  → caps fair_pe_qglp at 18.0 (~L3672)
+    #       → pe_discount_to_quality (~L3679) → VALUATION_SIGNAL_COLS (scoring_engine L261)
+    #       → _sector_pct_rank → valuation axis → composite_score.
+    #   It also reaches Kelly sizing (scoring_engine ~L1283) and verdict_engine (~L48).
+    #   MEASURED 2026-08-24: re-tiering ONE industry at source moved 28 stocks' composite_score,
+    #   max 0.28 pts. Small, but non-zero — and it SPILLS to sector peers, because the valuation
+    #   rank is sector-relative: re-tiering is never local. Re-tier only behind /census + /verify.
+    #   test_cyclicality.test_display_only_composite_byte_identical does NOT catch this: it poisons
+    #   the column AFTER fetch_and_clean_data has already consumed it to compute fair_pe_qglp, so
+    #   the dependency sits upstream of the poison point. It proves "changing the tier post-hoc is
+    #   inert", not "the tier is inert". Unifying the coarse scoring signal with this finer view is
+    #   still a deliberate FUTURE, /census-gated change, not done here.
     # The PRIOR (tier) vs REALIZED (drawdown) disagreement is itself the signal: a Defensive-tier
     #   name carrying a high realized drawdown is a mislabel / behaving-cyclically flag.
     _pat_cols = [c for c in ["pat", "pat_1yb", "pat_2yb", "pat_3yb", "pat_4yb", "pat_5yb"]

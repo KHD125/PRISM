@@ -1363,7 +1363,11 @@ def compute_composite_score(
         _total_equity_rupees * (df["optimal_portfolio_weight_pct"] / 100.0)
     )
 
-    # ── Mauboussin Ch.13 Payoff Framework: per-stock Expected Excess Return ──
+    # ── Mauboussin Ch.7 Payoff Framework: per-stock Expected Excess Return ──
+    # CITATION CORRECTED 2026-08-27: this was labelled "Ch.13" throughout. Expectations Investing
+    # (rev. ed. 2021) has TWELVE chapters — there is no ch.13. The expected-value method is ch.7,
+    # "Buy, Sell, or Hold?" (p.118), which gives EV = Σ(payoff × probability) and judges a stock on
+    # price-as-%-of-EV plus years-to-convergence.
     # EV = P(upside) × Upside% − P(downside) × Downside%   (book's exact identity)
     #   P(upside)  = win_rate_proxy (trajectory-tau calibrated, 0.35–0.65)
     #   Upside%    = re-rating gap to quality-justified fair PE (fair_pe_qglp / pe − 1),
@@ -1391,7 +1395,11 @@ def compute_composite_score(
     df["expected_excess_return"] = (
         df["win_rate_proxy"] * _ev_up_m5 - (1.0 - df["win_rate_proxy"]) * _ev_dn_m5
     )
-    # Book's Ch.13 sizing table, materialized here so the UI stays pure display:
+    # OUR thesis-sizing table, materialized here so the UI stays pure display. NOT the book's:
+    # ch.7 gives price-as-%-of-EV and years-to-convergence but prescribes NO position sizes, NO
+    # hurdle rate and NO Kelly (verified 2026-08-27: 0 occurrences of each in the converted text).
+    # The bands below are PRISM's own convention and are a THESIS size, not an executable one —
+    # the cockpit reconciles them against the Kelly/Minervini weight (test_kelly_sizing_honesty).
     # >15% high (8-12%) · 10-15% mod-high (5-8%) · 5-10% moderate (3-5%) · <5% none
     _eer = df["expected_excess_return"]
     df["mauboussin_ev_verdict"] = np.select(

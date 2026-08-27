@@ -212,7 +212,7 @@ def test_score_strip_differs_between_stocks(scored_df):
 
 
 def test_payoff_framework_tiles_present_and_per_stock(scored_df):
-    """The Mauboussin Ch.13 EV tiles must render, and must differ across stocks
+    """The Mauboussin ch.7 EV tiles must render, and must differ across stocks
     (the old static matrix showed identical hardcoded numbers for every stock)."""
     a = _all_rendered_text(_run_tearsheet_for(scored_df.iloc[0]))
     b = _all_rendered_text(_run_tearsheet_for(scored_df.iloc[len(scored_df) // 2]))

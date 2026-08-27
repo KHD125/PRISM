@@ -116,7 +116,9 @@ def test_loss_maker_expected_cagr_not_nan():
 
 
 def test_expected_excess_return_identity():
-    """Mauboussin Ch.13: EV = P(up) x Upside% - P(down) x Downside%, per stock.
+    """Mauboussin ch.7 ("Buy, Sell, or Hold?"): EV = P(up) x Upside% - P(down) x Downside%, per
+    stock. (Citation corrected 2026-08-27 — was "Ch.13"; the book has 12 chapters. The BANDS the
+    EV maps onto are PRISM's own: the book prescribes no position sizes.)
     Healthy frame: fair_pe 35 / pe 25 -> upside 40%; stop 450 on close 500 -> downside 10%;
     trajectory 0.5 -> win rate 0.35 + (0.75 * 0.30) = 0.575.
     EV = 0.575*40 - 0.425*10 = 18.75."""
