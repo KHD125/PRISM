@@ -14,7 +14,7 @@ import pandas as pd
 import numpy as np
 import html as _html
 from config import (COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS,
-                    FRAMEWORK_CATEGORIES, MASTER_PROFILES, INDIA_GSEC_YIELD)
+                    FRAMEWORK_CATEGORIES, MASTER_PROFILES, INDIA_GSEC_YIELD, COST_OF_EQUITY)
 # Single source of truth for the "?" help chip lives in ui_components (which owns the .ts-help CSS).
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
@@ -269,7 +269,13 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
             # hurdle — CAP over 5 ROCE lookbacks (10y/7y/5y/prior/current), GAP over 3 PAT-growth
             # lookbacks (10y/5y/3y). A CAP of 5 therefore spans TEN years, not five, so rendering
             # "5 years" would be flatly wrong. Say windows, and name them in the tooltip.
-            def _dur_html(kind, n, total, tip):
+            def _dur_html(kind, n, total, hurdle, tip):
+                # HURDLE IS A PARAMETER, not the literal "15%" this printed until 2026-08-26.
+                # CAP and GAP do NOT share a hurdle: CAP tests >= COST_OF_EQUITY (config: 12.0),
+                # GAP tests >= 15.0 (hardcoded, and book-correct — the 22nd WCS's benchmark PAT
+                # growth rate). Labelling both "≥15%" overstated CAP's bar, and 718 of 2,117
+                # stocks (33.9%) have a DIFFERENT CAP count at 15 than at 12. Rendering the number
+                # the engine actually uses means the label can never drift from the constant again.
                 if n is None:
                     return ""
                 _dc = (COLORS["green"] if n >= total else
@@ -278,7 +284,7 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
                     f'<br><span style="font-size:0.62rem;font-weight:700;color:{_dc};">'
                     f'{_esc(kind)} {int(n)}/{total}</span>'
                     f'<span style="font-size:0.62rem;color:{COLORS["text_muted"]};margin-left:5px;">'
-                    f'windows ≥15%</span>{help_chip(kind + " longevity", tip)}'
+                    f'windows ≥{hurdle:g}%</span>{help_chip(kind + " longevity", tip)}'
                 )
 
             def _dur_val(col):
@@ -293,16 +299,19 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
             _gap_n = _dur_val("gap_years_proxy")
             _shown_longevity = (_cap_n is not None) or (_gap_n is not None)
             _cap_html = _dur_html(
-                "CAP", _cap_n, 5,
+                "CAP", _cap_n, 5, COST_OF_EQUITY,
                 "Competitive Advantage Period — the 22nd WCS's measure of MOAT longevity: the "
                 "time a company earns above its cost of capital. The study defines it as the "
-                "SUCCESSIVE years of return above 15%, and found a median CAP of 9-11 years among "
-                "its wealth creators, with 171 of 223 clearing 5 years. This is a PROXY, not that "
-                "run: it counts how many of five ROCE lookbacks (10-year median, 7-year, 5-year, "
-                "prior year, current) clear the 15% line — so 5/5 spans a decade of evidence, but "
-                "is not a guarantee of an unbroken streak.")
+                "SUCCESSIVE years of RoE above 15%, and found a median CAP of 9-11 years among "
+                "its wealth creators, with 171 of 223 clearing 5 years. This is a PROXY on two "
+                "counts, and both matter: it counts WINDOWS not a consecutive run — how many of "
+                "five ROCE lookbacks (10-year median, 7-year, 5-year, prior year, current) clear "
+                f"the hurdle — and the hurdle here is this engine's cost of equity "
+                f"({COST_OF_EQUITY:g}%, config.COST_OF_EQUITY), NOT the study's 15%. Those differ, "
+                "so a 5/5 spans a decade of evidence above 12% rather than an unbroken streak "
+                "above 15%.")
             _gap_html = _dur_html(
-                "GAP", _gap_n, 3,
+                "GAP", _gap_n, 3, 15.0,   # hardcoded in the engine, and book-correct
                 "Growth Advantage Period — the 22nd WCS's measure of GROWTH longevity: the time "
                 "profits outgrow the benchmark. The study's hurdle is 15% PAT growth, deliberately "
                 "the same number as the cost of equity. Counted here as WINDOWS, not years: how "

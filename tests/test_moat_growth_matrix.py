@@ -222,6 +222,29 @@ def test_longevity_is_labelled_windows_not_years(live):
     assert not re.search(r">(CAP|GAP) \d/\d<[^<]*years", md), "longevity rendered as YEARS"
 
 
+def test_cap_and_gap_state_the_hurdle_the_engine_ACTUALLY_uses(live):
+    """CAP and GAP do NOT share a hurdle, and the first version of this panel said they did.
+
+    CAP tests `>= COST_OF_EQUITY` (config: 12.0). GAP tests `>= 15.0`, hardcoded and book-correct
+    (the 22nd WCS's benchmark PAT growth rate). Both cells were labelled "windows ≥15%", which
+    overstated CAP's bar — and 718 of 2,117 stocks (33.9%) have a DIFFERENT CAP count at 15 than
+    at 12, so the label was wrong for a third of the universe.
+
+    Asserts against the CONSTANT, not a literal, so the label cannot drift if the constant moves."""
+    from config import COST_OF_EQUITY
+    name = "Shilchar Technologies Ltd"
+    if name not in set(T._moat_growth_plot_frame(live)["name"]):
+        pytest.skip("highlight stock not plotted")
+    _, md = _render(live, highlight=name)
+    found = dict((k, float(h)) for k, _a, _b, h in
+                 re.findall(r">(CAP|GAP) (\d)/(\d)</span><span[^>]*>windows ≥(\d+)%", md))
+    assert found.get("CAP") == pytest.approx(float(COST_OF_EQUITY)), (
+        f"CAP claims ≥{found.get('CAP')}% but the engine tests >= COST_OF_EQUITY "
+        f"({COST_OF_EQUITY}) — the label and the computation disagree"
+    )
+    assert found.get("GAP") == pytest.approx(15.0), "GAP's hurdle is 15.0 in the engine"
+
+
 def test_caption_only_claims_longevity_when_it_rendered(live):
     """On a frame without the proxy columns the caption must not point at an absent strip."""
     stripped = live.drop(columns=["cap_years_proxy", "gap_years_proxy"])
