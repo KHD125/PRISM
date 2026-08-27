@@ -3264,12 +3264,35 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # RR = 1 − (DPR/100). High RR = self-funding compounder; low RR = defensive income asset.
     # DPR fillna(0): no dividend data → full retention (conservative for growth companies).
     # clip(0,1): guards against DPR > 100 (data artefacts in some screeners).
-    # KNOWN DATA GAP (2026-06-12 census): the CSV DPR column is broken at source (96% empty,
-    # rest negative) → RR ≡ 1.0 universe-wide. This corrupts RR-gated signals two ways:
-    #   • DEADENS low-RR conditions (stagnant_cash_cow_flag needs RR<0.30 → fires 0)
-    #   • makes high-RR gates INERT/always-pass: flag_epoch2_compounder (RR≥0.60) AND
-    #     capital_misallocation_risk (RR>0.50) both pass for ALL → those flags fire on their OTHER
-    #     legs only (ROCE+size / VCR<1.0) — noise, not death. Self-heals when DPR is fixed.
+    # PARTIAL DATA GAP — REMEASURED 2026-08-27. The DPR source column was repaired in part on
+    # 2026-08-22, and the RR-gated signals woke up with it. The 2026-06-12 census note that stood
+    # here described a universe that no longer exists; every one of its four claims was false by
+    # the time it was replaced, which is why it is quoted below rather than quietly deleted:
+    #     "96% empty"                              → DPR is 41.2% populated
+    #     "RR ≡ 1.0 universe-wide"                 → RR = 1.0 on 69.8%, 589 distinct values
+    #     capital_misallocation_risk "passes for ALL" → fires 42.5%
+    #     flag_epoch2_compounder "INERT/always-pass"  → fires 14.7%
+    # The danger of the old note was not its arithmetic but its conclusion: it told a reader these
+    # gates were inert and therefore safe to ignore. They are live and they move scores.
+    #
+    # WHAT IS STILL TRUE. DPR remains missing on 58.8% of rows, and the fillna(0) above reads every
+    # one of those as "pays no dividend, retains everything" — the maximally incriminating reading
+    # of absent evidence. That is the mirror of the "unverifiable is not passed" rule (CLAUDE.md §5):
+    # here a gate CONDEMNS on evidence it does not have. Measured on capital_misallocation_risk,
+    # which applies a 10% quality_score haircut (scoring_engine ~L641):
+    #     899 stocks flagged · 601 of them (66.9%) have NO DPR at all, so their "retains >50%" leg
+    #     is fabricated by the fillna; only 298 (33.1%) are flagged on real dividend evidence.
+    # The ranking harm is small — flagged names carry a 7.41 median 5Y ROCE against 18.20 unflagged
+    # and score 15.3 vs 55.8 on quality, so a 10% haircut on an already-low score reorders little.
+    # It is an honesty defect, not a wrong-answers defect. Sized here so nobody re-derives it.
+    #
+    # NOT FIXED HERE BY DELIBERATE STANDING DECISION (2026-06-14): guards that neutralise
+    # DPR-degenerate signals are rejected — the source column gets fixed instead. That ruling was
+    # made at ~4% DPR coverage; at 41% the remaining repair would retire 601 fabricated
+    # condemnations, revive stagnant_cash_cow_flag (RR<0.30, still 0 — see tools/census.py:51,
+    # where it is triaged as genuine rarity), and restore two one-legged gates to real two-leg tests.
+    # Fire rates above are pinned by tests/test_reinvestment_rate_data_gap.py, which FAILS when the
+    # data moves and this comment goes stale again — the failure that this rewrite exists to prevent.
     df["reinvestment_rate"] = (
         1.0 - (df["dividend_payout_ratio"].fillna(0) / 100.0)
     ).clip(0.0, 1.0)
