@@ -1164,9 +1164,13 @@ with tabs[3]:
             </div>
             """, unsafe_allow_html=True)
 
-            _ts_cols = [c for c in ["rank","name","verdict_direction","sector","market_category","market_cap",
+            # Same ordering fix as QGLP below: 12 columns, ~8 fit. The Tsunami claim is that all 7
+            # conviction conditions fire at once, so the EVIDENCE for that (scores, F-score, entry
+            # zone) leads and the wide context columns follow.
+            _ts_cols = [c for c in ["rank","name","verdict_direction",
                                     "composite_score","quality_score","momentum_score",
-                                    "piotroski_fscore","smart_money_flow","buy_zone_label"]
+                                    "piotroski_fscore","buy_zone_label",
+                                    "sector","market_category","market_cap","smart_money_flow"]
                         if c in _mp_ts.columns]
             _ts_sel = st.dataframe(
                 _mp_ts[_ts_cols].reset_index(drop=True),
@@ -1225,19 +1229,31 @@ with tabs[3]:
             </div>
             """, unsafe_allow_html=True)
 
-            _q_cols = [c for c in ["rank","name","verdict_direction","red_flag_count","sector","market_cap",
+            # COLUMN ORDER MATTERS HERE, and it is the fix for a real defect (2026-08-27): 13
+            # columns are defined but only ~8 fit the container, and `sector` — the widest column
+            # in the frame ("Infrastructure Developers & Operators") — sat at position 5. It shoved
+            # qglp_price, the "P" in QGLP, off-screen entirely. A tab showcasing a four-leg
+            # framework was showing one and a half legs.
+            # Nothing is REMOVED (the table scrolls, so every column is still reachable) — the
+            # framework's own components simply come before the context columns now.
+            _q_cols = [c for c in ["rank","name","verdict_direction","red_flag_count",
                                    "qglp_score","qglp_quality","qglp_growth","qglp_longevity","qglp_price",
-                                   "smart_money_flow","buy_zone_label"]
+                                   "sector","market_cap","smart_money_flow","buy_zone_label"]
                        if c in _mp_qglp.columns]
             _q_sel = st.dataframe(
                 _mp_qglp[_q_cols].reset_index(drop=True),
                 column_config={
                     "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall BUY / WATCH / AVOID call — most QGLP passers are WATCH/AVOID on valuation, so this surfaces the few that are buyable now."),
-                    "qglp_score":     st.column_config.ProgressColumn("QGLP",      min_value=0, max_value=100, format="%.0f"),
-                    "qglp_quality":   st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
-                    "qglp_growth":    st.column_config.ProgressColumn("Growth",    min_value=0, max_value=100, format="%.0f"),
-                    "qglp_longevity": st.column_config.ProgressColumn("Longevity", min_value=0, max_value=100, format="%.0f"),
-                    "qglp_price":     st.column_config.ProgressColumn("Price/PEG", min_value=0, max_value=100, format="%.0f"),
+                    # width="small" on the five legs + the name column: reordering alone left
+                    # Longevity and Price/PEG off-screen at a 1793px viewport (verified in the
+                    # browser). The legs need room for a bar and 2-3 digits, nothing more, and
+                    # `name` is the widest text column in the frame.
+                    "name":           st.column_config.TextColumn("name", width="medium"),
+                    "qglp_score":     st.column_config.ProgressColumn("QGLP",      min_value=0, max_value=100, format="%.0f", width="small"),
+                    "qglp_quality":   st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f", width="small"),
+                    "qglp_growth":    st.column_config.ProgressColumn("Growth",    min_value=0, max_value=100, format="%.0f", width="small"),
+                    "qglp_longevity": st.column_config.ProgressColumn("Longevity", min_value=0, max_value=100, format="%.0f", width="small"),
+                    "qglp_price":     st.column_config.ProgressColumn("Price/PEG", min_value=0, max_value=100, format="%.0f", width="small"),
                     "red_flag_count": st.column_config.NumberColumn("🚩 Flags",    format="%.0f", help="Forensic red flags raised (0 = clean). QGLP gates on quality/growth, NOT forensics — so this is the risk check the screen itself doesn't do."),
                     "market_cap":     st.column_config.NumberColumn("MCap ₹Cr",    format="%.0f"),
                     "rank":           st.column_config.NumberColumn("Rank",         format="%.0f"),
@@ -1314,15 +1330,23 @@ with tabs[3]:
         if _sec_stats.empty:
             st.info("No sector has ≥5 stocks in this view — sample too small for a reliable average.")
         else:
-            _sec_order = [c for c in ["stocks", "pct_qualify", "avg_quality", "avg_momentum",
-                                      "avg_valuation", "avg_composite", "crown_jewels"]
+            # Score (avg_composite) sat second-to-last and rendered as a bar plus a single
+            # truncated digit. The three figures a reader scans first — how many, what share
+            # qualifies, and how they score — now lead; the component averages follow.
+            _sec_order = [c for c in ["stocks", "pct_qualify", "avg_composite",
+                                      "avg_quality", "avg_momentum", "avg_valuation", "crown_jewels"]
                           if c in _sec_stats.columns]
             st.dataframe(
                 _sec_stats[_sec_order].reset_index(),
                 column_config={
                     "stocks":        st.column_config.NumberColumn("Count", format="%.0f"),
                     "pct_qualify":   st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%",
-                                       help="Share of the sector's stocks that clear all hard gates — its quality breadth. Robust to sector size."),
+                                       help="Share of the sector's stocks that clear all hard gates — its quality breadth. "
+                                            "SCALE-FREE, not statistically robust: a percentage stops big sectors "
+                                            "dominating, but small ones then reach extremes easily. Measured "
+                                            "2026-08-27: 8 of the top 10 sectors hold fewer than 12 stocks (median 9 "
+                                            "vs 19 universe-wide), and at n=7 a single stock moves this 14 points. "
+                                            "Read it alongside Count."),
                     "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
                     "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
                     "avg_valuation": st.column_config.ProgressColumn("Valuation",min_value=0, max_value=100, format="%.0f"),
