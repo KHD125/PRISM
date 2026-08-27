@@ -4233,6 +4233,31 @@ _ACCEL_MARGIN = [
 ]
 
 
+# Below this, a move is noise and the card says "flat". NOT a taste call: measured across all
+# 5,421 growth-acceleration values on the live universe, |delta| has a median of 10.5pp and a p10
+# of exactly 2.0pp — so this band marks the smallest decile of real moves as no-move. The first
+# cut used 0.5pp, which called only 2.7% flat and let a 0.5pp wobble outvote a 49pp collapse:
+# Igarashi Motors read "Decelerating — 1 up · 2 down" on the strength of Revenue 3Y 9.7% vs 5Y
+# 10.2%, a non-event. At 2.0pp the same stock reads "Mixed — 1 up · 1 down · 1 flat", which is
+# what its rows actually say. Display-only — this band never reaches a score.
+_ACCEL_FLAT_PP = 2.0
+_ACCEL_DP = 1          # decimal places shown; classification rounds to this FIRST (see _accel_move)
+
+
+def _accel_move(delta):
+    """Classify a delta as +1 / -1 / 0, judging the number the READER CAN SEE.
+
+    Rounds to the displayed precision BEFORE comparing. Without that, the page and its own
+    colours disagree: at the old 0.5pp cutoff, 30 deltas across the universe rendered as exactly
+    "0.5pp" and 12 of them were grey while 18 were coloured and counted — identical text, opposite
+    treatment, with nothing on screen to explain the difference. Rounding first makes the rule
+    inspectable: what you read is what was counted."""
+    if delta is None:
+        return None
+    shown = round(delta, _ACCEL_DP)
+    return 1 if shown > _ACCEL_FLAT_PP else -1 if shown < -_ACCEL_FLAT_PP else 0
+
+
 def _accel_val(stock: pd.Series, key: str):
     """Read a delta off the ENGINE column. Never re-derived from its two inputs here: a display
     that recomputes an engine number drifts from it the moment one side changes (the Fisher
@@ -4251,24 +4276,31 @@ def _accel_row(label: str, delta, lhs, rhs, lhs_tag: str, rhs_tag: str) -> str:
     Missing data renders as an em-dash in muted grey, never as 0.0. A zero here would read as
     "flat" — a confident claim — when the truth is that the figure is absent (CLAUDE.md's semantic
     truth principle, at the display boundary)."""
-    if delta is None:
+    move = _accel_move(delta)
+    if move is None:
         val_html = f'<span style="font-size:0.82rem;font-weight:800;color:{COLORS["text_muted"]};">—</span>'
         sub = "no data"
     else:
-        clr = (COLORS["green"] if delta > 0.5 else
-               COLORS["red"]   if delta < -0.5 else COLORS["text_secondary"])
+        # Colour and count come from ONE classifier, so a grey row and an uncounted row are always
+        # the same row. Deriving the colour separately is how they drift apart.
+        clr = (COLORS["green"] if move > 0 else
+               COLORS["red"]   if move < 0 else COLORS["text_secondary"])
         val_html = (f'<span style="font-size:0.82rem;font-weight:800;color:{clr};">'
-                    f'{delta:+.1f}<span style="font-size:0.6rem;font-weight:600;'
+                    f'{delta:+.{_ACCEL_DP}f}<span style="font-size:0.6rem;font-weight:600;'
                     f'color:{COLORS["text_muted"]};">pp</span></span>')
         _f = lambda x: "—" if x is None else f"{x:.1f}%"
         sub = f"{lhs_tag} {_f(lhs)} vs {rhs_tag} {_f(rhs)}"
+    # Label and its evidence sit TOGETHER on the left and read as one phrase ("PAT · 3Y 19.6% vs
+    # 5Y 69.0%"); only the number is pushed right, so it forms a scannable column. The first cut
+    # pinned the evidence to the right edge too, which on a full-width tab left ~1000px of dead
+    # space between a row's name and everything that explains it.
     return (
-        f'<div style="display:flex;justify-content:space-between;align-items:baseline;'
-        f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);gap:10px;">'
-        f'<span style="font-size:0.72rem;color:{COLORS["text_secondary"]};min-width:62px;">{_esc(label)}</span>'
-        f'<span style="font-size:0.6rem;color:{COLORS["text_muted"]};flex:1;text-align:right;'
+        f'<div style="display:flex;align-items:baseline;gap:10px;'
+        f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
+        f'<span style="font-size:0.72rem;color:{COLORS["text_secondary"]};min-width:64px;">{_esc(label)}</span>'
+        f'<span style="font-size:0.6rem;color:{COLORS["text_muted"]};'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{_esc(sub)}</span>'
-        f'{val_html}</div>'
+        f'<span style="flex:1;"></span>{val_html}</div>'
     )
 
 
@@ -4278,10 +4310,11 @@ def render_trajectory_card(stock: pd.Series):
     up = down = known = 0
     for label, key, a, b in _ACCEL_GROWTH:
         d = _accel_val(stock, key)
-        if d is not None:
+        m = _accel_move(d)
+        if m is not None:
             known += 1
-            up += d > 0.5
-            down += d < -0.5
+            up += m > 0
+            down += m < 0
         growth.append(_accel_row(label, d, _accel_val(stock, a), _accel_val(stock, b), "3Y", "5Y"))
     for label, key, a, b, base_tag in _ACCEL_MARGIN:
         d = _accel_val(stock, key)
@@ -4316,13 +4349,24 @@ def render_trajectory_card(stock: pd.Series):
     st.markdown(
         f'<div style="font-size:0.62rem;font-weight:800;color:{COLORS["text_muted"]};'
         f'text-transform:uppercase;letter-spacing:0.8px;margin:13px 0 4px 0;">Trajectory'
-        f'{help_chip("", "Is the business speeding up or slowing down? Growth acceleration compares the 3-year CAGR against the 5-year CAGR — positive means the recent stretch outgrew the longer record. Margin trend compares the latest quarter against its own base. Measured in percentage points (pp).")}'
+        f'{help_chip("", "Is the business speeding up or slowing down? Growth acceleration compares the 3-year CAGR against the 5-year CAGR — positive means the recent stretch outgrew the longer record. Margin trend compares the latest quarter against its own base. Measured in percentage points (pp). A move smaller than ±2.0pp counts as flat — that is the smallest tenth of all moves in this universe, so it is noise rather than a change of direction.")}'
         f'</div>'
         f'<div style="font-size:0.78rem;font-weight:800;color:{head_clr};margin-bottom:2px;">{_esc(head_txt)}</div>'
+        # Two columns, not two stacked blocks. Full-width rows on this tab left ~900px of dead gap
+        # between a row's evidence and its number; side by side, each column is about half as wide,
+        # the gap closes, and the card is three rows tall instead of six. auto-fit/minmax means it
+        # collapses back to one column on a narrow viewport rather than crushing the text.
+        # CSS grid rather than st.columns: ui_tearsheet is bound by the no-layout-widgets rule
+        # (CLAUDE.md §5, pinned by test_tearsheet_stateless_contract.py).
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));'
+        f'gap:0 26px;align-items:start;">'
+        f'<div>'
         f'{_sub("Growth Acceleration · 3Y CAGR vs 5Y CAGR", "The second derivative: 3-year CAGR minus 5-year CAGR. Positive = the last three years grew faster than the five-year record, so growth is picking up. Negative = the longer record was stronger and growth is fading.")}'
         f'{"".join(growth)}'
+        f'</div><div>'
         f'{_sub("Margin Trend · latest quarter vs its own base", "The latest quarter's margin against the base named on each row — NPM and OPM against the figure one year back, GPM against its 5-year median. The bases differ, so each row states its own; these are margin CHANGES, not accelerations.")}'
-        f'{"".join(margin)}',
+        f'{"".join(margin)}'
+        f'</div></div>',
         unsafe_allow_html=True,
     )
 

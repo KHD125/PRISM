@@ -183,13 +183,59 @@ def test_headline_counts_only_what_it_could_measure(live):
 
 
 def test_headline_accounts_for_every_measured_leg(live):
-    """The first cut read "Mixed — 1 up, 1 down of 3" on -1.9/+1.2/-0.1 and left the reader
-    subtracting to discover the third leg was flat. A leg inside the dead band is an answer."""
+    """An early cut read "Mixed — 1 up, 1 down of 3" and left the reader subtracting to discover
+    the third leg was flat. A leg inside the dead band is an answer, so it gets named."""
     row = live.iloc[0].copy()
-    row["pat_acceleration"], row["rev_acceleration"], row["ebitda_acceleration"] = -1.9, 1.2, -0.1
+    row["pat_acceleration"], row["rev_acceleration"], row["ebitda_acceleration"] = -9.0, 6.0, -0.1
     head = _text(_render(row)).split("Growth Acceleration")[0]
     for part in ("1 up", "1 down", "1 flat"):
         assert part in head, f"headline {head.strip()!r} does not name the {part!r} leg"
+
+
+# -- 3b. What you read is what was counted ----------------------------------------------
+def test_classification_uses_the_number_the_reader_can_see(live):
+    """THE IGARASHI BUG. Colour and count were taken from the RAW delta while the page printed a
+    1-decimal rounding of it. At the old cutoff, 30 deltas across the universe rendered as exactly
+    "0.5pp" -- 12 grey and uncounted, 18 coloured and counted. Identical text, opposite treatment,
+    nothing on screen to explain it. Two deltas that PRINT the same must now behave the same."""
+    eps = 10 ** -(T._ACCEL_DP + 2)
+    below = T._ACCEL_FLAT_PP - eps      # prints as the band edge, must be flat
+    above = T._ACCEL_FLAT_PP + eps      # prints as the band edge, must ALSO be flat
+    assert f"{below:+.{T._ACCEL_DP}f}" == f"{above:+.{T._ACCEL_DP}f}", "probe values do not print alike"
+    assert T._accel_move(below) == T._accel_move(above) == 0, (
+        f"{below} and {above} both print as {below:+.{T._ACCEL_DP}f}pp but classify differently "
+        f"({T._accel_move(below)} vs {T._accel_move(above)}) -- the page contradicts itself"
+    )
+
+
+def test_a_move_just_past_the_band_is_counted(live):
+    """The mirror: the band must still DO something, or everything reads flat."""
+    assert T._accel_move(T._ACCEL_FLAT_PP + 0.5) == 1
+    assert T._accel_move(-T._ACCEL_FLAT_PP - 0.5) == -1
+
+
+def test_row_colour_and_headline_count_come_from_one_classifier():
+    """A row rendered grey must be a row the headline did not count. Structural, because the two
+    used to be derived from separate inline comparisons that could drift apart."""
+    import inspect
+    src = inspect.getsource(T._accel_row) + inspect.getsource(T.render_trajectory_card)
+    assert src.count("_accel_move") >= 2, "colour and count no longer share the classifier"
+    assert "> 0.5" not in src and "< -0.5" not in src, (
+        "an inline threshold comparison came back; the band lives in _ACCEL_FLAT_PP and the "
+        "comparison in _accel_move, so that the colour and the count can never disagree"
+    )
+
+
+def test_the_flat_band_is_calibrated_to_the_observed_distribution(live):
+    """The band is the p10 of real moves, not a taste call. If the data shifts far enough that it
+    no longer marks roughly the smallest decile, the number needs re-deriving rather than keeping."""
+    acc = pd.concat([live["pat_acceleration"], live["rev_acceleration"],
+                     live["ebitda_acceleration"]]).dropna().abs()
+    flat_share = (acc <= T._ACCEL_FLAT_PP).mean()
+    assert 0.04 <= flat_share <= 0.20, (
+        f"the {T._ACCEL_FLAT_PP}pp band now calls {flat_share:.1%} of moves flat. It was set at the "
+        f"p10 of observed |delta| (~10%); re-derive it from the current distribution."
+    )
 
 
 @pytest.mark.parametrize("pat,rev,ebitda,expect", [
