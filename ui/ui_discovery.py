@@ -20,7 +20,7 @@ from config import COLORS, FRAMEWORK_CATEGORIES
 _CHIP_META = [
     ("sb_mcap", "Market Cap", "ms"), ("sb_sector", "Sector", "sel"), ("sb_industry", "Industry", "sel"),
     ("sb_cyc", "Cyclicality", "ms"), ("sb_capphase", "Capital Phase", "ms"), ("sb_tier", "Tier", "ms"),
-    ("sb_verdict", "Verdict", "ms"), ("sb_corpclass", "Corp Class", "ms"), ("sb_maxrf", "Max Red Flags", "max"),
+    ("sb_verdict", "Verdict", "ms"), ("sb_wealthtier", "Wealth Tier", "ms"), ("sb_corpclass", "Corp Class", "ms"), ("sb_maxrf", "Max Red Flags", "max"),
     ("sb_piotier", "Piotroski", "ms"), ("sb_mincov", "Min Coverage", "min"), ("sb_hidestale", "Hide Stale", "bool"),
     ("sb_fwfam", "FW Family", "ms"),
     ("sb_fw_exclude", "Exclude FW", "ms"), ("sb_fw_include", "Include FW", "ms"), ("sb_fw_combine", "Combine FW", "ms"),
@@ -296,7 +296,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cf = _narrow(_cf, _label_mask(_cf["sector_capital_phase"], sel_cap), "Capital Phase")
             st.caption(f"→ {len(_cf):,} remaining")
 
-        with _grp("🎯 Decision & Class", "sb_tier", "sb_verdict", "sb_corpclass", expanded=True):
+        with _grp("🎯 Decision & Class", "sb_tier", "sb_verdict", "sb_wealthtier", "sb_corpclass", expanded=True):
             # 4. Conviction Tier — only tiers present in the remaining stocks
             _tier_opts = sorted(int(t) for t in _cf["conviction_tier"].dropna().unique())
             sel_tier = _ms_cascade("Conviction Tier", _tier_opts, "sb_tier", default=[],
@@ -312,6 +312,23 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                       count_col="verdict_direction")
             if sel_verdict and "verdict_direction" in _cf.columns:
                 _cf = _narrow(_cf, _label_mask(_cf["verdict_direction"], sel_verdict), "Verdict")
+
+            # 4b2. Wealth Tier — the change-lens verdict (verdict_engine.wealth_tier): is the
+            # business BECOMING more valuable? Orthogonal to Verdict above by construction (the
+            # engine's complete 18-stock BUY list splits across four wealth tiers) — so composing
+            # the two is the point: Verdict=AVOID + Wealth=WATCH★ is the confirmed-turnaround
+            # screen the engine cannot express alone. Price- and forensics-blind by design; pair
+            # with Max Red Flags below for the clean version.
+            _wt_opts = _ordered_present(_cf, "wealth_tier",
+                                        ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"])
+            sel_wtier = _ms_cascade("Wealth Tier", _wt_opts, "sb_wealthtier", default=[],
+                                    help="The wealth-engine tier (EP% · Vel% · margin tau): is it becoming "
+                                         "more valuable? BUY★ = earning above cost of equity, improving, "
+                                         "margins confirming; WATCH★ = confirmed turnaround. Price-blind — "
+                                         "not a recommendation. Empty = all.",
+                                    count_col="wealth_tier")
+            if sel_wtier and "wealth_tier" in _cf.columns:
+                _cf = _narrow(_cf, _label_mask(_cf["wealth_tier"], sel_wtier), "Wealth Tier")
 
             # 4c. Corporate Class — Motilal Oswal capital-allocation quality (Great / Good / Gruesome)
             _corp_opts = _ordered_present(_cf, "corporate_class", ["🏆 GREAT", "👍 GOOD", "💀 GRUESOME"])

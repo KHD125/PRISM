@@ -16,8 +16,18 @@ justified rather than slipped in. Neither Stage-3 removal reason applies to it �
     not redundant corr(convergence, composite_score) = 0.479 — it carries information the score
                   does not
 
-The behaviour of the tab itself is pinned by tests/test_mosl_convergence_tab.py. This file pins
-only the SET, which is the thing a future edit is most likely to change carelessly.
+💹 WEALTH ADDED 2026-08-27 (same session, later), and again this file forced the justification:
+    not dead      every one of its six tiers is populated on live data (BUY★ 12% · BUY 5% ·
+                  WATCH★ 9% · WATCH 32% · AVOID 34% · N/A 8%) — pinned by tests/test_wealth_tier.py
+    not brittle   a pure READ of the wealth_* columns compute_verdict materializes; the tab holds
+                  zero logic, so the tier a snapshot captures equals the tier displayed
+    not redundant it answers the question no other surface does — "is it becoming more valuable?"
+                  — and provably does not collapse into verdict_direction (the engine's complete
+                  18-stock BUY list splits across four wealth tiers)
+
+The behaviour of the tabs themselves is pinned by tests/test_mosl_convergence_tab.py and
+tests/test_wealth_tier.py. This file pins only the SET, which is the thing a future edit is most
+likely to change carelessly.
 """
 import ast
 from pathlib import Path
@@ -43,7 +53,7 @@ def test_market_pulse_tab_set_is_exact():
     """Order matters as much as membership: every `with _mp_tabs[i]` body is bound by index, so a
     reordering silently renders the wrong content into the wrong tab."""
     labels = _mp_tab_labels()
-    assert labels == ["🌊 Tsunami", "🏛️ QGLP", "🔭 MOSL", "📈 Sectors"], labels
+    assert labels == ["🌊 Tsunami", "🏛️ QGLP", "🔭 MOSL", "💹 Wealth", "📈 Sectors"], labels
 
 
 def test_removed_renderers_are_not_called():
@@ -60,7 +70,7 @@ def test_removed_renderers_are_not_imported():
 
 def test_tab_extractor_has_teeth():
     labels = _mp_tab_labels()
-    assert labels is not None and len(labels) == 4
+    assert labels is not None and len(labels) == 5
 
 
 def test_the_stage_3_removals_were_not_quietly_restored():

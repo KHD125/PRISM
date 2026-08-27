@@ -26,6 +26,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+# ── Wealth-tier grammar constants (see the wealth_* block at the end of compute_verdict) ──────
+# Derived and stress-tested 2026-08-27 on the user's watchlists, the engine's complete BUY list
+# (18 stocks) and its complete WATCH tier (126) — ~250 names across three dry-runs.
+WEALTH_VEL_MIN   = 0.5     # Vel% at/above this = excess return MATERIALLY improving (B)
+WEALTH_TAU_CONF  = 0.25    # tau at/above this = margin spine confirms (C)
+WEALTH_TAU_FADE  = -0.25   # tau at/below this = margins fading — caps the tier at WATCH
+WEALTH_WARN_FLAGS = 8      # red flags at/above this raise the ⚠ marker (engine veto sits at 10)
+
 
 def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     """Materialize the verdict_* display columns. Pure synthesis of existing signals."""
@@ -201,5 +209,71 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
         ],
         default="No decisive edge on any axis right now — pass and revisit on a re-rate or result.",
     )
+
+    # ══ WEALTH TIER — the change-lens verdict (2026-08-27) ═══════════════════════════════════
+    # Answers a DIFFERENT question from verdict_direction. The direction asks "is this business
+    # good and safe now?" (level + forensics + valuation). The wealth tier asks "is it becoming
+    # more valuable?" — three clocks, nothing else:
+    #     A  wealth_ep_pct  > 0                earning above the cost of equity
+    #        (EP/net_worth = ROE − CoE: the MOSL Wealth Creation studies' own recurring engine —
+    #         ROCE expansion + earnings growth — re-derived independently and normalized so a
+    #         ₹190 Cr business and a ₹2,025 Cr one are comparable. Absolute EP is size-biased:
+    #         it ranked Sarda's +₹251 Cr improvement above far larger PERCENTAGE improvers.)
+    #     B  wealth_vel_pct >= WEALTH_VEL_MIN  excess return materially improving this year
+    #     C  moat_tau       >= WEALTH_TAU_CONF the 5-year margin spine confirms it
+    #     fading: tau <= WEALTH_TAU_FADE caps everything at WATCH — improvement without a margin
+    #             spine stays on probation (Varroc: Vel +7.5 but tau −0.83).
+    #
+    #     BUY★  A·B·C   BUY  A·B(tau flat)   WATCH★  ¬A·B·C (the confirmed turnaround)
+    #     WATCH one clock only, or momentum broken   AVOID  nothing improving   N/A  unverifiable
+    #
+    # PRICE-BLIND BY DESIGN and the UI must say so: BUY here means the wealth engine is
+    # buy-grade, not that the price is. It is a compressed DESCRIPTION, never a recommendation —
+    # the decision stays with the user.
+    #
+    # ⚠ (wealth_warn) IS DELIBERATELY NOT BLENDED INTO THE TIER. These three clocks cannot see
+    # forensics — measured: 16 of 26 BUY★ on one live watchlist carried 8+ red flags — so the
+    # risk marker rides beside the tier and never alters it. Blending would hide exactly the
+    # tension the reader needs to see (the cf_triangle lesson).
+    #
+    # STRICT N/A RULING: any missing input (net worth ≤ 0/absent, EP, velocity or tau NaN) yields
+    # N/A, never a tier — "unverifiable is not passed" (§5), and equally never condemned. This
+    # buries e.g. Lohia Corp (EP% +24.6, Vel% +10.9, tau missing) as N/A; accepted deliberately —
+    # the row still shows the strong numbers.
+    #
+    # CLASSIFIED ON DISPLAYED PRECISION (the _shown rule, tests/test_display_threshold_
+    # consistency.py): the UI prints EP%/Vel% at 1dp and tau at 2dp, so the grammar rounds to
+    # those BEFORE comparing — two stocks printing the same number must land in the same tier.
+    _w_nw  = _col("net_worth", np.nan).astype(float).to_numpy()
+    _w_ep  = _col("economic_profit", np.nan).astype(float).to_numpy()
+    _w_vel = _col("economic_profit_velocity", np.nan).astype(float).to_numpy()
+    _w_tau = _col("moat_tau", np.nan).astype(float).to_numpy()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        _w_nw_ok  = np.isfinite(_w_nw) & (_w_nw > 0)
+        _ep_pct   = np.where(_w_nw_ok, _w_ep / _w_nw * 100.0, np.nan)
+        _vel_pct  = np.where(_w_nw_ok, _w_vel / _w_nw * 100.0, np.nan)
+        _ep_s, _vel_s, _tau_s = np.round(_ep_pct, 1), np.round(_vel_pct, 1), np.round(_w_tau, 2)
+        _known = np.isfinite(_ep_s) & np.isfinite(_vel_s) & np.isfinite(_tau_s)
+        _A    = _known & (_ep_s > 0.0)
+        _B    = _known & (_vel_s >= WEALTH_VEL_MIN)
+        _C    = _known & (_tau_s >= WEALTH_TAU_CONF)
+        _FADE = _known & (_tau_s <= WEALTH_TAU_FADE)
+    df["wealth_ep_pct"]  = _ep_pct
+    df["wealth_vel_pct"] = _vel_pct
+    # Condition ORDER is load-bearing: N/A first (unverifiable outranks everything), then the
+    # fading cap (it overrides even A·B·C — C and FADE are mutually exclusive, but A·B·fading
+    # must land on WATCH/AVOID, not BUY), then the tiers from strongest down.
+    df["wealth_tier"] = np.select(
+        [~_known,
+         _FADE & _B,
+         _FADE,
+         _A & _B & _C,
+         _A & _B,
+         _B & _C,
+         (_C & ~_B) | (_B & ~_A)],
+        ["N/A", "WATCH", "AVOID", "BUY★", "BUY", "WATCH★", "WATCH"],
+        default="AVOID",
+    )
+    df["wealth_warn"] = ((rflags >= WEALTH_WARN_FLAGS) | schilit_fail).astype(int)
 
     return df

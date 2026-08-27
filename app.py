@@ -1135,6 +1135,7 @@ with tabs[3]:
         "🌊 Tsunami",
         "🏛️ QGLP",
         "🔭 MOSL",
+        "💹 Wealth",
         "📈 Sectors",
     ])   # Stage 3: dropped dead "💙 Blue Chips" (0% fires) + brittle "🚀 Tipping Points" (folded into Sectors)
 
@@ -1363,8 +1364,78 @@ with tabs[3]:
                 hide_index=True,
             )
 
-    # ══ Sectors ════════════════════════════════════════════════════
+    # ══ Wealth — the change-lens tiers (engine columns from verdict_engine) ═════
     with _mp_tabs[3]:
+        # Everything here READS the wealth_* columns compute_verdict materialized — zero logic
+        # lives in this tab, so the tier a snapshot captures is byte-identical to the tier shown.
+        # Grammar, provenance and the four rules: core/verdict_engine.py + tests/test_wealth_tier.py.
+        _WT_ORDER = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
+        _wt_counts = df["wealth_tier"].value_counts() if "wealth_tier" in df.columns else {}
+        st.markdown(
+            f"<div class='sec-cap'>The <b>wealth-engine tier</b> — three clocks, nothing else: "
+            f"<b>EP%</b> (economic profit ÷ net worth = ROE − cost of equity, so a ₹200 Cr and a "
+            f"₹2,000 Cr business compare fairly) · <b>Vel%</b> (this year's change in that excess "
+            f"return) · <b>tau</b> (the 5-year margin spine). BUY★ = earning, improving, confirmed; "
+            f"WATCH★ = the confirmed turnaround (not earning yet, improving with a spine); AVOID = "
+            f"nothing improving — the LEVEL may be fine. Market-wide (ignores sidebar filters).</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div style='font-size:0.72rem;color:{COLORS['gold']};margin:-4px 0 10px 0;'>"
+            f"⚠️ <b>Price-blind and forensics-blind by design.</b> BUY means the wealth engine is "
+            f"buy-grade — not that the price is right (check Valuation) and not that the books are "
+            f"clean (the ⚠ marker and 🚩 count carry that; they never alter the tier, so the "
+            f"tension stays visible). A description to decide WITH, not a recommendation.</div>",
+            unsafe_allow_html=True,
+        )
+        if "wealth_tier" not in df.columns:
+            st.info("wealth_tier not present — re-run the pipeline.")
+        else:
+            st.markdown(
+                "<div style='font-size:0.78rem;font-weight:700;margin-bottom:6px;'>"
+                + " &nbsp;·&nbsp; ".join(
+                    f"{t} <span style='color:{COLORS['text_secondary']};'>{int(_wt_counts.get(t, 0))}</span>"
+                    for t in _WT_ORDER)
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+            _wt_pick = st.selectbox(
+                "Tier", ["All"] + _WT_ORDER, key="mp_wealth_tier",
+                label_visibility="collapsed",
+                help="Filter to one tier. The table always sorts strongest tier first, then by Vel%.",
+            )
+            _wl = df.copy()
+            _wl["_wt_ord"] = _wl["wealth_tier"].map({t: i for i, t in enumerate(_WT_ORDER)})
+            _wl["_warn_txt"] = np.where(_wl["wealth_warn"].fillna(0) == 1, "⚠", "")
+            if _wt_pick != "All":
+                _wl = _wl[_wl["wealth_tier"] == _wt_pick]
+            _wl = _wl.sort_values(["_wt_ord", "wealth_vel_pct"], ascending=[True, False])
+            _wt_cols = [c for c in ["wealth_tier", "name", "_warn_txt", "wealth_ep_pct",
+                                    "wealth_vel_pct", "moat_tau", "moat_score", "growth_score",
+                                    "red_flag_count", "verdict_direction", "net_worth"]
+                        if c in _wl.columns]
+            st.dataframe(
+                _wl[_wt_cols].reset_index(drop=True),
+                column_config={
+                    "wealth_tier":       st.column_config.TextColumn("Tier", width="small"),
+                    "name":              st.column_config.TextColumn("name", width="medium"),
+                    "_warn_txt":         st.column_config.TextColumn("⚠", width="small", help="Forensic caution: 8+ red flags or a Schilit checker fail. Never changes the tier — it rides beside it."),
+                    "wealth_ep_pct":     st.column_config.NumberColumn("EP%",  format="%+.1f", width="small", help="Excess return: ROE − cost of equity, in percentage points. The universe median is NEGATIVE — being above zero already beats the median listed company."),
+                    "wealth_vel_pct":    st.column_config.NumberColumn("Vel%", format="%+.1f", width="small", help="This year's CHANGE in the excess return, in points of net worth. Direction beats level — the 28th WCS's own finding."),
+                    "moat_tau":          st.column_config.NumberColumn("tau",  format="%+.2f", width="small", help="5-year margin trend (rank correlation, −1…+1). ≥ +0.25 confirms; ≤ −0.25 caps the tier at WATCH."),
+                    "moat_score":        st.column_config.NumberColumn("Moat", format="%.0f", width="small"),
+                    "growth_score":      st.column_config.NumberColumn("Gro",  format="%.0f", width="small"),
+                    "red_flag_count":    st.column_config.NumberColumn("🚩",   format="%.0f", width="small"),
+                    "verdict_direction": st.column_config.TextColumn("Engine", width="small", help="The main verdict (level + forensics + valuation) beside the wealth tier (pure change). They answer DIFFERENT questions and disagreeing openly is the point: the engine's only BUYs include stocks this lens reads as decaying, and its AVOID pile hides confirmed turnarounds."),
+                    "net_worth":         st.column_config.NumberColumn("NW ₹Cr", format="%.0f", width="small", help="The denominator behind EP% and Vel%. A tiny base can make the percentages explode — check this before believing an extreme EP%."),
+                },
+                use_container_width=True,
+                height=min(520, 80 + len(_wl) * 35 + 40),
+                hide_index=True,
+            )
+
+    # ══ Sectors ════════════════════════════════════════════════════
+    with _mp_tabs[4]:
         # The size floor is a CONTROL now, so this caption cannot hardcode it. It is rendered into
         # a placeholder AFTER the filter row has produced _min_n — the same set-after-the-widget
         # pattern the sidebar funnel uses. The first cut left "≥5 stocks" literal here and it went

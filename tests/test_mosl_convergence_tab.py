@@ -179,6 +179,6 @@ def test_sectors_tab_still_has_its_own_index(src):
     """Adding a tab shifts every index after it -- an off-by-one here silently renders the wrong
     body into the wrong tab."""
     assert "_mp_tabs[3]" in src, "the Sectors tab was not reindexed after MOSL was inserted"
-    n_tabs = len(re.findall(r'"[^"]*(?:Tsunami|QGLP|MOSL|Sectors)"', src[src.index("_mp_tabs = st.tabs(["):][:300]))
+    n_tabs = len(re.findall(r'"[^"]*(?:Tsunami|QGLP|MOSL|Wealth|Sectors)"', src[src.index("_mp_tabs = st.tabs(["):][:220]))
     used = {int(x) for x in re.findall(r"_mp_tabs\[(\d)\]", src)}
     assert used == set(range(n_tabs)), f"tab bodies {sorted(used)} do not cover the {n_tabs} tabs declared"
