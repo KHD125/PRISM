@@ -1134,6 +1134,7 @@ with tabs[3]:
     _mp_tabs = st.tabs([
         "🌊 Tsunami",
         "🏛️ QGLP",
+        "🔭 MOSL",
         "📈 Sectors",
     ])   # Stage 3: dropped dead "💙 Blue Chips" (0% fires) + brittle "🚀 Tipping Points" (folded into Sectors)
 
@@ -1279,8 +1280,91 @@ with tabs[3]:
                 </div>
                 """, unsafe_allow_html=True)
 
-    # ══ Sectors ════════════════════════════════════════════════════
+    # ══ MOSL — convergence across the Wealth Creation Study family ═════
     with _mp_tabs[2]:
+        # EXACT TOKENS, NEVER SUBSTRINGS. `frameworks_passed` joins names with ", ", and "QGLP" is
+        # a SUBSTRING of "SQGLP Century Stock" — matching by substring inflated a first measurement
+        # of this very cohort by 37 stocks. Splitting on the ", " boundary yields whole tokens only
+        # (the same discipline ui_tearsheet._parse_frameworks uses). Cross-checked against the
+        # authoritative qglp_pass column: both give 328.
+        #
+        # WHY A VIEW AND NOT NEW ENGINE COLUMNS: the fw_* booleans are LOCALS inside
+        # scoring_engine.run_full_scoring and are never persisted, so frameworks_passed is the only
+        # surviving record. Persisting them would be the cleaner data model but it is an engine
+        # change, and this is a display feature.
+        _MOSL_LENSES = ["QGLP", "Economic Moat", "Consistent in Volatile", "EP Hockey Stick",
+                        "CAP-GAP Compounder", "SQGLP Century Stock", "100x Candidate",
+                        "Blue Chip Quality", "MOSL Wealth Creator", "Bruised Blue Chip 29"]
+        _tok = df.get("frameworks_passed", pd.Series("", index=df.index)).fillna("").astype(str).map(
+            lambda _s: {t.strip() for t in re.split(r"\s*,\s*", _s) if t.strip()})
+        _mosl = df.copy()
+        _mosl["mosl_n"] = _tok.map(lambda t: sum(1 for m in _MOSL_LENSES if m in t))
+        _mosl["mosl_hits"] = _tok.map(lambda t: " · ".join(m for m in _MOSL_LENSES if m in t))
+        # >=2 because ONE lens is not convergence -- the tab's whole claim is that independent
+        # studies from the same house agree.
+        _mosl = _mosl[_mosl["mosl_n"] >= 2].sort_values(
+            ["mosl_n", "composite_score"], ascending=False)
+
+        st.markdown(
+            f"<div class='sec-cap'>How many of the <b>{len(_MOSL_LENSES)} Motilal Oswal Wealth "
+            f"Creation lenses</b> (studies 16–30) a stock clears at once. Unlike a count across all "
+            f"37 frameworks — where gate strictness varies by design and the numbers are not "
+            f"comparable — these come from one research programme, so agreement between them means "
+            f"something. Showing stocks that clear <b>2 or more</b>; one lens is not convergence."
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        # THE CAVEAT IS IN THE CAPTION, NOT A TOOLTIP. Measured 2026-08-27 with EXACT-TOKEN
+        # matching: the 4-or-more cohort (175 stocks) carries a median of 6 red flags against the
+        # universe's 5 — slightly WORSE, not better — and 80.6% of it is AVOID. These lenses gate
+        # quality, growth and longevity; none of them reads the forensics.
+        # (An earlier substring-matched pass reported 5 flags and 83.6%. It was wrong: "QGLP" is a
+        # substring of "SQGLP Century Stock", which pulled 37 extra stocks into the cohort.)
+        st.markdown(
+            f"<div style='font-size:0.72rem;color:{COLORS['gold']};margin:-4px 0 10px 0;'>"
+            f"⚠️ Convergence is <b>agreement, not safety</b>. These lenses test quality, growth and "
+            f"longevity — none of them reads the forensics, so a high count carries no clean-books "
+            f"claim. Check <b>Verdict</b> and <b>🚩 Flags</b> on every row. Unvalidated against "
+            f"forward returns: read it as convergence, never as conviction.</div>",
+            unsafe_allow_html=True,
+        )
+
+        if _mosl.empty:
+            st.info("No stock clears 2 or more MOSL lenses in this universe.")
+        else:
+            _n4 = int((_mosl["mosl_n"] >= 4).sum())
+            st.markdown(f"""
+            <div style="display:flex;gap:20px;align-items:center;margin-bottom:6px;">
+              <span style="font-size:1.05rem;font-weight:800;color:{COLORS['gold']};">
+                🔭 {len(_mosl)} stocks clear 2+ lenses
+              </span>
+              <span style="font-size:0.8rem;color:{COLORS['text_secondary']};">
+                {_n4} clear 4+ &nbsp;·&nbsp; deepest agreement: {int(_mosl['mosl_n'].max())} of {len(_MOSL_LENSES)}
+              </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            _m_cols = [c for c in ["rank", "name", "verdict_direction", "red_flag_count",
+                                   "mosl_n", "composite_score", "mosl_hits"]
+                       if c in _mosl.columns]
+            st.dataframe(
+                _mosl[_m_cols].reset_index(drop=True),
+                column_config={
+                    "rank":             st.column_config.NumberColumn("Rank", format="%.0f"),
+                    "name":             st.column_config.TextColumn("name", width="medium"),
+                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall call. Most high-convergence names are AVOID — the MOSL lenses do not read forensics or entry timing, and the verdict does."),
+                    "red_flag_count":   st.column_config.NumberColumn("🚩 Flags", format="%.0f", width="small", help="Forensic red flags. The MOSL lenses gate quality/growth/longevity and NOT forensics, so this is the risk check the convergence count itself does not do."),
+                    "mosl_n":           st.column_config.ProgressColumn("MOSL", min_value=0, max_value=len(_MOSL_LENSES), format="%.0f", width="small", help="How many of the 10 Wealth Creation lenses this stock clears."),
+                    "composite_score":  st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f", width="small"),
+                    "mosl_hits":        st.column_config.TextColumn("Lenses cleared", width="large"),
+                },
+                use_container_width=True,
+                height=min(500, 80 + len(_mosl) * 35 + 40),
+                hide_index=True,
+            )
+
+    # ══ Sectors ════════════════════════════════════════════════════
+    with _mp_tabs[3]:
         st.markdown(
             "<div class='sec-cap'>Every sector with ≥5 stocks — Quality / Momentum / Valuation / Score "
             "averaged across <strong>all</strong> its stocks (sample-robust, not just the gate-passers). "
