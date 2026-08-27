@@ -75,6 +75,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_lynch_radar, render_mauboussin_radar, render_qglp_radar, render_mosl_wealth_matrix,
                 render_piotroski_checklist,
                 render_sector_peer_strip,
+                render_trajectory_card,
                 render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_pulse_band,
                 render_stock_card, help_chip,
@@ -966,6 +967,12 @@ with tabs[2]:
             # the stock's OWN sector before the absolute financials below: the value-trap guard
             # (a high absolute score that is bottom-quartile for its sector, or vice-versa).
             render_sector_peer_strip(stock)
+
+            # Trajectory — the second derivative, and the one question the rest of Overview does
+            # not ask: not where this business stands, but which way it is moving and whether the
+            # move is speeding up. Sits after the peer strip (absolute -> relative -> directional)
+            # and before the detailed financials it summarises.
+            render_trajectory_card(stock)
 
             st.markdown(
                 f"<div class='sec-head'>📊 Business & Financial Analysis</div>",

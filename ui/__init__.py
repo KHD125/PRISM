@@ -32,6 +32,7 @@ try:
         render_mosl_wealth_matrix,
         render_piotroski_checklist,
         render_sector_peer_strip,
+        render_trajectory_card,
         render_valuation_inversion_and_sizing_cockpit,
     )
 except ImportError as e:
@@ -67,6 +68,7 @@ except ImportError as e:
     render_mosl_wealth_matrix = _stub
     render_piotroski_checklist = _stub
     render_sector_peer_strip = _stub
+    render_trajectory_card = _stub
     render_valuation_inversion_and_sizing_cockpit = _stub
 
 from .ui_components import (
@@ -110,6 +112,7 @@ __all__ = [
     "render_mosl_wealth_matrix",
     "render_piotroski_checklist",
     "render_sector_peer_strip",
+    "render_trajectory_card",
     "render_valuation_inversion_and_sizing_cockpit",
     "inject_css",
     "render_hero_banner",

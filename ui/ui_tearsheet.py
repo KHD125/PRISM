@@ -4206,6 +4206,127 @@ def _sector_peer_strip_html(stock: pd.Series) -> str:
     )
 
 
+# Trajectory card — the SECOND derivative. Every other Overview panel answers "where does this
+# business stand"; none answers "which way is it moving, and is the move speeding up".
+#
+# WHY THE TWO SECTIONS ARE SEPARATED AND LABELLED WITH THEIR OWN BASES. The engine carries seven
+# columns whose names all end in _acceleration, and they are THREE unrelated things:
+#     pat/rev/ebitda_acceleration = 3Y CAGR - 5Y CAGR   → a true acceleration (rate of a rate)
+#     npm/opm_acceleration        = latest QUARTER - the ANNUAL figure 1Y back
+#     gpm_acceleration            = latest QUARTER - the 5Y MEDIAN   (a third base again)
+#     ebit_acceleration           = EBIT growth - EBITDA growth, SAME window — a D&A-intensity
+#                                   spread, not a time comparison at all; deliberately NOT shown
+#                                   here, because it does not answer this card's question.
+# Rendering all seven under one "Acceleration" heading would repeat the All Data "PAT YoY" bug
+# (tests/test_all_data_yoy_labels.py): different bases stacked in one column invite a comparison
+# that is not valid. So growth and margin sit in separate blocks, and every margin row prints the
+# base it was measured against instead of leaving the reader to assume they match.
+_ACCEL_GROWTH = [
+    ("PAT",     "pat_acceleration",    "pat_gr_3y",    "pat_gr_5y"),
+    ("Revenue", "rev_acceleration",    "rev_gr_3y",    "rev_gr_5y"),
+    ("EBITDA",  "ebitda_acceleration", "ebitda_gr_3y", "ebitda_gr_5y"),
+]
+_ACCEL_MARGIN = [
+    ("NPM", "npm_acceleration", "npm_latest_q", "npm_1yb",    "1Y back"),
+    ("OPM", "opm_acceleration", "opm_latest_q", "opm_1yb",    "1Y back"),
+    ("GPM", "gpm_acceleration", "gpm_latest_q", "gpm_med_5y", "5Y median"),
+]
+
+
+def _accel_val(stock: pd.Series, key: str):
+    """Read a delta off the ENGINE column. Never re-derived from its two inputs here: a display
+    that recomputes an engine number drifts from it the moment one side changes (the Fisher
+    module/engine-pill lesson). The inputs are shown as evidence, not used as the source."""
+    v = stock.get(key, None)
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if pd.isna(f) else f
+
+
+def _accel_row(label: str, delta, lhs, rhs, lhs_tag: str, rhs_tag: str) -> str:
+    """One row: the move, then the two numbers it was computed from.
+
+    Missing data renders as an em-dash in muted grey, never as 0.0. A zero here would read as
+    "flat" — a confident claim — when the truth is that the figure is absent (CLAUDE.md's semantic
+    truth principle, at the display boundary)."""
+    if delta is None:
+        val_html = f'<span style="font-size:0.82rem;font-weight:800;color:{COLORS["text_muted"]};">—</span>'
+        sub = "no data"
+    else:
+        clr = (COLORS["green"] if delta > 0.5 else
+               COLORS["red"]   if delta < -0.5 else COLORS["text_secondary"])
+        val_html = (f'<span style="font-size:0.82rem;font-weight:800;color:{clr};">'
+                    f'{delta:+.1f}<span style="font-size:0.6rem;font-weight:600;'
+                    f'color:{COLORS["text_muted"]};">pp</span></span>')
+        _f = lambda x: "—" if x is None else f"{x:.1f}%"
+        sub = f"{lhs_tag} {_f(lhs)} vs {rhs_tag} {_f(rhs)}"
+    return (
+        f'<div style="display:flex;justify-content:space-between;align-items:baseline;'
+        f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);gap:10px;">'
+        f'<span style="font-size:0.72rem;color:{COLORS["text_secondary"]};min-width:62px;">{_esc(label)}</span>'
+        f'<span style="font-size:0.6rem;color:{COLORS["text_muted"]};flex:1;text-align:right;'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{_esc(sub)}</span>'
+        f'{val_html}</div>'
+    )
+
+
+def render_trajectory_card(stock: pd.Series):
+    """Overview: is the business speeding up or slowing down? Stateless, display-only."""
+    growth, margin = [], []
+    up = down = known = 0
+    for label, key, a, b in _ACCEL_GROWTH:
+        d = _accel_val(stock, key)
+        if d is not None:
+            known += 1
+            up += d > 0.5
+            down += d < -0.5
+        growth.append(_accel_row(label, d, _accel_val(stock, a), _accel_val(stock, b), "3Y", "5Y"))
+    for label, key, a, b, base_tag in _ACCEL_MARGIN:
+        d = _accel_val(stock, key)
+        margin.append(_accel_row(label, d, _accel_val(stock, a), _accel_val(stock, b), "Q", base_tag))
+
+    # Headline first (the app's inverted pyramid). Two rules it has to obey:
+    #   1. count only what could be MEASURED — "2 of 3" where the third input is absent would
+    #      overstate the evidence;
+    #   2. account for EVERY measured leg. The first cut read "Mixed — 1 up, 1 down of 3" on a row
+    #      set of -1.9 / +1.2 / -0.1: truthful, but it left the reader subtracting to discover the
+    #      third leg was flat. A leg inside the +/-0.5pp dead band is a real answer, not a gap, so
+    #      it is named rather than implied.
+    if known == 0:
+        head_txt, head_clr = "Not enough growth history to judge", COLORS["text_muted"]
+    else:
+        flat = known - up - down
+        detail = " · ".join(f"{n} {w}" for n, w in ((up, "up"), (down, "down"), (flat, "flat")) if n)
+        if up > down:
+            head_txt, head_clr = f"Accelerating — {detail}", COLORS["green"]
+        elif down > up:
+            head_txt, head_clr = f"Decelerating — {detail}", COLORS["red"]
+        elif up == 0 and down == 0:
+            head_txt, head_clr = f"Flat — no material move in {known}", COLORS["text_secondary"]
+        else:
+            head_txt, head_clr = f"Mixed — {detail}", COLORS["gold"]
+
+    def _sub(title: str, tip: str) -> str:
+        return (f'<div style="font-size:0.58rem;font-weight:800;color:{COLORS["text_muted"]};'
+                f'text-transform:uppercase;letter-spacing:0.7px;margin:10px 0 3px 0;">'
+                f'{title}{help_chip("", tip)}</div>')
+
+    st.markdown(
+        f'<div style="font-size:0.62rem;font-weight:800;color:{COLORS["text_muted"]};'
+        f'text-transform:uppercase;letter-spacing:0.8px;margin:13px 0 4px 0;">Trajectory'
+        f'{help_chip("", "Is the business speeding up or slowing down? Growth acceleration compares the 3-year CAGR against the 5-year CAGR — positive means the recent stretch outgrew the longer record. Margin trend compares the latest quarter against its own base. Measured in percentage points (pp).")}'
+        f'</div>'
+        f'<div style="font-size:0.78rem;font-weight:800;color:{head_clr};margin-bottom:2px;">{_esc(head_txt)}</div>'
+        f'{_sub("Growth Acceleration · 3Y CAGR vs 5Y CAGR", "The second derivative: 3-year CAGR minus 5-year CAGR. Positive = the last three years grew faster than the five-year record, so growth is picking up. Negative = the longer record was stronger and growth is fading.")}'
+        f'{"".join(growth)}'
+        f'{_sub("Margin Trend · latest quarter vs its own base", "The latest quarter's margin against the base named on each row — NPM and OPM against the figure one year back, GPM against its 5-year median. The bases differ, so each row states its own; these are margin CHANGES, not accelerations.")}'
+        f'{"".join(margin)}',
+        unsafe_allow_html=True,
+    )
+
+
 def render_sector_peer_strip(stock: pd.Series):
     """Mount the 'vs Sector Peers' strip (Overview tab). Stateless — single st.markdown."""
     st.markdown(_sector_peer_strip_html(stock), unsafe_allow_html=True)
