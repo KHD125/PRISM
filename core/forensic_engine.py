@@ -1046,7 +1046,20 @@ def compute_cashflow_triangle(df: pd.DataFrame) -> pd.DataFrame:
             ocf_pos & icf_neg & fcf_pos,    # Growth: OCF positive but borrowing to grow
             ~ocf_pos & icf_neg & fcf_pos,   # Danger: cash burn + still spending + borrowing
         ],
-        ["✅ Perfect — Buy Zone", "⚠️ Growth Phase — Watch D/E", "🚨 Debt Trap — Avoid"],
+        # RENAMED 2026-08-27: this value was "✅ Perfect — Buy Zone". cf_triangle classifies a
+        # CASH-FLOW SHAPE (OCF+ / investing- / financing-) and says nothing about whether to buy,
+        # but the old wording read as a recommendation and landed as a green tick beside the
+        # verdict header. Measured on the live universe: of the 944 stocks carrying it, 835 (39.4%
+        # of all tearsheets) had a verdict of AVOID, and 347 were classed "💀 GRUESOME" — so four
+        # in ten pages showed "Perfect — Buy Zone" next to "avoid regardless of how cheap it looks".
+        # It also COLLIDED with buy_zone_label, the column that actually means entry timing, whose
+        # top value is "🟢 Perfect Entry (Low Risk)"; Igarashi Motors showed the badge while its
+        # real buy_zone_label was "🟠 Loose Entry Zone".
+        # "Self-Funding" is the glossary's own first word for this pattern. The ✅ and the green
+        # still carry "this is the healthiest of the four" — the TEXT no longer claims more.
+        # The negative labels are deliberately UNCHANGED: "🚨 Debt Trap — Avoid" fires on 287
+        # stocks and every one has an AVOID verdict (0 BUY), so it never contradicts the page.
+        ["✅ Self-Funding", "⚠️ Growth Phase — Watch D/E", "🚨 Debt Trap — Avoid"],
         default="⚪ Mixed Pattern"
     )
 

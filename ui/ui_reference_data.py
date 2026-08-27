@@ -70,7 +70,7 @@ CONCEPT_REFERENCE = {
     ],
     # ── cf_triangle — core/forensic_engine.py:1006 (signs of operating/investing/financing cash flow)
     "💵 Cash-Flow Triangle": [
-        ("✅ Perfect — Buy Zone", "Self-funding: operating cash positive, investing in the business, AND paying down financing — the healthiest cash pattern."),
+        ("✅ Self-Funding", "Operating cash positive, investing in the business, AND paying down financing — the healthiest cash pattern."),
         ("⚠️ Growth Phase — Watch D/E", "Operating cash is positive but the company is also BORROWING to invest — growth funded by debt; watch leverage."),
         ("🚨 Debt Trap — Avoid", "Burning operating cash, still spending, and borrowing to stay afloat — the dangerous cash pattern."),
         ("⚪ Mixed Pattern", "A cash-flow mix that doesn't fit the clean Perfect / Growth / Debt-trap patterns."),

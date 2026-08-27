@@ -588,7 +588,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
             # 8e. Cash-Flow Triangle — cash-flow quality pattern
             _cftri_opts = _ordered_present(_cf, "cf_triangle",
-                                           ["✅ Perfect — Buy Zone", "⚪ Mixed Pattern",
+                                           ["✅ Self-Funding", "⚪ Mixed Pattern",
                                             "⚠️ Growth Phase — Watch D/E", "🚨 Debt Trap — Avoid"])
             sel_cftri = _ms_cascade("Cash-Flow Triangle", _cftri_opts, "sb_cftri", default=[],
                                     help="Operating/investing/financing cash-flow quality. Empty = all.",
