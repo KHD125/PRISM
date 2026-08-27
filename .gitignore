@@ -64,3 +64,10 @@ Wave (2.0)/
 # files -- one "git add -A" would commit an entire other project into PRISM,
 # which auto-deploys. Same reason alpha/ and Wave (2.0)/ are ignored.
 RS-Stages/
+
+# Pasted UI screenshots used for audits, and throwaway render harnesses. Both are working
+# artifacts, not deliverables: the repo is deliberately code-only (Other Resources/, docs/ and
+# every visual-check *.png above are ignored for the same reason). Screenshot/ escaped /*.png
+# only by being a subdirectory, and its contents are renders of the gitignored CSV data.
+Screenshot/
+_scratch_*.py
