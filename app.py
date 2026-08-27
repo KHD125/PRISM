@@ -1365,32 +1365,95 @@ with tabs[3]:
 
     # ══ Sectors ════════════════════════════════════════════════════
     with _mp_tabs[3]:
-        st.markdown(
-            "<div class='sec-cap'>Every sector with ≥5 stocks — Quality / Momentum / Valuation / Score "
-            "averaged across <strong>all</strong> its stocks (sample-robust, not just the gate-passers). "
-            "<strong>% Qualify</strong> = the share clearing the hard gates (the sector's quality breadth). "
-            "Ranked by % Qualify (most-investable first). Capital-cycle phase is named below: 🔥 hot (over-investing — caution) · "
-            "❄️ starved (under-invested — opportunity).</div>",
-            unsafe_allow_html=True,
-        )
+        # The size floor is a CONTROL now, so this caption cannot hardcode it. It is rendered into
+        # a placeholder AFTER the filter row has produced _min_n — the same set-after-the-widget
+        # pattern the sidebar funnel uses. The first cut left "≥5 stocks" literal here and it went
+        # stale the moment the dial moved to 15: a caption contradicting its own control, which is
+        # the exact defect class this session has been removing.
+        _sec_cap_ph = st.empty()
         # Cap-tier filter — Market Pulse is market-wide by design (ignores the sidebar filter), so this
         # slices the WHOLE-sector aggregation by size. selectbox (not pills): cleaner for 7 options +
         # always returns a value; format_func adds the tier emoji while the option value stays the exact
         # market_category string (zero-mapping filter). Guarded if the column is absent.
+        # TWO KINDS OF CONTROL, and the caption says so because they look identical and are not:
+        #   RE-AGGREGATING (market-cap, cyclicality) filter the STOCKS, so every average and the
+        #     % Qualify are recomputed over the surviving subset.
+        #   ROW filters (capital phase, minimum size) hide whole sectors and leave the numbers
+        #     of the survivors untouched.
+        # sector_capital_phase is CONSTANT within a sector today (measured: 0 of 81 vary), so
+        # filtering stocks by it would be equivalent — but it is applied AFTER aggregation anyway,
+        # so it stays correct if that ever stops being true rather than silently part-filtering a
+        # sector and skewing its averages.
         _sec_src = df
-        if "market_category" in df.columns:
-            from config import MCAP_TIERS
-            _cap_opts = ["All"] + [t for t in MCAP_TIERS if (df["market_category"] == t).any()]
-            _cf1, _ = st.columns([2, 6])
-            with _cf1:
+        _c1, _c2, _c3, _c4 = st.columns([2, 2, 2, 2])
+
+        with _c1:
+            if "market_category" in df.columns:
+                from config import MCAP_TIERS
+                _cap_opts = ["All"] + [t for t in MCAP_TIERS if (df["market_category"] == t).any()]
                 _cap = st.selectbox(
                     "Market-cap tier", _cap_opts,
                     format_func=lambda t: t if t == "All" else f"{MCAP_TIERS[t]['emoji']} {t}",
                     key="mp_sec_cap",
+                    help="Re-aggregates: keeps only stocks in this tier, then recomputes every sector average.",
                 )
-            if _cap != "All":
-                _sec_src = df[df["market_category"] == _cap]
-                st.caption(f"📊 {len(_sec_src):,} {_cap} stocks across {_sec_src['sector'].nunique()} sectors.")
+            else:
+                _cap = "All"
+
+        with _c2:
+            if "cyclicality_tier" in df.columns:
+                _cyc_opts = ["All"] + sorted(df["cyclicality_tier"].dropna().unique().tolist())
+                _cyc = st.selectbox(
+                    "Cyclicality tier", _cyc_opts, key="mp_sec_cyc",
+                    help="Re-aggregates. The business-type tier varies WITHIN a sector (42 of 81 sectors "
+                         "hold more than one, up to 6), so this is a genuine stock-level slice — "
+                         "'Deep Cyclical names, grouped by sector'.",
+                )
+            else:
+                _cyc = "All"
+
+        with _c3:
+            if "sector_capital_phase" in df.columns:
+                _ph_opts = ["All"] + sorted(df["sector_capital_phase"].dropna().unique().tolist())
+                _phase = st.selectbox(
+                    "Capital phase", _ph_opts, key="mp_sec_phase",
+                    help="Hides rows. The phase is a SECTOR attribute (constant within a sector), so this "
+                         "shows or hides whole sectors and changes no average.",
+                )
+            else:
+                _phase = "All"
+
+        with _c4:
+            # THE FLOOR IS NOW A DIAL. It was hardcoded at 5, and that is why the ranking was
+            # dominated by tiny sectors: an extreme % Qualify is easy at n=7 and near-impossible at
+            # n=96. Measured 2026-08-27: 8 of the top 10 sectors held fewer than 12 stocks, and
+            # raising this to 15 changes the top six COMPLETELY (0 of 6 in common). Default stays 5
+            # so nothing moves for anyone who does not touch it.
+            _min_n = st.selectbox(
+                "Min stocks / sector", [5, 10, 15, 20, 30], index=0, key="mp_sec_minn",
+                help="Hides rows. A sector's % Qualify is only as trustworthy as its sample: at n=7 one "
+                     "company moves it 14 points, at n=96 it moves it 1. Raise this to see only sectors "
+                     "big enough for the percentage to mean something.",
+            )
+
+        _sec_cap_ph.markdown(
+            f"<div class='sec-cap'>Every sector with <strong>≥{_min_n} stocks</strong> — "
+            f"Quality / Momentum / Valuation / Score averaged across <strong>all</strong> its stocks "
+            f"(sample-robust, not just the gate-passers). <strong>% Qualify</strong> = the share "
+            f"clearing the hard gates (the sector's quality breadth). Ranked by % Qualify "
+            f"(most-investable first). Capital-cycle phase is named below: 🔥 hot (over-investing — "
+            f"caution) · ❄️ starved (under-invested — opportunity).</div>",
+            unsafe_allow_html=True,
+        )
+
+        if _cap != "All":
+            _sec_src = _sec_src[_sec_src["market_category"] == _cap]
+        if _cyc != "All":
+            _sec_src = _sec_src[_sec_src["cyclicality_tier"] == _cyc]
+        if _cap != "All" or _cyc != "All":
+            _bits = " · ".join(b for b in [_cap if _cap != "All" else "", _cyc if _cyc != "All" else ""] if b)
+            st.caption(f"📊 {len(_sec_src):,} stocks ({_bits}) across "
+                       f"{_sec_src['sector'].nunique()} sectors — averages recomputed on this subset.")
 
         # WHOLE-sector aggregation over ALL stocks — bigger samples = robust averages (the fix for
         # comparing a 3-stock sector to a 50-stock one). % Qualify = gate-pass rate, the sample-size-
@@ -1408,11 +1471,16 @@ with tabs[3]:
         # Sort by % Qualify (breadth), then Score — so the most-INVESTABLE sectors lead. Sorting by
         # Score alone would rank a 0%-qualify sector #1 (e.g. Financial Services scores high on
         # fundamentals but every stock fails a hard gate), which misleads at a glance.
-        _sec_stats = (_sec_stats[_sec_stats["stocks"] >= 5]
+        _sec_stats = (_sec_stats[_sec_stats["stocks"] >= _min_n]
                       .sort_values(["pct_qualify", "avg_composite"], ascending=False))
+        # Phase applied AFTER aggregation — a row filter, so the survivors' averages are untouched.
+        if _phase != "All" and "sector_capital_phase" in df.columns:
+            _keep = set(df.loc[df["sector_capital_phase"] == _phase, "sector"].dropna().unique())
+            _sec_stats = _sec_stats[_sec_stats.index.isin(_keep)]
 
         if _sec_stats.empty:
-            st.info("No sector has ≥5 stocks in this view — sample too small for a reliable average.")
+            st.info(f"No sector clears these filters at ≥{_min_n} stocks — widen the selection or "
+                    f"lower the minimum.")
         else:
             # Score (avg_composite) sat second-to-last and rendered as a bar plus a single
             # truncated digit. The three figures a reader scans first — how many, what share

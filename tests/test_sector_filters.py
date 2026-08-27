@@ -1,0 +1,184 @@
+"""
+test_sector_filters.py
+======================
+Contract for the Market Pulse → Sectors filter row.
+
+FOUR CONTROLS, TWO KINDS — and the difference is invisible on screen, which is why it is pinned
+here rather than left to whoever edits this next:
+
+    RE-AGGREGATING   Market-cap tier, Cyclicality tier
+                     filter the STOCKS, so every average and % Qualify is recomputed
+    ROW FILTERS      Capital phase, Min stocks/sector
+                     hide whole sectors and leave the survivors' numbers untouched
+
+Four identical-looking selectboxes that behave in two different ways is a trap. The tests below
+assert the behaviour, not the label.
+
+WHY THE SIZE DIAL EXISTS, and why it is the important one. The floor was hardcoded at 5, and that
+is precisely why the ranking was dominated by tiny sectors: an extreme % Qualify is easy at n=7
+and near-impossible at n=96. Measured 2026-08-27 — 8 of the top 10 sectors held fewer than 12
+stocks (median 9 against 19 universe-wide), and Glass & Glass Products ranked #1 at 88% on 8
+stocks while carrying a below-average composite of 27.9. Raising the floor to 15 changes the top
+six COMPLETELY: 0 of 6 in common. The tab's own tooltip already warned about this; now it can be
+acted on.
+
+DEFAULT STAYS 5, so the tab is byte-identical for anyone who does not touch the control.
+
+Run with: pytest tests/test_sector_filters.py -v
+"""
+
+import contextlib
+import io as _io
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core"))
+
+import pandas as pd
+import pytest
+
+from data_engine import (coerce_numeric_columns, compute_derived_signals, load_all_csvs,
+                         merge_datasets)
+
+_APP = os.path.join(os.path.dirname(__file__), "..", "app.py")
+
+
+@pytest.fixture(scope="module")
+def src():
+    return _io.open(_APP, encoding="utf-8").read()
+
+
+@pytest.fixture(scope="module")
+def live():
+    from core import run_scoring_pipeline
+    with contextlib.redirect_stdout(_io.StringIO()):
+        return run_scoring_pipeline(
+            compute_derived_signals(coerce_numeric_columns(merge_datasets(load_all_csvs("local")))))
+
+
+def _agg(d, min_n=5):
+    """Mirror of the tab's aggregation, so these tests measure what it measures."""
+    g = d.groupby("sector").agg(
+        stocks=("name", "count"),
+        pct_qualify=("gate_pass", lambda s: 100.0 * s.mean()),
+        avg_composite=("composite_score", "mean"),
+    )
+    return (g[g["stocks"] >= min_n]
+            .sort_values(["pct_qualify", "avg_composite"], ascending=False))
+
+
+# -- 1. The controls exist, and the default changes nothing ---------------------------------
+@pytest.mark.parametrize("key", ["mp_sec_cap", "mp_sec_cyc", "mp_sec_phase", "mp_sec_minn"])
+def test_each_control_is_present_with_its_own_key(src, key):
+    assert f'key="{key}"' in src, f"the {key} control is gone"
+
+
+def test_the_size_dial_defaults_to_the_old_hardcoded_floor(src):
+    """Anyone who never touches it must see exactly the tab they saw before."""
+    i = src.index('key="mp_sec_minn"')
+    block = src[i - 400:i + 200]
+    assert "[5, 10, 15, 20, 30]" in block, f"the size options changed: {block[:200]}"
+    assert "index=0" in block, "the default is no longer the first option (5) -- behaviour changed"
+
+
+def test_the_hardcoded_floor_is_gone(src):
+    assert '_sec_stats["stocks"] >= _min_n' in src, "the floor is not driven by the control"
+    assert '_sec_stats["stocks"] >= 5]' not in src, "the hardcoded 5 is still there"
+
+
+# -- 2. THE SEMANTICS: which filters move the numbers, and which only hide rows --------------
+def test_cyclicality_is_a_stock_filter_that_re_aggregates(live):
+    """The premise for treating it as a stock filter: it varies WITHIN sectors, so slicing by it
+    genuinely changes what a sector's average is computed over."""
+    v = live.groupby("sector")["cyclicality_tier"].nunique()
+    assert (v > 1).sum() > 10, (
+        f"cyclicality_tier now varies within only {int((v > 1).sum())} sectors -- if it became a "
+        f"sector-constant attribute it should be a ROW filter like capital phase, not a stock one"
+    )
+    base = _agg(live)
+    sliced = _agg(live[live["cyclicality_tier"] == "Cyclical"])
+    common = base.index.intersection(sliced.index)
+    assert len(common) > 5, "not enough overlap to compare"
+    moved = (base.loc[common, "pct_qualify"] - sliced.loc[common, "pct_qualify"]).abs() > 0.01
+    assert moved.any(), "slicing by cyclicality changed no sector's % Qualify -- it is not re-aggregating"
+
+
+def test_capital_phase_is_a_row_filter_that_moves_no_number(live):
+    """It is applied AFTER aggregation, so a surviving sector's figures must be identical."""
+    v = live.groupby("sector")["sector_capital_phase"].nunique()
+    assert (v > 1).sum() == 0, (
+        f"sector_capital_phase now varies within {int((v > 1).sum())} sectors. The tab applies it "
+        f"after aggregation precisely so this stays correct -- but the help text calling it a "
+        f"sector attribute needs revisiting."
+    )
+    base = _agg(live)
+    keep = set(live.loc[live["sector_capital_phase"].astype(str).str.contains("Hot"), "sector"])
+    filtered = base[base.index.isin(keep)]
+    assert len(filtered) > 0, "no Hot sector survives -- probe is stale"
+    pd.testing.assert_frame_equal(filtered, base.loc[filtered.index], check_like=True)
+
+
+def test_the_phase_filter_is_applied_after_aggregation(src):
+    """Structural: filtering the stocks instead would part-filter a sector and skew its averages
+    the moment phase stops being sector-constant."""
+    i = src.index("_sec_stats = (_sec_stats[")
+    block = src[i:i + 900]
+    assert "sector_capital_phase" in block, "the phase filter moved out of the post-aggregation block"
+    assert "_sec_stats.index.isin" in block, "the phase filter no longer selects whole sectors by index"
+
+
+# -- 3. The size dial must actually change the answer ----------------------------------------
+def test_raising_the_minimum_changes_which_sectors_lead(live):
+    """The whole reason the control exists. If this stops being true the small-sample bias has
+    gone and the dial is merely decorative."""
+    top5 = list(_agg(live, 5).head(6).index)
+    top15 = list(_agg(live, 15).head(6).index)
+    overlap = len(set(top5) & set(top15))
+    assert overlap <= 3, (
+        f"raising the floor from 5 to 15 leaves {overlap} of the top 6 unchanged; the small-sample "
+        f"dominance this control addresses appears to have gone -- re-measure before trusting the "
+        f"help text, which claims the ranking changes completely"
+    )
+
+
+def test_small_sectors_really_do_dominate_the_default_view(live):
+    """The claim in the help text, checked against live data."""
+    top10 = _agg(live, 5).head(10)
+    assert top10["stocks"].median() < _agg(live, 5)["stocks"].median(), (
+        "the top-ranked sectors are no longer smaller than typical -- the help text's premise is stale"
+    )
+
+
+def test_the_floor_never_admits_a_sector_below_it(live):
+    for n in (5, 10, 15, 20, 30):
+        g = _agg(live, n)
+        if g.empty:
+            continue
+        assert g["stocks"].min() >= n, f"a sector below {n} stocks survived the {n} floor"
+
+
+# -- 4. The two kinds are explained to the reader --------------------------------------------
+def test_the_help_text_distinguishes_the_two_behaviours(src):
+    """Four identical-looking selectboxes behaving in two ways needs saying, not guessing."""
+    i = src.index('key="mp_sec_cap"')
+    block = src[i - 900:i + 3200]
+    assert block.lower().count("re-aggregat") >= 2, (
+        "the re-aggregating controls no longer say that they recompute the averages"
+    )
+    assert block.lower().count("hides rows") >= 2, (
+        "the row filters no longer say that they only hide rows"
+    )
+
+def test_the_caption_follows_the_size_dial(src):
+    """The caption hardcoded "≥5 stocks" while the floor became a control, so it contradicted its
+    own dial the moment that moved to 15. Verified in the browser before it was fixed."""
+    # SCOPED TO THE RENDERED STRING, not the whole file. The first version scanned all of app.py
+    # for the literal and matched the CODE COMMENT that explains this very bug -- the fourth
+    # substring-scan-over-source mistake of the session. Prose naming a banned string is not the
+    # banned string.
+    i = src.index("_sec_cap_ph.markdown(")
+    block = src[i:src.index("unsafe_allow_html=True,", i)]
+    assert "{_min_n}" in block, "the caption no longer interpolates the chosen minimum"
+    assert "≥5" not in block, f"the caption hardcodes the old floor: {block[:160]}"
