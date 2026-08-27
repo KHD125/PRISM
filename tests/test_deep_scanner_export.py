@@ -123,9 +123,18 @@ def test_all_data_export_encodes_through_bom_helper():
     (UTF-8 BOM) — its Value column dumps every engine column, which includes emoji decision-strings
     (corporate_class 🏆, smart_money_flow ⚪/✅/❌, weinstein_stage, verdict emojis) + Indian names that
     mojibake in Excel under a bare DataFrame.to_csv(). Same regression class as the Deep Scanner export,
-    on the third (previously unguarded) download button."""
+    on the third (previously unguarded) download button.
+
+    LOCATED BY ITS DATA ARGUMENT, NOT ITS LABEL. This originally searched for the literal label
+    "Full Data Row" and broke when that label was reworded to state the signal count. The label is
+    copy and will change again; `data=...(_stock_export)` is the thing this test is actually about.
+    """
     tree = ast.parse(_APP.read_text(encoding="utf-8"), filename="app.py")
-    btn = _download_button_by_label(tree, "Full Data Row")
+    btn = next((n for n in ast.walk(tree)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == "download_button"
+                and any(kw.arg == "data" and "_stock_export" in ast.unparse(kw.value)
+                        for kw in n.keywords)), None)
     assert btn is not None, "could not locate the All Data single-row export button in app.py"
     data = next((kw.value for kw in btn.keywords if kw.arg == "data"), None)
     assert data is not None, "All Data export download_button has no data= keyword"

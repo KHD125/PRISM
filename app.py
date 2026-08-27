@@ -1084,20 +1084,28 @@ with tabs[2]:
             render_raw_signals(stock, query=_ad_q)
             # Breathing room before the Export so it doesn't crowd the last data section.
             st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
-            _stock_export = pd.DataFrame({
-                "Signal": df[df["name"] == selected].iloc[0].index,
-                "Value":  df[df["name"] == selected].iloc[0].values,
-            })
+            # `stock` IS df[df["name"] == selected].iloc[0] (assigned once at the top of this tab) and
+            # is the very row the grid above just rendered. Reuse it instead of re-running the same
+            # lookup twice more: one derivation cannot drift from what the tab displayed, two can.
+            _stock_export = pd.DataFrame({"Signal": stock.index, "Value": stock.values})
             # Excel-safe UTF-8-with-BOM encode (the SAME path as the Deep Scanner + sidebar exports) —
             # this row's Value column is full of emoji decision-strings (corporate_class 🏆, smart_money
             # ⚪/✅/❌, weinstein_stage, verdict emojis) + Indian names that mojibake under a bare to_csv.
             from ui.ui_export import _to_csv_bytes
             st.download_button(
-                f"📥 Export {selected} — Full Data Row (all columns)",
+                f"📥 Export {selected} — full row · all {df.shape[1]} signals",
                 data=_to_csv_bytes(_stock_export),
                 file_name=f"{re.sub(r'[^A-Za-z0-9._-]+', '_', selected).lower()}_signals.csv",
                 mime="text/csv",
                 use_container_width=True,
+                # Both sibling data exports state their column count in the label; this one said only
+                # "(all columns)". The help names the one thing measurement showed a user WILL hit:
+                # the CSV is keyed by ENGINE column name, and NONE of the 154 display labels the grid
+                # above just taught them appear in it (0 of 154 — verified on live data).
+                help=f"The complete machine-readable row — all {df.shape[1]} engine columns, including "
+                     f"the intermediate working columns the grid above omits. Rows are keyed by engine "
+                     f"column name (roce_med_10y), NOT the display labels shown above (ROCE 10Y Med). "
+                     f"Excel-safe UTF-8. The filter box does not narrow this export.",
             )
 
 
