@@ -41,6 +41,28 @@ def _g(stock: pd.Series, key: str, default=0):
     return default if (v is None or (isinstance(v, float) and np.isnan(v))) else v
 
 
+def _shown(value, dp: int = 0) -> float:
+    """The number AS THE READER SEES IT — rounded to the displayed precision.
+
+    Classify colours, zone words and bands on THIS, never on the raw value. Otherwise two cells
+    print the identical string and wear different colours, with nothing on screen to explain the
+    difference: growth_score 69.6744 and 70.3481 both render "70" while one is gold and the other
+    green. Measured 2026-08-27 across the tearsheet: 540 such renders on 10 surfaces.
+
+    WHEN THIS IS THE RIGHT FIX: the threshold is a DISPLAY BAND — Strong/Average/Weak at 70/40,
+    "cheaper than X% of peers" at 75/25. Those cuts are presentation conventions, so moving a value
+    to the band its printed form implies loses nothing.
+
+    WHEN IT IS NOT: the threshold is a real economic line. VCR's 1.00 is Buffett's one-dollar
+    premise — blurring its edge would destroy the signal, so that chip shows MORE PRECISION instead
+    (tests/test_deep_signal_chips.py). Nor does it apply where the colour comes from an ENGINE
+    classification that is separately labelled on the page: the hero ring is coloured by
+    conviction_tier, and the tier's own name sits beside it, so the number is not what the reader
+    is decoding. Ask what the threshold MEANS before reaching for this.
+    """
+    return round(float(value), dp)
+
+
 def _parse_frameworks(fw_str, exclude: set = None) -> list:
     """Split the `frameworks_passed` string into clean, whole-token framework names.
 
@@ -244,9 +266,12 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
                 return "th" if 11 <= (n % 100) <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
 
             def _pct_cell(lbl, val, pct, dur_html=""):
-                _c = (COLORS["green"] if pct >= 75 else
-                      COLORS["gold"] if pct >= 40 else COLORS["red"])
-                _p = int(round(pct))
+                # Colour from the percentile the cell PRINTS, not the raw one: pct 74.6 renders
+                # "75th percentile" and must not sit in a different band from a pct of 75.0 that
+                # renders the identical text. _p is that printed figure.
+                _p = int(_shown(pct, 0))
+                _c = (COLORS["green"] if _p >= 75 else
+                      COLORS["gold"] if _p >= 40 else COLORS["red"])
                 return (
                     f'<div style="flex:1;min-width:180px;">'
                     f'<span style="font-size:0.56rem;font-weight:700;color:{COLORS["text_muted"]};'
@@ -457,9 +482,20 @@ def render_ep_power_curve_module(stock: pd.Series):
     """, unsafe_allow_html=True)
 
     # ── EP Metrics Strip — packed HTML flex (no st.columns/st.metric padding) ──
-    vel_sign = "+" if ep_vel >= 0 else ""
+    # EP Velocity prints WHOLE CRORE, so sign, colour and the Ascending/Descending word are all
+    # decided on that rounded figure — +0.4 and -0.4 both render "0 Cr" and must not wear opposite
+    # colours (99 stocks did). A value that rounds to zero at the displayed scale is neither
+    # ascending nor descending, so it reads FLAT rather than being forced onto a side: this
+    # threshold is a SIGN, and absent movement is a real third state, not a band edge.
+    # `_vel_shown != 0` normalises -0.0 (round(-0.4) is -0.0, which formats as the ugly "-0").
+    _vel_shown = _shown(ep_vel, 0) if ep_vel_known else 0.0
+    if _vel_shown == 0:
+        _vel_shown = 0.0
+    # The display's own "{:,.0f}" already carries the minus for negatives — only "+" is added here.
+    vel_sign = "+" if _vel_shown > 0 else ""
     ep_clr  = COLORS["green"] if ep_positive else COLORS["red"]
-    vel_clr = COLORS["green"] if ep_vel > 0 else COLORS["red"]
+    vel_clr = (COLORS["green"] if _vel_shown > 0 else
+               COLORS["red"]   if _vel_shown < 0 else COLORS["text_secondary"])
 
     def _ep_metric(label: str, value: str, sub: str, val_clr: str, sub_clr: str,
                    tip: str = "") -> str:
@@ -496,8 +532,9 @@ def render_ep_power_curve_module(stock: pd.Series):
                        "while economic profit is negative — that is a company earning less than "
                        "its shareholders' money costs.") +
         _ep_metric("EP Velocity (YoY)",
-                   f"{vel_sign}₹{ep_vel:,.0f} Cr" if ep_vel_known else "—",
-                   ("Ascending ↑" if ep_vel > 0 else "Descending ↓")
+                   f"{vel_sign}₹{_vel_shown:,.0f} Cr" if ep_vel_known else "—",
+                   ("Ascending ↑" if _vel_shown > 0 else
+                    "Descending ↓" if _vel_shown < 0 else "Flat — under ₹1 Cr")
                        if ep_vel_known else "No prior-year equity",
                    vel_clr if ep_vel_known else COLORS["text_muted"],
                    vel_clr if ep_vel_known else COLORS["text_muted"],
@@ -1015,8 +1052,11 @@ def render_forensic_perimeter(stock: pd.Series):
     # ── KPI strip ────────────────────────────────────────────────────────
     pio_clr  = (COLORS["green"] if piotroski >= 7 else
                 COLORS["gold"]  if piotroski >= 5 else COLORS["red"])
-    fsc_clr  = (COLORS["green"] if forensic_score >= 80 else
-                COLORS["gold"]  if forensic_score >= 60 else COLORS["red"])
+    # 0 contradictions on today's data, but forensic_score is NOT integer-valued (18 distinct
+    # values) -- that zero is luck, not structure, so it bands on the shown figure like the rest.
+    _fsc_shown = _shown(forensic_score, 0)
+    fsc_clr  = (COLORS["green"] if _fsc_shown >= 80 else
+                COLORS["gold"]  if _fsc_shown >= 60 else COLORS["red"])
 
     st.markdown(f"""
     <div class="ts-kpi-strip">
@@ -2270,9 +2310,12 @@ def render_score_strip(stock: pd.Series):
         w   = max(0.0, min(100.0, val))
         neg = val < 0
         disp = f"{val:+.0f}" if neg else f"{val:.0f}"
-        zone = ("Strong" if val >= 70 else "Average" if val >= 40 else "Weak") if not neg else "Penalty"
-        zone_clr = (COLORS["green"] if val >= 70 else
-                    COLORS["gold"]  if val >= 40 else COLORS["red"])
+        # Band on the DISPLAYED number: 69.67 and 70.35 both print "70", so both must read
+        # Strong/green. The zone WORD is classified here too — it had the same split.
+        _v   = _shown(val, 0)
+        zone = ("Strong" if _v >= 70 else "Average" if _v >= 40 else "Weak") if not neg else "Penalty"
+        zone_clr = (COLORS["green"] if _v >= 70 else
+                    COLORS["gold"]  if _v >= 40 else COLORS["red"])
         return (
             f'<div class="ts-score-cell" style="border-top:3px solid {color};">'
             f'<div class="ts-score-cell-lbl">{icon} {label}{help_chip(f"{label} Score")}</div>'
@@ -3567,7 +3610,8 @@ def render_qglp_radar(stock: pd.Series, profile_name: str = "Balanced"):
         v = stock.get(col)
         known = pd.notna(v)
         pct   = max(0.0, min(100.0, float(v))) if known else 0.0
-        clr   = (_Q_GOLD if pct >= 70 else COLORS["gold"] if pct >= 40
+        _p    = _shown(pct, 0)                      # band on what the leg PRINTS, not the raw pct
+        clr   = (_Q_GOLD if _p >= 70 else COLORS["gold"] if _p >= 40
                  else COLORS["orange"]) if known else COLORS["text_muted"]
         disp  = f"{float(v):.0f}" if known else "—"
         _rows += (
@@ -3853,8 +3897,9 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     _rank_known = pd.notna(val_rank)
     _cheaper    = (100.0 - float(val_rank)) if _rank_known else None   # low rank = cheapest
     if _rank_known:
-        _val_clr = (COLORS["green"] if _cheaper >= 75.0
-                    else COLORS["gold"] if _cheaper >= 25.0 else COLORS["red"])
+        _c_shown = _shown(_cheaper, 0)          # the tile prints 0dp; band on that
+        _val_clr = (COLORS["green"] if _c_shown >= 75.0
+                    else COLORS["gold"] if _c_shown >= 25.0 else COLORS["red"])
         _val_txt, _val_sub = f"{_cheaper:.0f}%", (
             f"Cheaper than {_cheaper:.0f}% of fundamentals-matched peers")
     else:
@@ -4021,9 +4066,10 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     _fv_txt, _fv_sub, _fv_clr = "—", "needs positive EPS", COLORS["text_muted"]
     if _px_ok and pd.notna(_fv_ex):
         _upside = (float(_fv_ex) / float(_px_ex) - 1.0) * 100.0
+        _up_shown = _shown(_upside, 0)          # the sub-line prints 0dp; colour on that
         _fv_txt = f"₹ {float(_fv_ex):,.0f}"
         _fv_sub = f"{_upside:+.0f}% vs price · QGLP fair PE × EPS"
-        _fv_clr = COLORS["green"] if _upside >= 0 else COLORS["red"]
+        _fv_clr = COLORS["green"] if _up_shown >= 0 else COLORS["red"]
     _sh_txt = "—"
     if _px_ok and allocation and allocation > 0:
         _sh_txt = f"{int(allocation // float(_px_ex)):,} shares"
@@ -4069,9 +4115,9 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     # Polarity per the engine's own definition (data_engine ~L3308): "Positive gap = priced for
     # more than it can deliver (expectations risk); negative = pessimism / margin of safety."
     _egap_clr = COLORS["text_muted"] if not _egap_ok else (
-        COLORS["green"] if _egap < 0 else COLORS["orange"])
+        COLORS["green"] if _shown(_egap, 2) < 0 else COLORS["orange"])
     _vcv_clr = COLORS["text_muted"] if not _vcv_ok else (
-        COLORS["green"] if _vcv > 0 else COLORS["red"])
+        COLORS["green"] if _shown(_vcv, 2) > 0 else COLORS["red"])
 
     _struct = (
         _cockpit_card(
