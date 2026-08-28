@@ -75,7 +75,7 @@ CONCEPT_REFERENCE = {
         ("WATCH★", "The confirmed turnaround: NOT yet earning above the cost of equity, but the excess return is climbing and margins confirm the turn. The engine's AVOID pile is where these live."),
         ("WATCH", "One clock only — a margin spine without improvement, improvement without earnings, or a good business whose momentum just broke. Also caps anything whose margins are fading (tau ≤ −0.25)."),
         ("AVOID", "Nothing improving. The LEVEL may be excellent — a stock can earn far above its cost of equity and still land here because every change clock points down (the engine's own BUY list contains such names)."),
-        ("N/A", "An input the tier needs (net worth, economic profit, its velocity, or the margin tau) is missing or unusable — unverifiable is neither passed nor condemned, so no tier is assigned. The row still shows whatever numbers exist."),
+        ("N/A", "An input the tier needs (the reserves equity base, economic profit, its velocity, or the margin tau) is missing or unusable — unverifiable is neither passed nor condemned, so no tier is assigned. The row still shows whatever numbers exist."),
     ],
     # ── cf_triangle — core/forensic_engine.py:1006 (signs of operating/investing/financing cash flow)
     "💵 Cash-Flow Triangle": [

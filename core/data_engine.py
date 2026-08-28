@@ -1550,6 +1550,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── EQUITY BASE FOR THE EP FAMILY — one balance-sheet line, both years ──
+    # BOOK DEVIATION (data-forced, not mathematical — CLAUDE.md §5 book-fidelity rule): the 28th
+    # WCS computes EP on NET WORTH (Eq 3: EP = Net Worth × (RoE − CoE); its Eq 2 RoE uses the same
+    # base). The engine uses RESERVES for both years instead, because a same-definition prior-year
+    # net worth does not exist in the data — the one-basis requirement below outranks the book's
+    # base choice. A reconstruction (reserves_1yb + current share capital) was evaluated and
+    # rejected: only ~61% of stocks have an unchanged share count year-over-year.
     # net_worth (above) is market_cap ÷ P/B and has NO prior-year counterpart — the CSV carries no
     # historical price_to_book. Pairing it against reserves_1yb therefore subtracted two DIFFERENT
     # definitions of equity, biasing every velocity upward by the share-capital gap (~7% of book,

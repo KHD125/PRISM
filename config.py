@@ -39,7 +39,10 @@ DATA_DIR_NAME = "Other Resources/CSV Data"
 # ═══════════════════════════════════════════════════════════════
 
 # India institutional Cost of Equity — Motilal Oswal 23rd WCS baseline.
-# Used in Economic Profit: EP = Net Worth × (RoE − COST_OF_EQUITY).
+# Used in Economic Profit: EP = equity base × (RoE − COST_OF_EQUITY). The 28th WCS's Eq 3 says
+# NET WORTH; the engine uses RESERVES for both years instead — a data-forced deviation (the CSV
+# has no historical P/B, so no prior-year net worth on the same definition exists). Documented
+# at the EP block in core/data_engine.py.
 # Referenced in data_engine.py; update here to stress-test against 12% or 15% hurdle rates.
 COST_OF_EQUITY = 12.0
 INDIA_GSEC_YIELD = 7.0   # India 10-year G-Sec proxy (update when RBI policy shifts)

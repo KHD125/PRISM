@@ -1398,7 +1398,7 @@ with tabs[3]:
         _wt_counts = df["wealth_tier"].value_counts() if "wealth_tier" in df.columns else {}
         st.markdown(
             f"<div class='sec-cap'>The <b>wealth-engine tier</b> — three clocks, nothing else: "
-            f"<b>EP%</b> (economic profit ÷ net worth = ROE − cost of equity, so a ₹200 Cr and a "
+            f"<b>EP%</b> (economic profit ÷ reserves = ROE − cost of equity, so a ₹200 Cr and a "
             f"₹2,000 Cr business compare fairly) · <b>Vel%</b> (this year's change in that excess "
             f"return) · <b>tau</b> (the 5-year margin spine). BUY★ = earning, improving, confirmed; "
             f"WATCH★ = the confirmed turnaround (not earning yet, improving with a spine); AVOID = "
@@ -1437,7 +1437,7 @@ with tabs[3]:
             _wl = _wl.sort_values(["_wt_ord", "wealth_vel_pct"], ascending=[True, False])
             _wt_cols = [c for c in ["wealth_tier", "name", "_warn_txt", "wealth_ep_pct",
                                     "wealth_vel_pct", "moat_tau", "moat_score", "growth_score",
-                                    "red_flag_count", "verdict_direction", "net_worth"]
+                                    "red_flag_count", "verdict_direction", "reserves"]
                         if c in _wl.columns]
             st.dataframe(
                 _wl[_wt_cols].reset_index(drop=True),
@@ -1446,13 +1446,13 @@ with tabs[3]:
                     "name":              st.column_config.TextColumn("name", width="medium"),
                     "_warn_txt":         st.column_config.TextColumn("⚠", width="small", help="Forensic caution: 8+ red flags or a Schilit checker fail. Never changes the tier — it rides beside it."),
                     "wealth_ep_pct":     st.column_config.NumberColumn("EP%",  format="%+.1f", width="small", help="Excess return: ROE − cost of equity, in percentage points. The universe median is NEGATIVE — being above zero already beats the median listed company."),
-                    "wealth_vel_pct":    st.column_config.NumberColumn("Vel%", format="%+.1f", width="small", help="This year's CHANGE in the excess return, in points of net worth. Direction beats level — the 28th WCS's own finding."),
+                    "wealth_vel_pct":    st.column_config.NumberColumn("Vel%", format="%+.1f", width="small", help="This year's CHANGE in the excess return, in points of the reserves base. Direction beats level — the 28th WCS's own finding."),
                     "moat_tau":          st.column_config.NumberColumn("tau",  format="%+.2f", width="small", help="5-year margin trend (rank correlation, −1…+1). ≥ +0.25 confirms; ≤ −0.25 caps the tier at WATCH."),
                     "moat_score":        st.column_config.NumberColumn("Moat", format="%.0f", width="small"),
                     "growth_score":      st.column_config.NumberColumn("Gro",  format="%.0f", width="small"),
                     "red_flag_count":    st.column_config.NumberColumn("🚩",   format="%.0f", width="small"),
                     "verdict_direction": st.column_config.TextColumn("Soundness", width="small", help="The soundness gate (level + forensics + valuation) beside the wealth tier (pure change). They answer DIFFERENT questions and disagreeing openly is the point: the engine's rare SOUND names include stocks this lens reads as decaying, and its FLAWED pile hides confirmed turnarounds."),
-                    "net_worth":         st.column_config.NumberColumn("NW ₹Cr", format="%.0f", width="small", help="The denominator behind EP% and Vel%. A tiny base can make the percentages explode — check this before believing an extreme EP%."),
+                    "reserves":          st.column_config.NumberColumn("Eq ₹Cr", format="%.0f", width="small", help="Reserves — the equity base behind EP% and Vel% (the same base economic profit is computed on). A tiny base can make the percentages explode — check this before believing an extreme EP%."),
                 },
                 use_container_width=True,
                 height=min(520, 80 + len(_wl) * 35 + 40),

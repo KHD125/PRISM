@@ -231,9 +231,9 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     # good and safe now?" (level + forensics + valuation). The wealth tier asks "is it becoming
     # more valuable?" — three clocks, nothing else:
     #     A  wealth_ep_pct  > 0                earning above the cost of equity
-    #        (EP/net_worth = ROE − CoE: the MOSL Wealth Creation studies' own recurring engine —
-    #         ROCE expansion + earnings growth — re-derived independently and normalized so a
-    #         ₹190 Cr business and a ₹2,025 Cr one are comparable. Absolute EP is size-biased:
+    #        (EP/reserves = ROE − CoE, EXACTLY: the MOSL Wealth Creation studies' own recurring
+    #         engine — ROCE expansion + earnings growth — re-derived independently and normalized
+    #         so a ₹190 Cr business and a ₹2,025 Cr one are comparable. Absolute EP is size-biased:
     #         it ranked Sarda's +₹251 Cr improvement above far larger PERCENTAGE improvers.)
     #     B  wealth_vel_pct >= WEALTH_VEL_MIN  excess return materially improving this year
     #     C  moat_tau       >= WEALTH_TAU_CONF the 5-year margin spine confirms it
@@ -252,7 +252,7 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     # risk marker rides beside the tier and never alters it. Blending would hide exactly the
     # tension the reader needs to see (the cf_triangle lesson).
     #
-    # STRICT N/A RULING: any missing input (net worth ≤ 0/absent, EP, velocity or tau NaN) yields
+    # STRICT N/A RULING: any missing input (reserves ≤ 0/absent, EP, velocity or tau NaN) yields
     # N/A, never a tier — "unverifiable is not passed" (§5), and equally never condemned. This
     # buries e.g. Lohia Corp (EP% +24.6, Vel% +10.9, tau missing) as N/A; accepted deliberately —
     # the row still shows the strong numbers.
@@ -260,14 +260,23 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     # CLASSIFIED ON DISPLAYED PRECISION (the _shown rule, tests/test_display_threshold_
     # consistency.py): the UI prints EP%/Vel% at 1dp and tau at 2dp, so the grammar rounds to
     # those BEFORE comparing — two stocks printing the same number must land in the same tier.
-    _w_nw  = _col("net_worth", np.nan).astype(float).to_numpy()
+    # ONE-BASIS DENOMINATOR (2026-08-28; was net_worth). economic_profit is built on RESERVES
+    # (data_engine's _ep_equity = reserves.where(> 0)); net_worth is market_cap ÷ P/B — a
+    # DIFFERENT equity definition, with a silent reserves fallback on 34 rows. Mixing the two
+    # made the "EP% = ROE − CoE" identity only approximate: median shrink ×0.962 but ratio
+    # 0.004–14.0 in the tails (GKW displayed EP% −77.7 against a true −12.1; Swan Defence was
+    # 256pp off), and 7 stocks failed the Vel% bar on the shrink alone. Dividing by the SAME
+    # base EP is built on makes wealth_ep_pct ≡ ROE − CoE exact by construction — pinned by
+    # test_ep_pct_is_exactly_roe_minus_coe, which also catches any future drift between this
+    # divisor and data_engine's EP equity base. Migration measured: 8 tiers changed, none BUY/BUY★.
+    _w_eq  = _col("reserves", np.nan).astype(float).to_numpy()
     _w_ep  = _col("economic_profit", np.nan).astype(float).to_numpy()
     _w_vel = _col("economic_profit_velocity", np.nan).astype(float).to_numpy()
     _w_tau = _col("moat_tau", np.nan).astype(float).to_numpy()
     with np.errstate(invalid="ignore", divide="ignore"):
-        _w_nw_ok  = np.isfinite(_w_nw) & (_w_nw > 0)
-        _ep_pct   = np.where(_w_nw_ok, _w_ep / _w_nw * 100.0, np.nan)
-        _vel_pct  = np.where(_w_nw_ok, _w_vel / _w_nw * 100.0, np.nan)
+        _w_eq_ok  = np.isfinite(_w_eq) & (_w_eq > 0)
+        _ep_pct   = np.where(_w_eq_ok, _w_ep / _w_eq * 100.0, np.nan)
+        _vel_pct  = np.where(_w_eq_ok, _w_vel / _w_eq * 100.0, np.nan)
         _ep_s, _vel_s, _tau_s = np.round(_ep_pct, 1), np.round(_vel_pct, 1), np.round(_w_tau, 2)
         _known = np.isfinite(_ep_s) & np.isfinite(_vel_s) & np.isfinite(_tau_s)
         _A    = _known & (_ep_s > 0.0)

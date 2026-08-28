@@ -524,8 +524,8 @@ def render_ep_power_curve_module(stock: pd.Series):
     # cards are assembled inside ONE concatenated expression; an earlier edit that inserted
     # statements mid-expression broke the module and was reverted). This card closes the loop the
     # strip opens: its four siblings ARE the tier's raw inputs, and the normalized EP% / Vel% —
-    # the scale-free versions (EP ÷ net worth = ROE − CoE) that make a ₹200 Cr and a ₹2,000 Cr
-    # business comparable — are displayed on NO other per-stock surface.
+    # the scale-free versions (EP ÷ reserves = ROE − CoE, exactly) that make a ₹200 Cr and a
+    # ₹2,000 Cr business comparable — are displayed on NO other per-stock surface.
     _wt_val = str(stock.get("wealth_tier", "") or "")
     _wt_warn = " ⚠" if int(stock.get("wealth_warn", 0) or 0) == 1 else ""
     _wt_ep, _wt_vel = stock.get("wealth_ep_pct"), stock.get("wealth_vel_pct")
@@ -548,7 +548,7 @@ def render_ep_power_curve_module(stock: pd.Series):
                    ep_clr if ep_known else COLORS["text_muted"],
                    ep_clr if ep_known else COLORS["text_muted"],
                    tip="Profit left after charging for ALL capital, equity included: "
-                       "net worth × (RoE − cost of equity). Accounting profit can be healthy "
+                       "equity (reserves) × (RoE − cost of equity). Accounting profit can be healthy "
                        "while economic profit is negative — that is a company earning less than "
                        "its shareholders' money costs.") +
         _ep_metric("EP Velocity (YoY)",
@@ -585,7 +585,8 @@ def render_ep_power_curve_module(stock: pd.Series):
                    tip="The wealth-engine tier — three clocks, nothing else: EP% (excess return, "
                        "ROE − cost of equity), Vel% (this year's change in it), and the 5-year "
                        "margin tau. The four cards to the left are its raw inputs; EP% and Vel% "
-                       "here are those figures ÷ net worth, so businesses of any size compare "
+                       "here are those figures ÷ reserves (the same equity base EP is computed "
+                       "on), so businesses of any size compare "
                        "fairly. Price-blind and forensics-blind: the ⚠ marks 8+ red flags or a "
                        "Schilit fail and never alters the tier. A description, not a "
                        "recommendation — see the 💹 Wealth tab for the whole universe.")

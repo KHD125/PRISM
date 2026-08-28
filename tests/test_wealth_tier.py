@@ -8,8 +8,8 @@ WHAT IT IS. A second, deliberately PRICE-BLIND verdict answering a different que
 verdict_direction: not "is this business good and safe now?" but "is it becoming more valuable?"
 Three clocks only:
 
-    A  EP%  = economic_profit / net_worth × 100 = ROE − cost of equity   (earning above hurdle)
-    B  Vel% = EP velocity / net_worth × 100 ≥ 0.5                        (materially improving)
+    A  EP%  = economic_profit / reserves × 100 = ROE − cost of equity    (earning above hurdle)
+    B  Vel% = EP velocity / reserves × 100 ≥ 0.5                         (materially improving)
     C  tau  = moat_tau ≥ +0.25                                            (5Y margin spine)
     fading: tau ≤ −0.25 caps everything at WATCH
 
@@ -22,8 +22,11 @@ improvers like Sarda), the engine's complete 18-stock BUY list (which it split 6
 demoting decaying legends like Vedant Fashions and Gulf Oil), and the engine's complete 126-stock
 WATCH tier (split 36/12/0/43/27/8 — separating Nestle, still compounding, from Colgate at EP%
 +70.4 but decaying). The normalization matters: absolute EP is size-biased (it ranked Sarda's
-+₹251 Cr above far larger PERCENTAGE improvers); EP/net_worth is scale-free and equals ROE − CoE
-(verified corr 0.980 on live data).
++₹251 Cr above far larger PERCENTAGE improvers); EP/reserves is scale-free and equals ROE − CoE
+EXACTLY (one basis — EP is built on reserves. The original build divided by net_worth, a
+market_cap ÷ P/B figure on a DIFFERENT equity definition: corr 0.980 but ratio 0.004–14.0 in
+the tails, GKW displaying EP% −77.7 against a true −12.1. Fixed 2026-08-28; 8 tiers moved,
+none BUY/BUY★).
 
 THE FOUR RULES THESE TESTS DEFEND:
   1. ⚠ NEVER ALTERS THE TIER — the clocks cannot see forensics (16 of 26 BUY★ on one live list
@@ -63,8 +66,9 @@ _DEFAULTS = {
     "expected_excess_return": 20.0, "pe": 20.0, "fair_pe_qglp": 30.0,
     "buy_zone_label": "Accumulate", "governance_risk_multiplier": 1.0,
     "data_coverage_pct": 90.0,
-    # wealth inputs — defaults make a clean BUY★; each test overrides what it probes
-    "net_worth": 1000.0, "economic_profit": 100.0,
+    # wealth inputs — defaults make a clean BUY★; each test overrides what it probes.
+    # reserves (not net_worth) is the denominator: the SAME equity base EP is built on.
+    "reserves": 1000.0, "economic_profit": 100.0,
     "economic_profit_velocity": 50.0, "moat_tau": 1.0,
 }
 
@@ -131,7 +135,7 @@ def test_fading_without_improvement_is_avoid():
 
 # ── 3. Strict N/A — unverifiable is neither passed nor condemned ────────────────────────────
 @pytest.mark.parametrize("hole", [
-    {"net_worth": np.nan}, {"net_worth": 0.0}, {"net_worth": -50.0},
+    {"reserves": np.nan}, {"reserves": 0.0}, {"reserves": -50.0},
     {"economic_profit": np.nan}, {"economic_profit_velocity": np.nan}, {"moat_tau": np.nan},
 ])
 def test_any_missing_input_is_na(hole):
@@ -141,7 +145,7 @@ def test_any_missing_input_is_na(hole):
 def test_the_lohia_ruling_strong_numbers_with_missing_tau_stay_na():
     """EP% +24.6, Vel% +10.9, tau absent → N/A, deliberately. The row still shows the numbers;
     the TIER refuses to certify on absent evidence."""
-    assert _tier(net_worth=1000.0, economic_profit=246.0,
+    assert _tier(reserves=1000.0, economic_profit=246.0,
                  economic_profit_velocity=109.0, moat_tau=np.nan) == "N/A"
 
 
@@ -219,6 +223,25 @@ def test_calibration_bands(live):
     assert 0.04 < share.get("BUY★", 0) < 0.30, f"BUY★ at {share.get('BUY★', 0):.1%}"
     assert share.get("AVOID", 0) < 0.60, "AVOID is swallowing the universe — the engine-verdict disease"
     assert share.get("N/A", 0) < 0.20, "N/A too large — an input's coverage collapsed"
+
+
+def test_ep_pct_is_exactly_roe_minus_coe(live):
+    """THE ONE-BASIS CONTRACT (2026-08-28). EP = reserves × (ROE − CoE) / 100 in data_engine, and
+    this engine divides by the SAME reserves base — so EP% ≡ ROE − CoE must hold EXACTLY (fp
+    tolerance), for every row where it is defined. This is the drift alarm: if data_engine ever
+    changes EP's equity base, or this divisor ever changes, the identity breaks and this fails.
+    The original build divided by net_worth (market_cap ÷ P/B — a different equity definition)
+    and this identity held only approximately (ratio 0.004–14.0 in the tails)."""
+    from config import COST_OF_EQUITY
+    known = live["wealth_ep_pct"].notna()
+    assert known.sum() > 1500, "EP% coverage collapsed — the identity check has nothing to bite"
+    np.testing.assert_allclose(
+        live.loc[known, "wealth_ep_pct"].to_numpy(),
+        (live.loc[known, "roe"] - COST_OF_EQUITY).to_numpy(),
+        rtol=0, atol=1e-6,
+        err_msg="wealth_ep_pct no longer equals ROE − CoE — the EP numerator and the wealth "
+                "denominator have drifted onto different equity bases",
+    )
 
 
 def test_tiers_mean_what_they_claim_on_live_data(live):
