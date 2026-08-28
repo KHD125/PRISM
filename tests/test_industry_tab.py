@@ -464,3 +464,48 @@ def test_missing_industry_column_is_handled(block):
     assert 'if "industry" not in' in block or '"industry" in df.columns' in block, (
         "no guard for a frame without an industry column"
     )
+
+
+# ── 7. 💹 tier-share column (2026-08-28) — same design as the Sectors tab ────────────────────
+def test_tier_share_base_is_captured_before_the_wealth_filter(block):
+    """The 100% trap (see test_sector_filters for the live proof): the denominator must be the
+    pre-wealth-filter roster."""
+    i = block.index("_ind_share_base = _ind_src")
+    j = block.index('_ind_src = _ind_src[_ind_src["wealth_tier"] == _ind_wt]')
+    assert i < j, "the share base is captured AFTER the wealth filter — the 100% trap is live"
+    assert '_ind_share_base.groupby("industry")["wealth_tier"]' in block, (
+        "the share aggregation no longer reads the pre-filter base"
+    )
+
+
+def test_tier_share_is_exact_match_never_contains(block):
+    i = block.index("_ind_share_tier")
+    seg = block[i:i + 2600]
+    assert "(s == _ind_share_tier)" in seg, "the share is no longer an exact-equality match"
+    assert ".str.contains" not in seg, "a contains-match crept into the tier share"
+
+
+def test_tier_share_defaults_to_buy_star_and_the_label_follows(block):
+    assert '_ind_share_tier = _ind_wt if _ind_wt != "All" else "BUY★"' in block
+    assert 'f"💹 {_ind_share_tier} %"' in block, "the column label no longer follows the filter"
+
+
+def test_tier_share_is_not_the_sort_key(block):
+    """Industry keeps its Δ-vs-Sector sort — the tab's whole subject."""
+    i = block.index("_ind_stats.sort_values")
+    assert "pct_tier" not in block[i:i + 250], "pct_tier became a sort key"
+
+
+def test_industry_tier_share_discriminates(live):
+    """Liveness: among industries with n≥5, the BUY★ share must genuinely spread (measured at
+    build: sector-level 0%→50% against a 12% base rate). A near-constant column is dead weight."""
+    d = live.copy()
+    d["industry"] = d["industry"].astype(str).str.strip()
+    n = d.groupby("industry")["name"].count()
+    share = d.groupby("industry")["wealth_tier"].apply(lambda s: 100.0 * (s == "BUY★").mean())
+    big = share[n >= 5]
+    assert len(big) >= 30, f"only {len(big)} industries hold ≥5 stocks — threshold stale"
+    assert big.max() - big.min() > 20.0, (
+        f"BUY★ share barely varies across industries ({big.min():.0f}–{big.max():.0f}%) — "
+        f"the column no longer discriminates; re-measure before keeping it"
+    )

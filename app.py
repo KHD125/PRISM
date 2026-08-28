@@ -1555,6 +1555,14 @@ with tabs[3]:
 
         if _cap != "All":
             _sec_src = _sec_src[_sec_src["market_category"] == _cap]
+        # 💹 TIER-SHARE BASE — captured AFTER the cap filter, BEFORE the wealth filter. The share
+        # column answers "how much of this group's FULL roster is tier X?"; computed after the
+        # wealth filter it would read 100% everywhere the moment a tier is selected (the filter
+        # keeps only that tier — the trap the design review caught). Denominator = the roster
+        # under every OTHER filter. The tier shown follows the filter selection; All → BUY★,
+        # the top of the forward-validated monotonic ladder.
+        _sec_share_base = _sec_src
+        _sec_share_tier = _wt_sec if _wt_sec != "All" else "BUY★"
         if _wt_sec != "All":
             _sec_src = _sec_src[_sec_src["wealth_tier"] == _wt_sec]
         if _cap != "All" or _wt_sec != "All":
@@ -1575,6 +1583,14 @@ with tabs[3]:
             avg_composite=("composite_score","mean"),
             crown_jewels=("conviction_tier", lambda x: (x == 1).sum()),
         )
+        # 💹 tier share — over _sec_share_base (the pre-wealth-filter roster; see above). Exact
+        # equality, never a contains match: "BUY" is a substring of "BUY★" (the QGLP⊂SQGLP class).
+        if "wealth_tier" in _sec_share_base.columns:
+            _sec_stats["pct_tier"] = (
+                _sec_share_base.groupby("sector")["wealth_tier"]
+                .apply(lambda s: 100.0 * (s == _sec_share_tier).mean())
+                .reindex(_sec_stats.index)
+            )
         # Sort by % Qualify (breadth), then Score — so the most-INVESTABLE sectors lead. Sorting by
         # Score alone would rank a 0%-qualify sector #1 (e.g. Financial Services scores high on
         # fundamentals but every stock fails a hard gate), which misleads at a glance.
@@ -1592,7 +1608,7 @@ with tabs[3]:
             # Score (avg_composite) sat second-to-last and rendered as a bar plus a single
             # truncated digit. The three figures a reader scans first — how many, what share
             # qualifies, and how they score — now lead; the component averages follow.
-            _sec_order = [c for c in ["stocks", "pct_qualify", "avg_composite",
+            _sec_order = [c for c in ["stocks", "pct_qualify", "avg_composite", "pct_tier",
                                       "avg_quality", "avg_momentum", "avg_valuation", "crown_jewels"]
                           if c in _sec_stats.columns]
             st.dataframe(
@@ -1606,6 +1622,13 @@ with tabs[3]:
                                             "2026-08-27: 8 of the top 10 sectors hold fewer than 12 stocks (median 9 "
                                             "vs 19 universe-wide), and at n=7 a single stock moves this 14 points. "
                                             "Read it alongside Count."),
+                    "pct_tier":      st.column_config.ProgressColumn(f"💹 {_sec_share_tier} %", min_value=0, max_value=100, format="%.0f%%",
+                                       help=f"Share of the sector's FULL roster in the {_sec_share_tier} wealth tier. The tier "
+                                            f"follows the Wealth-tier filter (All → BUY★, the top of the ladder); the "
+                                            f"denominator deliberately IGNORES that filter — computed after it, this column "
+                                            f"would read 100% everywhere. Unverifiable (N/A) stocks stay in the denominator "
+                                            f"and dilute the share. Universe BUY★ base rate ≈ 12%. Price-blind and "
+                                            f"forensics-blind, like the tier itself; read against Count."),
                     "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
                     "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
                     "avg_valuation": st.column_config.ProgressColumn("Valuation",min_value=0, max_value=100, format="%.0f"),
@@ -1717,6 +1740,11 @@ with tabs[3]:
 
             if _ind_cap != "All":
                 _ind_src = _ind_src[_ind_src["market_category"] == _ind_cap]
+            # 💹 TIER-SHARE BASE — same design as the Sectors tab: captured AFTER the cap filter,
+            # BEFORE the wealth filter, so the share column keeps the FULL roster as denominator
+            # (computed after the filter it would read 100% everywhere). All → BUY★.
+            _ind_share_base = _ind_src
+            _ind_share_tier = _ind_wt if _ind_wt != "All" else "BUY★"
             if _ind_wt != "All":
                 _ind_src = _ind_src[_ind_src["wealth_tier"] == _ind_wt]
 
@@ -1746,6 +1774,14 @@ with tabs[3]:
                 avg_valuation=("valuation_score", "mean"),
                 crown_jewels=("conviction_tier", lambda x: (x == 1).sum()),
             )
+            # 💹 tier share — over _ind_share_base (pre-wealth-filter roster; see above). Exact
+            # equality, never contains: "BUY" ⊂ "BUY★".
+            if "wealth_tier" in _ind_share_base.columns and not _ind_stats.empty:
+                _ind_stats["pct_tier"] = (
+                    _ind_share_base.groupby("industry")["wealth_tier"]
+                    .apply(lambda s: 100.0 * (s == _ind_share_tier).mean())
+                    .reindex(_ind_stats.index)
+                )
             if _ind_stats.empty:
                 st.info("No stocks match these filters — widen the selection.")
             else:
@@ -1810,8 +1846,9 @@ with tabs[3]:
                 # for the other tables. Sector names are the widest strings in the frame
                 # ("Infrastructure Developers & Operators"), so the sector goes last.
                 _ind_order = [c for c in ["stocks", "pct_qualify", "avg_composite",
-                                          "delta_vs_sector", "avg_quality", "avg_momentum",
-                                          "avg_valuation", "crown_jewels", "dom_sector"]
+                                          "delta_vs_sector", "pct_tier", "avg_quality",
+                                          "avg_momentum", "avg_valuation", "crown_jewels",
+                                          "dom_sector"]
                               if c in _ind_stats.columns]
                 st.dataframe(
                     _ind_stats[_ind_order].reset_index(),
@@ -1832,6 +1869,13 @@ with tabs[3]:
                                                  "toward zero by its own weight). Both terms are computed over the SAME "
                                                  "filtered stocks. BLANK means incomparable, not zero: that sector holds "
                                                  "no other industry, so no peers exist."),
+                        "pct_tier":       st.column_config.ProgressColumn(f"💹 {_ind_share_tier} %", min_value=0, max_value=100, format="%.0f%%",
+                                            help=f"Share of the industry's FULL roster in the {_ind_share_tier} wealth tier. "
+                                                 f"Follows the Wealth-tier filter (All → BUY★); the denominator deliberately "
+                                                 f"IGNORES that filter — computed after it, the column would read 100% "
+                                                 f"everywhere. N/A stocks dilute the share. Universe BUY★ base rate ≈ 12%. "
+                                                 f"Read against Count — even more so here than on Sectors (median industry "
+                                                 f"holds 3 stocks)."),
                         "avg_quality":    st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
                         "avg_momentum":   st.column_config.ProgressColumn("Momentum",  min_value=0, max_value=100, format="%.0f"),
                         "avg_valuation":  st.column_config.ProgressColumn("Valuation", min_value=0, max_value=100, format="%.0f"),

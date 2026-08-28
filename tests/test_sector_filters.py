@@ -199,3 +199,53 @@ def test_the_caption_follows_the_size_dial(src):
     block = src[i:src.index("unsafe_allow_html=True,", i)]
     assert "{_min_n}" in block, "the caption no longer interpolates the chosen minimum"
     assert "≥5" not in block, f"the caption hardcodes the old floor: {block[:160]}"
+
+
+# ── 5. 💹 tier-share column (2026-08-28) — one column, follows the filter ────────────────────
+def test_tier_share_base_is_captured_before_the_wealth_filter(src):
+    """THE 100% TRAP, pinned structurally: the share column's denominator must be the
+    pre-wealth-filter roster. Captured after the filter, selecting any tier makes every
+    surviving row read a meaningless 100% — the design review caught this before it shipped."""
+    i = src.index("_sec_share_base = _sec_src")
+    j = src.index('_sec_src = _sec_src[_sec_src["wealth_tier"] == _wt_sec]')
+    assert i < j, "the share base is captured AFTER the wealth filter — the 100% trap is live"
+    assert '_sec_share_base.groupby("sector")["wealth_tier"]' in src, (
+        "the share aggregation no longer reads the pre-filter base — capturing it means nothing "
+        "if the groupby runs on the filtered frame"
+    )
+
+
+def test_the_100_percent_trap_is_real(live):
+    """Self-verifying: the naive post-filter share IS 100% everywhere, and the pre-filter one
+    genuinely varies — so the structural pin above defends a measured hazard, not a style."""
+    filt = live[live["wealth_tier"] == "AVOID"]
+    trap = filt.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "AVOID").mean())
+    assert (trap == 100.0).all(), "the trap probe went stale — post-filter share is no longer trivial"
+    full = live.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "AVOID").mean())
+    assert full.std() > 1.0, "the full-roster share no longer varies across sectors"
+
+
+def test_tier_share_is_exact_match_never_contains(src, live):
+    """'BUY' ⊂ 'BUY★' (the QGLP⊂SQGLP class). Structural: exact equality in the app. Live: the
+    two matchers genuinely disagree, so the pin has teeth."""
+    i = src.index("_sec_share_tier")
+    seg = src[i:i + 2500]
+    assert "(s == _sec_share_tier)" in seg, "the share is no longer an exact-equality match"
+    assert ".str.contains" not in seg, "a contains-match crept into the tier share"
+    star = live.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "BUY★").mean())
+    loose = live.groupby("sector")["wealth_tier"].apply(
+        lambda s: 100.0 * s.astype(str).str.contains("BUY", regex=False).mean())
+    assert (loose - star).max() > 1.0, "BUY and BUY★ no longer diverge — re-check before relaxing"
+
+
+def test_tier_share_defaults_to_buy_star_and_the_label_follows(src):
+    """All → BUY★ (top of the forward-validated monotonic ladder); a selected tier renames the
+    column so its semantics are self-announcing."""
+    assert '_sec_share_tier = _wt_sec if _wt_sec != "All" else "BUY★"' in src
+    assert 'f"💹 {_sec_share_tier} %"' in src, "the column label no longer follows the filter"
+
+
+def test_tier_share_is_not_a_sort_key(src):
+    """A column, not the ranking: Sectors keeps % Qualify → Score."""
+    i = src.index('_sec_stats = (_sec_stats[_sec_stats["stocks"] >= _min_n]')
+    assert "pct_tier" not in src[i:i + 300], "pct_tier became a sort key"
