@@ -779,7 +779,12 @@ with tabs[2]:
         # Hard overrides (gate fail / sell alert) take precedence; otherwise the engine's veto-aware
         # verdict drives the band. No verdict logic is computed here — single source of truth is the engine.
         _vdir  = str(_sg("verdict_direction", "FLAWED") or "FLAWED")
-        _vstr  = str(stock.get("verdict_strength", "") or "")
+        # verdict_strength is deliberately NOT read here (removed 2026-08-27). It is a measured
+        # 1:1 rename of conviction_tier, and the hero already carries the tier badge and the
+        # score — so "🟡 MIXED · HIGH CONVICTION · Score 90/100" stated the same fact three ways
+        # on one screen. The COLUMN still exists (snapshot-schema stability, orphan principle:
+        # an unsurfaced column harms nobody); only the display is retired. Pinned by
+        # tests/test_verdict_vocabulary.py.
         _vconf = str(stock.get("verdict_confidence", "") or "")
         _vnarr = str(stock.get("verdict_narrative", "") or "")
         _vrisk = str(stock.get("verdict_top_risk", "") or "")
@@ -801,11 +806,9 @@ with tabs[2]:
             _verdict = f"{_vemoji} {_vdir}".strip()
             _verdict_reason = _vnarr or f"Tier {_tier_num} · Score {_comp_sc:.0f}/100"
 
-        # Strength · Score · Confidence subline (engine path only)
+        # Score · Confidence subline (engine path only)
         _meta_bits = []
         if _gate_ok and not _sell_any:
-            if _vstr:
-                _meta_bits.append(_vstr)
             _meta_bits.append(f"Score {_comp_sc:.0f}/100")
             if _vconf:
                 _meta_bits.append(f"🔍 {_vconf} data")

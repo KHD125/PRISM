@@ -118,16 +118,6 @@ CONCEPT_REFERENCE = {
         ("MIXED", "The middle of the gate — promising but with a caveat: mid conviction, or a soft forensic/timing/governance downgrade from SOUND. Renamed from WATCH (the wealth tier owns WATCH/WATCH★ now)."),
         ("FLAWED", "The gate found flaws — low conviction, OR a hard veto from severe forensic red flags / value-destroying capital allocation. Says nothing about direction: a FLAWED stock can be a confirmed turnaround on the wealth tier (WATCH★), and that pairing is exactly what the two lenses exist to surface. Renamed from AVOID."),
     ],
-    # ── verdict_strength — core/verdict_engine.py:86 (.map over conviction_tier 1-5): the strength
-    # WORD shown in the verdict band beside the direction. It mirrors the tier but uses different
-    # words, and the .map isn't caught by the categorical-label net — so it needs its own entry. ──
-    "🎯 Verdict — Conviction Strength": [
-        ("HIGH CONVICTION", "The verdict band's strength word for Tier 1 (composite ≥85, the Crown Jewels) — the engine's strongest endorsement. Read it with the direction, e.g. 🟢 BUY · HIGH CONVICTION."),
-        ("STRONG", "The band's strength word for Tier 2 (composite ≥70, Strong Compounders) — high quality with momentum confirmation, just below the top tier. (Distinct from the Malik 'Strong' quality rating.)"),
-        ("EMERGING", "The band's strength word for Tier 3 (composite ≥55, Emerging Quality) — a developing thesis where quality is building but not yet proven; monitor for an upgrade."),
-        ("SPECULATIVE", "The band's strength word for Tier 4 (composite ≥40, On Radar) — a low-conviction, unproven setup; size small if at all and wait for confirmation."),
-        ("WEAK", "The band's strength word for Tier 5 (composite below 40, Not Ready) — does not clear the bar; the band's way of saying pass for now. (Distinct from the Malik 'Weak' quality rating.)"),
-    ],
     # ── conviction_tier / tier_label — config.CONVICTION_TIERS (composite-score bands)
     "🏆 Conviction Tier": [
         ("Crown Jewels", "Tier 1 (composite ≥85) — the highest-conviction compounders; deep-dive and build a position."),

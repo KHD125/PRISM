@@ -140,3 +140,29 @@ def test_the_glossary_explains_all_three(live):
     documented = {lab for lab, _ in section}
     assert ENGINE_WORDS <= documented, f"glossary missing: {ENGINE_WORDS - documented}"
     assert not (OLD_WORDS & documented), "the glossary still documents the old action words"
+
+
+# -- 4. The strength word stays off the screen -----------------------------------------------
+def test_verdict_strength_is_never_rendered():
+    """DISPLAY-RETIRED 2026-08-27. verdict_strength is a measured 1:1 map of conviction_tier --
+    zero added information -- and the hero showed it beside the tier badge AND the score: the
+    same fact three times on one screen ("MIXED / HIGH CONVICTION / Score 90/100"). The COLUMN
+    remains (snapshot-schema stability; the orphan principle -- an unsurfaced column harms
+    nobody); no UI surface may READ it for display again. A surface that wants a strength word
+    should render the tier, which is the same fact with its own established vocabulary.
+
+    Matches the READ pattern, not the word -- app.py's explanatory comment legitimately names
+    the column, and prose that names a banned thing is not the banned thing (the substring-scan
+    lesson, learned four times on 2026-08-27)."""
+    import glob
+    import re
+    root = os.path.join(os.path.dirname(__file__), "..")
+    read_pat = re.compile(r"""(?:\.get\(\s*|_sg\(\s*|_g\(\s*\w+,\s*)["']verdict_strength["']""")
+    offenders = []
+    for f in [os.path.join(root, "app.py")] + glob.glob(os.path.join(root, "ui", "*.py")):
+        if read_pat.search(_io.open(f, encoding="utf-8").read()):
+            offenders.append(os.path.basename(f))
+    assert not offenders, (
+        f"these UI files read verdict_strength for display again: {offenders} -- it is a 1:1 "
+        f"duplicate of the tier; render the tier instead"
+    )

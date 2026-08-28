@@ -113,6 +113,10 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ── Conviction strength (from tier) ──
+    # DISPLAY-RETIRED 2026-08-27: a measured 1:1 map of conviction_tier (zero added
+    # information), it was shown in the hero beside the tier badge and the score — the same
+    # fact three times. The column REMAINS (snapshot-schema stability; exports) but no UI
+    # surface renders it. If you are about to display it, display the tier instead.
     df["verdict_strength"] = pd.Series(tier, index=idx).map(
         {1.0: "HIGH CONVICTION", 2.0: "STRONG", 3.0: "EMERGING", 4.0: "SPECULATIVE", 5.0: "WEAK"}
     ).fillna("WEAK")
