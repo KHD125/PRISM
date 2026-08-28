@@ -110,10 +110,20 @@ def _agg(df, floor=NO_FLOOR):
     dom = pair.drop_duplicates("industry").set_index("industry")
     g["dom_sector"] = dom["sector"].reindex(g.index)
     g["purity"] = dom["n"].reindex(g.index) / g["stocks"]
-    base = d.groupby("sector")["composite_score"].mean()
-    n_ind = d.groupby("sector")["industry"].nunique()
-    comparable = g["dom_sector"].map(n_ind) > 1
-    g["delta"] = np.where(comparable, g["avg_composite"] - g["dom_sector"].map(base), np.nan)
+    # LEAVE-ONE-OUT baseline (v2 of the tab, 2026-08-28): the peers are the dominant sector's
+    # OTHER stocks — this industry's own in-sector stocks are subtracted out. Including them
+    # damped the delta by (1 − the industry's share of the sector): QSR showed −7.0 against a
+    # true peer gap of −48.1. Zero peers (a sector holding only this industry) → NaN falls out
+    # of the count guard — the degenerate case needs no separate rule any more.
+    sec_sum = d.groupby("sector")["composite_score"].sum()
+    sec_cnt = d.groupby("sector")["composite_score"].count()
+    in_dom = d[d["sector"].values == d["industry"].map(dom["sector"]).values]
+    own = (in_dom.groupby("industry")["composite_score"].agg(["sum", "count"])
+           .reindex(g.index))
+    peer_sum = g["dom_sector"].map(sec_sum) - own["sum"].fillna(0.0)
+    peer_cnt = g["dom_sector"].map(sec_cnt) - own["count"].fillna(0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        g["delta"] = np.where(peer_cnt > 0, g["avg_composite"] - peer_sum / peer_cnt, np.nan)
     return g
 
 
@@ -172,12 +182,27 @@ def test_degenerate_delta_is_nan_not_zero(live):
 
 def test_the_app_guards_the_degenerate_case(block):
     """The behavioural tests above run against this file's own re-implementation. This one checks
-    app.py actually carries the guard, so the two cannot drift apart."""
-    assert "nunique" in block, (
-        "app.py computes no per-sector industry count, so it cannot know which deltas are "
-        "degenerate — the 0.0 sentinel is back"
+    app.py actually carries the guard, so the two cannot drift apart. Since the LOO baseline
+    (2026-08-28) the guard IS the peer-count denominator: zero peers → np.nan falls out of the
+    math instead of needing a separate ≥2-industries test."""
+    assert "_peer_cnt > 0" in block, (
+        "the peer-count guard is gone — a zero-peer division would emit inf/0.0 instead of the "
+        "honest NaN for industries alone in their sector"
     )
     assert "np.nan" in block, "no NaN is ever emitted for the incomparable rows"
+
+
+def test_the_app_baseline_excludes_the_industrys_own_stocks(block):
+    """THE LOO PIN (2026-08-28). Including the industry's own stocks in the sector baseline
+    damps its delta by exactly (1 − its share of the sector) — invisible on screen, and it hit
+    hardest precisely on the sector-dominating rows the tab exists to expose (QSR: −7.0 shown
+    vs −48.1 true). The app must subtract the industry's own in-sector sum and count."""
+    assert '- _ind_own["sum"]' in block.replace("  ", " ") or '_ind_own["sum"]' in block, (
+        "the baseline no longer subtracts the industry's own score sum — self-inclusion is back"
+    )
+    assert '_ind_own["count"]' in block, (
+        "the baseline no longer subtracts the industry's own stock count"
+    )
 
 
 def test_delta_is_not_uniformly_nan(live):
@@ -202,9 +227,43 @@ def test_delta_baseline_uses_the_filtered_subset(live):
     assert (base_sub[shared] - base_all[shared]).abs().max() > 0.5, (
         "the filtered and unfiltered sector baselines are identical, so this test proves nothing"
     )
+    # LOO expectation, recomputed here by MASKING (a different route than the mirror's
+    # sum-subtraction, so the two implementations can disagree and catch each other):
     row = g_sub[g_sub["delta"].notna()].index[0]
-    expect = g_sub.loc[row, "avg_composite"] - base_sub[g_sub.loc[row, "dom_sector"]]
+    _dsec = g_sub.loc[row, "dom_sector"]
+    _d2 = sub.copy()
+    _d2["industry"] = _d2["industry"].astype(str).str.strip()
+    _peers = _d2[(_d2["sector"] == _dsec) & (_d2["industry"] != row)]["composite_score"]
+    expect = g_sub.loc[row, "avg_composite"] - _peers.mean()
     assert abs(g_sub.loc[row, "delta"] - expect) < 1e-9
+
+
+def test_dominant_industries_are_no_longer_self_damped(live):
+    """The defect the LOO baseline closed (2026-08-28), measured live: including an industry's
+    own stocks damped its delta by (1 − its sector share) — QSR displayed −7.0 against a true
+    peer gap of −48.1. The LOO delta must therefore differ MATERIALLY from the include-self
+    delta somewhere in the table. If this ever fails, either self-inclusion crept back into
+    the mirror, or the universe lost its sector-dominating industries — re-measure before
+    touching anything."""
+    g = _agg(live)
+    d = live.copy()
+    d["industry"] = d["industry"].astype(str).str.strip()
+    base_incl = d.groupby("sector")["composite_score"].mean()
+    incl = g["avg_composite"] - g["dom_sector"].map(base_incl)
+    both = g["delta"].notna()
+    gap = (g.loc[both, "delta"] - incl[both]).abs()
+    assert gap.max() > 5.0, (
+        f"LOO and include-self deltas agree within {gap.max():.2f} pts everywhere — the "
+        f"self-damping this baseline exists to remove has vanished"
+    )
+    # And the two must agree where self-inclusion is immaterial: tiny industries in big sectors.
+    small = both & (g["stocks"] <= 2) & (g["purity"] >= 0.99)
+    if small.any():
+        small_gap = (g.loc[small, "delta"] - incl[small]).abs()
+        assert small_gap.median() < 2.0, (
+            "even negligible-share industries diverge between LOO and include-self — the "
+            "baseline arithmetic is off, not just de-damped"
+        )
 
 
 def test_app_recomputes_the_baseline_after_filtering(block):

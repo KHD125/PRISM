@@ -1723,15 +1723,17 @@ with tabs[3]:
             st.markdown(
                 f"<div class='sec-cap'>All <strong>{_ind_src['industry'].nunique()} industries</strong>, "
                 f"ranked by <strong>Δ vs Sector</strong> — how far its average score sits above or "
-                f"below the sector it mostly belongs to. That is the one thing the Sectors tab "
-                f"cannot show: inside Pharmaceuticals alone, industry averages run from 18 to 51. "
-                f"Positive = the sector average flatters this industry's peers; negative = the "
-                f"sector average is carrying it.</div>",
+                f"below its sector <strong>peers</strong> (the industry's own stocks are excluded "
+                f"from the baseline, so a sector-dominating industry cannot damp its own gap). That "
+                f"is the one thing the Sectors tab cannot show: inside Pharmaceuticals alone, "
+                f"industry averages run from 18 to 51. Positive = this industry outscores the rest "
+                f"of its sector; negative = the rest of the sector is carrying it.</div>",
                 unsafe_allow_html=True,
             )
 
             # DOMINANT SECTOR, not parent — industry is NOT nested inside sector. 136 of the 355
-            # industries span more than one (median purity 0.91, MINIMUM 0.38). The modal sector is
+            # industries span more than one (dominant-sector share across ALL 355: median 1.00,
+            # minimum 0.33 — the 136 multi-sector ones are the impure tail). The modal sector is
             # picked with an explicit (count desc, sector asc) tie-break: an unsorted mode is
             # non-deterministic across processes (PYTHONHASHSEED), which would make the displayed
             # parent sector flicker between runs.
@@ -1760,18 +1762,33 @@ with tabs[3]:
                 # `_ind_src` — the FILTERED frame — not off `df`. Comparing a Small-Cap-only industry
                 # average against an all-cap sector average would report the cap effect as though it
                 # were an industry effect: the cross-year-basis defect in different clothes.
-                _sec_base = _ind_src.groupby("sector")["composite_score"].mean()
-                _sec_nind = _ind_src.groupby("sector")["industry"].nunique()
-
-                # A SECTOR HOLDING ONE INDUSTRY HAS NO COMPARISON TO OFFER. Its industry average and
-                # its sector average are the same number, so `a - b` returns exactly 0.0 — which
-                # reads as "perfectly average" when the truth is "nothing to compare against".
-                # 3 of 76 industries are in this position live (Bearings, Pesticides/Agrochemicals,
-                # Refineries). They get np.nan and render blank: never a sentinel where the honest
-                # answer is missing.
-                _ind_comparable = _dom_sec.map(_sec_nind).fillna(0) > 1
-                _ind_stats["delta_vs_sector"] = np.where(
-                    _ind_comparable, _ind_stats["avg_composite"] - _dom_sec.map(_sec_base), np.nan)
+                #
+                # LEAVE-ONE-OUT BASELINE (2026-08-28; was the plain sector mean). Including the
+                # industry's own stocks damps the delta by exactly (1 − its share of the sector) —
+                # measured: QSR displayed −7.0 against a true peer gap of −48.1 (it IS 83% of its
+                # sector, so the baseline was mostly itself), Paints +4.2 vs +33.5, max distortion
+                # 41 points — and the damping factor appears nowhere on screen, so a reader could
+                # neither see nor undo it. The baseline now excludes the industry's own in-sector
+                # stocks: Δ is the gap to its sector PEERS. The aggregate sort barely moves (rank
+                # corr 0.971 vs the old math); the muted tail rows were the point.
+                #
+                # THE DEGENERATE CASE NOW FALLS OUT OF THE MATH. A sector holding only this
+                # industry leaves zero peers, the count guard emits np.nan, and the row renders
+                # blank — never a 0.0 sentinel that reads "perfectly average" when the truth is
+                # "nothing to compare against". The old explicit ≥2-industries test is gone because
+                # it became REDUNDANT, not because the rule changed (live: 8 of 355 industries,
+                # counted dynamically in the footer).
+                _sec_agg = _ind_src.groupby("sector")["composite_score"].agg(["sum", "count"])
+                _ind_dom_rows = _ind_src[_ind_src["sector"].values ==
+                                         _ind_src["industry"].map(_dom_sec).values]
+                _ind_own = (_ind_dom_rows.groupby("industry")["composite_score"]
+                            .agg(["sum", "count"]).reindex(_ind_stats.index))
+                _peer_sum = _dom_sec.map(_sec_agg["sum"])   - _ind_own["sum"].fillna(0.0)
+                _peer_cnt = _dom_sec.map(_sec_agg["count"]) - _ind_own["count"].fillna(0)
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    _ind_stats["delta_vs_sector"] = np.where(
+                        _peer_cnt > 0,
+                        _ind_stats["avg_composite"] - _peer_sum / _peer_cnt, np.nan)
                 # "~" flags an industry whose stocks are NOT mostly in the sector named beside it.
                 _ind_stats["dom_sector"] = np.where(_dom_share < 0.8,
                                                     "~ " + _dom_sec.astype(str),
@@ -1809,10 +1826,12 @@ with tabs[3]:
                                                  "sectors. This is a column, not the sort key, for exactly that reason."),
                         "avg_composite":  st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
                         "delta_vs_sector": st.column_config.NumberColumn("Δ vs Sector", format="%+.1f", width="small",
-                                            help="Average score minus the average of the sector this industry mostly sits "
-                                                 "in — the reason this tab exists. Both terms are computed over the SAME "
+                                            help="Average score minus the average of its sector PEERS — the OTHER stocks "
+                                                 "in the sector this industry mostly sits in; its own stocks are excluded "
+                                                 "from the baseline (including them shrinks a dominant industry's gap "
+                                                 "toward zero by its own weight). Both terms are computed over the SAME "
                                                  "filtered stocks. BLANK means incomparable, not zero: that sector holds "
-                                                 "no other industry, so the two averages are the same number."),
+                                                 "no other industry, so no peers exist."),
                         "avg_quality":    st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
                         "avg_momentum":   st.column_config.ProgressColumn("Momentum",  min_value=0, max_value=100, format="%.0f"),
                         "avg_valuation":  st.column_config.ProgressColumn("Valuation", min_value=0, max_value=100, format="%.0f"),
