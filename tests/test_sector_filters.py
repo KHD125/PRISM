@@ -3,10 +3,13 @@ test_sector_filters.py
 ======================
 Contract for the Market Pulse → Sectors filter row.
 
-FOUR CONTROLS, TWO KINDS — and the difference is invisible on screen, which is why it is pinned
+FIVE CONTROLS, TWO KINDS — and the difference is invisible on screen, which is why it is pinned
 here rather than left to whoever edits this next:
 
-    RE-AGGREGATING   Market-cap tier, Wealth Tier
+    RE-AGGREGATING   Market-cap tier, Wealth Tier, Cyclicality tier (returned 2026-08-28 —
+                     measured: 42 of 81 sectors hold >1 tier, so only a stock filter can answer
+                     "sector rankings among Defensive stocks"; the 2026-08-27 swap had quietly
+                     lost that view)
                      filter the STOCKS, so every average and % Qualify is recomputed
     ROW FILTERS      Capital phase, Min stocks/sector
                      hide whole sectors and leave the survivors' numbers untouched
@@ -74,7 +77,7 @@ def _agg(d, min_n=5):
 
 
 # -- 1. The controls exist, and the default changes nothing ---------------------------------
-@pytest.mark.parametrize("key", ["mp_sec_cap", "mp_sec_wealth", "mp_sec_phase", "mp_sec_minn"])
+@pytest.mark.parametrize("key", ["mp_sec_cap", "mp_sec_wealth", "mp_sec_cyc", "mp_sec_phase", "mp_sec_minn"])
 def test_each_control_is_present_with_its_own_key(src, key):
     assert f'key="{key}"' in src, f"the {key} control is gone"
 
@@ -180,9 +183,9 @@ def test_the_floor_never_admits_a_sector_below_it(live):
 def test_the_help_text_distinguishes_the_two_behaviours(src):
     """Four identical-looking selectboxes behaving in two ways needs saying, not guessing."""
     i = src.index('key="mp_sec_cap"')
-    block = src[i - 900:i + 3200]
-    assert block.lower().count("re-aggregat") >= 2, (
-        "the re-aggregating controls no longer say that they recompute the averages"
+    block = src[i - 900:i + 5200]      # widened 2026-08-28: the cyclicality control joined the row
+    assert block.lower().count("re-aggregat") >= 3, (
+        "the three re-aggregating controls no longer all say that they recompute the averages"
     )
     assert block.lower().count("hides rows") >= 2, (
         "the row filters no longer say that they only hide rows"
@@ -249,3 +252,43 @@ def test_tier_share_is_not_a_sort_key(src):
     """A column, not the ranking: Sectors keeps % Qualify → Score."""
     i = src.index('_sec_stats = (_sec_stats[_sec_stats["stocks"] >= _min_n]')
     assert "pct_tier" not in src[i:i + 300], "pct_tier became a sort key"
+
+
+# ── 6. Cyclicality tier — the returned third re-aggregator (2026-08-28) ──────────────────────
+def test_cyclicality_really_does_vary_within_sectors(live):
+    """The premise that makes this a STOCK filter (and made the 2026-08-27 swap a silent
+    capability loss): tiers cross sector lines. Measured at build: 42 of 81. If this collapses,
+    the filter should become a row filter and this file rewritten."""
+    v = live.groupby("sector")["cyclicality_tier"].nunique()
+    assert (v > 1).sum() > 10, (
+        f"cyclicality varies within only {int((v > 1).sum())} sectors — the stock-filter premise died"
+    )
+
+
+def test_cyclicality_filter_is_applied_before_the_share_base_and_the_groupby(src):
+    """Ordering is the whole contract: cap → cyclicality → [💹 share base] → wealth → groupby.
+    Applied after the share base, Defensive × BUY★ would silently show the ALL-stock share."""
+    i = src.index('_sec_src[_sec_src["cyclicality_tier"] == _cyc_sec]')
+    j = src.index("_sec_share_base = _sec_src")
+    k = src.index('_sec_src = _sec_src[_sec_src["wealth_tier"] == _wt_sec]')
+    m = src.index("_sec_stats = _sec_src.groupby")
+    assert i < j < k < m, "the cyclicality filter is out of order in the filter chain"
+
+
+def test_cyclicality_slice_re_aggregates(live):
+    """Behavioural: slicing to one tier genuinely changes sector averages (it is not a row hide)."""
+    base = _agg(live)
+    sliced = _agg(live[live["cyclicality_tier"] == "Defensive"])
+    common = base.index.intersection(sliced.index)
+    assert len(common) > 5, "not enough overlap to compare"
+    moved = (base.loc[common, "avg_composite"] - sliced.loc[common, "avg_composite"]).abs() > 0.01
+    assert moved.any(), "slicing by cyclicality changed no sector average — it is not re-aggregating"
+
+
+def test_the_caption_points_to_the_industry_tab(src):
+    """The dispersion pointer (measured: up to 50 points of industry spread inside one sector):
+    the Sectors caption must hand the reader to 🏭 Industry."""
+    i = src.index("_sec_cap_ph.markdown(")
+    block = src[i:src.index("unsafe_allow_html=True,", i)]
+    assert "🏭 Industry" in block, "the Sectors caption no longer points to the Industry tab"
+    assert "50 points" in block, "the dispersion magnitude vanished from the caption"

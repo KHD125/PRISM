@@ -449,10 +449,10 @@ def test_widget_keys_are_unique_to_this_tab(src, block):
     """A key collision with the Sectors tab would make one tab's control silently drive the
     other's — both tabs render on every run."""
     keys = re.findall(r'key="(\w+)"', block)
-    assert len(keys) == 2, (
-        f"expected exactly the two RE-AGGREGATING filters (market-cap, wealth tier), found {keys}. "
-        f"The min-stocks dial was retired 2026-08-28; a third widget means it came back or a new "
-        f"one arrived unexamined."
+    assert sorted(keys) == ["mp_ind_cap", "mp_ind_sec", "mp_ind_wealth"], (
+        f"expected the two RE-AGGREGATING filters (market-cap, wealth tier) plus the sector "
+        f"DRILL-DOWN row filter (added 2026-08-28, examined), found {keys}. The min-stocks dial "
+        f"stays retired; any other widget arrived unexamined."
     )
     for k in keys:
         assert k.startswith("mp_ind_"), f"key {k!r} is not namespaced to the Industry tab"
@@ -509,3 +509,34 @@ def test_industry_tier_share_discriminates(live):
         f"BUY★ share barely varies across industries ({big.min():.0f}–{big.max():.0f}%) — "
         f"the column no longer discriminates; re-measure before keeping it"
     )
+
+
+# ── 8. Sector drill-down — a row filter, applied after every number (2026-08-28) ─────────────
+def test_drill_down_is_applied_after_aggregation_and_sort(block):
+    """Row-filter semantics: the drill must touch no average, Δ or 💹 share — so it must sit
+    AFTER the aggregation, the delta, the share and the sort."""
+    i = block.index('_dom_sec.reindex(_ind_stats.index) == _ind_sec')
+    assert block.index("_ind_stats = _ind_src.groupby") < i
+    assert block.index('_ind_stats["delta_vs_sector"]') < i
+    assert block.index('_ind_stats["pct_tier"]') < i
+    assert block.index("_ind_stats.sort_values") < i
+
+
+def test_drill_down_matches_the_dominant_sector(block):
+    """The drill matches _dom_sec — the same dominant-sector series the table displays — so a
+    ~ row appears under its dominant home, never under a minority sector."""
+    assert '_dom_sec.reindex(_ind_stats.index) == _ind_sec' in block
+
+
+def test_dom_share_is_index_aligned_for_the_drill(block):
+    """_dom_share was a bare positional array; the drill row-filters _ind_stats, so the footer's
+    ~ count would silently pair shares with the wrong industries. It must be an index-aligned
+    Series, and the footer must reindex it to the drilled view."""
+    assert "_dom_share = pd.Series(" in block, "_dom_share reverted to a positional array"
+    assert "_dom_share.reindex(_ind_stats.index)" in block, "the footer no longer follows the drilled view"
+
+
+def test_drill_options_are_sorted(block):
+    """Determinism mandate: an unsorted unique() would reorder the dropdown per process."""
+    i = block.index("_ind_sec_opts")
+    assert "sorted(" in block[i:i + 140], "the drill-down options are not sorted"

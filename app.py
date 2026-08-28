@@ -1484,7 +1484,7 @@ with tabs[3]:
         # so it stays correct if that ever stops being true rather than silently part-filtering a
         # sector and skewing its averages.
         _sec_src = df
-        _c1, _c2, _c3, _c4 = st.columns([2, 2, 2, 2])
+        _c1, _c2, _c3, _c4, _c5 = st.columns([2, 2, 2, 2, 2])
 
         with _c1:
             if "market_category" in df.columns:
@@ -1500,13 +1500,13 @@ with tabs[3]:
                 _cap = "All"
 
         with _c2:
-            # REPLACED 2026-08-27 (user request): Cyclicality tier → Wealth Tier. Same semantic
-            # slot — a RE-AGGREGATING stock-level filter — so the two-kinds architecture holds
-            # (re-aggregating: Market-cap + Wealth Tier · row filters: Capital phase + Min size).
-            # Nothing is lost overall: cyclicality filtering remains in the Discovery sidebar
-            # (sb_cyc). The win here is sector-level wealth concentration: "which sectors hold
-            # the most BUY★ stocks, and how do THOSE score" — the question the user's whole
-            # wealth lens exists to ask, now askable per sector.
+            # 2026-08-27: Cyclicality tier → Wealth Tier in this slot (user request). 2026-08-28:
+            # cyclicality RETURNED as a third control (below) once measurement showed the swap had
+            # quietly lost a capability — 42 of 81 sectors hold MORE THAN ONE cyclicality tier
+            # (Chemicals only 44% its dominant one), so "sector averages over Defensive stocks
+            # only" is a stock-level re-aggregation no Discovery filter or row-hide can rebuild.
+            # Two-kinds architecture now: re-aggregating = Market-cap + Wealth + Cyclicality ·
+            # row filters = Capital phase + Min size.
             _WT_SEC = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
             if "wealth_tier" in df.columns:
                 _wt_sec_opts = ["All"] + [t for t in _WT_SEC if (df["wealth_tier"] == t).any()]
@@ -1520,6 +1520,24 @@ with tabs[3]:
                 _wt_sec = "All"
 
         with _c3:
+            # Canonical tier order (defensive → deep cyclical), not alphabetical — the economic
+            # spectrum reads left to right. Presence-checked like the other re-aggregators.
+            _CYC_SEC = ["Defensive", "Sensitive / Structural-Growth", "Cyclical",
+                        "Deep Cyclical / Commodity", "Financials", "Catch-all"]
+            if "cyclicality_tier" in df.columns:
+                _cyc_opts = ["All"] + [t for t in _CYC_SEC if (df["cyclicality_tier"] == t).any()]
+                _cyc_sec = st.selectbox(
+                    "Cyclicality tier", _cyc_opts, key="mp_sec_cyc",
+                    help="Re-aggregates: keeps only stocks in this cyclicality tier, then recomputes "
+                         "every sector average, % Qualify and the 💹 share over the survivors. "
+                         "Tiers cross sector lines (42 of 81 sectors hold more than one), so this "
+                         "is a stock filter — hiding whole sectors could not answer 'how do "
+                         "sectors rank among Defensive stocks only'.",
+                )
+            else:
+                _cyc_sec = "All"
+
+        with _c4:
             if "sector_capital_phase" in df.columns:
                 _ph_opts = ["All"] + sorted(df["sector_capital_phase"].dropna().unique().tolist())
                 _phase = st.selectbox(
@@ -1530,7 +1548,7 @@ with tabs[3]:
             else:
                 _phase = "All"
 
-        with _c4:
+        with _c5:
             # THE FLOOR IS NOW A DIAL. It was hardcoded at 5, and that is why the ranking was
             # dominated by tiny sectors: an extreme % Qualify is easy at n=7 and near-impossible at
             # n=96. Measured 2026-08-27: 8 of the top 10 sectors held fewer than 12 stocks, and
@@ -1549,13 +1567,17 @@ with tabs[3]:
             f"(sample-robust, not just the gate-passers). <strong>% Qualify</strong> = the share "
             f"clearing the hard gates (the sector's quality breadth). Ranked by % Qualify "
             f"(most-investable first). Capital-cycle phase is named below: 🔥 hot (over-investing — "
-            f"caution) · ❄️ starved (under-invested — opportunity).</div>",
+            f"caution) · ❄️ starved (under-invested — opportunity). A sector average can hide up to "
+            f"<strong>50 points</strong> of industry dispersion — see 🏭 Industry for the split.</div>",
             unsafe_allow_html=True,
         )
 
         if _cap != "All":
             _sec_src = _sec_src[_sec_src["market_category"] == _cap]
-        # 💹 TIER-SHARE BASE — captured AFTER the cap filter, BEFORE the wealth filter. The share
+        if _cyc_sec != "All" and "cyclicality_tier" in _sec_src.columns:
+            _sec_src = _sec_src[_sec_src["cyclicality_tier"] == _cyc_sec]
+        # 💹 TIER-SHARE BASE — captured AFTER the cap and cyclicality filters, BEFORE the wealth
+        # filter, so Defensive × BUY★ reads "BUY★ share among the sector's Defensive stocks". The share
         # column answers "how much of this group's FULL roster is tier X?"; computed after the
         # wealth filter it would read 100% everywhere the moment a tier is selected (the filter
         # keeps only that tier — the trap the design review caught). Denominator = the roster
@@ -1565,8 +1587,10 @@ with tabs[3]:
         _sec_share_tier = _wt_sec if _wt_sec != "All" else "BUY★"
         if _wt_sec != "All":
             _sec_src = _sec_src[_sec_src["wealth_tier"] == _wt_sec]
-        if _cap != "All" or _wt_sec != "All":
-            _bits = " · ".join(b for b in [_cap if _cap != "All" else "", _wt_sec if _wt_sec != "All" else ""] if b)
+        if _cap != "All" or _wt_sec != "All" or _cyc_sec != "All":
+            _bits = " · ".join(b for b in [_cap if _cap != "All" else "",
+                                           _cyc_sec if _cyc_sec != "All" else "",
+                                           _wt_sec if _wt_sec != "All" else ""] if b)
             st.caption(f"📊 {len(_sec_src):,} stocks ({_bits}) across "
                        f"{_sec_src['sector'].nunique()} sectors — averages recomputed on this subset.")
 
@@ -1581,8 +1605,9 @@ with tabs[3]:
             avg_momentum=("momentum_score",  "mean"),
             avg_valuation=("valuation_score","mean"),
             avg_composite=("composite_score","mean"),
-            crown_jewels=("conviction_tier", lambda x: (x == 1).sum()),
         )
+        # 👑 T1 REMOVED 2026-08-28 (user call, sparsity-backed): nonzero in 7 of 81 sectors (9%)
+        # and 7 of 355 industries (2%) — the same 7 names live in Discovery's tier filter.
         # 💹 tier share — over _sec_share_base (the pre-wealth-filter roster; see above). Exact
         # equality, never a contains match: "BUY" is a substring of "BUY★" (the QGLP⊂SQGLP class).
         if "wealth_tier" in _sec_share_base.columns:
@@ -1609,7 +1634,7 @@ with tabs[3]:
             # truncated digit. The three figures a reader scans first — how many, what share
             # qualifies, and how they score — now lead; the component averages follow.
             _sec_order = [c for c in ["stocks", "pct_qualify", "avg_composite", "pct_tier",
-                                      "avg_quality", "avg_momentum", "avg_valuation", "crown_jewels"]
+                                      "avg_quality", "avg_momentum", "avg_valuation"]
                           if c in _sec_stats.columns]
             st.dataframe(
                 _sec_stats[_sec_order].reset_index(),
@@ -1633,7 +1658,6 @@ with tabs[3]:
                     "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
                     "avg_valuation": st.column_config.ProgressColumn("Valuation",min_value=0, max_value=100, format="%.0f"),
                     "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
-                    "crown_jewels":  st.column_config.NumberColumn("👑 T1",      format="%.0f"),
                 },
                 use_container_width=True,
                 height=min(700, 80 + len(_sec_stats) * 35),
@@ -1709,7 +1733,7 @@ with tabs[3]:
             _ind_src["industry"] = _ind_src["industry"].astype(str).str.strip()
             _ind_src = _ind_src[~_ind_src["industry"].isin(["", "nan", "None"])]
 
-            _i1, _i2 = st.columns([2, 2])
+            _i1, _i2, _i3 = st.columns([2, 2, 2])
             with _i1:
                 if "market_category" in _ind_src.columns:
                     from config import MCAP_TIERS
@@ -1737,6 +1761,21 @@ with tabs[3]:
                     )
                 else:
                     _ind_wt = "All"
+            with _i3:
+                # SECTOR DRILL-DOWN (2026-08-28) — the navigation the tab pair implies: spot a
+                # sector on 📈 Sectors, open 🏭 Industry, see its internal dispersion. A ROW
+                # FILTER applied AFTER aggregation (matches on the DOMINANT sector), so every
+                # number — averages, Δ, 💹 share — is exactly what the unfiltered table shows.
+                # Sectors hold a median of 3 industries (max 38), so this turns 355 rows into a
+                # focused split. sorted() — determinism mandate.
+                _ind_sec_opts = ["All"] + sorted(_ind_src["sector"].dropna().astype(str).unique().tolist())
+                _ind_sec = st.selectbox(
+                    "Sector (drill-down)", _ind_sec_opts, key="mp_ind_sec",
+                    help="Hides rows: shows only industries whose MAJORITY of stocks sit in this "
+                         "sector (the table's own 'dominant sector'). Applied after aggregation — "
+                         "no average, Δ or 💹 share changes. Industries that only partly touch "
+                         "the sector (the ~ rows) stay under their dominant home.",
+                )
 
             if _ind_cap != "All":
                 _ind_src = _ind_src[_ind_src["market_category"] == _ind_cap]
@@ -1772,7 +1811,6 @@ with tabs[3]:
                 avg_quality=("quality_score", "mean"),
                 avg_momentum=("momentum_score", "mean"),
                 avg_valuation=("valuation_score", "mean"),
-                crown_jewels=("conviction_tier", lambda x: (x == 1).sum()),
             )
             # 💹 tier share — over _ind_share_base (pre-wealth-filter roster; see above). Exact
             # equality, never contains: "BUY" ⊂ "BUY★".
@@ -1790,9 +1828,13 @@ with tabs[3]:
                              .sort_values(["industry", "n", "sector"], ascending=[True, False, True]))
                 _ind_dom  = _ind_pair.drop_duplicates("industry").set_index("industry")
                 _dom_sec  = _ind_dom["sector"].reindex(_ind_stats.index)
-                _dom_share = np.where(_ind_stats["stocks"] > 0,
-                                      _ind_dom["n"].reindex(_ind_stats.index) / _ind_stats["stocks"],
-                                      np.nan)
+                # pd.Series (not a bare array): the drill-down below row-filters _ind_stats, and
+                # positional alignment would silently pair shares with the wrong industries.
+                _dom_share = pd.Series(
+                    np.where(_ind_stats["stocks"] > 0,
+                             _ind_dom["n"].reindex(_ind_stats.index) / _ind_stats["stocks"],
+                             np.nan),
+                    index=_ind_stats.index)
 
                 # BOTH TERMS OF THE DIFFERENCE COME FROM ONE POPULATION. The baseline is grouped off
                 # `_ind_src` — the FILTERED frame — not off `df`. Comparing a Small-Cap-only industry
@@ -1842,12 +1884,21 @@ with tabs[3]:
                 _ind_stats = _ind_stats.sort_values(["delta_vs_sector", "avg_composite"],
                                                     ascending=[False, False], na_position="last")
 
+                # SECTOR DRILL-DOWN — row filter, applied AFTER every number is computed: matches
+                # the dominant sector, so no average, Δ or 💹 share moves (pinned).
+                if _ind_sec != "All":
+                    _ind_stats = _ind_stats[_dom_sec.reindex(_ind_stats.index) == _ind_sec]
+                    if _ind_stats.empty:
+                        st.info(f"No industry has {_ind_sec} as its dominant sector under these "
+                                f"filters — its stocks live inside industries that mostly sit "
+                                f"elsewhere (the ~ rows of their own homes).")
+
                 # Signal before context — the same invariant tests/test_market_pulse_columns.py pins
                 # for the other tables. Sector names are the widest strings in the frame
                 # ("Infrastructure Developers & Operators"), so the sector goes last.
                 _ind_order = [c for c in ["stocks", "pct_qualify", "avg_composite",
                                           "delta_vs_sector", "pct_tier", "avg_quality",
-                                          "avg_momentum", "avg_valuation", "crown_jewels",
+                                          "avg_momentum", "avg_valuation",
                                           "dom_sector"]
                               if c in _ind_stats.columns]
                 st.dataframe(
@@ -1879,7 +1930,6 @@ with tabs[3]:
                         "avg_quality":    st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
                         "avg_momentum":   st.column_config.ProgressColumn("Momentum",  min_value=0, max_value=100, format="%.0f"),
                         "avg_valuation":  st.column_config.ProgressColumn("Valuation", min_value=0, max_value=100, format="%.0f"),
-                        "crown_jewels":   st.column_config.NumberColumn("👑 T1", format="%.0f"),
                         "dom_sector":     st.column_config.TextColumn("Sector (dominant)", width="medium",
                                             help="Industry is NOT nested inside sector — 136 of 355 span more than one. "
                                                  "This is where the MAJORITY of the industry's stocks sit; a leading '~' "
@@ -1891,7 +1941,7 @@ with tabs[3]:
                 )
 
                 _ind_blank = int(_ind_stats["delta_vs_sector"].isna().sum())
-                _ind_tilde = int((_dom_share < 0.8).sum())
+                _ind_tilde = int((_dom_share.reindex(_ind_stats.index) < 0.8).sum())
                 st.markdown(
                     f'<div style="font-size:0.72rem;line-height:1.7;margin-top:12px;'
                     f'border-top:1px solid {COLORS["border"]};padding-top:10px;'
