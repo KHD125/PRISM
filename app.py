@@ -1162,7 +1162,10 @@ with tabs[3]:
         "🔭 MOSL",
         "💹 Wealth",
         "📈 Sectors",
+        "🏭 Industry",
     ])   # Stage 3: dropped dead "💙 Blue Chips" (0% fires) + brittle "🚀 Tipping Points" (folded into Sectors)
+         # 🏭 Industry APPENDED 2026-08-28 — appended, never inserted: each `with _mp_tabs[i]` body
+         # binds by index, so inserting anywhere earlier renders existing content into a new tab.
 
     # ══ Tsunami ════════════════════════════════════════════════════
     with _mp_tabs[0]:
@@ -1635,6 +1638,213 @@ with tabs[3]:
                 f'<span style="color:{COLORS["text_secondary"]};">{_join(_starved)}</span></div>',
                 unsafe_allow_html=True,
             )
+
+    # ══ Industry ═══════════════════════════════════════════════════
+    with _mp_tabs[5]:
+        # WHY THIS IS NOT THE SECTORS TAB WITH A DIFFERENT GROUPBY KEY. `sector` has 81 values,
+        # `industry` has 355 — and averaging up to the sector destroys real dispersion. Measured
+        # 2026-08-28: the six sizeable industries inside Pharmaceuticals run 18.1 → 51.3 on average
+        # composite, a 33-point spread the Sectors tab reports as one number (FMCG 22.9, Auto
+        # Ancillaries 22.6). 20 of the 76 industries holding ≥8 stocks sit more than 5 points from
+        # their parent sector's average. That gap is this tab's whole subject, so it is a COLUMN
+        # (Δ vs Sector) and the table sorts by it rather than by % Qualify.
+        #
+        # SORTING BY THE DELTA DOES NOT FIX THE SMALL-SAMPLE PROBLEM — an earlier version of this
+        # comment claimed it did, and measurement contradicted it. Δ is MORE small-sample sensitive
+        # than % Qualify, not less: % Qualify is bounded 0–100 while Δ is unbounded, so a one-stock
+        # industry sitting 38 points off its sector average tops the entire table. Measured with no
+        # floor at all: 5 of the top 10 rows were single-stock industries, and the top 10 overlapped
+        # a floored table by 1 of 10. There is deliberately NO floor here — see the block below for
+        # the trade that was made and the mitigation (Count, first column).
+        if "industry" not in df.columns:
+            st.info("🏭 No `industry` column in the loaded frame — re-run the pipeline.")
+        else:
+            # NO SIZE FLOOR — every industry is shown, down to the ones holding a single stock.
+            # This went dial (5..30) → fixed 8 → none, each step on the user's explicit call.
+            #
+            # THE COST IS REAL AND ACCEPTED, recorded here so nobody "fixes" it back. Sorting by Δ
+            # does not neutralise small samples — Δ is MORE exposed to them than % Qualify, since
+            # % Qualify is bounded 0–100 while Δ is not. Measured 2026-08-28 with no floor: 5 of the
+            # top 10 rows are single-stock industries, the leader is "Auto Ancillaries - Seats"
+            # (n=1, +32) — one company's score minus a sector average — and the unfloored top 10
+            # shares 1 row with the floored one. The floor did not trim the tail; it decided who led.
+            # The mitigation is Count, on every row, second from the left: a reader can see n=1 and
+            # discount it. That is the trade the user chose, deliberately, twice.
+
+            # Same two-kinds architecture as Sectors, minus one control:
+            #   RE-AGGREGATING  Market-cap tier, Wealth tier — filter the STOCKS, every average and
+            #                   the sector BASELINE are recomputed over the survivors.
+            #   ROW FILTER      Min stocks/industry — hides rows, touches no number.
+            # Capital phase is deliberately absent: sector_capital_phase is a SECTOR attribute with
+            # no industry-level analogue, so carrying it over would attach a sector's phase to an
+            # industry that only partly lives in it.
+            _IND_KEEP = [c for c in ["industry", "sector", "name", "composite_score",
+                                     "quality_score", "momentum_score", "valuation_score",
+                                     "gate_pass", "conviction_tier", "market_category",
+                                     "wealth_tier"] if c in df.columns]
+            _ind_src = df[_IND_KEEP].copy()
+            _ind_src["industry"] = _ind_src["industry"].astype(str).str.strip()
+            _ind_src = _ind_src[~_ind_src["industry"].isin(["", "nan", "None"])]
+
+            _i1, _i2 = st.columns([2, 2])
+            with _i1:
+                if "market_category" in _ind_src.columns:
+                    from config import MCAP_TIERS
+                    _ind_cap_opts = ["All"] + [t for t in MCAP_TIERS
+                                               if (_ind_src["market_category"] == t).any()]
+                    _ind_cap = st.selectbox(
+                        "Market-cap tier", _ind_cap_opts,
+                        format_func=lambda t: t if t == "All" else f"{MCAP_TIERS[t]['emoji']} {t}",
+                        key="mp_ind_cap",
+                        help="Re-aggregates: keeps only stocks in this tier, then recomputes every "
+                             "industry average AND its sector baseline over the same survivors.",
+                    )
+                else:
+                    _ind_cap = "All"
+            with _i2:
+                if "wealth_tier" in _ind_src.columns:
+                    _ind_wt_opts = ["All"] + [t for t in ["BUY★", "BUY", "WATCH★", "WATCH",
+                                                          "AVOID", "N/A"]
+                                              if (_ind_src["wealth_tier"] == t).any()]
+                    _ind_wt = st.selectbox(
+                        "Wealth tier", _ind_wt_opts, key="mp_ind_wealth",
+                        help="Re-aggregates. 'BUY★, grouped by industry' shows where the "
+                             "improving-wealth names actually concentrate — a far sharper answer "
+                             "than the same question asked of an 81-value sector.",
+                    )
+                else:
+                    _ind_wt = "All"
+
+            if _ind_cap != "All":
+                _ind_src = _ind_src[_ind_src["market_category"] == _ind_cap]
+            if _ind_wt != "All":
+                _ind_src = _ind_src[_ind_src["wealth_tier"] == _ind_wt]
+
+            st.markdown(
+                f"<div class='sec-cap'>All <strong>{_ind_src['industry'].nunique()} industries</strong>, "
+                f"ranked by <strong>Δ vs Sector</strong> — how far its average score sits above or "
+                f"below the sector it mostly belongs to. That is the one thing the Sectors tab "
+                f"cannot show: inside Pharmaceuticals alone, industry averages run from 18 to 51. "
+                f"Positive = the sector average flatters this industry's peers; negative = the "
+                f"sector average is carrying it.</div>",
+                unsafe_allow_html=True,
+            )
+
+            # DOMINANT SECTOR, not parent — industry is NOT nested inside sector. 136 of the 355
+            # industries span more than one (median purity 0.91, MINIMUM 0.38). The modal sector is
+            # picked with an explicit (count desc, sector asc) tie-break: an unsorted mode is
+            # non-deterministic across processes (PYTHONHASHSEED), which would make the displayed
+            # parent sector flicker between runs.
+            _ind_stats = _ind_src.groupby("industry").agg(
+                stocks=("name", "count"),
+                pct_qualify=("gate_pass", lambda s: 100.0 * s.mean()),
+                avg_composite=("composite_score", "mean"),
+                avg_quality=("quality_score", "mean"),
+                avg_momentum=("momentum_score", "mean"),
+                avg_valuation=("valuation_score", "mean"),
+                crown_jewels=("conviction_tier", lambda x: (x == 1).sum()),
+            )
+            if _ind_stats.empty:
+                st.info("No stocks match these filters — widen the selection.")
+            else:
+                _ind_pair = (_ind_src.groupby(["industry", "sector"]).size().rename("n")
+                             .reset_index()
+                             .sort_values(["industry", "n", "sector"], ascending=[True, False, True]))
+                _ind_dom  = _ind_pair.drop_duplicates("industry").set_index("industry")
+                _dom_sec  = _ind_dom["sector"].reindex(_ind_stats.index)
+                _dom_share = np.where(_ind_stats["stocks"] > 0,
+                                      _ind_dom["n"].reindex(_ind_stats.index) / _ind_stats["stocks"],
+                                      np.nan)
+
+                # BOTH TERMS OF THE DIFFERENCE COME FROM ONE POPULATION. The baseline is grouped off
+                # `_ind_src` — the FILTERED frame — not off `df`. Comparing a Small-Cap-only industry
+                # average against an all-cap sector average would report the cap effect as though it
+                # were an industry effect: the cross-year-basis defect in different clothes.
+                _sec_base = _ind_src.groupby("sector")["composite_score"].mean()
+                _sec_nind = _ind_src.groupby("sector")["industry"].nunique()
+
+                # A SECTOR HOLDING ONE INDUSTRY HAS NO COMPARISON TO OFFER. Its industry average and
+                # its sector average are the same number, so `a - b` returns exactly 0.0 — which
+                # reads as "perfectly average" when the truth is "nothing to compare against".
+                # 3 of 76 industries are in this position live (Bearings, Pesticides/Agrochemicals,
+                # Refineries). They get np.nan and render blank: never a sentinel where the honest
+                # answer is missing.
+                _ind_comparable = _dom_sec.map(_sec_nind).fillna(0) > 1
+                _ind_stats["delta_vs_sector"] = np.where(
+                    _ind_comparable, _ind_stats["avg_composite"] - _dom_sec.map(_sec_base), np.nan)
+                # "~" flags an industry whose stocks are NOT mostly in the sector named beside it.
+                _ind_stats["dom_sector"] = np.where(_dom_share < 0.8,
+                                                    "~ " + _dom_sec.astype(str),
+                                                    _dom_sec.astype(str))
+
+                if _ind_cap != "All" or _ind_wt != "All":
+                    _ind_bits = " · ".join(b for b in [_ind_cap if _ind_cap != "All" else "",
+                                                       _ind_wt if _ind_wt != "All" else ""] if b)
+                    st.caption(f"🏭 {len(_ind_src):,} stocks ({_ind_bits}) across "
+                               f"{_ind_src['industry'].nunique()} industries — averages and the "
+                               f"sector baseline both recomputed on this subset.")
+
+                # Incomparable rows carry no signal, so they sink rather than heading a descending
+                # sort; avg_composite breaks ties and orders that trailing group sensibly.
+                _ind_stats = _ind_stats.sort_values(["delta_vs_sector", "avg_composite"],
+                                                    ascending=[False, False], na_position="last")
+
+                # Signal before context — the same invariant tests/test_market_pulse_columns.py pins
+                # for the other tables. Sector names are the widest strings in the frame
+                # ("Infrastructure Developers & Operators"), so the sector goes last.
+                _ind_order = [c for c in ["stocks", "pct_qualify", "avg_composite",
+                                          "delta_vs_sector", "avg_quality", "avg_momentum",
+                                          "avg_valuation", "crown_jewels", "dom_sector"]
+                              if c in _ind_stats.columns]
+                st.dataframe(
+                    _ind_stats[_ind_order].reset_index(),
+                    column_config={
+                        "industry":       st.column_config.TextColumn("Industry", width="medium"),
+                        "stocks":         st.column_config.NumberColumn("Count", format="%.0f",
+                                            help="Read every percentage on this row against this number first."),
+                        "pct_qualify":    st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%",
+                                            help="Share of the industry's stocks clearing all hard gates. SCALE-FREE, "
+                                                 "not statistically robust — and much less robust here than on the "
+                                                 "Sectors tab: the median industry holds 3 stocks against 19 for "
+                                                 "sectors. This is a column, not the sort key, for exactly that reason."),
+                        "avg_composite":  st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
+                        "delta_vs_sector": st.column_config.NumberColumn("Δ vs Sector", format="%+.1f", width="small",
+                                            help="Average score minus the average of the sector this industry mostly sits "
+                                                 "in — the reason this tab exists. Both terms are computed over the SAME "
+                                                 "filtered stocks. BLANK means incomparable, not zero: that sector holds "
+                                                 "no other industry, so the two averages are the same number."),
+                        "avg_quality":    st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
+                        "avg_momentum":   st.column_config.ProgressColumn("Momentum",  min_value=0, max_value=100, format="%.0f"),
+                        "avg_valuation":  st.column_config.ProgressColumn("Valuation", min_value=0, max_value=100, format="%.0f"),
+                        "crown_jewels":   st.column_config.NumberColumn("👑 T1", format="%.0f"),
+                        "dom_sector":     st.column_config.TextColumn("Sector (dominant)", width="medium",
+                                            help="Industry is NOT nested inside sector — 136 of 355 span more than one. "
+                                                 "This is where the MAJORITY of the industry's stocks sit; a leading '~' "
+                                                 "means under 80% of them do, so read the Δ for that row loosely."),
+                    },
+                    use_container_width=True,
+                    height=min(700, 80 + len(_ind_stats) * 35),
+                    hide_index=True,
+                )
+
+                _ind_blank = int(_ind_stats["delta_vs_sector"].isna().sum())
+                _ind_tilde = int((_dom_share < 0.8).sum())
+                st.markdown(
+                    f'<div style="font-size:0.72rem;line-height:1.7;margin-top:12px;'
+                    f'border-top:1px solid {COLORS["border"]};padding-top:10px;'
+                    f'color:{COLORS["text_muted"]};">'
+                    f'<span style="color:{COLORS["text_secondary"]};font-weight:700;">Reading this '
+                    f'table.</span> {len(_ind_stats)} industries, no size floor. Check '
+                    f'<strong>Count</strong> before trusting a Δ — a one-stock industry is just '
+                    f'that single stock measured against its sector average. '
+                    f'<strong>{_ind_blank}</strong> show a blank Δ — their sector contains no other '
+                    f'industry, so there is nothing to compare them against (blank, deliberately, '
+                    f'rather than a 0.0 that would read as "average"). '
+                    f'<strong>{_ind_tilde}</strong> carry a <strong>~</strong> — fewer than 80% of '
+                    f'their stocks sit in the sector named beside them, because industry is not a '
+                    f'clean subdivision of sector.</div>',
+                    unsafe_allow_html=True,
+                )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -177,8 +177,17 @@ def test_the_table_stays_narrow(src):
 
 def test_sectors_tab_still_has_its_own_index(src):
     """Adding a tab shifts every index after it -- an off-by-one here silently renders the wrong
-    body into the wrong tab."""
+    body into the wrong tab.
+
+    The label count is read from the st.tabs([...]) list itself rather than matched against a
+    hardcoded set of tab NAMES. The first version alternated on Tsunami|QGLP|MOSL|Wealth|Sectors
+    inside a 220-char window, which meant it could not see a newly added tab at all: appending
+    🏭 Industry (2026-08-28) left it counting 5 declared tabs against 6 bodies and failing on a
+    change that was correct. A guard that cannot survive the event it guards against is worse than
+    no guard -- it trains you to edit it."""
     assert "_mp_tabs[3]" in src, "the Sectors tab was not reindexed after MOSL was inserted"
-    n_tabs = len(re.findall(r'"[^"]*(?:Tsunami|QGLP|MOSL|Wealth|Sectors)"', src[src.index("_mp_tabs = st.tabs(["):][:220]))
+    _i = src.index("_mp_tabs = st.tabs([")
+    n_tabs = len(re.findall(r'"[^"]+"', src[_i:src.index("])", _i)]))
+    assert n_tabs >= 5, f"only {n_tabs} tab labels parsed -- the extractor lost its teeth"
     used = {int(x) for x in re.findall(r"_mp_tabs\[(\d)\]", src)}
     assert used == set(range(n_tabs)), f"tab bodies {sorted(used)} do not cover the {n_tabs} tabs declared"

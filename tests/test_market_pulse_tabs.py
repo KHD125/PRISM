@@ -25,6 +25,20 @@ justified rather than slipped in. Neither Stage-3 removal reason applies to it �
                   — and provably does not collapse into verdict_direction (the engine's complete
                   18-stock BUY list splits across four wealth tiers)
 
+🏭 INDUSTRY ADDED 2026-08-28, and it clears the same three bars:
+    not dead      76 industries hold ≥8 stocks (54 at ≥10) out of 355 — against 81 sectors, so the
+                  view is 4.4× finer and still well populated at its default floor
+    not brittle   a pure groupby over columns that already exist (industry, sector,
+                  composite_score, gate_pass). No new gate, no engine change, nothing to calibrate
+    not redundant THE STRONGEST CASE OF THE FOUR. Sector averaging destroys real dispersion: the
+                  six sizeable industries inside Pharmaceuticals run 18.1 → 51.3 on average
+                  composite — a 33-point spread the Sectors tab reports as ONE number (FMCG 22.9,
+                  Auto Ancillaries 22.6). 20 of those 76 industries sit more than 5 points from
+                  their parent sector's average, from Pharma - MNC bulk Drugs at +22.7 to Auto
+                  Ancillaries - Gears at −12.9. The tab makes that gap its sort key.
+                  Note it is NOT a drill-down: 136 of 355 industries span more than one sector, so
+                  the hierarchy the name suggests does not exist — see tests/test_industry_tab.py.
+
 The behaviour of the tabs themselves is pinned by tests/test_mosl_convergence_tab.py and
 tests/test_wealth_tier.py. This file pins only the SET, which is the thing a future edit is most
 likely to change carelessly.
@@ -53,7 +67,8 @@ def test_market_pulse_tab_set_is_exact():
     """Order matters as much as membership: every `with _mp_tabs[i]` body is bound by index, so a
     reordering silently renders the wrong content into the wrong tab."""
     labels = _mp_tab_labels()
-    assert labels == ["🌊 Tsunami", "🏛️ QGLP", "🔭 MOSL", "💹 Wealth", "📈 Sectors"], labels
+    assert labels == ["🌊 Tsunami", "🏛️ QGLP", "🔭 MOSL", "💹 Wealth", "📈 Sectors",
+                      "🏭 Industry"], labels
 
 
 def test_removed_renderers_are_not_called():
@@ -70,7 +85,7 @@ def test_removed_renderers_are_not_imported():
 
 def test_tab_extractor_has_teeth():
     labels = _mp_tab_labels()
-    assert labels is not None and len(labels) == 5
+    assert labels is not None and len(labels) == 6
 
 
 def test_the_stage_3_removals_were_not_quietly_restored():
