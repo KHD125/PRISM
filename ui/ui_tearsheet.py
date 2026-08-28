@@ -4502,7 +4502,7 @@ def render_mosl_wealth_matrix(stock: pd.Series):
     pay_show  = payback if payback == payback else payback_g       # prefer trailing; else growth
     pe_to_roe = _num("pe_to_roe_ratio", default=float("nan"))     # PE / sustainable ROE; <1 = MoS
     pe_below  = int(_num("pe_below_roe", 0))
-    ep_abs    = _num("economic_profit", default=float("nan"))     # ₹ Cr/yr (Net Worth × (RoE−CoE))
+    ep_abs    = _num("economic_profit", default=float("nan"))     # ₹ Cr/yr (reserves × (RoE−CoE))
     ep_pos    = int(_num("economic_profit_positive", 0))
     atb       = str(_g(stock, "atoms_to_bits_label", "Hybrid") or "Hybrid")
 
@@ -4577,6 +4577,6 @@ def render_mosl_wealth_matrix(stock: pd.Series):
     st.markdown(
         f"<div style='font-size:0.6rem;color:{_MUTE};margin-bottom:14px;'>"
         f"Payback = MktCap ÷ trailing-5Y PAT · P/E-vs-RoE = Motilal 1st-Study margin of safety · "
-        f"Economic Profit = Net Worth × (RoE − {12.0:.0f}% cost of equity), exact book value</div>",
+        f"Economic Profit = equity (reserves) × (RoE − {12.0:.0f}% cost of equity)</div>",
         unsafe_allow_html=True,
     )

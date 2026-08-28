@@ -131,10 +131,13 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
         v = s.fillna(-1.0)
         return np.select([v < 0, v >= hi, v >= mid], ["⚪", "🟢", "🟡"], default="🔴")
 
-    def _pill_num(label: str, s: pd.Series, hi: float, mid: float, fmt="{:.0f}"):
+    def _pill_num(label: str, s: pd.Series, hi: float, mid: float):
+        # Vectorized (2026-08-28): the original zipped a Python list-comprehension over rows +
+        # a lambda .map — the one row loop in a file whose own docstring says "no row loops".
+        # .round(0) and "{:.0f}" share IEEE half-even rounding, so the strings are identical.
         dot = _band_num(s, hi, mid)
-        val = s.map(lambda x: fmt.format(x) if pd.notna(x) else "N/A")
-        return pd.Series([f"{label} {d} {vv}" for d, vv in zip(dot, val)], index=idx)
+        val = s.round(0).fillna(0).astype(int).astype(str).where(s.notna(), "N/A")
+        return label + " " + pd.Series(dot, index=idx) + " " + val
 
     # 4 numeric axes (0-100 sub-scores, 🟢≥60 🟡≥40) + 2 categorical (Governance/Forensics —
     # cleaner than a compressed bonus score). Orthogonal: Moat·Growth·Valuation·Balance·Govern·Forensics.

@@ -3377,8 +3377,20 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _at1      = _safe_numeric(df.get("asset_turnover_1yb", _dup_nan))
     _ta0      = _safe_numeric(df.get("total_assets",     _dup_nan))
     _ta1      = _safe_numeric(df.get("total_assets_1yb", _dup_nan))
-    _nw0      = _safe_numeric(df.get("net_worth",        _dup_nan)).clip(lower=1.0)
-    _nw1      = _safe_numeric(df.get("net_worth_1yb",    _dup_nan)).clip(lower=1.0)
+    # ONE-BASIS LEVERAGE LADDER (2026-08-28; was net_worth / net_worth_1yb — the cross-year basis
+    # rule). net_worth is market_cap ÷ P/B while net_worth_1yb is reserves_1yb: two different
+    # equity definitions in one year-over-year delta. Since net_worth runs above reserves, _lev0
+    # was systematically depressed and the leverage delta biased NEGATIVE — measured: median
+    # Δleverage −0.1026 mixed vs −0.0086 consistent, 409/2015 rows (20.3%) flip sign, and
+    # roe_leverage_driven under-fired. Both years now use RESERVES (the EP family's base).
+    # .where(> 0): negative equity flips the ratio's meaning (§5 signed-base guard) → NaN;
+    # .clip(lower=1.0) keeps the old micro-equity floor. Bonus honesty: the old
+    # net_worth_1yb (= reserves_1yb.fillna(0)).clip(1.0) turned a MISSING prior year into ₹1 Cr
+    # of equity (lev1 = TA/1, garbage); a missing reserves_1yb now propagates NaN.
+    _rv0      = _safe_numeric(df.get("reserves",         _dup_nan))
+    _rv1      = _safe_numeric(df.get("reserves_1yb",     _dup_nan))
+    _nw0      = _rv0.where(_rv0 > 0).clip(lower=1.0)
+    _nw1      = _rv1.where(_rv1 > 0).clip(lower=1.0)
     _lev0     = np.where(_ta0.notna() & (_nw0 > 0), _ta0 / _nw0, np.nan)
     _lev1     = np.where(_ta1.notna() & (_nw1 > 0), _ta1 / _nw1, np.nan)
     _lev0_s   = pd.Series(_lev0, index=df.index)
