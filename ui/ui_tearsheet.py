@@ -3741,11 +3741,12 @@ def render_mauboussin_radar(stock: pd.Series):
     Renders Mauboussin & Rappaport's Expectations Investing 3-layer audit card.
     PURE DISPLAY — Reads pre-materialized binary pillar columns from scoring_engine.py.
     Zero threshold re-computation; zero scoring logic; immune to parameter drift.
-    Source: docs/mauboussin_expectations_specs.json v1.1-fixed-nopat-precision.
-    Pillars (T/O/C):
-      T — Treadmill Safety:      mauboussin_treadmill_breach (sell_alert_treadmill gate)
-      O — OpLev Integrity:       mauboussin_oplev_drift      (operating_leverage gate)
-      C — CAP Trap Clear:        mauboussin_cap_trap==0      (implied_cap > 15 + ROCE 3Y slope < -1)
+    Source: docs/mauboussin_expectations_specs.json v2.0-expectations-gap.
+    Pillars (G/T/C) — v2.0 REPOINT 2026-08-28: G is the book's ch.7 buy standard and the
+    CERTIFICATION leg (strict inputs); T and C are DISQUALIFIERS (fire on evidence only):
+      G — Expectations Discount:  mauboussin_gap_opportunity  (expectations_gap ≤ −5, inputs required)
+      T — Treadmill Safety:       mauboussin_treadmill_breach (sell_alert_treadmill gate)
+      C — CAP Trap Clear:         mauboussin_cap_trap==0      (implied_cap > 15 + ROCE 3Y slope < -1)
     Layer 3: Interactive Reverse DCF Expected Value Calculator (on-demand, single-stock only).
     """
     _MAUB_COLOR = "#8b5cf6"
@@ -3759,13 +3760,18 @@ def render_mauboussin_radar(stock: pd.Series):
     _nopat_raw = _g(stock, "mauboussin_nopat_margin",   None)
     m_nopat_str = f"{_nopat_raw:.1f}%" if _nopat_raw is not None and _nopat_raw == _nopat_raw else "—"
 
+    _m_gap_raw = _g(stock, "expectations_gap", None)
+    _m_gap_str = (f"{_m_gap_raw:+.1f}pp" if _m_gap_raw is not None
+                  and _m_gap_raw == _m_gap_raw else "—")
     pillars = [
+        ("G", "Expectations Discount",
+         int(_g(stock, "mauboussin_gap_opportunity",  0)) == 1,
+         "The book's ch.7 buy standard: the growth the price implies sits at least 5 points "
+         "below what the business can sustainably deliver — a margin of safety in expectations. "
+         "Requires all inputs present: unverifiable is not certified."),
         ("T", "Treadmill Safety",
          int(_g(stock, "mauboussin_treadmill_breach", 0)) == 1,
          "Expectations Treadmill Safe: stock not priced for indefinite perfection requiring continuous positive surprises"),
-        ("O", "OpLev Integrity",
-         int(_g(stock, "mauboussin_oplev_drift",      0)) == 1,
-         "Operating Leverage Intact: incremental revenue converting efficiently to profit — economic engine healthy"),
         ("C", "CAP Trap Clear",
          int(_g(stock, "mauboussin_cap_trap",         0)) == 0,
          "Competitive Advantage Period Realistic: no high-CAP expectations paired with ROCE deceleration"),
@@ -3784,6 +3790,8 @@ def render_mauboussin_radar(stock: pd.Series):
             Mauboussin Price-Implied Expectations (PIE) Audit
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
+            Expectations Gap: <strong style="color:{hdr_color};">{_m_gap_str}</strong>
+            &nbsp;·&nbsp;
             Implied CAP Proxy: <strong style="color:{hdr_color};">{m_cap:.2f}</strong>
             &nbsp;·&nbsp;
             NOPAT Margin: <strong style="color:{hdr_color};">{m_nopat_str}</strong>

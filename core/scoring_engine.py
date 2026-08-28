@@ -3077,16 +3077,51 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (df["mauboussin_implied_cap"] > 15.0) & (_roce_slope_3y < -1.0)
     ).astype(int)
 
-    # Strategy pass flag: both operational gates clear AND not caught in expectations trap
+    # ── Pillar G (v2.0-expectations-gap, REPOINTED 2026-08-28): the BOOK's buy standard ──
+    # Expectations Investing ch.7 ("Buy, Sell, or Hold?"): buy only at a clear-cut margin of
+    # safety — a sufficient discount of the PRICE-IMPLIED expectation to what the business can
+    # deliver. The engine's expectations_gap (data_engine: g_implied inverted from the P/B–Gordon
+    # identity, minus g_star = deliverable growth) IS that method compressed — it existed, and the
+    # v1.x gate never read it: the framework carrying the book's name certified on three
+    # operational checks alone (census: T-clear 95.3%, C-clear 99.0%, oplev-intact 48.3% —
+    # 0.953 × 0.483 × 0.99 ≈ the 45.8% that "CERTIFIED": the gate was effectively the oplev
+    # flag renamed) and its NaN contract certified a stock with EVERY input
+    # missing. v2.0 makes the gap the CERTIFICATION leg and keeps T/C as DISQUALIFIERS — the two
+    # §5 polarities: certification requires evidence (all three inputs present — g_star silently
+    # fabricates a 0 deliverable when roe is absent, so roe is required too; unverifiable is not
+    # passed), disqualifiers fire only on positive evidence of trouble (a missing alert is not an
+    # alert). Oplev leaves the GATE (its fillna(1) benefit-of-doubt is the certified-on-absent-
+    # evidence class; latent today — 0 live NaN rows) but the COLUMN stays materialized.
+    #
+    # GAP_MIN = 5.0 is OURS, not the book's (ch.7 deliberately prescribes no universal cutoff —
+    # Table 7.7 maps price/EV × years-to-convergence and leaves "sufficient" to the investor).
+    # Chosen 2026-08-28 by liveness census: gap ≤ −5 → gate fires 13.8% (293 stocks; 0/2/5/8/10/15
+    # candidates measured at 25.6/20.5/13.8/9.7/8.1/5.4%), and the cohort is the book's target —
+    # median quality 64.4 against the universe's 33.8, priced for less growth than it can fund.
+    # The book's own caveat ("a stock with low expectations is no bargain if the prospects warrant
+    # them") is the T & C legs' job. KNOWN LIMITATION: g_star inherits the DPR hole (missing
+    # payout → RR fabricated at 1.0 → deliverable growth overstated → gap more negative) — the
+    # standing ruling is fix-the-source-column, never guard; sized at ~10-15%% relative for
+    # missing-DPR rows.
+    _eg_v2  = df.get("expectations_gap", pd.Series(np.nan, index=df.index))
+    _gi_v2  = df.get("g_implied",        pd.Series(np.nan, index=df.index))
+    _gs_v2  = df.get("g_star",           pd.Series(np.nan, index=df.index))
+    _roe_v2 = df.get("roe",              pd.Series(np.nan, index=df.index))
+    _gap_known_v2 = _gi_v2.notna() & _gs_v2.notna() & _roe_v2.notna()
+    df["mauboussin_gap_opportunity"] = (
+        _gap_known_v2 & (_eg_v2 <= -5.0)
+    ).astype(int)
+
+    # Strategy pass flag v2.0: the book's discount CERTIFIES; the traps DISQUALIFY.
     fw_mauboussin = (
+        (df["mauboussin_gap_opportunity"]  == 1) &
         (df["mauboussin_treadmill_breach"] == 1) &
-        (df["mauboussin_oplev_drift"]      == 1) &
         (df["mauboussin_cap_trap"]         == 0)
     )
     df["mauboussin_pass"]  = fw_mauboussin.astype(int)
     df["mauboussin_score"] = (
+        df["mauboussin_gap_opportunity"] +
         df["mauboussin_treadmill_breach"] +
-        df["mauboussin_oplev_drift"] +
         (df["mauboussin_cap_trap"] == 0).astype(int)
     )  # 0-3; score==3 ↔ pass==1 (bidirectional — no asymmetric disqualifier)
 
