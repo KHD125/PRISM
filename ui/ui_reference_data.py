@@ -417,4 +417,22 @@ CONCEPT_REFERENCE = {
         ("Momentum (O'Neil CAN-SLIM)", "Scoring Profile — price and earnings momentum: buy what FII/DII are accumulating right now (O'Neil CAN-SLIM)."),
         ("Turnaround / Special Situation", "Scoring Profile — quarter-on-quarter earnings acceleration plus promoter buying and a volume surge. High risk, high reward."),
     ],
+    # ── tier_label — config.CONVICTION_TIERS via apply_forensic_penalty (post-penalty score bands:
+    # ≥85 / ≥70 / ≥55 / ≥40 / rest). Added 2026-08-28: the app's most visible labels were absent
+    # from the searchable reference (found by the all-label coverage sweep). ──
+    "🏆 Conviction Tier": [
+        ("🏆 Crown Jewels", "Post-penalty composite score of 85 or more — the highest-conviction compounders; deep-dive and build a position. The rarest band (single digits of 2,100+ stocks)."),
+        ("🥇 Strong Compounders", "Score 70–84 — quality with momentum confirmation; watchlist priority."),
+        ("🥈 Emerging Quality", "Score 55–69 — quality building and momentum developing; monitor for an upgrade."),
+        ("🥉 On Radar", "Score 40–54 — some quality signals but they need time; the early watchlist."),
+        ("❌ Not Ready", "Score below 40 — insufficient quality or momentum for the engine to carry a thesis; ignore for now."),
+    ],
+    # ── atoms_to_bits_label — core/data_engine.py:1419 (sector-mapped, 26th WCS Atoms→Bits;
+    # unmapped sectors default to Hybrid). ──
+    "🌐 Business Design (Atoms → Bits)": [
+        ("Bits", "An asset-light, digital-first business (26th Wealth Creation Study taxonomy) — scales through networks and software rather than plants; sector-mapped."),
+        ("Atoms", "A capital-intensive physical business — growth needs plants, inventory and working capital, so scaling is linear with capital."),
+        ("Hybrid", "A mixed physical-plus-digital model — also the default for sectors the Atoms→Bits map does not classify either way."),
+    ],
+
 }

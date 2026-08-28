@@ -413,8 +413,6 @@ CONVICTION_TIERS = [
      "description": "Insufficient quality or momentum — ignore"},
 ]
 
-# ═══════════════════════════════════════════════════════════════
-# 7b. MARKS CYCLE TEMPERATURE GAUGE
 
 # Baid's 3 Sell Triggers (alert system)
 BAID_SELL_TRIGGERS = {

@@ -83,7 +83,8 @@ from .ui_components import (
     help_chip,
 )
 
-from .ui_reference import render_reference, render_concepts, render_flags, build_reference_markdown
+from .ui_reference import (render_reference, render_concepts, render_flags,
+                           render_frameworks, build_reference_markdown)
 
 __all__ = [
     "render_moat_growth_matrix",
@@ -126,5 +127,6 @@ __all__ = [
     "render_reference",
     "render_concepts",
     "render_flags",
+    "render_frameworks",
     "build_reference_markdown",
 ]

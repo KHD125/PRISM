@@ -143,3 +143,47 @@ def test_every_forensic_flag_has_a_display_description():
     assert not missing, f"forensic rf_ flags with NO _FLAG_DISPLAY description: {missing}"
     assert len(_FLAG_DISPLAY) == FORENSIC_MAX_FLAGS, \
         f"_FLAG_DISPLAY has {len(_FLAG_DISPLAY)} entries; FORENSIC_MAX_FLAGS = {FORENSIC_MAX_FLAGS}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# THE ALL-LABEL COVERAGE SWEEP (2026-08-28) — closing the June blind spot
+# ═══════════════════════════════════════════════════════════════════════════
+def test_every_label_emitting_column_is_fully_documented():
+    """The filterable-set coverage above has a structural blind spot this file's own history
+    recorded ("green concept-coverage tests have blind spots — always content-check"): a label
+    column that is NOT a Discovery filter could ship undocumented and every test stayed green.
+    It happened — tier_label (the app's most visible vocabulary: Crown Jewels…Not Ready) and
+    atoms_to_bits_label were absent from the reference until a manual sweep found them on
+    2026-08-28. This test IS that sweep, permanent: every live value of every label-emitting
+    column must be a documented concept label. A new label column goes in this list the day it
+    is born, and cannot ship undocumented without turning this red."""
+    import contextlib, io as _io, sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core"))
+    from data_engine import (coerce_numeric_columns, compute_derived_signals, load_all_csvs,
+                             merge_datasets)
+    from core import run_scoring_pipeline
+    from ui.ui_reference_data import CONCEPT_REFERENCE
+    with contextlib.redirect_stdout(_io.StringIO()):
+        df = run_scoring_pipeline(
+            compute_derived_signals(coerce_numeric_columns(merge_datasets(load_all_csvs("local")))))
+    documented = set()
+    for _cat, entries in CONCEPT_REFERENCE.items():
+        documented |= {lbl for lbl, _ in entries}
+    LABEL_COLS = ["buy_zone_label", "weinstein_stage", "cf_triangle", "lynch_category",
+                  "mef_label", "smart_money_flow", "wealth_tier", "ep_power_curve",
+                  "corporate_class", "tier_label", "moat_growth_quad", "peg_zone",
+                  "earnings_power_box", "cyclicality_tier", "sector_capital_phase",
+                  "verdict_direction", "atoms_to_bits_label", "forensic_label"]
+    problems = []
+    for col in sorted(LABEL_COLS):
+        assert col in df.columns, f"{col} vanished from the frame — update the sweep list"
+        vals = {str(v) for v in df[col].dropna().unique() if str(v).strip() and str(v) != "nan"}
+        missing = sorted(v for v in vals if v not in documented)
+        if missing:
+            problems.append(f"{col}: {missing}")
+    assert not problems, (
+        "these live label values have NO entry in the searchable reference "
+        "(add them to CONCEPT_REFERENCE, written from the code that emits them):  "
+        + " | ".join(problems)
+    )

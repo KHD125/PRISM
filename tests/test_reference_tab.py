@@ -45,3 +45,28 @@ def test_render_is_pure_no_streamlit_calls():
     ]
     assert not st_calls, "ui_reference.py must be pure HTML — no st.* calls"
     assert isinstance(render_reference({"Foo": "bar"}, ""), str)
+
+
+# ── Framework registry ON SCREEN (2026-08-28) ────────────────────────────────────────────────
+def test_frameworks_are_searchable_on_screen():
+    """Before 2026-08-28 the Markdown export documented all 37 frameworks while on-screen search
+    could find only 6 — the answer to "what is Dhandho Asymmetry?" lived in the download but not
+    the search box. The on-screen section renders from the SAME _FW_META-derived dict the export
+    consumes, so the two can never disagree."""
+    from ui.ui_reference import render_frameworks
+    from ui.ui_tearsheet import _FW_META
+    fw = {name: {"emoji": meta[1], "name": name, "desc": meta[2]} for name, meta in _FW_META.items()}
+    html_all = render_frameworks(fw, "")
+    for name in ("Dhandho Asymmetry", "QGLP", "100-Bagger"):
+        assert name in html_all, f"{name} missing from the on-screen framework registry"
+    assert render_frameworks(fw, "dhandho") != ""
+    assert render_frameworks(fw, "zzz-no-such-framework") == ""
+
+
+def test_app_renders_the_framework_registry():
+    import io as _io, os
+    src = _io.open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
+    assert "render_frameworks(_fw_md, _ref_q)" in src, (
+        "app.py no longer renders the framework registry on screen — the export/search asymmetry is back"
+    )
+    assert "Framework Registry" in src

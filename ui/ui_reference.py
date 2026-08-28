@@ -103,6 +103,34 @@ def render_flags(flag_display: dict, query: str = "") -> str:
     )
 
 
+def render_frameworks(fw_meta: dict, query: str = "") -> str:
+    """Inline dark-theme HTML for the 37-framework registry — the SAME `_FW_META`-derived dict
+    the Markdown export consumes (app.py adapts it to {emoji,name,desc}), so the on-screen
+    section and the download can never disagree. Added 2026-08-28: the export documented all 37
+    while on-screen search could find only 6 — "what is Dhandho Asymmetry?" had an answer in the
+    file but not in the search box. Pure: no Streamlit, no I/O. Sorted by name (deterministic);
+    token-AND filtered over name AND description; returns "" when nothing matches."""
+    tokens = (query or "").lower().split()
+    rows = []
+    for _key, meta in sorted(fw_meta.items(), key=lambda kv: kv[0].lower()):
+        emoji = meta.get("emoji", "") if isinstance(meta, dict) else ""
+        name = meta.get("name", _key) if isinstance(meta, dict) else str(meta)
+        desc = meta.get("desc", "") if isinstance(meta, dict) else ""
+        if all(tok in f"{name}\n{desc}".lower() for tok in tokens):
+            rows.append((emoji, name, desc))
+    if not rows:
+        return ""
+    return "".join(
+        f'<div style="padding:7px 0;border-bottom:1px solid {COLORS["border"]};">'
+        f'<div style="font-size:0.8rem;font-weight:700;color:{COLORS["text_primary"]};">'
+        f'{html.escape(emoji)} {html.escape(name)}</div>'
+        + (f'<div style="font-size:0.74rem;color:{COLORS["text_secondary"]};line-height:1.45;'
+           f'margin-top:2px;">{html.escape(str(desc))}</div>' if desc else "")
+        + "</div>"
+        for emoji, name, desc in rows
+    )
+
+
 def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: dict,
                              frameworks: dict = None, as_of: str = None) -> str:
     """The FULL Reference as one Markdown string, assembled from the SAME single-source dicts the

@@ -80,7 +80,8 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 inject_css, render_hero_banner, render_metric_strip, render_pulse_band,
                 render_stock_card, help_chip,
                 render_radar_chart, render_sidebar_brand,
-                render_reference, render_concepts, render_flags, build_reference_markdown)
+                render_reference, render_concepts, render_flags, render_frameworks,
+                build_reference_markdown)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
@@ -2326,7 +2327,7 @@ with tabs[4]:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 6: REFERENCE — searchable glossary (renders the 173-term _RAW_GLOSSARY single source)
+# TAB 6: REFERENCE — searchable glossary (renders the _RAW_GLOSSARY single source, count shown live)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tabs[5]:
     st.markdown(
@@ -2379,3 +2380,14 @@ with tabs[5]:
             unsafe_allow_html=True,
         )
         st.markdown(_flags_html, unsafe_allow_html=True)
+    # Framework registry ON SCREEN (2026-08-28) — the same _fw_md the download consumes; before
+    # this, the export documented all 37 while the search box could find only 6.
+    _fw_html = render_frameworks(_fw_md, _ref_q)
+    if _fw_html:
+        st.markdown(
+            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["purple"]};'
+            f'text-transform:uppercase;letter-spacing:1px;margin:20px 0 2px 0;">'
+            f'Framework Registry — the {len(_fw_md)} lenses</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(_fw_html, unsafe_allow_html=True)
