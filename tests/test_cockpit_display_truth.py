@@ -202,6 +202,36 @@ def test_negative_velocity_keeps_the_red():
     assert COLORS["red"] in seg, "genuine below-hurdle compounding lost its red"
 
 
+# ── 5. A ruled-out position is a known zero, not missing data (2026-08-28) ──────────
+def test_ruled_out_position_says_zero_shares_not_dash():
+    """Sarda: price below its volatility stop → the sizing rule computes weight 0 — a KNOWN
+    answer. The tile showed the em-dash, this codebase's honest-blank glyph for 'unknown',
+    dressing a decision as a data hole (the VCV full-payout defect class)."""
+    html = _render(close_price=531.15, vstop_value=589.54, dist_to_vstop=-9.9,
+                   rupee_capital_allocation=0.0, optimal_portfolio_weight_pct=0.0)
+    i = html.index("Executable at 10L Base")
+    seg = html[i:i + 700]
+    assert "0 shares" in seg, "a computed-zero position still renders the unknown dash"
+    assert "no entry" in seg
+
+
+def test_missing_allocation_keeps_the_honest_dash():
+    """The reverse must also hold: when the engine truly has no allocation figure, the dash
+    stays — a data hole must never be dressed as a confident zero."""
+    html = _render(rupee_capital_allocation=np.nan)
+    i = html.index("Executable at 10L Base")
+    seg = html[i:i + 700]
+    assert "0 shares" not in seg
+    assert "—" in seg
+
+
+def test_positive_allocation_still_prints_the_share_count():
+    html = _render(rupee_capital_allocation=39202.80, close_price=268.50)
+    i = html.index("Executable at 10L Base")
+    seg = html[i:i + 700]
+    assert "146 shares" in seg     # 39202.80 // 268.50 = 146
+
+
 # ── 3. The EP power-curve label must not praise a shrinking company ─────────────────
 def _live():
     import contextlib, io as _io

@@ -4120,9 +4120,18 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
         _fv_txt = f"₹ {float(_fv_ex):,.0f}"
         _fv_sub = f"{_upside:+.0f}% vs price · QGLP fair PE × EPS"
         _fv_clr = COLORS["green"] if _up_shown >= 0 else COLORS["red"]
-    _sh_txt = "—"
-    if _px_ok and allocation and allocation > 0:
-        _sh_txt = f"{int(allocation // float(_px_ex)):,} shares"
+    # A COMPUTED zero (sizing ruled the position out — price at/below stop, or zero Kelly
+    # weight) is a KNOWN answer, not missing data. The em-dash is this codebase's honest-blank
+    # glyph for "unknown", so a ruled-out entry must not wear it (the VCV full-payout lesson,
+    # same day). Mirrors the ENGINE value: raw rupee_capital_allocation present-and-zero = the
+    # rule spoke; missing = "—" as before.
+    _sh_txt, _sh_sub = "—", "deployment ÷ price"
+    _alloc_raw = stock.get("rupee_capital_allocation")
+    if _px_ok and pd.notna(_alloc_raw):
+        if float(_alloc_raw) > 0:
+            _sh_txt = f"{int(float(_alloc_raw) // float(_px_ex)):,} shares"
+        else:
+            _sh_txt, _sh_sub = "0 shares", "no entry — sizing rules it out at this price"
     _dvs_sub = (f"{float(_dvs_ex):+.1f}% vs stop" if pd.notna(_dvs_ex) else "stop distance unknown")
     _d52_sub = (f"{float(_d52_ex):.1f}% off 52w high" if pd.notna(_d52_ex) else "")
     row3 = (
@@ -4132,7 +4141,7 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
                       COLORS["text_primary"], COLORS["text_muted"]) +
         _cockpit_card("⚖️ Fair Value (QGLP)", _fv_txt, _fv_sub, _fv_clr, _fv_clr) +
         _cockpit_card("🧾 Executable at 10L Base", _sh_txt,
-                      "deployment ÷ price", COLORS["blue"], COLORS["text_muted"])
+                      _sh_sub, COLORS["blue"], COLORS["text_muted"])
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">{row3}</div>',
