@@ -150,6 +150,58 @@ def test_structural_metrics_render_as_cards_not_bare_text():
     assert html.count("border-radius:10px") >= 6
 
 
+# ── 4. VCV honesty states (2026-08-28: found walking the live BUY★ cohort) ──────────
+def _vcv_card(html):
+    """The VCV card's own html: label → next card's label. The value's color style sits AFTER
+    the label div, and the next card's value color sits after ITS label — so this window holds
+    exactly one card's verdict colors (plus neutral chrome)."""
+    i = html.index("Value Creation Velocity")
+    return html[i:html.index("Expectations Gap", i)]
+
+
+def test_full_payout_zero_is_gold_not_condemned():
+    """Castrol India: ROCE 75.8, DPR 135 → RR clips to 0 → VCV 0.00. Eleven live stocks with a
+    real above-hurdle spread (median ROCE 48.4) rendered a RED zero beside a green Moat axis —
+    a full distributor is not a value destroyer."""
+    seg = _vcv_card(_render(value_creation_velocity=0.0, reinvestment_rate=0.0,
+                            dividend_payout_ratio=135.36))
+    assert "distributes all earnings" in seg and "not retained" in seg
+    assert COLORS["red"] not in seg, "a full-payout zero still wears the below-hurdle red"
+    assert COLORS["gold"] in seg
+
+
+def test_assumed_retention_is_named_not_presented_as_measured():
+    """DPR missing (58.8% of the universe) → RR is fillna-fabricated at 1.0, so the number is
+    really ROCE − CoE. The sub-line must say the assumption, never claim a measured rate."""
+    seg = _vcv_card(_render(value_creation_velocity=13.34))   # fixture has no DPR key
+    assert "assumed full retention — payout unreported" in seg
+    assert "Reinvestment rate × capital spread" not in seg, (
+        "an assumed RR is still presented as measured")
+
+
+def test_measured_rr_keeps_the_measured_subline():
+    seg = _vcv_card(_render(value_creation_velocity=13.05, dividend_payout_ratio=10.21,
+                            reinvestment_rate=0.8979))
+    assert "Reinvestment rate × capital spread" in seg
+    assert "assumed full retention" not in seg and "distributes all earnings" not in seg
+    assert COLORS["green"] in seg
+
+
+def test_zero_is_a_third_state_not_below_hurdle_red():
+    """The engine's own definition: 'Negative = compounding capital below its hurdle rate.'
+    Zero is not negative — a spread exactly at the hurdle must render muted, never red."""
+    seg = _vcv_card(_render(value_creation_velocity=0.0, dividend_payout_ratio=40.0,
+                            reinvestment_rate=0.6))
+    assert COLORS["red"] not in seg
+    assert COLORS["gold"] not in seg, "an at-hurdle zero is not the full-payout state"
+
+
+def test_negative_velocity_keeps_the_red():
+    seg = _vcv_card(_render(value_creation_velocity=-3.2, dividend_payout_ratio=40.0,
+                            reinvestment_rate=0.6))
+    assert COLORS["red"] in seg, "genuine below-hurdle compounding lost its red"
+
+
 # ── 3. The EP power-curve label must not praise a shrinking company ─────────────────
 def _live():
     import contextlib, io as _io

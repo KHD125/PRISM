@@ -4158,17 +4158,49 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     # more than it can deliver (expectations risk); negative = pessimism / margin of safety."
     _egap_clr = COLORS["text_muted"] if not _egap_ok else (
         COLORS["green"] if _shown(_egap, 2) < 0 else COLORS["orange"])
-    _vcv_clr = COLORS["text_muted"] if not _vcv_ok else (
-        COLORS["green"] if _shown(_vcv, 2) > 0 else COLORS["red"])
+
+    # ── VCV display honesty (2026-08-28, audited on the live BUY★ cohort). Three states beyond
+    # the number, each MIRRORING an engine value (never re-derived — the Fisher drift lesson):
+    #   FULL PAYOUT  reinvestment_rate == 0 (DPR ≥ 100): the formula truthfully reads 0.00 —
+    #                nothing retained to compound — but 11 live stocks with real above-hurdle
+    #                spread (median ROCE 48.4; Castrol 75.8, P&G Health 85.9) rendered a RED zero
+    #                beside a green Moat axis. A full distributor is not a value destroyer → gold.
+    #   ASSUMED RR   dividend_payout_ratio missing (58.8% of the universe): RR is fillna-
+    #                fabricated at 1.0, so the shown number is really just ROCE − CoE. The
+    #                sub-line stops claiming a measured "Reinvestment rate ×" and names the
+    #                assumption instead.
+    #   ZERO ≠ RED   the engine defines red as "compounding below hurdle" — the shown value
+    #                being NEGATIVE. A 0.00 is a third state (full payout, or spread exactly at
+    #                the hurdle): muted, not condemned.
+    _vcv_rr  = stock.get("reinvestment_rate")
+    _vcv_dpr = stock.get("dividend_payout_ratio")
+    _vcv_full_payout = bool(_vcv_ok and pd.notna(_vcv_rr) and float(_vcv_rr) == 0.0)
+    _vcv_assumed_rr  = bool(_vcv_ok and pd.isna(_vcv_dpr))
+    if not _vcv_ok:
+        _vcv_sub = "not reported"
+    elif _vcv_full_payout:
+        _vcv_sub = "distributes all earnings — spread returned as cash, not retained"
+    elif _vcv_assumed_rr:
+        _vcv_sub = "assumed full retention — payout unreported"
+    else:
+        _vcv_sub = "Reinvestment rate × capital spread"
+    _vcv_clr = (COLORS["text_muted"] if not _vcv_ok else
+                COLORS["gold"] if _vcv_full_payout else
+                COLORS["green"] if _shown(_vcv, 2) > 0 else
+                COLORS["red"] if _shown(_vcv, 2) < 0 else
+                COLORS["text_muted"])
 
     _struct = (
         _cockpit_card(
             "🔄 Value Creation Velocity", f"{_vcv:+.2f}%" if _vcv_ok else "N/A",
-            "Reinvestment rate × capital spread" if _vcv_ok else "not reported",
+            _vcv_sub,
             _vcv_clr, COLORS["text_muted"],
             tip="How fast the business compounds its own capital: the share of profit it "
                 "reinvests multiplied by the spread it earns above its cost of capital. "
-                "Positive means every retained rupee is creating value.") +
+                "Positive means every retained rupee is creating value. A 0.00 on a full "
+                "payout means nothing is retained to compound — not value destruction. When "
+                "the payout ratio is unreported the engine takes full retention as given, so "
+                "the figure shown is the raw spread above the 12% hurdle.") +
         _cockpit_card(
             "📊 Expectations Gap", f"{_egap:+.2f}%" if _egap_ok else "N/A",
             ("priced above what it can deliver" if _egap > 0 else "margin of safety")
