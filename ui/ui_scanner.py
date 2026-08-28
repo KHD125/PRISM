@@ -13,6 +13,7 @@ from ui.ui_components import _RAW_GLOSSARY as _GLOSSARY
 _SCANNER_HEADER_TIPS = {
     "rank":             "The stock's overall rank in the current screen (1 = highest conviction).",
     "verdict_direction":"The engine's one-word gate (SOUND / MIXED / FLAWED) synthesised from all 6 axes after the forensic penalty.",
+    "wealth_tier":"The wealth-engine tier (BUY★ / BUY / WATCH★ / WATCH / AVOID / N/A) — is the business becoming more valuable? Three clocks: EP% (ROE − cost of equity), Vel% (this year's change in it), 5-year margin tau. Price-blind and forensics-blind; a description, not a recommendation.",
     "corporate_class":  _GLOSSARY["Corporate Class"],
     "composite_score":  _GLOSSARY["Composite Score"],
     "conviction_tier":  _GLOSSARY["Conviction Tier"],

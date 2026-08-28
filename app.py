@@ -503,7 +503,7 @@ with tabs[1]:
 
     # ── Column view presets ────────────────────────────────────────
     _DS_VIEWS = {
-        "🏆 Core":      ["rank","name","verdict_direction","sector","market_category","composite_score",
+        "🏆 Core":      ["rank","name","verdict_direction","wealth_tier","sector","market_category","composite_score",
                          "data_coverage_pct","conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
         "📊 Quality":   ["name","quality_score","moat_score","growth_score","cash_score",
                          "governance_bonus","piotroski_fscore","roce","opm","cfo_to_pat"],
@@ -640,7 +640,7 @@ with tabs[1]:
     # String decision-signal + identity columns get clean headers (else they show raw snake_case).
     for _tc, _tl in {
         "name": "Stock", "sector": "Sector", "market_category": "Market Cap",
-        "verdict_direction": "Soundness", "weinstein_stage": "Trend",
+        "verdict_direction": "Soundness", "wealth_tier": "Wealth", "weinstein_stage": "Trend",
         "moat_growth_quad": "Moat·Growth", "smart_money_flow": "Smart Money",
         "buy_zone_label": "Buy Zone",
         "red_flag_list": "Which Flags",
@@ -851,6 +851,28 @@ with tabs[2]:
             f'border-radius:7px;padding:6px 10px;">{_trend_msg}</div>'
         ) if _trend_conflict else ""
 
+        # ── 💹 Wealth-tier pill: the third layer of the grammar, on the reading surface ──
+        # A LABELED PILL, never a competing banner — the band is Soundness's home. Unlocked by
+        # the vocabulary rename: "FLAWED · 💹 WATCH★" reads as two layers disagreeing openly
+        # (the feature), where the old "AVOID · BUY★" read as a contradiction (the cf_triangle
+        # defect). ⚠ rides with the tier per the wealth_warn contract — never blended.
+        _wtier = str(stock.get("wealth_tier", "") or "")
+        _wwarn = " ⚠" if int(stock.get("wealth_warn", 0) or 0) == 1 else ""
+        _WT_PILL_CLR = {
+            "BUY★":   ("rgba(63,185,80,0.13)",   COLORS["green"], "rgba(63,185,80,0.4)"),
+            "BUY":    ("rgba(63,185,80,0.10)",   COLORS["green"], "rgba(63,185,80,0.3)"),
+            "WATCH★": ("rgba(228,179,65,0.15)",  COLORS["gold"],  "rgba(228,179,65,0.4)"),
+            "WATCH":  ("rgba(228,179,65,0.10)",  COLORS["gold"],  "rgba(228,179,65,0.3)"),
+            "AVOID":  ("rgba(110,118,129,0.12)", COLORS["text_secondary"], "rgba(110,118,129,0.35)"),
+        }
+        _wealth_pill = ""
+        if _wtier in _WT_PILL_CLR:          # N/A and missing render nothing — no pill over no data
+            _bg, _fg, _bd = _WT_PILL_CLR[_wtier]
+            _wealth_pill = (
+                f'<span style="{_pill_css}background:{_bg};color:{_fg};'
+                f'border:1px solid {_bd};">💹 {_wtier}{_wwarn}</span>'
+            )
+
         st.markdown(f"""
         <div style="background:{_verdict_bg};border:1px solid {_verdict_clr}55;
              border-left:4px solid {_verdict_clr};border-radius:10px;
@@ -860,7 +882,7 @@ with tabs[2]:
                  letter-spacing:1.1px;white-space:nowrap;">{_verdict}</span>
             <span style="font-size:0.7rem;color:{COLORS['text_secondary']};
                  white-space:nowrap;">{_meta_line}</span>
-            {_risk_pill}{_mr_pill}{_trend_pill}
+            {_wealth_pill}{_risk_pill}{_mr_pill}{_trend_pill}
           </div>
           <div style="font-size:0.75rem;color:{COLORS['text_secondary']};margin-top:5px;">
             {_verdict_reason}</div>

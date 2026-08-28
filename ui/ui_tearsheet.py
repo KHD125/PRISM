@@ -520,6 +520,26 @@ def render_ep_power_curve_module(stock: pd.Series):
             f'</div>'
         )
 
+    # ── 💹 Wealth Tier card inputs — computed HERE, before the strip expression (the four EP
+    # cards are assembled inside ONE concatenated expression; an earlier edit that inserted
+    # statements mid-expression broke the module and was reverted). This card closes the loop the
+    # strip opens: its four siblings ARE the tier's raw inputs, and the normalized EP% / Vel% —
+    # the scale-free versions (EP ÷ net worth = ROE − CoE) that make a ₹200 Cr and a ₹2,000 Cr
+    # business comparable — are displayed on NO other per-stock surface.
+    _wt_val = str(stock.get("wealth_tier", "") or "")
+    _wt_warn = " ⚠" if int(stock.get("wealth_warn", 0) or 0) == 1 else ""
+    _wt_ep, _wt_vel = stock.get("wealth_ep_pct"), stock.get("wealth_vel_pct")
+    if _wt_val in ("BUY★", "BUY"):
+        _wt_clr = COLORS["green"]
+    elif _wt_val in ("WATCH★", "WATCH"):
+        _wt_clr = COLORS["gold"]
+    elif _wt_val == "AVOID":
+        _wt_clr = COLORS["text_secondary"]
+    else:
+        _wt_val, _wt_clr = "N/A", COLORS["text_muted"]
+    _wt_sub = ("EP% " + (f"{float(_wt_ep):+.1f}" if pd.notna(_wt_ep) else "—")
+               + " · Vel% " + (f"{float(_wt_vel):+.1f}" if pd.notna(_wt_vel) else "—"))
+
     ep_strip = (
         _ep_metric("Economic Profit",
                    f"₹{ep_val:,.0f} Cr" if ep_known else "—",
@@ -560,7 +580,15 @@ def render_ep_power_curve_module(stock: pd.Series):
                        "economic profit, but the RETURN needs a cheap entry). 533 stocks show 🚀 "
                        "here; 211 pass the framework. So a stock can be a Hockey Stick on this "
                        "card and still have no pill in the Frameworks tab — that is the price "
-                       "gate, not a disagreement.")
+                       "gate, not a disagreement.") +
+        _ep_metric("Wealth Tier", f"{_wt_val}{_wt_warn}", _wt_sub, _wt_clr, COLORS["text_muted"],
+                   tip="The wealth-engine tier — three clocks, nothing else: EP% (excess return, "
+                       "ROE − cost of equity), Vel% (this year's change in it), and the 5-year "
+                       "margin tau. The four cards to the left are its raw inputs; EP% and Vel% "
+                       "here are those figures ÷ net worth, so businesses of any size compare "
+                       "fairly. Price-blind and forensics-blind: the ⚠ marks 8+ red flags or a "
+                       "Schilit fail and never alters the tier. A description, not a "
+                       "recommendation — see the 💹 Wealth tab for the whole universe.")
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{ep_strip}</div>',
@@ -2681,6 +2709,13 @@ def render_raw_signals(stock: pd.Series, query: str = ""):
     # MOSL Wealth Creation signals (9 Annual Wealth Creation Studies extracted into the engine)
     _yn = lambda k: "Yes ✅" if g(k) == 1 else "No"
     _section("🏛️ MOSL Wealth Creation Signals", COLORS["gold"],
+        # 💹 The wealth tier + its two normalized inputs (engine columns, verdict_engine.py).
+        # Here and not in a new section: the tier IS the Wealth Creation studies' formula
+        # (ROCE expansion + earnings growth) operationalized, so this is its conceptual home.
+        _cell("Wealth Tier",     (str(stock.get("wealth_tier","") or "N/A")
+                                  + (" ⚠" if int(stock.get("wealth_warn",0) or 0)==1 else "")), "") +
+        _cell("Wealth EP%",      g("wealth_ep_pct"),  "{:+.1f}") +
+        _cell("Wealth Vel%",     g("wealth_vel_pct"), "{:+.1f}") +
         # 13th — Great/Good/Gruesome taxonomy
         _cell("Corporate Class", stock.get("corporate_class","") or "N/A", "") +
         # 17th — Economic Moat persistence (sector-relative ROE across 5 timeframes)

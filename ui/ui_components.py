@@ -608,6 +608,9 @@ def render_pulse_band(df) -> None:
 # The glossary explains the TERM for a beginner; it NEVER judges the value (good/bad needs thresholds
 # = engine drift). A label with no entry simply gets no "?" — the completeness net.
 _RAW_GLOSSARY = {
+    "Wealth Tier": "The wealth-engine tier — is this business becoming more valuable? Three clocks: EP% (excess return above the cost of equity), Vel% (this year's change in it), and the 5-year margin tau. BUY★ = earning, improving, confirmed; WATCH★ = confirmed turnaround. Price-blind and forensics-blind (the ⚠ marks 8+ red flags or a Schilit fail and never alters the tier); a description, not a recommendation.",
+    "Wealth EP%": "Excess return: economic profit ÷ net worth × 100 = ROE minus the 12% cost of equity, in percentage points. Scale-free, so a ₹200 Cr and a ₹2,000 Cr business compare fairly. The universe median is NEGATIVE — above zero already beats the median listed company.",
+    "Wealth Vel%": "This year's CHANGE in the excess return, in points of net worth. The 28th Wealth Creation study's finding is that DIRECTION beats level — a business climbing from a low base has historically outperformed a high earner sliding backwards.",
     # ── All-Data grid: curated residual orphans (coverage audit 2026-06-17) ──
     "Mcap Tier":          "Market-cap tier: Mega (≥₹2L Cr) / Large (≥₹20k) / Mid (≥₹5k) / Small (≥₹500) / Micro (≥₹100) / Nano (<₹100 Cr).",
     "Cyclicality Tier":   "The kind of business by industry — A Deep-Cyclical/Commodity, B Cyclical, C Defensive, D Sensitive/Structural-Growth, E Financials, F Catch-all. A holding-regime hint: cyclicals (A/B) tend to be timing/overlay trades while defensives and structural growers (C/D) are steadier to hold through the cycle. Display-only context, never scored.",
@@ -966,6 +969,20 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
         f'background:{_vclr}1f;border:1px solid {_vclr}66;">{_vemoji} {_html.escape(_vdir)}</div>'
     ) if _vdir else ""
 
+    # ── 💹 Wealth-tier chip beside the Soundness chip: the two verdicts at browse level.
+    # Filter-result coherence — if you filtered Wealth = WATCH★, the cards SHOW it. N/A and
+    # missing render nothing (no chip over no data); ⚠ rides with the tier, never blended.
+    _wt = str(row.get("wealth_tier", "") or "")
+    _wt_c = {"BUY★": COLORS["green"], "BUY": COLORS["green"],
+             "WATCH★": COLORS["gold"], "WATCH": COLORS["gold"],
+             "AVOID": COLORS["text_muted"]}.get(_wt)
+    _wt_w = " ⚠" if int(row.get("wealth_warn", 0) or 0) == 1 else ""
+    _wealth_chip = (
+        f'<div style="display:inline-block;font-size:0.78rem;font-weight:900;color:{_wt_c};'
+        f'letter-spacing:0.6px;white-space:nowrap;margin:0 0 5px 6px;padding:3px 11px;border-radius:11px;'
+        f'background:{_wt_c}1f;border:1px solid {_wt_c}66;">💹 {_html.escape(_wt)}{_wt_w}</div>'
+    ) if _wt_c else ""
+
     card_html = f"""
     <div class="stock-card" style="border-left: 3px solid {tc['border']};">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -979,7 +996,7 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
                 <div style="margin-top:5px;">{_verdict_strip}</div>
             </div>
             <div style="text-align:right;flex-shrink:0;margin-left:12px;">
-                {_verdict_chip}
+                {_verdict_chip}{_wealth_chip}
                 <div style="font-size:1.8rem; font-weight:900; color:{tc['text']};">{row.get('composite_score', 0):.0f}</div>
                 <div style="font-size:0.65rem; color:{COLORS['text_muted']};">COMPOSITE</div>
             </div>
