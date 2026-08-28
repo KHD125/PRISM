@@ -311,15 +311,12 @@ CONCEPT_REFERENCE = {
         ("📶 Fisher Scalability", "Does the business still have room to grow — a revenue runway, operating leverage, pricing power, and no dilution. The growth story isn't finished."),
         ("💯 100-Bagger", "Phelps/Mayer '100 Baggers' — the long-compounding, small-base setup: growth consistent across horizons, a low payback ratio, a wide economic-profit spread, a small base, and low pledging."),
     ],
-    # ── Market regime (scoring_engine detect_market_regime) + Marks posture (config.MARKS_CYCLE) ──
+    # ── Market regime (scoring_engine detect_market_regime) ──
     # Market-wide readings shown on the Market Pulse tab + the banner — never traits of one stock.
     "🌊 Market & Regime": [
         ("🐂 BULL", "The whole market is in a healthy uptrend — strong breadth (most stocks above their long-term averages). PRISM trusts momentum signals more in a Bull regime."),
         ("🐻 BEAR", "The whole market is weak — poor breadth. PRISM gets stricter and BLOCKS new momentum (CAN SLIM) entries, since most stocks fall in a falling market. Weight quality and caution."),
         ("➡️ SIDEWAYS", "The market is range-bound — breadth is mixed, neither clearly rising nor falling. The default, in-between regime."),
-        ("🟢 Aggressive", "Howard Marks cycle posture — a cheap, fearful market: deploy capital into quality. Fat-pitch territory."),
-        ("🟡 Neutral", "Marks cycle posture — a balanced market: maintain the portfolio, make selective additions only."),
-        ("🔴 Defensive", "Marks cycle posture — an expensive, euphoric market: reduce equity, accumulate dry powder, and wait."),
         ("🌊 Tsunami", "The rarest, highest-conviction setup — all SEVEN conviction conditions (quality + momentum + governance + technical) fire at once. Often only a handful exist, sometimes none."),
         ("🚀 Tipping Points", "A Market Pulse watch-list of stocks at a potential inflection — where a change in the business may be about to accelerate. Context, not a verdict."),
     ],
@@ -419,14 +416,5 @@ CONCEPT_REFERENCE = {
         ("Defensive / Cash Cow", "Scoring Profile — capital-protection mode: a free-cash-flow fortress with zero debt."),
         ("Momentum (O'Neil CAN-SLIM)", "Scoring Profile — price and earnings momentum: buy what FII/DII are accumulating right now (O'Neil CAN-SLIM)."),
         ("Turnaround / Special Situation", "Scoring Profile — quarter-on-quarter earnings acceleration plus promoter buying and a volume surge. High risk, high reward."),
-    ],
-    # ── Marks Cycle Gauge — Config-tab sliders (config.DEFAULT_CYCLE_TEMPERATURE). DISPLAY-ONLY: a
-    # personal conviction/sizing aid that never alters the engine's scores (CLAUDE.md §5). ──
-    "🌡️ Marks Cycle Gauge (display-only)": [
-        ("📊 Valuations (cycle)", "Marks Cycle dial — how expensive the market is, scored 1 (cheap, PE<17) to 5 (frothy, PE>25). A thinking aid for your own posture; it does NOT change the engine's scores."),
-        ("🏦 Credit Conditions (cycle)", "Marks Cycle dial — how loose credit is, 1 (tight) to 5 (loose, easy money). Display-only; informs your conviction, not the rankings."),
-        ("🧠 Investor Psychology (cycle)", "Marks Cycle dial — the crowd's mood, 1 (fear) to 5 (greed). A display-only conviction dial."),
-        ("📈 Capital Markets (cycle)", "Marks Cycle dial — IPO and issuance heat, 1 (no IPOs) to 5 (IPO mania). Display-only."),
-        ("⚖️ Market Quality (cycle)", "Marks Cycle dial — what's leading, 1 (quality leads) to 5 (junk leads). The five dials sum to a 5–25 cycle temperature that guides YOUR posture — never the engine's scores."),
     ],
 }

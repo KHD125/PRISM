@@ -415,25 +415,6 @@ CONVICTION_TIERS = [
 
 # ═══════════════════════════════════════════════════════════════
 # 7b. MARKS CYCLE TEMPERATURE GAUGE
-# ═══════════════════════════════════════════════════════════════
-# 5-Dimension market temperature (scored 1-5 each, total 5-25)
-# This is a MANUAL input updated quarterly — system provides the framework.
-MARKS_CYCLE = {
-    "posture_aggressive": {"max_score": 10, "label": "🟢 Aggressive",
-                           "action": "Deploy capital into quality. Fat pitch territory."},
-    "posture_neutral":    {"max_score": 18, "label": "🟡 Neutral",
-                           "action": "Maintain portfolio, selective additions only."},
-    "posture_defensive":  {"max_score": 25, "label": "🔴 Defensive",
-                           "action": "Reduce equity, accumulate dry powder, wait."},
-}
-# Default temperature (user adjusts via Config tab)
-DEFAULT_CYCLE_TEMPERATURE = {
-    "valuations": 3,         # 1=cold (PE<17) to 5=hot (PE>25)
-    "credit_conditions": 3,  # 1=tight to 5=loose
-    "investor_psychology": 3, # 1=fear to 5=greed
-    "capital_markets": 3,    # 1=no IPOs to 5=IPO mania
-    "market_quality": 3,     # 1=quality leads to 5=junk leads
-}
 
 # Baid's 3 Sell Triggers (alert system)
 BAID_SELL_TRIGGERS = {

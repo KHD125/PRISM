@@ -52,3 +52,21 @@ def test_profile_snaps_into_the_active_modes_allowed_set():
     assert 'if st.session_state["cfg_profile"] not in _allowed_profiles:' in src
     assert 'st.session_state["cfg_profile"] = _allowed_profiles[0]' in src
     assert "options=_allowed_profiles" in src, "profile selectbox must offer the mode's allowed set"
+
+
+def test_marks_gauge_stays_removed():
+    """Tombstone (2026-08-28): the 5-slider Marks Cycle Temperature Gauge was REMOVED — the only
+    hand-set subjective input in an evidence-first system: its sliders never persisted (session
+    state only), its output was sealed off from everything by its own display-only guardrail, and
+    the objective macro layer (detect_market_regime) already owns adaptation. Removing it also
+    closed the tab audit's two findings (the missing §5 pin and the hardcoded 25%/65% gradient).
+    NAME-COLLISION WARNING: the "Marks Cycle Shield" FRAMEWORK is a separate, engine-computed
+    feature and stays — these exact tombstone names deliberately do not match it."""
+    src = _APP.read_text(encoding="utf-8")
+    cfg = (_APP.parent / "config.py").read_text(encoding="utf-8")
+    for name in ['key="ct_val"', 'key="ct_credit"', 'key="ct_psych"', 'key="ct_cap"',
+                 'key="ct_qual"', "cycle_total", "MARKS_CYCLE", "DEFAULT_CYCLE_TEMPERATURE",
+                 "Cycle Temperature Gauge"]:
+        assert name not in src, f"{name!r} is back in app.py — the gauge was removed 2026-08-28"
+    for name in ["MARKS_CYCLE", "DEFAULT_CYCLE_TEMPERATURE"]:
+        assert name not in cfg, f"{name!r} is back in config.py — the gauge constants were removed"

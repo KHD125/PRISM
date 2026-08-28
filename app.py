@@ -88,7 +88,7 @@ from ui.ui_reference_data import CONCEPT_REFERENCE
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
-                    VALUATION_SIGNALS, MARKS_CYCLE, DEFAULT_CYCLE_TEMPERATURE,
+                    VALUATION_SIGNALS,
                     BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
                     MASTER_PROFILES, ANALYSIS_MODES, FORENSIC_MAX_FLAGS,
                     FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS)
@@ -2187,84 +2187,6 @@ with tabs[4]:
             unsafe_allow_html=True,
         )
 
-    # ── MARKS CYCLE TEMPERATURE GAUGE (standalone qualitative macro lens) ──
-    # Deliberately display-only: a subjective human cycle read must NOT re-rank the deterministic,
-    # vectorized quant scores. Macro adaptation is already handled objectively by detect_market_regime.
-    st.markdown("---")
-    st.markdown(f"<div class='sec-head'>🌡️ Marks Cycle Temperature Gauge</div>", unsafe_allow_html=True)
-    st.markdown(
-        f"<div class='sec-cap'>Howard Marks' 5-dimension cycle read — score each 1 (cold/fear) "
-        f"to 5 (hot/greed). A <strong>qualitative lens for your own conviction &amp; position "
-        f"sizing</strong>; it deliberately does <strong>not</strong> alter the quant rankings, "
-        f"which adapt objectively via the auto-detected market regime.</div>",
-        unsafe_allow_html=True,
-    )
-
-    tc1, tc2 = st.columns(2)
-    with tc1:
-        t_val = st.slider("📊 Valuations (1=PE<17, 5=PE>25)", 1, 5,
-                          DEFAULT_CYCLE_TEMPERATURE["valuations"], key="ct_val")
-        t_credit = st.slider("🏦 Credit Conditions (1=tight, 5=loose)", 1, 5,
-                             DEFAULT_CYCLE_TEMPERATURE["credit_conditions"], key="ct_credit")
-        t_psych = st.slider("🧠 Investor Psychology (1=fear, 5=greed)", 1, 5,
-                            DEFAULT_CYCLE_TEMPERATURE["investor_psychology"], key="ct_psych")
-    with tc2:
-        t_cap = st.slider("📈 Capital Markets (1=no IPOs, 5=IPO mania)", 1, 5,
-                          DEFAULT_CYCLE_TEMPERATURE["capital_markets"], key="ct_cap")
-        t_qual = st.slider("⚖️ Market Quality (1=quality leads, 5=junk leads)", 1, 5,
-                           DEFAULT_CYCLE_TEMPERATURE["market_quality"], key="ct_qual")
-
-    cycle_total = t_val + t_credit + t_psych + t_cap + t_qual
-    if cycle_total <= MARKS_CYCLE["posture_aggressive"]["max_score"]:
-        posture = MARKS_CYCLE["posture_aggressive"]
-    elif cycle_total <= MARKS_CYCLE["posture_neutral"]["max_score"]:
-        posture = MARKS_CYCLE["posture_neutral"]
-    else:
-        posture = MARKS_CYCLE["posture_defensive"]
-
-    posture_color = ("#3fb950" if "Aggressive" in posture["label"]
-                     else "#d29922" if "Neutral" in posture["label"] else "#f85149")
-    # Marker position on the 5-25 scale → 0-100% (clamped so it can never overflow the bar)
-    _marker_pct = max(0.0, min(100.0, (cycle_total - 5) / 20.0 * 100.0))
-
-    st.markdown(f"""
-    <div style="background:{COLORS['bg_secondary']};border:2px solid {posture_color};
-                border-radius:14px;padding:18px 22px;margin:12px 0;">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;
-                  flex-wrap:wrap;margin-bottom:16px;">
-        <div>
-          <div style="font-size:0.6rem;color:{COLORS['text_muted']};text-transform:uppercase;
-                      letter-spacing:1.4px;font-weight:700;">Cycle Temperature</div>
-          <div style="font-size:2.4rem;font-weight:900;color:{posture_color};line-height:1.05;">
-            {cycle_total}<span style="font-size:1.1rem;color:{COLORS['text_muted']};
-            font-weight:600;">/25</span></div>
-        </div>
-        <div style="text-align:right;flex:1;min-width:190px;">
-          <div style="font-size:1.15rem;font-weight:800;color:{posture_color};">{posture['label']}</div>
-          <div style="font-size:0.78rem;color:{COLORS['text_secondary']};margin-top:3px;">
-            {posture['action']}</div>
-        </div>
-      </div>
-      <div style="position:relative;height:12px;border-radius:6px;
-                  background:linear-gradient(90deg,#3fb950 0%,#3fb950 25%,#e3b341 25%,
-                  #e3b341 65%,#f85149 65%,#f85149 100%);">
-        <div style="position:absolute;top:-6px;left:{_marker_pct:.1f}%;transform:translateX(-50%);
-                    width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;
-                    border-top:10px solid {COLORS['text_primary']};"></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:10px;
-                  font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">
-        <span style="color:#3fb950;">🟢 Aggressive · Deploy</span>
-        <span style="color:#d29922;">🟡 Neutral · Hold</span>
-        <span style="color:#f85149;">🔴 Defensive · Protect</span>
-      </div>
-    </div>
-    <div style="font-size:0.66rem;color:{COLORS['text_muted']};margin:-2px 0 6px 2px;">
-      🧠 A <strong>thinking tool</strong> — it shapes how aggressively <em>you</em> deploy capital.
-      The engine's stock rankings stay 100% objective and untouched by these sliders.
-    </div>
-    """, unsafe_allow_html=True)
-
     # ── SYSTEM RISK MONITORS (Baid Sell Triggers + Mean Reversion) ──────────
     st.markdown("---")
     st.markdown(f"<div class='sec-head'>🛡️ System Risk Monitors</div>", unsafe_allow_html=True)
@@ -2314,8 +2236,7 @@ with tabs[4]:
     st.markdown("---")
     st.markdown(f"""
     <div style="text-align:center; padding:20px; color:{COLORS['text_muted']}; font-size:0.75rem;">
-        PRISM v{UI['version']} · Quantamental Intelligence · Every lens, one verdict<br>
-        <strong>Marks Cycle Posture: {posture['label']}</strong>
+        PRISM v{UI['version']} · Quantamental Intelligence · Every lens, one verdict
     </div>
     """, unsafe_allow_html=True)
 
