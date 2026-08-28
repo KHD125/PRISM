@@ -70,3 +70,54 @@ def test_marks_gauge_stays_removed():
         assert name not in src, f"{name!r} is back in app.py — the gauge was removed 2026-08-28"
     for name in ["MARKS_CYCLE", "DEFAULT_CYCLE_TEMPERATURE"]:
         assert name not in cfg, f"{name!r} is back in config.py — the gauge constants were removed"
+
+
+def test_data_health_card_computes_live_never_hardcodes():
+    """The 🩺 card's whole value is that it SELF-RESOLVES: every figure must be computed from
+    this run's frame, so fixing the source sheet turns rows green with zero code changes. A
+    hardcoded coverage percentage would freeze the diagnosis forever."""
+    src = _APP.read_text(encoding="utf-8")
+    i = src.index("🩺 DATA HEALTH")
+    block = src[i:src.index('_cfg_card("Source-Sheet Gaps', i)]
+    # live computations present
+    assert '"dividend_payout_ratio"' in block and ".notna().mean()" in block
+    assert '"current_ratio_1yb"' in block and "==" in block
+    assert '"data_coverage_pct"' in block
+    assert 'os.path.isdir(_snap_dir)' in block, "the snapshot row no longer reads the snapshots dir"
+    # no frozen diagnosis: the known figures at build time must NOT appear as literals
+    for frozen in ("41%", "58.8", "59%"):
+        assert frozen not in block, (
+            f"{frozen!r} is hardcoded in the Data Health card — the card must measure, not remember"
+        )
+
+
+def test_data_health_snapshot_row_has_both_states():
+    """'none yet' (red, with the call to action) and the days-ago state must both exist — a card
+    that only renders the happy path goes blank exactly when the nag matters most."""
+    src = _APP.read_text(encoding="utf-8")
+    i = src.index("🩺 DATA HEALTH")
+    block = src[i:src.index('_cfg_card("Source-Sheet Gaps', i)]
+    assert '"none yet"' in block
+    assert "tools/snapshot.py" in block
+
+
+def test_cr_1yb_copy_premise_still_true():
+    """PREMISE PIN (the test_reinvestment_rate_data_gap precedent): the CR-1YB row's red state
+    assumes the sheet still carries a copy of the current CR. Measured at build: ~100%% identical.
+    IF THIS FAILS, IT IS GOOD NEWS — the sheet was fixed; delete this test and watch the card's
+    row turn green on its own."""
+    import contextlib, io as _io2, sys as _sys
+    root = str(_APP.parent)
+    for p in (root, root + "/core"):
+        if p not in _sys.path:
+            _sys.path.insert(0, p)
+    from data_engine import (coerce_numeric_columns, compute_derived_signals, load_all_csvs,
+                             merge_datasets)
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        d = compute_derived_signals(coerce_numeric_columns(merge_datasets(load_all_csvs("local"))))
+    both = d["current_ratio"].notna() & d["current_ratio_1yb"].notna()
+    same = float((d.loc[both, "current_ratio"] == d.loc[both, "current_ratio_1yb"]).mean())
+    assert same > 0.90, (
+        f"CR-1YB now differs from CR on {(1-same):.0%} of rows — the source sheet appears FIXED. "
+        f"Good news: delete this premise test; the Data Health row self-resolves."
+    )

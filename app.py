@@ -2233,6 +2233,90 @@ with tabs[4]:
         st.markdown(_cfg_card("Mean Reversion Risk (Marks)", "🌡️", _mr_body, COLORS["gold"]),
                     unsafe_allow_html=True)
 
+    # ── 🩺 DATA HEALTH — the source-sheet gaps the engine works around (LIVE, never hardcoded) ──
+    # The engine rulebook's missing chapter: the two known sheet defects degrade real signals
+    # (DPR → fabricated full retention; CR-1YB → dead Piotroski F6), and until now they lived only
+    # in session memories. Every figure below is COMPUTED THIS RUN, so the day the sheet is fixed
+    # the rows turn green by themselves — the card self-resolves, it cannot go stale.
+    st.markdown("---")
+    st.markdown(f"<div class='sec-head'>🩺 Data Health</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='sec-cap'>Known source-sheet gaps, measured live on this run's data. These are "
+        f"fixed in the <strong>Google Sheet / CSVs</strong>, not in code — each row shows exactly "
+        f"what it degrades and turns green on its own once the sheet carries the real figure.</div>",
+        unsafe_allow_html=True,
+    )
+
+    def _dh_row(dot_clr: str, label: str, value: str, consequence: str) -> str:
+        return (
+            f'<div style="display:flex;align-items:baseline;gap:10px;padding:6px 0;'
+            f'border-bottom:1px solid rgba(255,255,255,0.04);flex-wrap:wrap;">'
+            f'<span style="color:{dot_clr};font-size:0.9rem;line-height:1;">●</span>'
+            f'<span style="font-size:0.74rem;font-weight:700;color:{COLORS["text_primary"]};'
+            f'min-width:150px;">{label}</span>'
+            f'<span style="font-size:0.74rem;font-weight:800;color:{dot_clr};min-width:110px;">{value}</span>'
+            f'<span style="font-size:0.68rem;color:{COLORS["text_muted"]};flex:1;min-width:260px;">'
+            f'{consequence}</span></div>'
+        )
+
+    # 1. DPR coverage — missing payout is read as "retains everything" (RR fabricated at 1.0).
+    _dpr_s = df.get("dividend_payout_ratio", pd.Series(np.nan, index=df.index))
+    _dpr_cov = float(_dpr_s.notna().mean()) * 100.0
+    _dpr_clr = (COLORS["green"] if _dpr_cov >= 90 else
+                COLORS["gold"] if _dpr_cov >= 60 else COLORS["red"])
+    _dh = _dh_row(
+        _dpr_clr, "Dividend Payout (DPR)", f"{_dpr_cov:.0f}% populated",
+        "Missing rows are read as full retention (RR = 1.0) — inflates Value Creation Velocity, "
+        "g★ and the misallocation flag. Fix: the DPR column in the source sheet.",
+    )
+
+    # 2. CR one-year-back — the known copy bug: identical to current CR for every row.
+    _cr0 = df.get("current_ratio", pd.Series(np.nan, index=df.index))
+    _cr1 = df.get("current_ratio_1yb", pd.Series(np.nan, index=df.index))
+    _cr_both = _cr0.notna() & _cr1.notna()
+    _cr_same = float((_cr0[_cr_both] == _cr1[_cr_both]).mean()) * 100.0 if _cr_both.any() else np.nan
+    if pd.isna(_cr_same):
+        _dh += _dh_row(COLORS["text_muted"], "Current Ratio 1Y-back", "not reported",
+                       "No prior-year liquidity figure at all — Piotroski F6 and the "
+                       "liquidity-improving check cannot run.")
+    else:
+        _cr_clr = (COLORS["green"] if _cr_same < 50 else
+                   COLORS["gold"] if _cr_same < 95 else COLORS["red"])
+        _dh += _dh_row(
+            _cr_clr, "Current Ratio 1Y-back", f"{_cr_same:.0f}% identical to CR",
+            "A copy of the current figure carries no year-over-year information — Piotroski F6 "
+            "and the liquidity-improving check stay dead until the sheet holds the real prior year.",
+        )
+
+    # 3. Overall evidence coverage — context, from the engine's own confidence input.
+    _cov_s = df.get("data_coverage_pct", pd.Series(np.nan, index=df.index))
+    if _cov_s.notna().any():
+        _cov_med, _cov_p10 = float(_cov_s.median()), float(_cov_s.quantile(0.10))
+        _cov_clr = COLORS["green"] if _cov_p10 >= 60 else COLORS["gold"]
+        _dh += _dh_row(_cov_clr, "Evidence coverage", f"median {_cov_med:.0f}%",
+                       f"The 44-input coverage behind the 🔍 confidence badge; the thinnest tenth "
+                       f"of the universe sits at {_cov_p10:.0f}% or less.")
+
+    # 4. Snapshot age — the validation series only exists if captures happen (monthly ritual).
+    _snap_dir = os.path.join("Other Resources", "snapshots")
+    _snaps = (sorted(f for f in os.listdir(_snap_dir) if f.endswith(".csv"))
+              if os.path.isdir(_snap_dir) else [])
+    if _snaps:
+        _snap_age = (pd.Timestamp.now()
+                     - pd.Timestamp(os.path.getmtime(os.path.join(_snap_dir, _snaps[-1])), unit="s")).days
+        _snap_clr = (COLORS["green"] if _snap_age <= 35 else
+                     COLORS["gold"] if _snap_age <= 70 else COLORS["red"])
+        _dh += _dh_row(_snap_clr, "Last snapshot", f"{_snap_age} day{'s' if _snap_age != 1 else ''} ago",
+                       "Forward-return validation needs a monthly capture: run tools/snapshot.py "
+                       "on the first trading day of each month.")
+    else:
+        _dh += _dh_row(COLORS["red"], "Last snapshot", "none yet",
+                       "No capture in Other Resources/snapshots — every conclusion about whether "
+                       "the engine predicts returns waits on this. Run tools/snapshot.py.")
+
+    st.markdown(_cfg_card("Source-Sheet Gaps & Validation Cadence — Live", "🩺", _dh, COLORS["cyan"]),
+                unsafe_allow_html=True)
+
     st.markdown("---")
     st.markdown(f"""
     <div style="text-align:center; padding:20px; color:{COLORS['text_muted']}; font-size:0.75rem;">
