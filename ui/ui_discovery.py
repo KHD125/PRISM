@@ -20,7 +20,7 @@ from config import COLORS, FRAMEWORK_CATEGORIES
 _CHIP_META = [
     ("sb_mcap", "Market Cap", "ms"), ("sb_sector", "Sector", "sel"), ("sb_industry", "Industry", "sel"),
     ("sb_cyc", "Cyclicality", "ms"), ("sb_capphase", "Capital Phase", "ms"), ("sb_tier", "Tier", "ms"),
-    ("sb_verdict", "Verdict", "ms"), ("sb_wealthtier", "Wealth Tier", "ms"), ("sb_corpclass", "Corp Class", "ms"), ("sb_maxrf", "Max Red Flags", "max"),
+    ("sb_verdict", "Soundness", "ms"), ("sb_wealthtier", "Wealth Tier", "ms"), ("sb_corpclass", "Corp Class", "ms"), ("sb_maxrf", "Max Red Flags", "max"),
     ("sb_piotier", "Piotroski", "ms"), ("sb_mincov", "Min Coverage", "min"), ("sb_hidestale", "Hide Stale", "bool"),
     ("sb_fwfam", "FW Family", "ms"),
     ("sb_fw_exclude", "Exclude FW", "ms"), ("sb_fw_include", "Include FW", "ms"), ("sb_fw_combine", "Combine FW", "ms"),
@@ -307,11 +307,11 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
             # 4b. Verdict — the engine's SOUND/MIXED/FLAWED gate (filter to the rare SOUNDs)
             _verdict_opts = _ordered_present(_cf, "verdict_direction", ["SOUND", "MIXED", "FLAWED"])
-            sel_verdict = _ms_cascade("Verdict", _verdict_opts, "sb_verdict", default=[],
+            sel_verdict = _ms_cascade("Soundness", _verdict_opts, "sb_verdict", default=[],
                                       help="The engine's top-line decision. Empty = all stocks.",
                                       count_col="verdict_direction")
             if sel_verdict and "verdict_direction" in _cf.columns:
-                _cf = _narrow(_cf, _label_mask(_cf["verdict_direction"], sel_verdict), "Verdict")
+                _cf = _narrow(_cf, _label_mask(_cf["verdict_direction"], sel_verdict), "Soundness")
 
             # 4b2. Wealth Tier — the change-lens verdict (verdict_engine.wealth_tier): is the
             # business BECOMING more valuable? Orthogonal to Verdict above by construction (the

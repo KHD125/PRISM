@@ -135,8 +135,8 @@ def test_the_gate_stays_a_gate(live):
 
 def test_the_glossary_explains_all_three(live):
     from ui.ui_reference_data import CONCEPT_REFERENCE
-    section = next((v for k, v in CONCEPT_REFERENCE.items() if "Verdict" in k), None)
-    assert section is not None, "the Verdict glossary section is gone"
+    section = next((v for k, v in CONCEPT_REFERENCE.items() if "Soundness" in k), None)
+    assert section is not None, "the Soundness glossary section is gone"
     documented = {lab for lab, _ in section}
     assert ENGINE_WORDS <= documented, f"glossary missing: {ENGINE_WORDS - documented}"
     assert not (OLD_WORDS & documented), "the glossary still documents the old action words"

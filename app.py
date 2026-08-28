@@ -640,7 +640,7 @@ with tabs[1]:
     # String decision-signal + identity columns get clean headers (else they show raw snake_case).
     for _tc, _tl in {
         "name": "Stock", "sector": "Sector", "market_category": "Market Cap",
-        "verdict_direction": "Verdict", "weinstein_stage": "Trend",
+        "verdict_direction": "Soundness", "weinstein_stage": "Trend",
         "moat_growth_quad": "Moat·Growth", "smart_money_flow": "Smart Money",
         "buy_zone_label": "Buy Zone",
         "red_flag_list": "Which Flags",
@@ -1180,7 +1180,7 @@ with tabs[3]:
             _ts_sel = st.dataframe(
                 _mp_ts[_ts_cols].reset_index(drop=True),
                 column_config={
-                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall SOUND / MIXED / FLAWED gate — a Tsunami setup can still be MIXED/FLAWED on valuation or entry timing."),
+                    "verdict_direction": st.column_config.TextColumn("Soundness", help="The engine's overall SOUND / MIXED / FLAWED gate — a Tsunami setup can still be MIXED/FLAWED on valuation or entry timing."),
                     "composite_score": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
                     "quality_score":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
                     "momentum_score":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
@@ -1248,7 +1248,7 @@ with tabs[3]:
             _q_sel = st.dataframe(
                 _mp_qglp[_q_cols].reset_index(drop=True),
                 column_config={
-                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall SOUND / MIXED / FLAWED gate — most QGLP passers are MIXED/FLAWED on valuation, so this surfaces the few that are buyable now."),
+                    "verdict_direction": st.column_config.TextColumn("Soundness", help="The engine's overall SOUND / MIXED / FLAWED gate — most QGLP passers are MIXED/FLAWED on valuation, so this surfaces the few that are buyable now."),
                     # width="small" on the five legs + the name column: reordering alone left
                     # Longevity and Price/PEG off-screen at a 1793px viewport (verified in the
                     # browser). The legs need room for a bar and 2-3 digits, nothing more, and
@@ -1356,7 +1356,7 @@ with tabs[3]:
                 column_config={
                     "rank":             st.column_config.NumberColumn("Rank", format="%.0f"),
                     "name":             st.column_config.TextColumn("name", width="medium"),
-                    "verdict_direction": st.column_config.TextColumn("Verdict", help="The engine's overall call. Most high-convergence names are AVOID — the MOSL lenses do not read forensics or entry timing, and the verdict does."),
+                    "verdict_direction": st.column_config.TextColumn("Soundness", help="The engine's overall SOUND / MIXED / FLAWED gate. Most high-convergence names are FLAWED — the MOSL lenses do not read forensics or entry timing, and the soundness gate does."),
                     "red_flag_count":   st.column_config.NumberColumn("🚩 Flags", format="%.0f", width="small", help="Forensic red flags. The MOSL lenses gate quality/growth/longevity and NOT forensics, so this is the risk check the convergence count itself does not do."),
                     "mosl_n":           st.column_config.ProgressColumn("MOSL", min_value=0, max_value=len(_MOSL_LENSES), format="%.0f", width="small", help="How many of the 10 Wealth Creation lenses this stock clears."),
                     "composite_score":  st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f", width="small"),
@@ -1429,7 +1429,7 @@ with tabs[3]:
                     "moat_score":        st.column_config.NumberColumn("Moat", format="%.0f", width="small"),
                     "growth_score":      st.column_config.NumberColumn("Gro",  format="%.0f", width="small"),
                     "red_flag_count":    st.column_config.NumberColumn("🚩",   format="%.0f", width="small"),
-                    "verdict_direction": st.column_config.TextColumn("Engine", width="small", help="The main verdict (level + forensics + valuation) beside the wealth tier (pure change). They answer DIFFERENT questions and disagreeing openly is the point: the engine's rare SOUND names include stocks this lens reads as decaying, and its FLAWED pile hides confirmed turnarounds."),
+                    "verdict_direction": st.column_config.TextColumn("Soundness", width="small", help="The soundness gate (level + forensics + valuation) beside the wealth tier (pure change). They answer DIFFERENT questions and disagreeing openly is the point: the engine's rare SOUND names include stocks this lens reads as decaying, and its FLAWED pile hides confirmed turnarounds."),
                     "net_worth":         st.column_config.NumberColumn("NW ₹Cr", format="%.0f", width="small", help="The denominator behind EP% and Vel%. A tiny base can make the percentages explode — check this before believing an extreme EP%."),
                 },
                 use_container_width=True,
