@@ -524,4 +524,31 @@ WCS_STUDIES = [
             "earnings-steadiness finding is the earliest ancestor of the Consistents framework."
         ),
     },
+    {
+        "study": "4th Study", "years": "1994–1999", "pub": "February 2000",
+        "theme": "The birth of PEG — growth, bought at the right price",
+        "says": (
+            "The study where GROWTH takes the throne, published one month before the dot-com peak. "
+            "Nine of the ten fastest wealth creators are IT companies (Satyam at 137% a year, "
+            "Wipro at 123%). Companies growing earnings above 25% a year produced 76% of all "
+            "wealth created — and of only 117 companies in the whole market that grew that fast, "
+            "65 made the wealth-creator list. But the deeper lesson is about PRICE: this is the "
+            "series' first PEG study. Infosys bought at PEG 0.4 returned 102% a year; Hindustan "
+            "Lever — a superb business — bought at PEG 1.46 returned only 24%. Splitting the 100 "
+            "at the median PEG of 0.83: low-PEG stocks returned 45% a year with a 68% hit rate, "
+            "high-PEG stocks just 13%. 'No P/E multiple can be regarded as high or low unless it "
+            "is measured relative to the stock's underlying earnings growth.' The study ends with "
+            "the series' first explicit screen: earnings growth above 25%, ROE/ROCE above 25%, "
+            "PEG well below 1.0 — and a prescient warning that New-Economy valuations were "
+            "'questionable'. Also the fourth straight ROCE expansion, and 61% of high-ROCE "
+            "companies stayed high: good economics 'tend to get better with time'."
+        ),
+        "prism": (
+            "The origin of every PEG signal — the PEG zones, the QGLP price gate, and the PEG≤1 "
+            "anchor all trace here. Its growth-quality-price trinity (growth + ROE + PEG) is the "
+            "embryo of QGLP itself, and 'sustainability of growth' foreshadows the CAP/GAP "
+            "longevity framework. The Wealth Creator badge's ancestry runs straight through this "
+            "study's 25/25/1 screen."
+        ),
+    },
 ]

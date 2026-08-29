@@ -258,7 +258,11 @@ PAYBACK_ZONES = {
     "very_exp":     {"min": 5.0, "max": 999, "score": 10},
 }
 
-# PEG zone scoring (Baid + Marks)
+# PEG zone scoring (Baid + Marks). MOSL lineage note (2026-08-29, 4th WCS full read): within the
+# WCS series the PEG yardstick ORIGINATES in the 4th study (1994-99, pub Feb 2000) — its low-PEG
+# quadrant (below the 0.83 median) returned 45-46%/yr with a 68% hit rate vs 12-13%/yr for high-PEG,
+# its Infosys-vs-HLL contrast (PEG 0.52 -> 105%/yr vs 1.46 -> 24%/yr), and its explicit screen
+# ("PEG well below 1.0") are the earliest source of the PEG<=1 anchor the 23rd/QGLP later carry.
 PEG_ZONES = {
     "deep_value":  {"min": 0,   "max": 0.8,  "score": 100},
     "undervalued": {"min": 0.8, "max": 1.2,  "score": 85},
