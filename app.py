@@ -2401,56 +2401,75 @@ def _render_reference():
         file_name="prism_reference.md", mime="text/markdown",
         use_container_width=True,
     )
-    # Two corpora, one search: the term glossary (column NAMES) + the concept reference (the VALUE
-    # labels you see on a cell — Wealth Creator, Deep Value, Stage 2…). The query filters both.
-    _concepts_html = render_concepts(CONCEPT_REFERENCE, _ref_q)
-    if _concepts_html:
+    # ── TWO-MODE LAYOUT (2026-08-29): BROWSE vs SEARCH ─────────────────────────────────────
+    # The tab had become five stacked corpora (~70KB of text) — the app's worst scroll. BROWSE
+    # (empty query) now shows five INNER TABS, one corpus each (the Market Pulse inner-tab
+    # pattern). SEARCH (any query) hides the tab bar and renders UNIFIED results from all five
+    # corpora — preserving the one-box-searches-everything power; splitting search per-tab would
+    # recreate the export/search asymmetry class (frameworks, 2026-08-28). The five pure render
+    # helpers are reused identically in both branches, so the modes can never drift.
+    def _sec_head(text_html, color, top=6):
         st.markdown(
-            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["text_secondary"]};'
-            f'text-transform:uppercase;letter-spacing:1px;margin:6px 0 2px 0;">'
-            f'Labels &amp; Verdicts — what each value means</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(_concepts_html, unsafe_allow_html=True)
+            f'<div style="font-size:0.72rem;font-weight:800;color:{color};'
+            f'text-transform:uppercase;letter-spacing:1px;margin:{top}px 0 2px 0;">'
+            f'{text_html}</div>', unsafe_allow_html=True)
+
+    def _show_concepts(q):
+        h = render_concepts(CONCEPT_REFERENCE, q)
+        if h:
+            _sec_head("Labels &amp; Verdicts — what each value means", COLORS["text_secondary"])
+            st.markdown(h, unsafe_allow_html=True)
+
+    def _show_glossary(q):
+        _sec_head("Glossary — terms", COLORS["text_secondary"], top=20)
+        st.markdown(render_reference(_RAW_GLOSSARY, q), unsafe_allow_html=True)
+
+    def _show_flags(q):
+        # Rendered straight from the engine's single-source _FLAG_DISPLAY (no copy).
+        h = render_flags(_FLAG_DISPLAY, q)
+        if h:
+            _sec_head("Forensic Red Flags — what each warning means", COLORS["red"], top=20)
+            st.markdown(h, unsafe_allow_html=True)
+
+    def _show_frameworks(q):
+        # The same _fw_md the download consumes — export and search can never disagree (2026-08-28).
+        h = render_frameworks(_fw_md, q)
+        if h:
+            _sec_head(f"Framework Registry — the {len(_fw_md)} lenses", COLORS["purple"], top=20)
+            st.markdown(h, unsafe_allow_html=True)
+
+    def _show_wcs(q):
+        # One entry per COMPLETELY-READ study (the WCS_STUDIES honesty contract); grows with the
+        # early-era reading program; the same list rides into the Markdown download above.
+        h = render_wcs_studies(WCS_STUDIES, q)
+        if h:
+            _sec_head(f"📚 Wealth Creation Studies — {len(WCS_STUDIES)} of 30 read &amp; verified",
+                      COLORS["gold"], top=20)
+            st.markdown(h, unsafe_allow_html=True)
+
+    if _ref_q.strip():
         st.markdown(
-            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["text_secondary"]};'
-            f'text-transform:uppercase;letter-spacing:1px;margin:20px 0 2px 0;">Glossary — terms</div>',
-            unsafe_allow_html=True,
-        )
-    st.markdown(render_reference(_RAW_GLOSSARY, _ref_q), unsafe_allow_html=True)
-    # Forensic red flags — rendered straight from the engine's single-source _FLAG_DISPLAY (no copy).
-    _flags_html = render_flags(_FLAG_DISPLAY, _ref_q)
-    if _flags_html:
-        st.markdown(
-            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["red"]};'
-            f'text-transform:uppercase;letter-spacing:1px;margin:20px 0 2px 0;">'
-            f'Forensic Red Flags — what each warning means</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(_flags_html, unsafe_allow_html=True)
-    # Framework registry ON SCREEN (2026-08-28) — the same _fw_md the download consumes; before
-    # this, the export documented all 37 while the search box could find only 6.
-    _fw_html = render_frameworks(_fw_md, _ref_q)
-    if _fw_html:
-        st.markdown(
-            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["purple"]};'
-            f'text-transform:uppercase;letter-spacing:1px;margin:20px 0 2px 0;">'
-            f'Framework Registry — the {len(_fw_md)} lenses</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(_fw_html, unsafe_allow_html=True)
-    # Wealth Creation Studies corpus (2026-08-29) — one entry per COMPLETELY-READ study (the
-    # WCS_STUDIES honesty contract: no second-hand summaries). Grows with the early-era reading
-    # program; the same list rides into the Markdown download above.
-    _wcs_html = render_wcs_studies(WCS_STUDIES, _ref_q)
-    if _wcs_html:
-        st.markdown(
-            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["gold"]};'
-            f'text-transform:uppercase;letter-spacing:1px;margin:20px 0 2px 0;">'
-            f'📚 Wealth Creation Studies — {len(WCS_STUDIES)} of 30 read &amp; verified</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(_wcs_html, unsafe_allow_html=True)
+            f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin:2px 0 8px 0;">'
+            f'🔎 Searching across all five sections — clear the box to browse by tab.</div>',
+            unsafe_allow_html=True)
+        _show_concepts(_ref_q)
+        _show_glossary(_ref_q)
+        _show_flags(_ref_q)
+        _show_frameworks(_ref_q)
+        _show_wcs(_ref_q)
+    else:
+        _ref_tabs = st.tabs(["🏷️ Labels & Verdicts", "📖 Glossary", "🚩 Red Flags",
+                             "🏛️ Frameworks", "📚 WCS Studies"])
+        with _ref_tabs[0]:
+            _show_concepts("")
+        with _ref_tabs[1]:
+            _show_glossary("")
+        with _ref_tabs[2]:
+            _show_flags("")
+        with _ref_tabs[3]:
+            _show_frameworks("")
+        with _ref_tabs[4]:
+            _show_wcs("")
 
 
 with tabs[5]:
