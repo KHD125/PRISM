@@ -436,3 +436,66 @@ CONCEPT_REFERENCE = {
     ],
 
 }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+# WCS_STUDIES — Raamdeo Agrawal's Annual Wealth Creation Studies, explained simply.
+#
+# HONESTY CONTRACT: an entry ships ONLY after the study has been read COMPLETELY and its
+# findings verified against the actual text (the early-era reading program, 2026-08-29 →).
+# Nothing here is summarized from second-hand notes — every claim traces to the study itself.
+# Entries are appended in the same change as each study's read completes (docs-as-code).
+# Keys: study · years · pub · theme · says (plain-language findings) · prism (what the engine took).
+# Pure data — zero Streamlit. Rendered by ui_reference.render_wcs_studies(); also emitted into the
+# Markdown download. Pinned by tests/test_reference_tab.py.
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+
+WCS_STUDIES = [
+    {
+        "study": "1st Study", "years": "1991–1996", "pub": "June 1996",
+        "theme": "The Inquire 100 — where it all began",
+        "says": (
+            "The founding study. It picks the 100 companies that at least QUADRUPLED their market "
+            "value in five years (32%+ a year) and asks what they have in common. The answers set "
+            "the template for the next thirty years: speed comes from SMALL — 80 of the 100 started "
+            "under ₹150 crore, while the giants gave safety but never topped the speed charts. "
+            "87% stuck to ONE business instead of diversifying. Moderate sales growth (median just "
+            "23%) was enough, because margins and asset productivity did the compounding. 68 of 100 "
+            "shrank their debt or barely grew it. High tax-payers earned HIGHER P/Es — honest "
+            "earnings get rewarded. And the crown jewel: in 1991, 63 of the 100 traded at a P/E far "
+            "BELOW their ROE — by 1996 the P/E had caught up. The rule: a stock's fair P/E sits "
+            "near its sustainable ROE, so buying well below that line carries a built-in margin of "
+            "safety."
+        ),
+        "prism": (
+            "The P/E-below-ROE margin-of-safety rule is implemented directly (the pe-vs-ROE spread "
+            "and ratio signals). The small-cap-speed finding feeds the mid/small-cap compounder "
+            "boost. ROCE-and-ROE rising over time — stated here first — became the ROCE-expansion "
+            "thesis behind Economic Profit."
+        ),
+    },
+    {
+        "study": "2nd Study", "years": "1992–1997", "pub": "February 1998",
+        "theme": "Swimming against the tide — wealth creation in a falling market",
+        "says": (
+            "The bear-market edition: the Sensex FELL 22% over this window, and only 45 companies "
+            "qualified (versus ~300 the year before). The survivors shared three things. LEADERSHIP: "
+            "30 of the 45 were #1 or #2 in their business — 'winners are passionate leaders'. "
+            "IMPROVING ECONOMICS: average ROCE rose from 20.4% to 24.5% — a right business is not "
+            "just superior, it 'gets better with time'. SELF-FUNDING: the first DuPont analysis in "
+            "the series showed margins rising, asset turnover improving, and leverage FALLING every "
+            "year — growth paid for internally. Blue chips jumped from 40% to 69% of the list: in "
+            "bad markets, proven quality wins. The valuation lesson cuts the other way from the 1st "
+            "study: 1992's P/Es sat far ABOVE ROE (wealth creators at 44× vs 22% ROE) and were "
+            "crushed back to parity — 'prices accorded relatively higher in comparison to long-term "
+            "ROE are clearly unsustainable'. Its first-ever Wealth DILUTORS table shows the wreckage: "
+            "companies at P/E 100+ with single-digit ROE destroyed thousands of crores."
+        ),
+        "prism": (
+            "The Wealth Dilutors table is the empirical ancestor of the valuation-multiple trap "
+            "(high P/E on low ROE gets a valuation-score penalty). The DuPont decomposition is "
+            "implemented as the ROE-attribution signals. Blue-chip resilience in downturns echoes "
+            "in the cyclicality tiers and regime detection."
+        ),
+    },
+]

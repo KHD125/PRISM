@@ -70,3 +70,51 @@ def test_app_renders_the_framework_registry():
         "app.py no longer renders the framework registry on screen — the export/search asymmetry is back"
     )
     assert "Framework Registry" in src
+
+
+# ── Wealth Creation Studies corpus (2026-08-29) ──────────────────────────────────────────────
+def test_wcs_studies_entries_are_complete_and_verified_shape():
+    """The honesty contract: an entry ships only after a COMPLETE read of the study, and every
+    entry carries the full schema (a study summarized without its 'In PRISM' mapping, or with an
+    empty summary, is a half-entry that must not ship). Entries stay in study order."""
+    from ui.ui_reference_data import WCS_STUDIES
+    assert 1 <= len(WCS_STUDIES) <= 30
+    for s in WCS_STUDIES:
+        for key in ("study", "years", "pub", "theme", "says", "prism"):
+            assert len(str(s.get(key, "")).strip()) > 0, f"{s.get('study')} missing {key}"
+        assert len(s["says"]) >= 200, f"{s['study']}: summary under the depth floor — not 'best explained'"
+        assert len(s["prism"]) >= 80, f"{s['study']}: the engine mapping is too thin"
+    nums = [int(str(s["study"]).split()[0].rstrip("stndrh")) for s in WCS_STUDIES]
+    assert nums == sorted(nums), "studies must stay in study-number order"
+
+
+def test_wcs_studies_are_searchable_on_screen():
+    """The corpus obeys the same search grammar as the other four: token-AND over every field,
+    empty string when nothing matches, everything when the query is empty."""
+    from ui.ui_reference import render_wcs_studies
+    from ui.ui_reference_data import WCS_STUDIES
+    html_all = render_wcs_studies(WCS_STUDIES, "")
+    for s in WCS_STUDIES:
+        assert s["study"] in html_all
+    assert render_wcs_studies(WCS_STUDIES, "margin of safety") != ""
+    assert render_wcs_studies(WCS_STUDIES, "zzz-no-such-study") == ""
+
+
+def test_wcs_studies_ride_into_the_markdown_download():
+    """One generator, one source: the download emits the SAME list the screen renders — the
+    export/search asymmetry that bit the frameworks (2026-08-28) cannot recur here."""
+    from ui.ui_reference import build_reference_markdown
+    from ui.ui_reference_data import WCS_STUDIES
+    md = build_reference_markdown({"T": "d"}, {"C": [("l", "e" * 45)]}, {}, studies=WCS_STUDIES)
+    assert "## Wealth Creation Studies" in md
+    for s in WCS_STUDIES:
+        assert s["study"] in md and s["theme"] in md
+
+
+def test_app_renders_the_wcs_studies_corpus():
+    import io as _io, os
+    src = _io.open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
+    assert "render_wcs_studies(WCS_STUDIES, _ref_q)" in src, (
+        "app.py no longer renders the Wealth Creation Studies on screen"
+    )
+    assert "studies=WCS_STUDIES" in src, "the download no longer carries the studies corpus"

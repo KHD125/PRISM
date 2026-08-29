@@ -131,8 +131,36 @@ def render_frameworks(fw_meta: dict, query: str = "") -> str:
     )
 
 
+def render_wcs_studies(studies: list, query: str = "") -> str:
+    """Inline dark-theme HTML for the Wealth Creation Studies corpus — one entry per COMPLETELY-READ
+    study (the WCS_STUDIES honesty contract: nothing summarized second-hand). Same grammar as the
+    other corpora: token-AND filtered over every text field, deterministic order (list order = study
+    number), returns "" when nothing matches. Pure: no Streamlit, no I/O."""
+    tokens = (query or "").lower().split()
+    rows = []
+    for s in studies:
+        blob = "\n".join(str(s.get(k, "")) for k in ("study", "years", "pub", "theme", "says", "prism"))
+        if all(tok in blob.lower() for tok in tokens):
+            rows.append(s)
+    if not rows:
+        return ""
+    return "".join(
+        f'<div style="padding:10px 0;border-bottom:1px solid {COLORS["border"]};">'
+        f'<div style="font-size:0.82rem;font-weight:700;color:{COLORS["text_primary"]};">'
+        f'📕 {html.escape(str(s.get("study", "")))} ({html.escape(str(s.get("years", "")))}) — '
+        f'{html.escape(str(s.get("theme", "")))}</div>'
+        f'<div style="font-size:0.66rem;color:{COLORS["text_muted"]};margin:1px 0 4px 0;">'
+        f'published {html.escape(str(s.get("pub", "")))}</div>'
+        f'<div style="font-size:0.74rem;color:{COLORS["text_secondary"]};line-height:1.5;">'
+        f'{html.escape(str(s.get("says", "")))}</div>'
+        f'<div style="font-size:0.72rem;color:{COLORS["text_muted"]};line-height:1.45;margin-top:5px;">'
+        f'<strong>In PRISM:</strong> {html.escape(str(s.get("prism", "")))}</div></div>'
+        for s in rows
+    )
+
+
 def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: dict,
-                             frameworks: dict = None, as_of: str = None) -> str:
+                             frameworks: dict = None, studies: list = None, as_of: str = None) -> str:
     """The FULL Reference as one Markdown string, assembled from the SAME single-source dicts the
     render_* functions consume (NOT scraped from their HTML) — so the download, the on-screen
     Reference, and any future docs/reference.md can never drift. Exports EVERYTHING (no query filter).
@@ -187,5 +215,15 @@ def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: di
                 line += f" — {_clean(desc)}"
             out.append(line)
         out.append("")
+
+    if studies:
+        out += ["## Wealth Creation Studies", "",
+                "_One entry per completely-read study — every claim verified against the text._", ""]
+        for s in studies:
+            out += [f"### 📕 {_clean(s.get('study', ''))} ({_clean(s.get('years', ''))}) — "
+                    f"{_clean(s.get('theme', ''))}", "",
+                    f"_Published {_clean(s.get('pub', ''))}_", "",
+                    _clean(s.get("says", "")), "",
+                    f"**In PRISM:** {_clean(s.get('prism', ''))}", ""]
 
     return "\n".join(out).rstrip() + "\n"

@@ -84,7 +84,7 @@ from .ui_components import (
 )
 
 from .ui_reference import (render_reference, render_concepts, render_flags,
-                           render_frameworks, build_reference_markdown)
+                           render_frameworks, render_wcs_studies, build_reference_markdown)
 
 __all__ = [
     "render_moat_growth_matrix",
@@ -128,5 +128,6 @@ __all__ = [
     "render_concepts",
     "render_flags",
     "render_frameworks",
+    "render_wcs_studies",
     "build_reference_markdown",
 ]

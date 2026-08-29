@@ -82,11 +82,11 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_stock_card, help_chip,
                 render_radar_chart, render_sidebar_brand,
                 render_reference, render_concepts, render_flags, render_frameworks,
-                build_reference_markdown)
+                render_wcs_studies, build_reference_markdown)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
-from ui.ui_reference_data import CONCEPT_REFERENCE
+from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
@@ -2396,7 +2396,8 @@ def _render_reference():
               for name, meta in _FW_META.items()}
     st.download_button(
         "📥 Download Reference (Markdown)",
-        data=build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY, frameworks=_fw_md),
+        data=build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY, frameworks=_fw_md,
+                                      studies=WCS_STUDIES),
         file_name="prism_reference.md", mime="text/markdown",
         use_container_width=True,
     )
@@ -2438,6 +2439,18 @@ def _render_reference():
             unsafe_allow_html=True,
         )
         st.markdown(_fw_html, unsafe_allow_html=True)
+    # Wealth Creation Studies corpus (2026-08-29) — one entry per COMPLETELY-READ study (the
+    # WCS_STUDIES honesty contract: no second-hand summaries). Grows with the early-era reading
+    # program; the same list rides into the Markdown download above.
+    _wcs_html = render_wcs_studies(WCS_STUDIES, _ref_q)
+    if _wcs_html:
+        st.markdown(
+            f'<div style="font-size:0.72rem;font-weight:800;color:{COLORS["gold"]};'
+            f'text-transform:uppercase;letter-spacing:1px;margin:20px 0 2px 0;">'
+            f'📚 Wealth Creation Studies — {len(WCS_STUDIES)} of 30 read &amp; verified</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(_wcs_html, unsafe_allow_html=True)
 
 
 with tabs[5]:
