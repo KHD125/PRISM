@@ -764,12 +764,12 @@ _RAW_GLOSSARY = {
     "PSG":           "Price-to-Sales-to-Growth — a sales-based valuation lens useful for fast growers whose PE/PEG can mislead.",
     # ── Layer-1 hero + Layer-2 scorecard jargon (the terms the casual reader meets FIRST) ──
     # The 6 verdict axes (verdict_axis_*) — explain what each axis WEIGHS, never the value.
-    "Moat Axis":       "The verdict's competitive-advantage axis — how durable and wide the company's moat is (returns on capital + IBAS moat sources). One of the 6 axes the verdict weighs.",
-    "Growth Axis":     "The verdict's growth axis — how fast and how durably sales and earnings are compounding. One of the 6 axes the verdict weighs.",
-    "Valuation Axis":  "The verdict's valuation axis — how the price compares to the quality and earnings you get (PE vs fair PE, earnings yield, payback). One of the 6 axes.",
-    "Balance Axis":    "The verdict's balance-sheet axis — financial strength and debt safety (debt-to-equity, interest cover, net cash). One of the 6 axes.",
-    "Governance Axis": "The verdict's governance axis — ownership quality and management trust (promoter skin-in-the-game, pledging, dilution). One of the 6 axes.",
-    "Forensics Axis":  "The verdict's forensics axis — accounting cleanliness and warning-sign count (Piotroski, red flags, balance-sheet bloat). One of the 6 axes.",
+    "Moat Axis":       "The Soundness scorecard's competitive-advantage axis — how durable and wide the company's moat is (returns on capital + IBAS moat sources). One of the 6 axes the soundness verdict weighs.",
+    "Growth Axis":     "The Soundness scorecard's growth axis — how fast and how durably sales and earnings are compounding. One of the 6 axes the soundness verdict weighs.",
+    "Valuation Axis":  "The Soundness scorecard's valuation axis — how the price compares to the quality and earnings you get (PE vs fair PE, earnings yield, payback). One of the 6 axes.",
+    "Balance Axis":    "The Soundness scorecard's balance-sheet axis — financial strength and debt safety (debt-to-equity, interest cover, net cash). One of the 6 axes.",
+    "Governance Axis": "The Soundness scorecard's governance axis — ownership quality and management trust (promoter skin-in-the-game, pledging, dilution). One of the 6 axes.",
+    "Forensics Axis":  "The Soundness scorecard's forensics axis — accounting cleanliness and warning-sign count (Piotroski, red flags, balance-sheet bloat). One of the 6 axes.",
     # Deep Signals strip — cross-cutting synthesis metrics.
     "WCS":            "Wealth-Creation Score — a 0-to-10 composite of the Motilal Oswal wealth-creation tests (quality, growth and longevity together). Higher means more of those traits are present.",
     "Econ-Profit":    "Economic profit — the profit left after charging for the cost of ALL the capital the business uses, shown here in ₹ crore. Positive means it earns more than its capital costs.",

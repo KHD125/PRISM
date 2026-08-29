@@ -159,7 +159,7 @@ CONCEPT_REFERENCE = {
     # (ui_discovery.py:644 _MULTIBAGGER). Exact dropdown labels so the filter and Reference read 1:1;
     # the EP Power Curve + Earnings Power Box dropdowns in the same group are the two categories above. ──
     "🚀 Multibagger Setups": [
-        ("🐘 100x Candidate", "Passes Motilal Oswal's tough small-cap screen for businesses that could compound enormously — a potential 100-bagger — over the long run. The rarest, highest-ceiling setup."),
+        ("🐘 100x Candidate", "MOSL's Mouse-to-Elephant screen: an early, small-base business with high returns reinvested at scale and a long runway — the raw ingredients for a ~100× multibagger. The rarest, highest-ceiling setup (same flag as the 🐘 entry under MOSL Frameworks)."),
         ("🏅 Category Winner", "The sector leader on the WCS screen: top-30% capital efficiency (ROCE) within its OWN sector AND above-market 5-year revenue growth — winning its category on both quality and growth."),
         ("📈 Compound Growth", "Sustained compounding power — profit growth clears 15% (3Y), 12% (5Y) and 10% (10Y); earnings compound across every horizon, not just one good stretch."),
         ("🛡️ Consistency Champion", "Profits have grown steadily and durably — a 'consistent' compounder whose earnings rise smoothly rather than lumpily. Low-volatility compounding is the coffee-can ideal."),
@@ -209,11 +209,11 @@ CONCEPT_REFERENCE = {
         ("WEAK", "Momentum is weak — neither overbought nor in a confirmed strong trend."),
     ],
     # ── verdict coverage confidence — core/verdict_engine.py:92 (evidence coverage %)
-    "🔍 Verdict — Evidence Confidence": [
-        ("High", "The verdict rests on 80%+ evidence coverage — most ranked inputs reported; trust it more."),
+    "🔍 Soundness — Evidence Confidence": [
+        ("High", "The soundness verdict rests on 80%+ evidence coverage — most ranked inputs reported; trust it more."),
         ("Medium", "60–80% evidence coverage — a fair amount of the inputs reported."),
         ("Low", "40–60% evidence coverage — a meaningful share of inputs are missing; treat with care."),
-        ("Very Low", "Under 40% evidence coverage — the verdict rests on thin data; tentative."),
+        ("Very Low", "Under 40% evidence coverage — the soundness verdict rests on thin data; tentative."),
     ],
     # ── result_age_days / result_stale_flag — core/data_engine.py:1566 (sign-flipped days_from_result;
     # stale at >120d). Shown as the tearsheet '⏳ Stale Nd' badge + the Discovery 'Hide Stale' filter.
@@ -223,7 +223,7 @@ CONCEPT_REFERENCE = {
         ("Result Age (days)", "How many days since the company last reported financial results — higher means staler numbers. The recency sibling to the 🔍 Evidence badge: coverage measures how MUCH of the data reported, this measures how OLD it is."),
     ],
     # ── verdict_axis_governance — core/verdict_engine.py:116 (governance multiplier)
-    "🛡️ Verdict — Governance Axis": [
+    "🛡️ Soundness — Governance Axis": [
         ("Govern 🟢 Safe", "No governance penalty — promoter pledge, dilution and related-party signals are clean."),
         ("Govern 🟡 Caution", "A mild governance penalty — one or more governance signals warrant caution."),
         ("Govern 🔴 Risk", "A heavy governance penalty — serious pledge/dilution/related-party risk drags the score."),
@@ -231,19 +231,19 @@ CONCEPT_REFERENCE = {
     # ── verdict_axis_forensics — core/verdict_engine.py:111 (nested np.where): the Forensics pill in
     # the 6-axis scorecard, parallel to the Governance axis above. np.where in an engine file isn't
     # enumerated by the categorical-label net, so these need explicit entries. ──
-    "🔬 Verdict — Forensics Axis": [
+    "🔬 Soundness — Forensics Axis": [
         ("Forensics 🟢 Clean", "The scorecard's Forensics pill when accounting signals look clean — fewer than 5 red flags and no severe forensic or Schilit veto."),
         ("Forensics 🟡 Watch", "The Forensics pill when 5 or more red flags fire but no hard veto — some accounting-quality caution; read the specific flags before acting."),
         ("Forensics 🔴 Flagged", "The Forensics pill when a severe forensic veto fires — forensic score below 50, ten or more red flags, or a Schilit checker hard-fail. A serious accounting-quality concern."),
     ],
     # ── verdict_top_risk — core/verdict_engine.py:121 (the single most important risk)
-    "⚠️ Verdict — Top Risk": [
+    "⚠️ Soundness — Top Risk": [
         ("🚨 Severe forensic / accounting-quality flags", "The dominant risk: severe forensic red flags veto the thesis — verify the accounts before anything."),
         ("💀 Value-destroying capital allocation", "The dominant risk: a Gruesome capital allocator earning below its cost of capital — destroys value."),
         ("🕵️ Schilit forensic checker flags", "The dominant risk: Schilit accounting-quality checkers fire — the reported numbers may be aggressive."),
         ("⚠️ Governance risk (pledge/dilution)", "The dominant risk: governance — meaningful promoter pledging or dilution."),
         ("⏳ Poor entry timing — wait for a base", "The dominant risk is timing, not quality — the chart is poorly placed; wait for a base."),
-        ("🔍 Thin data — verdict tentative", "The dominant caveat: evidence coverage is thin, so the verdict is tentative until more inputs report."),
+        ("🔍 Thin data — verdict tentative", "The dominant caveat: evidence coverage is thin, so the soundness verdict is tentative until more inputs report."),
     ],
     # ── Catalysts — ui/ui_discovery.py _CATALYSTS (fast-moving change triggers)
     "🔥 Catalysts": [
@@ -342,7 +342,7 @@ CONCEPT_REFERENCE = {
         ("G · Expectations Discount", "PIE pillar 1, the CERTIFYING gate — a green check means the growth the price implies (inverted from the P/B–Gordon identity) sits at least 5 points BELOW the growth the business can sustainably fund: a margin of safety in expectations, the book's ch.7 buy standard. Strict: if any input is missing the pillar fails — unverifiable is never certified. The 5-point bar is PRISM's census-calibrated choice; the book deliberately prescribes no universal cutoff."),
         ("T · Treadmill Safety", "PIE pillar 2, a DISQUALIFIER — a green check means the stock is NOT priced for indefinite perfection: it doesn't need a continuous stream of positive surprises just to hold today's price. Red means the price already assumes relentless out-performance."),
         ("C · CAP Trap Clear", "PIE pillar 3, a DISQUALIFIER — a green check means there's no dangerous pairing of a long competitive-advantage-period expectation with DECELERATING returns on capital. The trap: the price assumes a durable moat while ROCE is actually sliding."),
-        ("Implied CAP Proxy", "The competitive-advantage period — in years — that today's price implies the business can keep earning excess returns. Very high values are a caution: the market is paying for a moat that must last improbably long."),
+        ("Implied CAP Proxy", "A UNITLESS proxy (P/E × NOPAT margin × retention) for how long the price assumes the business keeps earning excess returns — higher = a longer implied competitive-advantage period, but NOT literal years. Very high values are a caution: the market is paying for a moat that must last improbably long."),
         ("NOPAT Margin", "Net Operating Profit After Tax as a share of sales — the clean, capital-structure-neutral operating profitability that Mauboussin's value-driver math runs on (it strips out financing effects)."),
         ("🧮 Payoff Framework — Expected Excess Return", "The per-stock expected value of the trade: P(Upside) × Upside% − P(Downside) × Downside%, where P(Upside) is the trajectory-calibrated win probability. The book's bar to act is a minimum 5% edge."),
         ("EV Upside %", "The reward leg of the payoff: how far the price could rise to reach the P/E its quality justifies (the gap to a quality-fair multiple)."),
@@ -378,8 +378,8 @@ CONCEPT_REFERENCE = {
     # header's SYSTEM-REJECTED / SELL-ALERT branches in app.py. Every stock must pass ALL gates. ──
     "🚨 Hard Gates & Rejection (Pass ALL)": [
         ("Gate-Passed", "The stock cleared EVERY hard safety gate below — the universal floor a stock must pass before PRISM scores it seriously. 'Gate-passed' means safe and eligible, not 'buy'."),
-        ("SYSTEM REJECTED", "The Tear-Sheet verdict-band state when a stock FAILS any one hard gate — it is eliminated regardless of its other scores. The band names the gate that failed."),
-        ("SELL ALERT", "The verdict-band state when a Baid sell-trigger has fired (e.g. cash collapse, thesis broken) — a held or candidate stock flashing risk; review the Forensics tab before acting."),
+        ("SYSTEM REJECTED", "The Tear-Sheet Soundness-band state when a stock FAILS any one hard gate — it is eliminated regardless of its other scores. The band names the gate that failed."),
+        ("SELL ALERT", "The Soundness-band state when a Baid sell-trigger has fired (e.g. cash collapse, thesis broken) — a held or candidate stock flashing risk; review the Forensics tab before acting."),
         ("Debt Safety (gate)", "Hard gate: debt-to-equity ≤ 1.0 — caps balance-sheet risk before a stock can score (Baid prefers ≤ 0.5)."),
         ("Current Ratio (gate)", "Hard gate: current ratio ≥ 1.0 — a basic liquidity floor, so current assets at least cover current liabilities."),
         ("Pledge Safety (gate)", "Hard gate: promoter shares pledged ≤ 20% — limits the forced-selling risk that comes from promoters pledging stock as collateral."),
@@ -394,9 +394,9 @@ CONCEPT_REFERENCE = {
     ],
     # ── Forensic integrity verdicts — forensic_engine.py forensic_label (np.where, ~656) + the
     # Schilit shield pass/fail banner (schilit_pass, score ≥ 70). Binary verdicts shown on the UI. ──
-    "🕵️ Forensic Integrity Verdict": [
-        ("🟢 Clean", "The forensic integrity verdict 'Clean' — the stock clears a strict four-part hard gate: operating cash flow ≥ 80% of profit, promoter pledge under 10%, no share dilution, AND zero red flags. The binary integrity stamp the SQGLP gate relies on."),
-        ("⚠️ Integrity Gates Open", "The forensic integrity verdict when any one of those four purity conditions is not met — most of the universe sits here, since a single red flag of 28 opens a gate. It means 'not surgically clean', NOT detected manipulation: a stock can hold a high forensic score and a Schilit pass and still show this. Treat it as a prompt to read WHICH flags fired, not as an accusation."),
+    "🕵️ Forensic Integrity (Schilit & Purity Gates)": [
+        ("🟢 Clean", "The forensic-integrity state 'Clean' — the stock clears a strict four-part hard gate: operating cash flow ≥ 80% of profit, promoter pledge under 10%, no share dilution, AND zero red flags. The binary integrity stamp the SQGLP gate relies on."),
+        ("⚠️ Integrity Gates Open", "The forensic-integrity state when any one of those four purity conditions is not met — most of the universe sits here, since a single red flag of 28 opens a gate. It means 'not surgically clean', NOT detected manipulation: a stock can hold a high forensic score and a Schilit pass and still show this. Treat it as a prompt to read WHICH flags fired, not as an accusation."),
         ("Perimeter Secure (Schilit)", "The Schilit Anomaly Shield's PASS state — at most two of the four Schilit checkers fired (a Schilit score of 70 or more). The accounting clears the manipulation screen."),
         ("Shenanigan Alert (Schilit)", "The Schilit Anomaly Shield's FAIL state — three or more of the four checkers fired (Schilit score below 70). The accounting raises manipulation concerns; investigate before trusting the reported numbers."),
     ],

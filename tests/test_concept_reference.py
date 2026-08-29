@@ -187,3 +187,16 @@ def test_every_label_emitting_column_is_fully_documented():
         "(add them to CONCEPT_REFERENCE, written from the code that emits them):  "
         + " | ".join(problems)
     )
+
+
+def test_soundness_owns_the_layer_name_in_category_headers():
+    """The 2026-08-27 rename rule: the display label for the engine-verdict layer is SOUNDNESS
+    on every surface. Two reference category headers ("Verdict — Evidence Confidence" /
+    "Verdict — Top Risk") missed the rename until the 2026-08-28 content audit. Category
+    headers naming this layer must say Soundness; lowercase generic prose is fine, and the
+    Mauboussin "EV Verdict" entry is a different layer's own term."""
+    from ui.ui_reference_data import CONCEPT_REFERENCE
+    offenders = [k for k in CONCEPT_REFERENCE if "Verdict" in k]
+    assert not offenders, (
+        f"category headers still name the layer 'Verdict' (it is Soundness on every surface): {offenders}"
+    )
