@@ -257,7 +257,14 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # 2. Sector — only sectors within the chosen market categories
             _sector_opts = ["All"] + sorted(_cf["sector"].dropna().unique().tolist())
             _sec_vc = _cf["sector"].value_counts().to_dict()
-            if st.session_state.get("sb_sector", "All") not in _sector_opts:
+            # SEED-BEFORE-INSTANTIATE (2026-08-29, the user's Steel repro): deleting a widget
+            # key does NOT clear the widget's frontend state — a selectbox with no session value
+            # asks the frontend, which still remembers the old pick, and the cleared filter
+            # RESURRECTS on the next rerun. _ms_cascade multiselects were always immune because
+            # they unconditionally re-seed the key pre-instantiation; every non-multiselect
+            # widget now does the same, which is what makes delete-based Clear-All authoritative.
+            if ("sb_sector" not in st.session_state
+                    or st.session_state["sb_sector"] not in _sector_opts):
                 st.session_state["sb_sector"] = "All"
             sel_sector = st.selectbox(
                 "Sector", _sector_opts, key="sb_sector",
@@ -270,7 +277,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # 3. Industry — only industries within the chosen categories AND sector
             _industry_opts = ["All"] + sorted(_cf["industry"].dropna().unique().tolist())
             _ind_vc = _cf["industry"].value_counts().to_dict()
-            if st.session_state.get("sb_industry", "All") not in _industry_opts:
+            if ("sb_industry" not in st.session_state
+                    or st.session_state["sb_industry"] not in _industry_opts):
                 st.session_state["sb_industry"] = "All"
             sel_industry = st.selectbox(
                 "Industry", _industry_opts, key="sb_industry",
@@ -354,6 +362,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # (pledge_rising / dilution_vampire / debt_restatement are 84–99% subsumed by red_flag_count≥3
             # — redundant per the orthogonality census).
             # 4d. Max red flags — cap forensic severity (0 = pristine; _RF_MAX = show all)
+            st.session_state.setdefault("sb_maxrf", _RF_MAX)     # seed-before-instantiate
             sel_maxrf = st.slider("Max red flags", 0, _RF_MAX, _RF_MAX, key="sb_maxrf",
                                   help="Cap how many of the 28 forensic red flags a stock may carry. Max = all.")
             if sel_maxrf < _RF_MAX and "red_flag_count" in _cf.columns:
@@ -373,12 +382,14 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cf = _narrow(_cf, pd.Series(_pio_tier, index=_cf.index).isin(sel_pio), "Piotroski")
 
             # 4f. Min data coverage % — don't trust a high score built on thin data
+            st.session_state.setdefault("sb_mincov", 0)          # seed-before-instantiate
             sel_mincov = st.slider("Min data coverage %", 0, 100, 0, key="sb_mincov",
                                    help="Hide stocks whose score rests on below-this-% evidence coverage.")
             if sel_mincov > 0 and "data_coverage_pct" in _cf.columns:
                 _cf = _narrow(_cf, _cf["data_coverage_pct"] >= sel_mincov, "Min Coverage")
 
             # 4g. Hide stale results — drop frozen filers (>120 days; catches Gensol-style filing freezes)
+            st.session_state.setdefault("sb_hidestale", False)   # seed-before-instantiate
             if st.checkbox("Hide stale results (>120d)", value=False, key="sb_hidestale") \
                     and "result_stale_flag" in _cf.columns:
                 _cf = _narrow(_cf, _cf["result_stale_flag"] == 0, "Hide Stale")
@@ -758,15 +769,18 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # Final power-user knobs — now applied to the cascade frame (_cf) IN-GROUP, exactly like
             # every other group, so the funnel, this group's "·N" badge, and its "→ remaining"
             # caption all agree (no more last-caption-vs-funnel drift). All default OFF.
+            st.session_state.setdefault("sb_gate", False)        # seed-before-instantiate
             gate_only = st.checkbox("Gate-passed only", value=False, key="sb_gate",
                                     help="Show only stocks that clear the engine's quality gate.")
             if gate_only and "gate_pass" in _cf.columns:
                 _cf = _narrow(_cf, _cf["gate_pass"] == 1, "Gate-passed")
+            st.session_state.setdefault("sb_minq", 0)            # seed-before-instantiate
             min_quality = st.slider("Min Quality Score", 0, 100, 0, key="sb_minq",
                                     help="Min fundamental quality score (PRE-forensic-penalty — moat + "
                                          "growth + cash + governance, before red-flag cuts).")
             if min_quality > 0 and "quality_score" in _cf.columns:
                 _cf = _narrow(_cf, _cf["quality_score"] >= min_quality, "Min Quality")
+            st.session_state.setdefault("sb_minscore", 0)        # seed-before-instantiate
             min_score = st.slider("Min Composite Score", 0, 100, 0, key="sb_minscore",
                                   help="Min headline composite_score (post-forensic-penalty — the score "
                                        "your tiers are built on; stronger than Min Quality, which is pre-penalty).")

@@ -368,3 +368,33 @@ def test_all_filter_sites_route_through_choke_point():
     )
     assert "_first_zero_filter" in src, "choke-point helper not wired"
     assert src.count("_zero_at") >= 2, "funnel zero-state does not read the culprit log"
+
+
+def test_every_non_multiselect_widget_seeds_its_key_before_instantiating():
+    """THE STEEL REPRO (2026-08-29, user-reported the day after the on_click fix): deleting a
+    widget key does NOT clear the widget's frontend state. A selectbox/slider/checkbox that
+    renders with no session value asks the FRONTEND, which still remembers the old pick — so a
+    cleared Sector=Steel resurrected on the next rerun. _ms_cascade multiselects were always
+    immune because they unconditionally re-seed their key pre-instantiation; this pins the same
+    discipline onto every non-multiselect sb_ widget, which is what makes delete-based Clear-All
+    authoritative for ALL widget kinds. AppTest cannot catch a regression here (no frontend to
+    resurrect from), so the seed is pinned structurally."""
+    for key, seed in [
+        ("sb_sector",    '"sb_sector" not in st.session_state'),
+        ("sb_industry",  '"sb_industry" not in st.session_state'),
+        ("sb_maxrf",     'st.session_state.setdefault("sb_maxrf"'),
+        ("sb_mincov",    'st.session_state.setdefault("sb_mincov"'),
+        ("sb_hidestale", 'st.session_state.setdefault("sb_hidestale"'),
+        ("sb_gate",      'st.session_state.setdefault("sb_gate"'),
+        ("sb_minq",      'st.session_state.setdefault("sb_minq"'),
+        ("sb_minscore",  'st.session_state.setdefault("sb_minscore"'),
+        ("sb_fwfam_min", '"sb_fwfam_min" not in st.session_state'),
+    ]:
+        assert seed in _DISC, (
+            f"{key} lost its seed-before-instantiate guard — a cleared value will resurrect "
+            f"from frontend widget state (the Steel repro)"
+        )
+        # the seed must appear BEFORE the widget that uses the key
+        assert _DISC.index(seed) < _DISC.index(f'key="{key}"'), (
+            f"{key}'s seed sits after its widget — it must run before instantiation"
+        )
