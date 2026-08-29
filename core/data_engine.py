@@ -652,9 +652,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # 6th Study (1996-2001): 12 companies with ROE > 35% created 50% of all wealth in that period.
     df["roe_elite_flag"] = (df["roe"].fillna(0) >= 35).astype(int)
 
-    # valuation_multiple_trap: 1st WCS — PE > 35 AND ROE < 18%.
-    # When PE expands without corresponding ROE expansion, the market is pricing in future
-    # returns the business cannot generate. pe_vs_roe_mos (derived below) captures the spread;
+    # valuation_multiple_trap — ENGINE-CONSTRUCTED converse of the 1st WCS P/E-vs-ROE rule.
+    # PROVENANCE CORRECTED (2026-08-29, full 1st-study read): the study's only valuation finding
+    # is the BUY-side margin-of-safety rule ("inherent margin of safety in buying a stock at a P/E
+    # ratio substantially lower than its sustainable ROE", §Observation-on-Valuation) — it states
+    # NO trap screen and NO thresholds; "PE > 35 AND ROE < 18" appears nowhere in its 16 pages.
+    # The converse logic (P/E far above ROE = paying for returns the business cannot generate) is a
+    # fair extension of the study's principle; the 35/18 gates are ENGINE CALIBRATION (fires 25.6%).
+    # pe_vs_roe_mos (derived below) captures the study's actual spread;
     # this binary flag allows scoring_engine to apply a targeted 40% valuation-score slash.
     # pe fillna(0): loss-makers (NaN PE) → 0 → 0 > 35 = False → not trapped (conservative).
     # roe fillna(99): NaN ROE → 99 → 99 < 18 = False → not trapped (benefit of doubt).
@@ -1359,12 +1364,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         default="Nano Cap"
     )
 
-    # ── Mid-Cap Velocity Compounder (1st WCS) ──
-    # 1st WCS empirical finding: smaller companies (Mid/Small/Micro/Nano-Cap) with sustained
-    # ROCE ≥ 20% compound at dramatically higher rates than large/mega caps with similar ROCE.
-    # Scale-velocity advantage: a ₹500 Cr company can double revenue in 3 years;
-    # a ₹50,000 Cr company needs 50 times the incremental revenue for the same effect.
-    # Validated across all 30 MOSL studies as the primary mid-cap alpha driver.
+    # ── Mid-Cap Velocity Compounder (size half = 1st WCS; ROCE gate = engine construction) ──
+    # PROVENANCE SEPARATED (2026-08-29, full 1st-study read). Study-GENUINE (verbatim, §Capitalisation
+    # Size): "the speed of wealth creation comes from the mid & small cap companies" — 80 of the
+    # Inquire 100 had 1991 mcap ≤ Rs.150 Cr (median Rs.92 Cr) and none of 1991's top-25 large caps
+    # made the top-25 by speed (large caps offer SURETY — 25% strike rate — not speed). NOT in the
+    # study: the "sustained ROCE ≥ 20%" condition (the study reports avg ROE 23.17% but screens no
+    # ROCE cutoff), the ₹500-Cr revenue-doubling illustration (invented color, removed), and
+    # "validated across all 30 studies" (boilerplate overclaim). The ROCE≥20 quality gate is an
+    # ENGINE construction fusing the study's size finding with its high-return observation. Fires 16.3%.
     df["mcap_velocity_compounder"] = (
         df["mcap_tier"].isin(["Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]) &
         (df["roce_med_10y"].fillna(0) >= 20)
@@ -1909,8 +1917,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["operating_leverage"] = (df["sales_profit_conversion"].fillna(0) > 0).astype(int)
 
-    # ── P/E < ROE Rule (Raamdeo's 1st WCS) ──
-    # Inherent margin of safety when PE < sustainable ROE
+    # ── P/E < ROE Rule (Raamdeo's 1st WCS) — provenance VERIFIED GENUINE (2026-08-29 full read) ──
+    # The 1st study's crown-jewel finding (§Observation on Valuation, verbatim): in 1991, 63 of the
+    # Inquire 100 traded "at a substantially lower PE ratio to their respective ROEs"; by 1996 the
+    # P/Es had caught up → "the PE ratio accorded should be closer to the sustainable ROE" →
+    # "inherent margin of safety in buying a stock at a P/E ratio substantially lower than its
+    # sustainable ROE". Spread form (roe − pe, positive = MoS exists) is a faithful implementation.
     df["pe_vs_roe_mos"] = np.where(
         df["pe"].notna() & df["roe"].notna() & (df["pe"] > 0),
         df["roe"].fillna(0) - df["pe"].fillna(0),  # positive = MoS exists
@@ -2690,8 +2702,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (df["roe"] > COST_OF_EQUITY)
     ).astype(int)
 
-    # ── P/E to Sustainable ROE Ratio (continuous MoS — 1st Study, all 30 confirmed) ──
-    # pe_to_roe_ratio < 1 = PE below sustainable ROE = inherent margin of safety
+    # ── P/E to Sustainable ROE Ratio (continuous MoS — 1st Study, provenance verified) ──
+    # Ratio form of the verified 1st-WCS rule (see pe_vs_roe_mos): < 1 = PE below sustainable ROE
+    # = inherent margin of safety. roe_med_10y proxies the study's "sustainable ROE" (the study
+    # names no window). ("all 30 confirmed" overclaim trimmed 2026-08-29 — nobody verified all 30.)
     df["pe_to_roe_ratio"] = np.where(
         df["roe_med_10y"].notna() & (df["roe_med_10y"] > 1) &
         df["pe"].notna() & (df["pe"] > 0),

@@ -491,7 +491,9 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
         payback_score = _zone_score(_payback_val.clip(lower=0, upper=998), PAYBACK_ZONES)
         score += payback_score.fillna(50) * VALUATION_SIGNALS["payback_ratio"]
 
-    # Agent 9 (1st WCS): Valuation Multiple Trap — PE > 35 AND ROE < 18%.
+    # Agent 9: Valuation Multiple Trap — PE > 35 AND ROE < 18% (thresholds = ENGINE calibration;
+    # the 1st WCS states only the buy-side P/E<ROE margin-of-safety rule, no trap numbers —
+    # provenance corrected 2026-08-29, see data_engine valuation_multiple_trap).
     # Market is pricing in returns the business cannot sustainably generate.
     # Slash valuation score by 40% for these stocks; the quality score still reflects fundamentals.
     if "valuation_multiple_trap" in df.columns:
@@ -1190,8 +1192,9 @@ def compute_composite_score(
     _hs_boost = df.get("ep_hockey_stick_breakout", pd.Series(0, index=df.index)).fillna(0)
     df["composite_score"] = df["composite_score"] + _hs_boost * 5.0
 
-    # Agent 8 (1st WCS): Mid-Cap Velocity Compounder boost.
-    # Mid/Small/Micro-Cap stocks with sustained ROCE ≥ 20% compound dramatically faster than large caps.
+    # Agent 8: Mid-Cap Velocity Compounder boost (size half = 1st WCS "speed of wealth creation
+    # comes from the mid & small cap companies"; the ROCE≥20 gate is engine construction —
+    # provenance separated 2026-08-29, see data_engine mcap_velocity_compounder).
     _mcv_boost = df.get("mcap_velocity_compounder", pd.Series(0, index=df.index)).fillna(0)
     df["composite_score"] = df["composite_score"] + _mcv_boost * 3.0
 
