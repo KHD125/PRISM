@@ -498,4 +498,30 @@ WCS_STUDIES = [
             "in the cyclicality tiers and regime detection."
         ),
     },
+    {
+        "study": "3rd Study", "years": "1993–1998", "pub": "January 1999",
+        "theme": "Creators and Destroyers — the first two-sided study",
+        "says": (
+            "Two firsts. FIRST: information technology enters the wealth-creator list (Satyam #1 at "
+            "87% a year, Wipro #2) — the study that caught the IT wave before the boom. SECOND: it "
+            "ranks the top 50 Wealth DESTROYERS alongside the 100 creators, and the contrast is the "
+            "lesson. Destroyers are asset-heavy commodity businesses (76% of them) making "
+            "undifferentiated intermediate products with no pricing power — and they destroyed not "
+            "just existing capital but ₹127 billion of FRESH capital raised on the way down. "
+            "Both groups were focused, so focus alone is not enough: the NATURE of the business "
+            "decides. Creators' average ROCE rose again (16% to 20% — third study in a row), and "
+            "their earnings were remarkably steady (ROCE varied only 6% around its mean). The "
+            "valuation chapter states the identity Price/Book = ROE × P/E — 'P/E multiples are a "
+            "function of ROE' — and introduces the first ROE/P-E matrix: companies moving from "
+            "high-ROE-low-P/E to high-ROE-high-P/E returned 49% a year, 'the safest investment "
+            "strategy', while good businesses that stayed high-ROE 'tend to get better over time'."
+        ),
+        "prism": (
+            "Third independent validation of the P/E-below-ROE margin-of-safety signals (the "
+            "high-ROE-low-P/E quadrant was the safest 49%-a-year cohort). The destroyer profile — "
+            "asset-heavy, undifferentiated, fed by fresh capital — is what the Atoms/Bits design "
+            "labels, the external-financing red flag, and the dilution checks screen against. The "
+            "earnings-steadiness finding is the earliest ancestor of the Consistents framework."
+        ),
+    },
 ]
