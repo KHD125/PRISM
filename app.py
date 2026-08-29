@@ -346,7 +346,7 @@ with st.sidebar:
     # your sidebar filters (every column), or the whole universe when nothing is filtered. Distinct
     # from the Deep Scanner's curated (~40-col) export and the All-Data single-row export.
     from datetime import date as _date
-    from ui.ui_export import scored_universe_csv
+    from ui.ui_export import scored_universe_csv, universe_signature
     _scored_dl_ph = st.empty()
 
     regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
@@ -364,11 +364,13 @@ with st.sidebar:
 filt = render_discovery_sidebar(df)
 
 # Fill the scored-data download now that the filtered frame exists. Filter-aware: exports the surviving
-# rows (all columns), cached on a cheap (score + count + composite-sum) signature so it re-serializes
-# ONLY when the filter actually changes — not on every rerun (the full 724-col frame is expensive to
-# serialize). No filter active → the whole universe, exactly as before.
+# rows (all columns), cached on the scoring key + an EXACT row-identity digest so it re-serializes
+# ONLY when the filter result actually changes — not on every rerun (the full-frame to_csv is the
+# expensive part). Exact matters: the old count+composite-sum signature collided on live data (two
+# different one-stock filter states both hashed to "1|90.00" and the second download served the
+# first stock's CSV — 2026-08-29 audit; pinned in tests/test_export.py). No filter → whole universe.
 with _scored_dl_ph.container():
-    _dl_sig = f"{_score_key}|{len(filt)}|{float(filt['composite_score'].sum()):.2f}"
+    _dl_sig = f"{_score_key}|{universe_signature(filt['name'])}"
     st.download_button(
         f"📥 Download {len(filt):,} stocks · all {df.shape[1]} cols",
         data=scored_universe_csv(_dl_sig, filt),
