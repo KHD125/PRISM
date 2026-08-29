@@ -398,3 +398,11 @@ def test_every_non_multiselect_widget_seeds_its_key_before_instantiating():
         assert _DISC.index(seed) < _DISC.index(f'key="{key}"'), (
             f"{key}'s seed sits after its widget — it must run before instantiation"
         )
+
+
+def test_cash_machine_filter_labels_match_the_engine():
+    """The 34th filter (2026-08-29): cash_machine_label options must match the emitter verbatim
+    (data_engine:1105) — the same cross-file pin the capital-phase filter carries."""
+    for lbl in ["💰 Cash Machine", "✅ Solid", "📄 Paper Profits"]:
+        assert lbl in _DISC, f"cash-machine label missing from ui_discovery: {lbl!r}"
+        assert lbl in _DENG, f"cash-machine label drifted in data_engine (emitter): {lbl!r}"

@@ -173,7 +173,7 @@ def test_every_label_emitting_column_is_fully_documented():
     LABEL_COLS = ["buy_zone_label", "weinstein_stage", "cf_triangle", "lynch_category",
                   "mef_label", "smart_money_flow", "wealth_tier", "ep_power_curve",
                   "corporate_class", "tier_label", "moat_growth_quad", "peg_zone",
-                  "earnings_power_box", "cyclicality_tier", "sector_capital_phase",
+                  "earnings_power_box", "cyclicality_tier", "sector_capital_phase", "cash_machine_label",
                   "verdict_direction", "atoms_to_bits_label", "forensic_label"]
     problems = []
     for col in sorted(LABEL_COLS):

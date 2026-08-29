@@ -21,7 +21,7 @@ _CHIP_META = [
     ("sb_mcap", "Market Cap", "ms"), ("sb_sector", "Sector", "sel"), ("sb_industry", "Industry", "sel"),
     ("sb_cyc", "Cyclicality", "ms"), ("sb_capphase", "Capital Phase", "ms"), ("sb_tier", "Tier", "ms"),
     ("sb_verdict", "Soundness", "ms"), ("sb_wealthtier", "Wealth Tier", "ms"), ("sb_corpclass", "Corp Class", "ms"), ("sb_maxrf", "Max Red Flags", "max"),
-    ("sb_piotier", "Piotroski", "ms"), ("sb_mincov", "Min Coverage", "min"), ("sb_hidestale", "Hide Stale", "bool"),
+    ("sb_piotier", "Piotroski", "ms"), ("sb_cashmach", "Cash Machine", "ms"), ("sb_mincov", "Min Coverage", "min"), ("sb_hidestale", "Hide Stale", "bool"),
     ("sb_fwfam", "FW Family", "ms"),
     ("sb_fw_exclude", "Exclude FW", "ms"), ("sb_fw_include", "Include FW", "ms"), ("sb_fw_combine", "Combine FW", "ms"),
     ("sb_moat", "Moat", "ms"), ("sb_peg_zone", "PEG Zone", "ms"), ("sb_buy_zone", "Buy Zone", "ms"),
@@ -355,7 +355,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cf = _narrow(_cf, _label_mask(_cf["corporate_class"], sel_corp), "Corp Class")
             st.caption(f"→ {len(_cf):,} remaining")
 
-        with _grp("🛡️ Safety", "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale", expanded=False):
+        with _grp("🛡️ Safety", "sb_maxrf", "sb_piotier", "sb_cashmach", "sb_mincov", "sb_hidestale", expanded=False):
             # Risk-control screen — the system's most defensible, validation-INDEPENDENT edge: avoiding
             # the zeros (Gensol et al.). Deliberately NOT here: a forensic_label dropdown (98.6% one value
             # → degenerate; red_flag_count is its live form) and an "exclude risk-flags" group
@@ -380,6 +380,21 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                   format_func=lambda v: f"{v}  ·  {_pio_vc.get(v, 0)}")
             if sel_pio:
                 _cf = _narrow(_cf, pd.Series(_pio_tier, index=_cf.index).isin(sel_pio), "Piotroski")
+
+            # 4e2. Cash Machine — accrual quality: are reported profits turning into CASH?
+            # (data_engine:1105 — the O'Glove/accrual-anomaly tiering; the 34th filter, added
+            # 2026-08-29 after the gap audit: balanced buckets 43/29/27%, max redundancy vs any
+            # existing filter 38% Jaccard, and 📄 Paper Profits carries a median 8 red flags
+            # against 💰 Cash Machine's 3 — the one axis no other filter names by CAUSE.)
+            _CASHM_ORDER = ["💰 Cash Machine", "✅ Solid", "📄 Paper Profits"]
+            _cashm_opts = _ordered_present(_cf, "cash_machine_label", _CASHM_ORDER)
+            sel_cashm = _ms_cascade("Cash Machine", _cashm_opts, "sb_cashmach", default=[],
+                                    help="Accrual quality — is the profit turning into cash? "
+                                         "💰 = CFO backs the earnings; 📄 Paper Profits = it "
+                                         "doesn't (median 8 red flags vs 3). Empty = all.",
+                                    count_col="cash_machine_label")
+            if sel_cashm and "cash_machine_label" in _cf.columns:
+                _cf = _narrow(_cf, _label_mask(_cf["cash_machine_label"], sel_cashm), "Cash Machine")
 
             # 4f. Min data coverage % — don't trust a high score built on thin data
             st.session_state.setdefault("sb_mincov", 0)          # seed-before-instantiate
@@ -819,7 +834,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     _active_total = _active_n(
         "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict",
         "sb_wealthtier", "sb_corpclass",
-        "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale",
+        "sb_maxrf", "sb_piotier", "sb_cashmach", "sb_mincov", "sb_hidestale",
         "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
         "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
         "sb_catalyst", "sb_sellalert", "sb_eppc", "sb_epbox", "sb_mbsetup",
