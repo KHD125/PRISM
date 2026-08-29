@@ -36,6 +36,40 @@ def test_new_keys_registered_in_both_spots():
     for k in ("sb_cyc", "sb_capphase"):
         assert k in grp_line,     f"{k} missing from the 🏢 Universe _grp() — group badge will undercount"
         assert k in active_block, f"{k} missing from _active_n() — the funnel total will undercount"
+    # GENERALIZED 2026-08-28: this pin used to check only the two keys it was written for, which is
+    # how sb_wealthtier shipped registered in the chips and the group badge but MISSING from the
+    # funnel total — the headline read "No filters — full universe" over a filtered count. Every
+    # chip-registered key must appear in the funnel total, so the NEXT filter cannot repeat it.
+    from ui.ui_discovery import _CHIP_META
+    missing = [k for k, _h, _kind in _CHIP_META if k not in active_block]
+    assert not missing, (
+        f"chip-registered filter keys missing from the funnel _active_n() total (the headline "
+        f"will undercount active filters): {missing}"
+    )
+
+
+def test_clear_all_is_always_an_on_click_callback():
+    """THE PARKED CLEAR-ALL BUG's call-site discipline (mechanised 2026-08-28): an inline
+    `if st.button(...): clear_all_filters()` from the MAIN BODY runs after the sidebar widgets
+    instantiated, and deleting an instantiated widget's key lets the frontend resurrect its value
+    on the rerun — filters come back, intermittently, and AppTest (no frontend) can never catch
+    it. So the discipline is pinned structurally: every clear button wires on_click, no call site
+    invokes clear_all_filters() inline, and the function itself contains no st.rerun() (a no-op
+    inside callbacks, and the tell-tale of the old inline pattern)."""
+    app_src = (_ROOT / "app.py").read_text(encoding="utf-8")
+    for src, where in ((_DISC, "ui_discovery.py"), (app_src, "app.py")):
+        assert "clear_all_filters()" not in src.replace("def clear_all_filters()", ""), (
+            f"an INLINE clear_all_filters() call is back in {where} — the resurrection bug returns"
+        )
+    assert app_src.count("on_click=clear_all_filters") == 2, "the two empty-state buttons must wire on_click"
+    assert _DISC.count("on_click=clear_all_filters") == 1, "the sidebar button must wire on_click"
+    fn = _DISC[_DISC.index("def clear_all_filters"):_DISC.index("def render_discovery_sidebar")]
+    # Match the STATEMENT, not the docstring's prose mention of it (the substring-scan-over-source
+    # lesson, learned repeatedly: prose naming a banned thing is not the banned thing).
+    import re as _re
+    assert not _re.search(r"^\s+st\.rerun\(\)\s*$", fn, _re.M), (
+        "clear_all_filters must not call st.rerun() (no-op in callbacks)"
+    )
 
 
 def test_active_groups_stay_open_across_reruns():

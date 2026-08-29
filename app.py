@@ -452,8 +452,8 @@ with tabs[0]:
         )
         _, _ec, _ = st.columns([3, 2, 3])
         with _ec:
-            if st.button("🧹 Clear all filters", key="disc_clear", use_container_width=True):
-                clear_all_filters()
+            st.button("🧹 Clear all filters", key="disc_clear", use_container_width=True,
+                      on_click=clear_all_filters)
     else:
         st.markdown(
             f'<div class="sec-head">🏆 Top Picks — {len(_disc_df)} stocks</div>',
@@ -671,8 +671,8 @@ with tabs[1]:
         )
         _, _ec, _ = st.columns([3, 2, 3])
         with _ec:
-            if st.button("🧹 Clear all filters", key="ds_clear", use_container_width=True):
-                clear_all_filters()
+            st.button("🧹 Clear all filters", key="ds_clear", use_container_width=True,
+                      on_click=clear_all_filters)
     elif ds_df.empty:
         # Filters DO match stocks; the search box killed them → clear the search, not the filters.
         st.info(f"🔍 No stock matches “{ds_search}” among the {len(filt):,} filtered stocks — "

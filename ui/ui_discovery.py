@@ -136,13 +136,21 @@ def _remove_one_filter(key) -> None:
 
 
 def clear_all_filters() -> None:
-    """Delete every `sb_*` filter selection so the cascade resets to its show-all defaults, then
-    rerun. SINGLE SOURCE — called by the sidebar 'Clear all' button AND the Discovery empty-state
-    button, so the two can never diverge. Only `sb_*` keys are removed, so any other widget key
-    (e.g. the Discovery tab's `disc_clear` button) is untouched."""
+    """Delete every `sb_*` filter selection so the cascade resets to its show-all defaults.
+    SINGLE SOURCE — the sidebar 'Clear all' button and both empty-state buttons all wire it via
+    on_click, so the three can never diverge. Only `sb_*` keys are removed, so any other widget
+    key (e.g. the Discovery tab's `disc_clear` button) is untouched.
+
+    MUST BE AN on_click CALLBACK, NEVER an inline `if st.button(...)` call (fixed 2026-08-28 —
+    the parked "Clear All sometimes doesn't clear" bug, finally mechanised): an inline call from
+    a MAIN-BODY button runs AFTER the sidebar widgets instantiated that run, and deleting an
+    instantiated widget's key lets the frontend RESURRECT its value on the rerun — the filters
+    come back. Callbacks run before any widget instantiates, so the deletes stick. Invisible to
+    AppTest (no frontend state to resurrect), which is why the bug never reproduced in tests —
+    the call-site discipline is pinned structurally instead. No st.rerun() here: callbacks
+    trigger their own rerun, and st.rerun() inside one is a no-op."""
     for _k in [k for k in st.session_state if k.startswith("sb_") and k != "sb_clear"]:
         del st.session_state[_k]
-    st.rerun()
 
 
 def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
@@ -158,8 +166,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # in real time as filters narrow the universe.
         _funnel = st.empty()
         _chips_ph = st.empty()   # applied-filter chips; filled at END (post-prune, like _funnel)
-        if st.button("🧹 Clear all filters", key="sb_clear", use_container_width=True):
-            clear_all_filters()
+        st.button("🧹 Clear all filters", key="sb_clear", use_container_width=True,
+                  on_click=clear_all_filters)
 
         def _active_n(*keys):
             """Count filters in a group that ACTUALLY narrow. Every filter now defaults to its
@@ -795,7 +803,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     _uni_n, _fin_n = len(df), len(filt)
     _pct = (_fin_n / _uni_n) if _uni_n else 0.0
     _active_total = _active_n(
-        "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict", "sb_corpclass",
+        "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict",
+        "sb_wealthtier", "sb_corpclass",
         "sb_maxrf", "sb_piotier", "sb_mincov", "sb_hidestale",
         "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
         "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
