@@ -65,6 +65,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core import (fetch_and_clean_data, run_full_scoring, compute_forensic_signals,
                   apply_forensic_penalty, compute_verdict, run_scoring_pipeline)
+from core.data_engine import extract_spreadsheet_id
 from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
@@ -160,6 +161,9 @@ with st.sidebar:
         st.cache_data.clear()
         st.session_state.pop("_scored_df", None)
         st.session_state.pop("_score_key", None)
+        # Flag for the post-load confirmation toast — before this, the only evidence a reload
+        # actually happened was the Load Time metric silently changing (user-reported 2026-08-29).
+        st.session_state["_cache_cleared"] = True
         st.rerun()
 
     sheet_id = None
@@ -172,10 +176,27 @@ with st.sidebar:
         # (Streamlit Cloud never sets it) → identical behaviour to before. The legacy
         # STOCKSCAN_SHEET_ID is still honored (backward-compat) so existing dev/deploy envs keep working.
         _default_sheet = os.environ.get("PRISM_SHEET_ID") or os.environ.get("STOCKSCAN_SHEET_ID", "")
-        sheet_id = st.text_input("Google Sheets URL or ID", value=_default_sheet,
+        # CLOUD-RESTART PERSISTENCE (2026-08-29): ?sheet=<id> in the page URL. Community Cloud
+        # sleeps/restarts the server, wiping session_state while the BROWSER keeps showing the old
+        # page — the link then sits visibly in the box but the new server session never received
+        # it, so the first click (Clear Cache & Reload included) dropped to the welcome screen,
+        # and Enter on the UNCHANGED text re-submits nothing (the frontend thinks it's already
+        # committed). Reproduced live on the deployed app 2026-08-29. The query param survives the
+        # restart inside the URL itself: it re-seeds the box (seed-before-instantiate — the same
+        # widget-state law as ui_discovery) and data auto-reloads with zero retyping. NOTHING is
+        # hardcoded: the param holds whatever the user last typed. The key is deliberately NOT
+        # sb_-prefixed — the sidebar's clear-all callback wipes every sb_* key.
+        if not _default_sheet:
+            _default_sheet = st.query_params.get("sheet", "")
+        if "data_sheet_box" not in st.session_state:
+            st.session_state.data_sheet_box = _default_sheet
+        sheet_id = st.text_input("Google Sheets URL or ID", key="data_sheet_box",
                                  placeholder="Enter Google Sheet ID...")
         if sheet_id:
             data_ready = True
+            _sid = extract_spreadsheet_id(sheet_id)
+            if _sid and st.query_params.get("sheet") != _sid:
+                st.query_params["sheet"] = _sid
     elif st.session_state.data_source == "upload":
         uploaded_files = st.file_uploader("Upload all 6 CSV files (Ratio, Income, Balance, Cashflow, Shareholding, Technical)", type="csv", accept_multiple_files=True)
         if uploaded_files and len(uploaded_files) > 0:
@@ -233,6 +254,9 @@ with st.spinner("🔄 Loading data..."):
     except Exception as e:
         st.error(f"❌ Error loading data: {e}")
         st.stop()
+
+if st.session_state.pop("_cache_cleared", False):
+    st.toast(f"✅ Cache cleared — data reloaded fresh from source in {load_time:.1f}s", icon="✅")
 
 # ═══════════════════════════════════════════════════════════════
 # BRAND — compact strip at page top (identity → control → context)
