@@ -658,7 +658,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ratio substantially lower than its sustainable ROE", §Observation-on-Valuation) — it states
     # NO trap screen and NO thresholds; "PE > 35 AND ROE < 18" appears nowhere in its 16 pages.
     # The converse logic (P/E far above ROE = paying for returns the business cannot generate) is a
-    # fair extension of the study's principle; the 35/18 gates are ENGINE CALIBRATION (fires 25.6%).
+    # fair extension of the study's principle — and the 2nd WCS (1992-97, read 2026-08-29) supplies
+    # its real empirical grounding: the Wealth Dilutors table shows exactly this profile imploding
+    # (FACT P/E 139.5 vs ROE 6.9% in 1992; Tata Timken 547.9 vs 6.8; TISCO diluted Rs.6,647 Cr), with
+    # the study concluding "prices accorded relatively higher in comparison to long-term ROE are
+    # clearly unsustainable". The 35/18 gates remain ENGINE CALIBRATION (fires 25.6%).
     # pe_vs_roe_mos (derived below) captures the study's actual spread;
     # this binary flag allows scoring_engine to apply a targeted 40% valuation-score slash.
     # pe fillna(0): loss-makers (NaN PE) → 0 → 0 > 35 = False → not trapped (conservative).
