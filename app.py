@@ -1145,7 +1145,15 @@ with tabs[2]:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 4: MARKET PULSE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-with tabs[3]:
+# FRAGMENT (2026-08-29): Market Pulse is market-wide BY DESIGN — it reads the module-level `df`
+# only (verified: zero `filt` reads, zero .attrs reads, mp_* keys consumed nowhere else, no
+# variable assigned here is referenced after the block). Its own controls (mp_sec_*, mp_ind_*,
+# mp_wealth_tier) therefore need no full-script rerun: measured pre-fragment, one in-tab
+# selectbox change cost 951 ms of which ~97% was re-rendering every OTHER tab. @st.fragment
+# scopes those interactions to this tab. Sidebar changes still rerun the full app (fragments
+# re-execute during full reruns), so nothing filter-related changes behavior.
+@st.fragment
+def _render_market_pulse():
 
     # ── Pre-compute section datasets ───────────────────────────────
     _mp_ts   = (df[df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
@@ -1961,9 +1969,19 @@ with tabs[3]:
                 )
 
 
+with tabs[3]:
+    _render_market_pulse()
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 5: CONFIGURATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# NEVER FRAGMENT THIS TAB. cfg_mode is "the one control that re-ranks the universe": the TOP of
+# this script reads st.session_state["cfg_mode"] to build the scored frame. Inside a fragment,
+# an Analysis-Mode change would rerun only the fragment — the frame would never recompute and
+# every tab would show STALE RANKINGS under a control that claims to re-rank. A state-of-the-art
+# audit proposed fragmenting this tab as a speedup on 2026-08-29; rejected for exactly this
+# reason (pinned by test_market_pulse_tabs). cfg_profile drives the QGLP screen the same way.
 with tabs[4]:
     st.markdown(f"<div class='sec-head'>⚙️ System Configuration — The Engine Rulebook</div>", unsafe_allow_html=True)
     st.markdown(
@@ -2329,7 +2347,10 @@ with tabs[4]:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 6: REFERENCE — searchable glossary (renders the _RAW_GLOSSARY single source, count shown live)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-with tabs[5]:
+# FRAGMENT (2026-08-29): fully self-contained — static dicts + its own search box; a glossary
+# search previously cost a full-app rerun per submit.
+@st.fragment
+def _render_reference():
     st.markdown(
         f'<div style="font-size:0.7rem;font-weight:700;color:{COLORS["text_muted"]};'
         f'text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">'
@@ -2391,3 +2412,7 @@ with tabs[5]:
             unsafe_allow_html=True,
         )
         st.markdown(_fw_html, unsafe_allow_html=True)
+
+
+with tabs[5]:
+    _render_reference()

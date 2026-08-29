@@ -95,3 +95,43 @@ def test_the_stage_3_removals_were_not_quietly_restored():
     joined = " ".join(labels)
     assert "Blue Chip" not in joined, "💙 Blue Chips fired on 0% of the universe; it stays out"
     assert "Tipping" not in joined, "🚀 Tipping Points was folded into Sectors; it stays out"
+
+
+# ── Fragment boundaries (2026-08-29) ─────────────────────────────────────────────────────────
+def _app_src():
+    import io as _io, os
+    return _io.open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
+
+
+def test_market_pulse_is_a_fragment_called_in_its_tab():
+    """Market Pulse is market-wide by design (reads module `df` only — verified: zero filt/attrs
+    reads, mp_* keys consumed nowhere else). Its in-tab controls cost 951 ms pre-fragment, ~97%
+    of it re-rendering the OTHER tabs. The fragment scopes them to this tab."""
+    src = _app_src()
+    i = src.index("def _render_market_pulse():")
+    deco = src[:i].rstrip().splitlines()[-1]
+    assert deco.strip() == "@st.fragment", "Market Pulse lost its @st.fragment decorator"
+    assert "with tabs[3]:" + chr(10) + "    _render_market_pulse()" in src, (
+        "the fragment is no longer called in tab 3")
+
+
+def test_reference_is_a_fragment_called_in_its_tab():
+    src = _app_src()
+    i = src.index("def _render_reference():")
+    deco = src[:i].rstrip().splitlines()[-1]
+    assert deco.strip() == "@st.fragment", "Reference lost its @st.fragment decorator"
+    assert "with tabs[5]:" + chr(10) + "    _render_reference()" in src
+
+
+def test_config_tab_is_never_fragmented():
+    """THE CORRECTNESS TOMBSTONE. cfg_mode re-ranks the universe: the top of the script reads it
+    to build the scored frame. Fragmented, an Analysis-Mode change would rerun only the fragment
+    and every tab would show STALE RANKINGS. A 2026-08-29 audit proposed fragmenting Config as a
+    speedup; rejected for exactly this reason — this pin keeps it rejected."""
+    src = _app_src()
+    cfg = src[src.index("# TAB 5: CONFIGURATION"):src.index("# TAB 6: REFERENCE")]
+    assert "@st.fragment" not in cfg, (
+        "Config was fragmented — cfg_mode changes will no longer recompute the scored frame"
+    )
+    assert "NEVER FRAGMENT THIS TAB" in cfg, "the tombstone comment explaining WHY is gone"
+    assert 'key="cfg_mode"' in cfg, "cfg_mode moved out of Config — re-verify the fragment safety story"
