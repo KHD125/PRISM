@@ -551,4 +551,33 @@ WCS_STUDIES = [
             "study's 25/25/1 screen."
         ),
     },
+    {
+        "study": "5th Study", "years": "1995–2000", "pub": "February 2001",
+        "theme": "Multi-baggers and the payback ratio — anatomy of a 100%-a-year stock",
+        "says": (
+            "The bubble-era study, written just after the dot-com top. All ten of the fastest "
+            "creators compounded above 100% a year (SSI 195%, Wipro 194% — Wipro alone made a "
+            "quarter of ALL wealth created), and 80% of the group's five-year wealth arrived in "
+            "the final year — after LOSING money for the first two ('it is easier to tell what "
+            "will happen to the price of a stock than how much time will elapse', Fisher). The "
+            "study dissects what a multi-bagger looks like BEFORE it runs: a genuine growth story "
+            "(top-10 profit growth ~63% a year); a long competitive advantage period (the series' "
+            "first Mauboussin citation); a very large opportunity relative to a SMALL starting "
+            "size (mean entry value just ₹233 crore — 'focus on the price of companies, not the "
+            "price of shares'); bought out of favour, with low trading volume and low "
+            "institutional holding; run by outstanding, honest management. Then the sober math: "
+            "86% of the top-10 wealth came from P/E re-rating, only 14% from earnings. And its "
+            "signature tool — the PAYBACK RATIO: market value today divided by the next five "
+            "years' profits. Stocks bought below 1× payback returned 73% a year on average and "
+            "produced 6 of the 10 multi-baggers; every higher band earned progressively less."
+        ),
+        "prism": (
+            "The verified origin of the payback-ratio family — the payback signals and their "
+            "bands (≤1× → 73.1% mean return) implement this study's exact definition and table. "
+            "The multi-bagger checklist is the earliest blueprint of SQGLP: small and unknown, "
+            "quality management, growth, long CAP, price with re-rating room. The low-institutional-"
+            "ownership entry condition survives in the SEPA institutional signal and SQGLP's "
+            "Size pillar."
+        ),
+    },
 ]
