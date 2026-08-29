@@ -650,6 +650,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # roe_elite_flag: ROE ≥ 35% — elite tier wealth creator.
     # 6th Study (1996-2001): 12 companies with ROE > 35% created 50% of all wealth in that period.
+    # PROVENANCE VERIFIED VERBATIM (2026-08-29, full 6th-study read): Force I table (p.14) —
+    # ROE>35 band = 12 of 71 cos = Rs.109,481 cr = 50.4% of the Rs.217,180 cr total. The study's
+    # own caveat rides with it: "They are few, but necessary in the portfolio." NOTE: provenance
+    # genuine ≠ forward edge proven — the flag's quality bonus remains on the evidence-gated
+    # register (negative measured forward returns in two overlapping validation windows; judged
+    # at ≥3 non-overlapping snapshot windows via tools/validate.py).
     df["roe_elite_flag"] = (df["roe"].fillna(0) >= 35).astype(int)
 
     # valuation_multiple_trap — ENGINE-CONSTRUCTED converse of the 1st WCS P/E-vs-ROE rule.

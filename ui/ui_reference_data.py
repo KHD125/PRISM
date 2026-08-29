@@ -580,4 +580,34 @@ WCS_STUDIES = [
             "Size pillar."
         ),
     },
+    {
+        "study": "6th Study", "years": "1996–2001", "pub": "January 2002",
+        "theme": "The Five Forces of Wealth Creation — high ROE meets margin of safety",
+        "says": (
+            "The post-crash study: only 71 companies qualified, and while the group fell 71% from "
+            "the bubble peak it still beat the flat Sensex by 427%. Its backdrop is stark — India "
+            "Inc's ROE collapsed from 14% to 7% over the five years while the creators held ~22%. "
+            "The study builds its Five Forces: (1) HIGH ROE well above the cost of capital — the "
+            "famous table shows just 12 of 71 companies with ROE above 35% created 50% of ALL the "
+            "wealth ('they are few, but necessary in the portfolio'); (2) high ROE with INCREASING "
+            "capital employed — the 'lethal combination', because big wealth needs big capital "
+            "deployed at high incremental returns; (3) GROWTH, but only in the same franchise — "
+            "the value formula C × (RoC − G)/(R − G) says growth where returns sit below the cost "
+            "of capital destroys value; (4) the COST OF CAPITAL itself — falling interest rates "
+            "lift all valuations (the Dow's 1964-81 vs 1981-94 story); (5) MARGIN OF SAFETY via "
+            "the payback ratio, now refined with the ROE cross-table: payback under 1× with ROE "
+            "above 35% returned 74% a year (Infosys, Wipro and Satyam all sat exactly there), and "
+            "'higher the ROE, longer can be the payback'. The study also splits intrinsic value "
+            "into asset replacement value, earning power value, and growth value — growth counting "
+            "only where a competitive advantage already exists."
+        ),
+        "prism": (
+            "The verified source of the ROE-elite signal (the 12-companies-50%-of-wealth table is "
+            "real). The value formula seeds the growth-value trap and Economic Profit doctrine — "
+            "growth below the cost of capital destroys value — sixteen years before the 23rd "
+            "formalized it. The payback-under-2 conclusion and the ROE-scaled payback tolerance "
+            "inform the payback tier signals; the three-components-of-value split parallels the "
+            "Earnings Power Box."
+        ),
+    },
 ]
