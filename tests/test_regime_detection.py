@@ -125,3 +125,67 @@ def test_unknown_regime_falls_back_to_sideways():
         sw = get_adaptive_weights(profile, "SIDEWAYS")
         assert (w["quality_w"], w["growth_w"], w["longevity_w"], w["price_w"]) == \
                (sw["quality_w"], sw["growth_w"], sw["longevity_w"], sw["price_w"])
+
+
+# ── The load-bearing argument (2026-08-30 audit) ─────────────────────────────────────────────
+# The ENTIRE regime -> weights/gates modulation hangs on run_full_scoring passing the ADAPTIVE
+# dict into compute_qglp_score. A one-word revert to the raw profile would silently disconnect
+# regime from QGLP (weights AND the roce/growth/peg gates) while every other test stayed green —
+# measured live 2026-08-30: qglp_pass moves 325 (SIDEWAYS) -> 309 (BULL) -> 249 (BEAR) only
+# because of this argument. One structural pin + one behavioral pin, so neither a syntax revert
+# nor a flow-preserving refactor can break it invisibly.
+
+def test_qglp_receives_the_adaptive_dict_not_the_raw_profile():
+    import io as _io, os
+    src = _io.open(os.path.join(os.path.dirname(__file__), "..", "core", "scoring_engine.py"),
+                   encoding="utf-8").read()
+    assert "compute_qglp_score(df, profile=adaptive)" in src, (
+        "run_full_scoring no longer passes the regime-adjusted ADAPTIVE dict into QGLP — "
+        "regime would silently stop moving QGLP weights and gates"
+    )
+
+
+import functools
+
+
+@functools.lru_cache(maxsize=1)
+def _forced_regime_frames():
+    """The full pipeline under forced SIDEWAYS and forced BEAR (patched at the module global
+    run_full_scoring resolves at call time; restored in finally). Cached so the two behavioral
+    tests below share one pair of runs."""
+    import contextlib, io as _io
+    import core.scoring_engine as se
+    from core import fetch_and_clean_data, run_scoring_pipeline
+    with contextlib.redirect_stdout(_io.StringIO()):
+        raw = fetch_and_clean_data("local")
+    _orig = se.detect_market_regime
+    frames = {}
+    try:
+        for regime in ("SIDEWAYS", "BEAR"):
+            se.detect_market_regime = lambda d, v=regime: v
+            with contextlib.redirect_stdout(_io.StringIO()):
+                frames[regime] = run_scoring_pipeline(raw.copy())
+    finally:
+        se.detect_market_regime = _orig
+    return frames
+
+
+def test_bear_regime_tightens_qglp_pass_on_live_data():
+    """BEAR raises the QGLP growth/peg bars (config REGIME_ADJUSTMENTS), so a forced-BEAR run
+    must pass STRICTLY fewer stocks than SIDEWAYS. Catches any refactor that keeps the call
+    shape but severs the flow — the numbers judge, not the syntax."""
+    frames = _forced_regime_frames()
+    side, bear = int(frames["SIDEWAYS"]["qglp_pass"].sum()), int(frames["BEAR"]["qglp_pass"].sum())
+    assert side > 0, "qglp_pass fires on nothing — the gate died"
+    assert bear < side, (
+        f"forced BEAR passed {bear} vs SIDEWAYS {side} — regime no longer reaches the QGLP gates"
+    )
+
+
+def test_regime_dual_write_agrees():
+    """detect_market_regime is stored twice (df.attrs primary + _detected_market_regime column
+    fallback, scoring_engine ~3312). The two must never disagree — a consumer picking the
+    'wrong' channel must get the same answer."""
+    for regime, frame in sorted(_forced_regime_frames().items()):
+        assert frame.attrs.get("detected_market_regime") == regime
+        assert frame["_detected_market_regime"].iloc[0] == regime

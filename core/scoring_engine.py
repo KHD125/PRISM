@@ -3321,7 +3321,10 @@ def run_full_scoring(
     print(f"   Profile: {adaptive.get('profile_name')} | Regime: {adaptive.get('regime_label')}")
     print(f"   Weights: Q={adaptive['quality_w']:.0%} G={adaptive['growth_w']:.0%} "
           f"L={adaptive['longevity_w']:.0%} P={adaptive['price_w']:.0%}")
-    print(f"   Gates:   ROCE≥{adaptive['roce_gate']:.0f}% | Growth≥{adaptive['growth_gate']:.0f}% | PEG≤{adaptive['peg_gate']:.1f}")
+    # "QGLP Gates" not "Gates": these regime-adjusted thresholds feed qglp_pass ONLY (via
+    # profile=adaptive below). The Layer-1 universal hard gates (apply_hard_gates → gate_pass)
+    # are STATIC by design — the survival floor does not chase the market regime.
+    print(f"   QGLP Gates: ROCE≥{adaptive['roce_gate']:.0f}% | Growth≥{adaptive['growth_gate']:.0f}% | PEG≤{adaptive['peg_gate']:.1f}")
     print("="*60)
 
     # ── Layer 1: Hard Gates ──
