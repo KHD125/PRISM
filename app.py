@@ -1269,6 +1269,84 @@ def _render_market_pulse():
     # ── Market-state Pulse band (breadth-led market vitals — what the tab's name promises) ──────
     render_pulse_band(df)
 
+    # ── Shared lens filters (2026-08-30): Sector · Wealth Tier · Market Cap · Catalyst ─────
+    # LOCAL to each lens tab (mp_* keys) — the "Market-wide (ignores sidebar filters)" captions
+    # stay true: these slice the LENS's own cohort, they are not the sidebar cascade. The
+    # fragment scopes every control to this tab, so each rerun costs ~nothing.
+    _WT_ORDER = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
+    _MP_CAP_ORDER = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
+    _MP_CATALYSTS = {   # MUST mirror ui_discovery's _CATALYSTS — pinned by test_market_pulse_tabs
+        "🔥 Capacity Explosion": "cat_capacity",
+        "🔥 OpLev Inflection":    "cat_oplev",
+        "🔥 Deleveraging":         "cat_deleveraging",
+        "🔥 Lynch Dream":          "cat_lynch_dream",
+        "🔥 Inst Discovery":       "cat_inst_discovery",
+    }
+
+    def _mp_clear_lens(keys):
+        """Reset a lens tab's filters by SETTING each key back to "All" — never `del`: deleting
+        an instantiated widget's key lets the frontend resurrect the stale value on the next
+        rerun (the Steel bug class; see ui_discovery.clear_all_filters)."""
+        for k in keys:
+            st.session_state[k] = "All"
+
+    def _mp_lens_row(frame, prefix, with_tier=True):
+        """The lens-filter row: Sector · [Wealth Tier ·] Market Cap · Catalyst · Clear.
+        Returns (filtered_frame, n_active). The 🧹 button materializes ONLY when a filter is
+        active, in a FIXED last slot — zero furniture when idle, zero layout jump when it
+        appears. Facets are honest: only values present in THIS lens's cohort are offered
+        (catalysts only if actually firing in it). Keys are seeded before instantiation and
+        re-seeded to "All" if a remembered value no longer exists in the cohort (the widget-
+        state law: a keyed selectbox whose state is missing from its options raises)."""
+        keys = ([f"mp_{prefix}_sec"] + ([f"mp_{prefix}_wt"] if with_tier else [])
+                + [f"mp_{prefix}_cap", f"mp_{prefix}_cat"])
+        _sec_opts = ["All"] + (sorted(frame["sector"].dropna().unique().tolist())
+                               if "sector" in frame.columns else [])
+        _wt_opts = ["All"] + [t for t in _WT_ORDER
+                              if "wealth_tier" in frame.columns and (frame["wealth_tier"] == t).any()]
+        _cap_opts = ["All"] + [c for c in _MP_CAP_ORDER
+                               if "market_category" in frame.columns and (frame["market_category"] == c).any()]
+        _cat_opts = ["All"] + [l for l, c in _MP_CATALYSTS.items()
+                               if c in frame.columns and int(frame[c].fillna(0).sum()) > 0]
+        _opts_for = {f"mp_{prefix}_sec": _sec_opts, f"mp_{prefix}_wt": _wt_opts,
+                     f"mp_{prefix}_cap": _cap_opts, f"mp_{prefix}_cat": _cat_opts}
+        for k in keys:
+            if st.session_state.setdefault(k, "All") not in _opts_for[k]:
+                st.session_state[k] = "All"
+        slots = st.columns([2.4, 1.6, 1.6, 1.9, 1.1] if with_tier else [2.9, 1.9, 2.2, 1.2])
+        with slots[0]:
+            sec = st.selectbox("Sector", _sec_opts, key=f"mp_{prefix}_sec",
+                               help="Slice this lens's cohort to one sector.")
+        _i = 1
+        wt = "All"
+        if with_tier:
+            with slots[_i]:
+                wt = st.selectbox("Wealth tier", _wt_opts, key=f"mp_{prefix}_wt",
+                                  help="Cross-lens: this framework's passers × the wealth engine's tier.")
+            _i += 1
+        with slots[_i]:
+            cap = st.selectbox("Market cap", _cap_opts, key=f"mp_{prefix}_cap",
+                               help="Slice by market-cap tier (the sheet's Market Category).")
+        with slots[_i + 1]:
+            cat = st.selectbox("Catalyst", _cat_opts, key=f"mp_{prefix}_cat",
+                               help="Only stocks where this fast-moving inflection is firing right now.")
+        out = frame
+        if sec != "All" and "sector" in out.columns:
+            out = out[out["sector"] == sec]
+        if wt != "All" and "wealth_tier" in out.columns:
+            out = out[out["wealth_tier"] == wt]
+        if cap != "All" and "market_category" in out.columns:
+            out = out[out["market_category"] == cap]
+        if cat != "All" and _MP_CATALYSTS[cat] in out.columns:
+            out = out[out[_MP_CATALYSTS[cat]].fillna(0) == 1]
+        _n_active = sum(1 for k in keys if st.session_state.get(k, "All") != "All")
+        with slots[-1]:
+            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+            if _n_active:
+                st.button("🧹 Clear", key=f"mp_{prefix}_clear", use_container_width=True,
+                          on_click=_mp_clear_lens, args=(keys,))
+        return out, _n_active
+
     # ── Inner navigation tabs ──────────────────────────────────────
     _mp_tabs = st.tabs([
         "🌊 Tsunami",
@@ -1360,68 +1438,73 @@ def _render_market_pulse():
         if len(_mp_qglp) == 0:
             st.info("No stocks currently pass the strict QGLP gates.")
         else:
-            _q_avg = float(_mp_qglp["qglp_score"].mean()) if "qglp_score" in _mp_qglp.columns else 0
-            st.markdown(f"""
-            <div style="display:flex;gap:20px;padding:8px 2px 12px 2px;
-                 border-bottom:1px solid {COLORS['border']};margin-bottom:10px;flex-wrap:wrap;">
-              <span style="font-size:0.82rem;font-weight:800;color:{COLORS['gold']};">
-                🏛️ {len(_mp_qglp)} QGLP compounders
-              </span>
-              <span style="font-size:0.78rem;color:{COLORS['text_muted']};">
-                Avg QGLP score <strong style="color:{COLORS['blue']}">{_q_avg:.0f}</strong>
-              </span>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # COLUMN ORDER MATTERS HERE, and it is the fix for a real defect (2026-08-27): 13
-            # columns are defined but only ~8 fit the container, and `sector` — the widest column
-            # in the frame ("Infrastructure Developers & Operators") — sat at position 5. It shoved
-            # qglp_price, the "P" in QGLP, off-screen entirely. A tab showcasing a four-leg
-            # framework was showing one and a half legs.
-            # Nothing is REMOVED (the table scrolls, so every column is still reachable) — the
-            # framework's own components simply come before the context columns now.
-            _q_cols = [c for c in ["rank","name","verdict_direction","red_flag_count",
-                                   "qglp_score","qglp_quality","qglp_growth","qglp_longevity","qglp_price",
-                                   "sector","market_cap","smart_money_flow","buy_zone_label"]
-                       if c in _mp_qglp.columns]
-            _q_sel = st.dataframe(
-                _mp_qglp[_q_cols].reset_index(drop=True),
-                column_config={
-                    "verdict_direction": st.column_config.TextColumn("Soundness", help="The engine's overall SOUND / MIXED / FLAWED gate — most QGLP passers are MIXED/FLAWED on valuation, so this surfaces the few that are buyable now."),
-                    # width="small" on the five legs + the name column: reordering alone left
-                    # Longevity and Price/PEG off-screen at a 1793px viewport (verified in the
-                    # browser). The legs need room for a bar and 2-3 digits, nothing more, and
-                    # `name` is the widest text column in the frame.
-                    "name":           st.column_config.TextColumn("name", width="medium"),
-                    "qglp_score":     st.column_config.ProgressColumn("QGLP",      min_value=0, max_value=100, format="%.0f", width="small"),
-                    "qglp_quality":   st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f", width="small"),
-                    "qglp_growth":    st.column_config.ProgressColumn("Growth",    min_value=0, max_value=100, format="%.0f", width="small"),
-                    "qglp_longevity": st.column_config.ProgressColumn("Longevity", min_value=0, max_value=100, format="%.0f", width="small"),
-                    "qglp_price":     st.column_config.ProgressColumn("Price/PEG", min_value=0, max_value=100, format="%.0f", width="small"),
-                    "red_flag_count": st.column_config.NumberColumn("🚩 Flags",    format="%.0f", help="Forensic red flags raised (0 = clean). QGLP gates on quality/growth, NOT forensics — so this is the risk check the screen itself doesn't do."),
-                    "market_cap":     st.column_config.NumberColumn("MCap ₹Cr",    format="%.0f"),
-                    "rank":           st.column_config.NumberColumn("Rank",         format="%.0f"),
-                },
-                use_container_width=True,
-                height=min(500, 80 + len(_mp_qglp) * 35 + 40),
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row",
-            )
-            _q_rows = _q_sel.selection.rows if _q_sel and hasattr(_q_sel, "selection") else []
-            if _q_rows:
-                _q_pick = _mp_qglp.iloc[_q_rows[0]]["name"]
-                # Transient key + rerun + change-guard (see Tsunami above — same set-after-widget rule).
-                if _q_pick != st.session_state.get("xray_stock"):
-                    st.session_state["_pending_xray"] = _q_pick
-                    st.rerun()
+            _q_total = len(_mp_qglp)
+            _mp_qglp, _q_act = _mp_lens_row(_mp_qglp, "qglp")
+            if _mp_qglp.empty:
+                st.info("No QGLP passer matches these lens filters — 🧹 Clear resets them.")
+            else:
+                _q_avg = float(_mp_qglp["qglp_score"].mean()) if "qglp_score" in _mp_qglp.columns else 0
                 st.markdown(f"""
-                <div style="padding:9px 14px;margin-top:8px;background:rgba(228,179,65,0.07);
-                     border:1px solid rgba(228,179,65,0.3);border-radius:8px;font-size:0.8rem;">
-                  🔬 <strong style="color:{COLORS['text_primary']};">{_q_pick}</strong>
-                  set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
+                <div style="display:flex;gap:20px;padding:8px 2px 12px 2px;
+                     border-bottom:1px solid {COLORS['border']};margin-bottom:10px;flex-wrap:wrap;">
+                  <span style="font-size:0.82rem;font-weight:800;color:{COLORS['gold']};">
+                    🏛️ {len(_mp_qglp)}{f' of {_q_total}' if _q_act else ''} QGLP compounders
+                  </span>
+                  <span style="font-size:0.78rem;color:{COLORS['text_muted']};">
+                    Avg QGLP score <strong style="color:{COLORS['blue']}">{_q_avg:.0f}</strong>
+                  </span>
                 </div>
                 """, unsafe_allow_html=True)
+
+                # COLUMN ORDER MATTERS HERE, and it is the fix for a real defect (2026-08-27): 13
+                # columns are defined but only ~8 fit the container, and `sector` — the widest column
+                # in the frame ("Infrastructure Developers & Operators") — sat at position 5. It shoved
+                # qglp_price, the "P" in QGLP, off-screen entirely. A tab showcasing a four-leg
+                # framework was showing one and a half legs.
+                # Nothing is REMOVED (the table scrolls, so every column is still reachable) — the
+                # framework's own components simply come before the context columns now.
+                _q_cols = [c for c in ["rank","name","verdict_direction","red_flag_count",
+                                       "qglp_score","qglp_quality","qglp_growth","qglp_longevity","qglp_price",
+                                       "sector","market_cap","smart_money_flow","buy_zone_label"]
+                           if c in _mp_qglp.columns]
+                _q_sel = st.dataframe(
+                    _mp_qglp[_q_cols].reset_index(drop=True),
+                    column_config={
+                        "verdict_direction": st.column_config.TextColumn("Soundness", help="The engine's overall SOUND / MIXED / FLAWED gate — most QGLP passers are MIXED/FLAWED on valuation, so this surfaces the few that are buyable now."),
+                        # width="small" on the five legs + the name column: reordering alone left
+                        # Longevity and Price/PEG off-screen at a 1793px viewport (verified in the
+                        # browser). The legs need room for a bar and 2-3 digits, nothing more, and
+                        # `name` is the widest text column in the frame.
+                        "name":           st.column_config.TextColumn("name", width="medium"),
+                        "qglp_score":     st.column_config.ProgressColumn("QGLP",      min_value=0, max_value=100, format="%.0f", width="small"),
+                        "qglp_quality":   st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f", width="small"),
+                        "qglp_growth":    st.column_config.ProgressColumn("Growth",    min_value=0, max_value=100, format="%.0f", width="small"),
+                        "qglp_longevity": st.column_config.ProgressColumn("Longevity", min_value=0, max_value=100, format="%.0f", width="small"),
+                        "qglp_price":     st.column_config.ProgressColumn("Price/PEG", min_value=0, max_value=100, format="%.0f", width="small"),
+                        "red_flag_count": st.column_config.NumberColumn("🚩 Flags",    format="%.0f", help="Forensic red flags raised (0 = clean). QGLP gates on quality/growth, NOT forensics — so this is the risk check the screen itself doesn't do."),
+                        "market_cap":     st.column_config.NumberColumn("MCap ₹Cr",    format="%.0f"),
+                        "rank":           st.column_config.NumberColumn("Rank",         format="%.0f"),
+                    },
+                    use_container_width=True,
+                    height=min(500, 80 + len(_mp_qglp) * 35 + 40),
+                    hide_index=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                )
+                _q_rows = _q_sel.selection.rows if _q_sel and hasattr(_q_sel, "selection") else []
+                if _q_rows:
+                    _q_pick = _mp_qglp.iloc[_q_rows[0]]["name"]
+                    # Transient key + rerun + change-guard (see Tsunami above — same set-after-widget rule).
+                    if _q_pick != st.session_state.get("xray_stock"):
+                        st.session_state["_pending_xray"] = _q_pick
+                        st.rerun()
+                    st.markdown(f"""
+                    <div style="padding:9px 14px;margin-top:8px;background:rgba(228,179,65,0.07);
+                         border:1px solid rgba(228,179,65,0.3);border-radius:8px;font-size:0.8rem;">
+                      🔬 <strong style="color:{COLORS['text_primary']};">{_q_pick}</strong>
+                      set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
+                    </div>
+                    """, unsafe_allow_html=True)
 
     # ══ MOSL — convergence across the Wealth Creation Study family ═════
     with _mp_tabs[2]:
@@ -1472,14 +1555,17 @@ def _render_market_pulse():
             unsafe_allow_html=True,
         )
 
+        _m_total = len(_mosl)
+        _mosl, _m_act = _mp_lens_row(_mosl, "mosl")
         if _mosl.empty:
-            st.info("No stock clears 2 or more MOSL lenses in this universe.")
+            st.info("No convergence stock matches — loosen the lens filters (🧹 Clear resets them)."
+                    if _m_act else "No stock clears 2 or more MOSL lenses in this universe.")
         else:
             _n4 = int((_mosl["mosl_n"] >= 4).sum())
             st.markdown(f"""
             <div style="display:flex;gap:20px;align-items:center;margin-bottom:6px;">
               <span style="font-size:1.05rem;font-weight:800;color:{COLORS['gold']};">
-                🔭 {len(_mosl)} stocks clear 2+ lenses
+                🔭 {len(_mosl)}{f' of {_m_total}' if _m_act else ''} stocks clear 2+ lenses
               </span>
               <span style="font-size:0.8rem;color:{COLORS['text_secondary']};">
                 {_n4} clear 4+ &nbsp;·&nbsp; deepest agreement: {int(_mosl['mosl_n'].max())} of {len(_MOSL_LENSES)}
@@ -1511,7 +1597,7 @@ def _render_market_pulse():
         # Everything here READS the wealth_* columns compute_verdict materialized — zero logic
         # lives in this tab, so the tier a snapshot captures is byte-identical to the tier shown.
         # Grammar, provenance and the four rules: core/verdict_engine.py + tests/test_wealth_tier.py.
-        _WT_ORDER = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
+        # _WT_ORDER hoisted above the tabs (shared with the lens-filter row).
         _wt_counts = df["wealth_tier"].value_counts() if "wealth_tier" in df.columns else {}
         st.markdown(
             f"<div class='sec-cap'>The <b>wealth-engine tier</b> — three clocks, nothing else: "
@@ -1551,6 +1637,11 @@ def _render_market_pulse():
             _wl["_warn_txt"] = np.where(_wl["wealth_warn"].fillna(0) == 1, "⚠", "")
             if _wt_pick != "All":
                 _wl = _wl[_wl["wealth_tier"] == _wt_pick]
+            _w_total = len(_wl)
+            # Tier stays the tab own control above; the lens row adds Sector/Cap/Catalyst.
+            _wl, _w_act = _mp_lens_row(_wl, "w", with_tier=False)
+            if _wl.empty:
+                st.info("No stock in this tier matches the lens filters — 🧹 Clear resets them.")
             _wl = _wl.sort_values(["_wt_ord", "wealth_vel_pct"], ascending=[True, False])
             _wt_cols = [c for c in ["wealth_tier", "name", "_warn_txt", "wealth_ep_pct",
                                     "wealth_vel_pct", "moat_tau", "moat_score", "growth_score",

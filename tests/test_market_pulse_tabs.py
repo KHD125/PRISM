@@ -135,3 +135,63 @@ def test_config_tab_is_never_fragmented():
     )
     assert "NEVER FRAGMENT THIS TAB" in cfg, "the tombstone comment explaining WHY is gone"
     assert 'key="cfg_mode"' in cfg, "cfg_mode moved out of Config — re-verify the fragment safety story"
+
+
+# ── Lens-filter rows on QGLP / MOSL / Wealth (2026-08-30) ────────────────────────────────────
+def test_lens_rows_wired_into_the_three_tabs():
+    """QGLP and MOSL had ZERO controls over 328/586-row cohorts; the lens row (Sector · Wealth
+    Tier · Market Cap · Catalyst · conditional Clear) fixes that. Wealth keeps its own Tier
+    selectbox, so its row is with_tier=False — passing True there would render a SECOND tier
+    control beside the first."""
+    src = _app_src()
+    assert '_mp_lens_row(_mp_qglp, "qglp")' in src, "QGLP tab lost its lens row"
+    assert '_mp_lens_row(_mosl, "mosl")' in src, "MOSL tab lost its lens row"
+    assert '_mp_lens_row(_wl, "w", with_tier=False)' in src, (
+        "Wealth tab's lens row must be with_tier=False — its own Tier selectbox already exists")
+
+
+def test_lens_clear_sets_all_and_never_deletes():
+    """The reset callback must SET each key back to "All" — `del` on an instantiated widget's
+    key lets the frontend resurrect the stale value on the next rerun (the Steel bug class).
+    And the 🧹 button must be CONDITIONAL: rendered only when a filter is active, in a fixed
+    slot (zero furniture idle, zero layout jump)."""
+    src = _app_src()
+    i = src.index("def _mp_clear_lens(")
+    fn = src[i:src.index("def _mp_lens_row(")]
+    assert 'st.session_state[k] = "All"' in fn, "the reset no longer SETS keys to All"
+    assert "del " not in fn, "del in the lens reset — the resurrection class returns"
+    j = src.index("if _n_active:")
+    assert "st.button" in src[j:j + 250] and "_mp_clear_lens" in src[j:j + 250], (
+        "the Clear button is no longer conditional on an active filter")
+
+
+def test_lens_row_seeds_and_stale_guards_every_key():
+    """Widget-state law, both halves: every key seeded BEFORE its selectbox instantiates, and
+    re-seeded to "All" when a remembered value no longer exists in the cohort's options
+    (a keyed selectbox whose state is missing from its options raises)."""
+    src = _app_src()
+    i = src.index("def _mp_lens_row(")
+    fn = src[i:src.index("    # ── Inner navigation tabs")]
+    assert 'st.session_state.setdefault(k, "All") not in _opts_for[k]' in fn
+    assert fn.index("_opts_for[k]") < fn.index("st.selectbox"), "seeding must precede instantiation"
+
+
+def test_mp_catalysts_mirrors_ui_discovery():
+    """One catalyst vocabulary: app.py's _MP_CATALYSTS literal must equal ui_discovery's
+    _CATALYSTS literal (label -> flag column). A drifted copy silently filters on flags the
+    sidebar no longer means."""
+    import ast, io as _io, os
+    root = os.path.join(os.path.dirname(__file__), "..")
+
+    def _dict_literal(path, name):
+        for n in ast.walk(ast.parse(_io.open(path, encoding="utf-8").read())):
+            if (isinstance(n, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)
+                    and isinstance(n.value, ast.Dict)):
+                return {k.value: v.value for k, v in zip(n.value.keys, n.value.values)}
+        return None
+
+    app_map = _dict_literal(os.path.join(root, "app.py"), "_MP_CATALYSTS")
+    disc_map = _dict_literal(os.path.join(root, "ui", "ui_discovery.py"), "_CATALYSTS")
+    assert app_map and disc_map, "one of the catalyst dicts vanished"
+    assert app_map == disc_map, f"catalyst vocabularies drifted: app={app_map} vs discovery={disc_map}"
