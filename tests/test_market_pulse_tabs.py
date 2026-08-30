@@ -8,8 +8,9 @@ Those two stay out, and the renderer checks below are what keep them out.
 🔭 MOSL ADDED 2026-08-27, and this file did its job: the change failed here first and had to be
 justified rather than slipped in. Neither Stage-3 removal reason applies to it —
 
-    not dead      586 stocks clear 2+ of the 10 Wealth Creation lenses; a clean pyramid from
-                  999 at zero down to 1 stock at eight; deepest agreement 8 of 10
+    not dead      527 stocks clear 2+ of the 9 Wealth Creation lenses (QGLP excluded 2026-08-30 —
+                  it owns the neighbouring tab, so this counts what agrees BEYOND the flagship);
+                  a clean pyramid from 1,027 at zero down to 2 stocks at seven
     not brittle   a VIEW over frameworks already implemented and audited, with no new gate and no
                   engine change; exact-token parsed and cross-checked against the authoritative
                   qglp_pass column (both 328)
