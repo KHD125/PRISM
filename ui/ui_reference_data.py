@@ -672,4 +672,61 @@ WCS_STUDIES = [
             "the management test feeds the capital-allocation checks."
         ),
     },
+    {
+        "study": "9th Study", "years": "1999–2004", "pub": "January 2005",
+        "theme": "Back to basics — the era of commodities",
+        "says": (
+            "The commodities study. For the first time, the biggest wealth creators are commodity "
+            "companies (ONGC, Reliance, IOC top the size list), and the study explains why: after "
+            "years of starved capacity, utilisation tightened, prices squeezed upward, and profits "
+            "went exponential. The durable findings restate the series' core laws with fresh "
+            "numbers: ROCE EXPANSION is the number-one wealth driver — 66 of the 100 creators "
+            "increased ROCE, accounting for 75% of the wealth created. Earnings growth above 25% "
+            "drove about two-thirds of the wealth — while two-thirds of the wealth came from "
+            "companies growing SALES below 20%, proving margins and capital productivity, not "
+            "revenue, do the compounding. Small caps were three times faster than large (mean "
+            "speed 63% under ₹2.5 billion versus 28% above ₹10 billion). And the creators entered "
+            "the period at a P/E near 11 versus the Sensex at 27 — the margin-of-safety entry, "
+            "again. Focused companies were 96% of the group. The macro half — the commodity-cycle "
+            "timing call — proved right for the 2003-07 bull run."
+        ),
+        "prism": (
+            "Pure validation of the engine's core: the ROCE-expansion finding is the doctrine "
+            "behind the ROCE-trajectory and Economic Profit signals, the moderate-sales/high-"
+            "earnings result supports scoring earnings quality over revenue growth, and the "
+            "small-cap speed tables feed the size tiers. The cycle-timing half is deliberately "
+            "NOT screened per-stock — sector capital-phase and regime detection carry its spirit."
+        ),
+    },
+    {
+        "study": "10th Study", "years": "2000–2005", "pub": "December 2005",
+        "theme": "Consistent Wealth Creators — the resilient few, bought below median value",
+        "says": (
+            "The anniversary study, and the revenge of the old economy: exactly ONE technology "
+            "company made the creators' list (fad investing at 2000's prices was 'the single "
+            "biggest source of wealth destruction' — Wipro was simultaneously the #1 wealth "
+            "DESTROYER of 2000-05 and a top-3 wealth creator of the full 15 years, bought-price "
+            "being the whole difference). Commodities peaked at 51% of the creators, and the "
+            "study made the contrarian call that technology 'could rule the roost during the "
+            "next five years'. Its famous screen: for a doubler every two years, look for "
+            "P/B below 1, P/E below 10, or P/Sales below 0.5 — the cheapest buckets compounded "
+            "37-44% a year. The heart is the new 15-year lens, THE MOST CONSISTENT: Hero Honda "
+            "and Ranbaxy appeared in all ten studies (40.8% and 34.7% a year with dividends "
+            "reinvested). Nine of the top-10 consistents are consumer-facing, five are pharma, "
+            "ALL are non-cyclical segment leaders with high returns on net worth. Their "
+            "rolling-return record: ~90% odds of positive 5-year returns, 87% odds of beating "
+            "the Sensex — and bought BELOW their own long-term median P/E, the win rate goes to "
+            "nearly 100% with average absolute returns of 45.7%. 'Price is what you pay, value "
+            "is what you get.'"
+        ),
+        "prism": (
+            "The direct ancestor of the Consistents framework (the 27th study turned this "
+            "theme's appearance-count into testable profit criteria the engine implements). The "
+            "doubler screen is the origin of the deep-value formulas the WCS score carries "
+            "(P/E<10, P/B<1 legs verified against the 13th). The buy-below-median-valuation "
+            "entry rule lives on in the valuation-percentile and mean-reversion signals; "
+            "'leaders in non-cyclical businesses with high return on net worth' is the "
+            "cyclicality-tier plus quality-gate combination in one sentence."
+        ),
+    },
 ]
