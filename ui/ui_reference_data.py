@@ -641,4 +641,35 @@ WCS_STUDIES = [
             "verified band tables instead."
         ),
     },
+    {
+        "study": "8th Study", "years": "1998–2003", "pub": "January 2004",
+        "theme": "Transitory vs enduring multibaggers — and when the market breeds them",
+        "says": (
+            "The study that separates the two kinds of multibagger. TRANSITORY ones ride a cycle "
+            "or a fad with questionable management, attract the crowd, and then correct almost "
+            "100% — the 115 stocks that trebled in the 1998–2000 boom mostly destroyed as much "
+            "wealth coming down as they made going up (Pentamedia fell from ₹65 billion to ₹2.5 "
+            "billion). ENDURING ones — Infosys, HDFC Bank, Cipla — are run by quality "
+            "managements, look expensive at purchase, and keep their gains. The recipe is "
+            "Buffett's trinity: a good BUSINESS whose improvement is permanent, not cyclical; "
+            "good MANAGEMENT (judged, via Mauboussin, on leadership, drive, and capital "
+            "allocation — HDFC Bank grew net worth 687% while Global Trust Bank destroyed 99%); "
+            "and an underpriced ENTRY ('overpriced stocks have no chance of becoming "
+            "multibaggers'). Its timing tool: the ratio of the market's EARNINGS YIELD to the "
+            "G-Sec yield — at 0.13 in 1992 (Sensex P/E 70×) only 3 stocks trebled in two years; "
+            "at 1.53 in March 2003 (P/E under 10× with rates at 6%), 734 did. Tweedy Browne's "
+            "value pointers checked out in India too: the cheapest P/B and P/E quartiles beat "
+            "the falling market, the dearest lost most. Commodity share of the creators hit 46% "
+            "— the cyclical wave arriving. 'Market folly contributes enormously to the creation "
+            "of mega multibaggers.'"
+        ),
+        "prism": (
+            "The verified source of the earnings-yield-versus-G-Sec signal (the ratio that "
+            "flagged March 2003 as the multibagger nursery). The transitory-vs-enduring split is "
+            "the doctrine behind the quality gates, cyclicality tiers, and consistency checks — "
+            "why the engine scores durable economics over cyclical bounce. The Tweedy Browne "
+            "quartile evidence validates the low-P/E and low-P/B legs of the value signals, and "
+            "the management test feeds the capital-allocation checks."
+        ),
+    },
 ]
