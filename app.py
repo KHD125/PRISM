@@ -114,6 +114,30 @@ def get_clean_data(data_source, file_signature: str, sheet_id, _uploaded_dict=No
     elapsed = time.time() - t0
     return df, elapsed
 
+@st.cache_data(show_spinner=False, ttl=900)
+def get_data_freshness(data_source: str, sheet_id, file_signature: str):
+    """How old is the loaded data? Read from the sheet's own name.
+
+    The ingestion pipeline renames the sheet to the session its numbers came
+    from ("PRISM 2026-08-28 Fri"), and Google returns that in the export
+    endpoint's Content-Disposition header — so freshness costs one lightweight
+    request, no Drive API and no extra column.
+
+    Cached for 15 minutes: the answer only changes once a day, and Streamlit
+    reruns the script on every widget interaction. file_signature participates
+    in the key so switching sheets re-reads immediately.
+    """
+    from core.sheet_meta import describe
+
+    return describe(extract_spreadsheet_id(sheet_id) if sheet_id else None, data_source)
+
+
+def _freshness_color(tone: str) -> str:
+    """sheet_meta's tone -> this app's palette."""
+    return {"green": COLORS["green"], "gold": COLORS["gold"],
+            "red": COLORS["red"]}.get(tone, COLORS["text_muted"])
+
+
 def get_scored_data(clean_df: pd.DataFrame, analysis_mode: str, scoring_profile: str) -> pd.DataFrame:
     """Tier-2+3: Instant scoring + forensic pass. NOT cached — runs in <0.5s on dropdown change.
 
@@ -320,9 +344,26 @@ qualified = df[df["gate_pass"] == 1]
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════
 with st.sidebar:
+    # Data vintage leads the card: every number below it is only as good as this
+    # date, so it is read first and set apart from the counts by a rule.
+    _fresh = get_data_freshness(st.session_state.data_source, sheet_id, file_sig)
+    _f_clr = _freshness_color(_fresh.tone)
+    _f_note = f"{_fresh.status}" if _fresh.is_known else "date not in the sheet name"
+    _f_tip = (f"Sheet name: {_fresh.title}" if _fresh.title
+              else "Named by the ingestion pipeline on every run")
     st.markdown(f"""
     <div style="background:{COLORS['bg_secondary']}; border:1px solid {COLORS['border']};
                 border-radius:12px; padding:12px 14px; margin:10px 0;">
+        <div title="{_f_tip}" style="display:flex; align-items:baseline; gap:7px;
+                    padding:1px 0 9px 0; margin-bottom:8px;
+                    border-bottom:1px solid {COLORS['border']};">
+            <span style="color:{_f_clr}; font-size:0.6rem; line-height:1;">●</span>
+            <span style="font-size:0.82rem; font-weight:700; color:{COLORS['text_primary']};
+                         letter-spacing:0.01em;">{_fresh.label}</span>
+            <span style="margin-left:auto; font-size:0.66rem; color:{_f_clr};
+                         text-transform:uppercase; letter-spacing:0.05em;
+                         font-weight:600;">{_f_note}</span>
+        </div>
         <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:{COLORS['text_primary']}; padding:3px 0;">
             <span>📊 Universe</span><span style="font-weight:700;">{total}</span>
         </div>
@@ -2342,22 +2383,25 @@ with tabs[4]:
                        f"The 44-input coverage behind the 🔍 confidence badge; the thinnest tenth "
                        f"of the universe sits at {_cov_p10:.0f}% or less.")
 
-    # 4. Snapshot age — the validation series only exists if captures happen (monthly ritual).
-    _snap_dir = os.path.join("Other Resources", "snapshots")
-    _snaps = (sorted(f for f in os.listdir(_snap_dir) if f.endswith(".csv"))
-              if os.path.isdir(_snap_dir) else [])
-    if _snaps:
-        _snap_age = (pd.Timestamp.now()
-                     - pd.Timestamp(os.path.getmtime(os.path.join(_snap_dir, _snaps[-1])), unit="s")).days
-        _snap_clr = (COLORS["green"] if _snap_age <= 35 else
-                     COLORS["gold"] if _snap_age <= 70 else COLORS["red"])
-        _dh += _dh_row(_snap_clr, "Last snapshot", f"{_snap_age} day{'s' if _snap_age != 1 else ''} ago",
-                       "Forward-return validation needs a monthly capture: run tools/snapshot.py "
-                       "on the first trading day of each month.")
+    # 4. Data vintage — every row above is only as current as the sheet itself.
+    #    Read live from the spreadsheet's name, which the ingestion pipeline sets
+    #    to the trading session the numbers came from ("PRISM 2026-08-28 Fri").
+    #    Graded in SESSIONS, not calendar days: Friday's data on a Monday is the
+    #    freshest that exists, and day-counting would call it three days stale.
+    _vin = get_data_freshness(st.session_state.data_source, sheet_id, file_sig)
+    if _vin.is_known:
+        _dh += _dh_row(_freshness_color(_vin.tone), "Data as of",
+                       f"{_vin.label} · {_vin.status}",
+                       f"Taken from the spreadsheet name \"{_vin.title}\". "
+                       f"The pipeline renames the sheet on every run, so this is the "
+                       f"session these numbers actually describe — not when they were loaded."
+                       if _vin.title else
+                       "Most recently written of the six source CSVs.")
     else:
-        _dh += _dh_row(COLORS["red"], "Last snapshot", "none yet",
-                       "No capture in Other Resources/snapshots — every conclusion about whether "
-                       "the engine predicts returns waits on this. Run tools/snapshot.py.")
+        _dh += _dh_row(COLORS["text_muted"], "Data as of", _vin.label,
+                       "No date in the spreadsheet name, so freshness cannot be verified. "
+                       "The ingestion pipeline names the sheet \"PRISM <YYYY-MM-DD> <Day>\"; "
+                       "a hand-renamed sheet loses this check.")
 
     st.markdown(_cfg_card("Source-Sheet Gaps & Validation Cadence — Live", "🩺", _dh, COLORS["cyan"]),
                 unsafe_allow_html=True)

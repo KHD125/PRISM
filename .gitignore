@@ -71,3 +71,4 @@ RS-Stages/
 # only by being a subdirectory, and its contents are renders of the gitignored CSV data.
 Screenshot/
 _scratch_*.py
+stockscans_sync/

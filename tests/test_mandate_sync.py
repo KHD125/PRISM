@@ -83,7 +83,7 @@ def test_data_health_card_computes_live_never_hardcodes():
     assert '"dividend_payout_ratio"' in block and ".notna().mean()" in block
     assert '"current_ratio_1yb"' in block and "==" in block
     assert '"data_coverage_pct"' in block
-    assert 'os.path.isdir(_snap_dir)' in block, "the snapshot row no longer reads the snapshots dir"
+    assert "get_data_freshness(" in block, "the vintage row no longer reads the sheet's own name"
     # no frozen diagnosis: the known figures at build time must NOT appear as literals
     for frozen in ("41%", "58.8", "59%"):
         assert frozen not in block, (
@@ -91,14 +91,18 @@ def test_data_health_card_computes_live_never_hardcodes():
         )
 
 
-def test_data_health_snapshot_row_has_both_states():
-    """'none yet' (red, with the call to action) and the days-ago state must both exist — a card
-    that only renders the happy path goes blank exactly when the nag matters most."""
+def test_data_health_vintage_row_has_both_states():
+    """The vintage row replaced the snapshot nag (2026-08-30). Both states must exist —
+    a dated sheet AND an undated one — because a card that only renders the happy path
+    goes blank exactly when something is wrong. Graded in sessions, never calendar days:
+    Friday's data read on a Monday is current, and day-counting would call it stale."""
     src = _APP.read_text(encoding="utf-8")
     i = src.index("🩺 DATA HEALTH")
     block = src[i:src.index('_cfg_card("Source-Sheet Gaps', i)]
-    assert '"none yet"' in block
-    assert "tools/snapshot.py" in block
+    assert "_vin.is_known" in block, "no fallback for a sheet whose name carries no date"
+    assert '"Data as of"' in block
+    assert "_freshness_color(" in block, "the row must be colour-graded by staleness"
+    assert "snapshot" not in block.lower(), "the retired snapshot nag is back"
 
 
 def test_cr_1yb_copy_premise_still_true():
