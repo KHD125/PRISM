@@ -143,3 +143,42 @@ def test_all_data_export_encodes_through_bom_helper():
         "All Data single-row export must encode via _to_csv_bytes(...) for an Excel-safe UTF-8 BOM "
         "(consistency with the Deep Scanner + sidebar exports); found a different data= expression."
     )
+
+
+# ── 🆕 Results sort (2026-08-30) — freshness as ORDERING, never a gate ─────────────────────────
+def _app_src():
+    return _APP.read_text(encoding="utf-8")
+
+
+def test_results_sort_is_ascending_on_result_age_days():
+    """Freshness ships as a SORT because a filter measurably fails liveness: 'reported <=7d' held
+    47.5% of the universe right after earnings season and ~5% mid-quarter — seasonal noise no gate
+    survives, while an ordering always works. Ascending is load-bearing: negative ages (a result
+    SCHEDULED but not yet declared) must lead, then the freshest reporters; descending would lead
+    with the stalest."""
+    src = _app_src()
+    i = src.index("_DS_SORTS = {")
+    block = src[i:src.index("}", i)]
+    assert '"🆕 Results ↑"'.encode().decode("unicode_escape") in block or "🆕 Results ↑" in block, (
+        "the 🆕 Results sort option vanished from _DS_SORTS")
+    line = next(l for l in block.splitlines() if "result_age_days" in l)
+    assert "True" in line, "🆕 Results must sort ASCENDING (due-soon first, freshest next)"
+
+
+def test_results_sort_materializes_a_readable_column():
+    """Sort-by-visible doctrine: no view carries result_age_days, so the active sort must
+    materialize the readable result_when column ('📅 due 4d' = scheduled/not yet declared vs
+    '8d ago' = reported) and place it beside the name — an ordering the table cannot explain is
+    the rank-jumble that got Discovery's sort pills removed (2026-08-24)."""
+    src = _app_src()
+    i = src.index('ds_sort_label == "🆕 Results ↑"')
+    block = src[i:i + 900]
+    assert "result_when" in block, "the readable result_when column is no longer materialized"
+    for piece in ('"📅 due "', '"today"', '"d ago"'):
+        assert piece in block, f"result_when lost its {piece} state — a negative age would read as reported"
+    assert '_view_cols.insert' in block, "result_when is computed but never inserted into the view"
+    # And it must render with a clean header + a tooltip that explains the due-vs-ago distinction.
+    assert '"result_when": "🆕 Results"' in src
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    assert "not yet declared" in _SCANNER_HEADER_TIPS.get("result_when", ""), (
+        "the result_when tip must explain that 'due' means the result is NOT yet declared")

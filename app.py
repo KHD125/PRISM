@@ -589,6 +589,12 @@ with tabs[1]:
         "Momentum ↓": ("momentum_score",  False),
         "PEG ↑":      ("peg",             True),
         "MCap ↓":     ("market_cap",      False),
+        # 🆕 Results ↑ (2026-08-30): freshness as an ORDERING, deliberately NOT a filter/tier —
+        # measured live, "reported ≤7d" holds 47.5% of the universe right after earnings season
+        # and ~5% mid-quarter (seasonal noise a gate can't survive; a sort always works).
+        # Ascending puts NEGATIVE ages first = results DUE soon (scheduled, not yet declared —
+        # the sheet's days_from_result flipped), then the freshest actual reporters. NaN last.
+        "🆕 Results ↑": ("result_age_days", True),
     }
 
     # ── Control bar ────────────────────────────────────────────────
@@ -656,6 +662,19 @@ with tabs[1]:
     _view_cols = [c for c in _DS_VIEWS.get(ds_view, []) if c in ds_df.columns]
     if not _view_cols:
         _view_cols = [c for c in ["rank", "name", "composite_score"] if c in ds_df.columns]
+    # Sort-by-visible doctrine (2026-08-30): the 🆕 Results sort orders by a column no view
+    # carries, so when it is active, materialize the age as a READABLE text column beside the
+    # name — "📅 due 4d" (scheduled, not yet declared) vs "8d ago" (reported) — an ordering the
+    # table cannot explain is the same rank-jumble that got Discovery's sort pills removed.
+    if ds_sort_label == "🆕 Results ↑" and "result_age_days" in ds_df.columns:
+        _ra = pd.to_numeric(ds_df["result_age_days"], errors="coerce")
+        _days = _ra.abs().round().astype("Int64").astype(str)
+        ds_df = ds_df.assign(result_when=np.select(
+            [_ra < 0, _ra == 0, _ra > 0],
+            ["📅 due " + _days + "d", "today", _days + "d ago"],
+            default=""))
+        _view_cols.insert(_view_cols.index("name") + 1 if "name" in _view_cols else 0,
+                          "result_when")
     _display_df = ds_df[_view_cols].reset_index(drop=True)
 
     # ── Column config ──────────────────────────────────────────────
@@ -712,6 +731,7 @@ with tabs[1]:
         "moat_growth_quad": "Moat·Growth", "smart_money_flow": "Smart Money",
         "buy_zone_label": "Buy Zone",
         "red_flag_list": "Which Flags",
+        "result_when": "🆕 Results",
     }.items():
         if _tc in _display_df.columns:
             _CC[_tc] = st.column_config.TextColumn(_tl, help=_SCANNER_HEADER_TIPS.get(_tc))
