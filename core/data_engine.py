@@ -2552,7 +2552,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         np.nan
     )
     df["payback_ratio"] = pd.Series(payback_growth, index=df.index)
-    df["payback_lt05"] = (df["payback_ratio"].fillna(99) < 0.5).astype(int)  # supernormal tier 1 (Studies 7-9: top-7 fastest ALL had payback < 0.5x)
+    # payback_lt05 tier: the old comment claimed "Studies 7-9: top-7 fastest ALL had payback
+    # < 0.5x" — REFUTED 2026-08-29 by the 7th study's own Appendix II: the top-7 fastest ran
+    # 0.3 / 0.1 / 0.7 / 0.4 / 0.0 / 0.6 / 2.6 — only 4 of 7 below 0.5x (e-Serve, Zee, Sri Vishnu
+    # break it). The <0.5 tier still stands on VERIFIED ground: the 5th's band table (<=1 → 73.1%
+    # mean return, 6 of 10 multi-baggers; SSI's 0.2 → 194.6%) and the 6th's cross-table
+    # (payback<=1 & RoE>35 → 74.2%) justify a supernormal sub-1 tier; <0.5 is the engine's
+    # finer cut of that verified band, not a study statistic.
+    df["payback_lt05"] = (df["payback_ratio"].fillna(99) < 0.5).astype(int)  # supernormal tier 1
     df["payback_lt1"]  = (df["payback_ratio"].fillna(99) < 1.0).astype(int)  # supernormal tier 2
     df["payback_lt2"]  = (df["payback_ratio"].fillna(99) < 2.0).astype(int)  # attractive zone
 

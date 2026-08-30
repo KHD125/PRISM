@@ -610,4 +610,35 @@ WCS_STUDIES = [
             "Earnings Power Box."
         ),
     },
+    {
+        "study": "7th Study", "years": "1997–2002", "pub": "January 2003",
+        "theme": "Interest rates rule everything — India 2002 as America 1981",
+        "says": (
+            "The macro study. Its centrepiece retells Buffett's famous Fortune analysis — the Dow "
+            "at 874 in 1964, 875 in 1981, then 9,181 by 1998, explained almost entirely by "
+            "interest rates tripling and then collapsing, with investors 'habitually guided by "
+            "the rear view mirror' — and argues India in 2002 IS America in 1981: rates falling "
+            "from 14% to 6%, interest the second-largest cost in corporate India (bigger than "
+            "labour), and a 2% rate drop worth ~20% on India Inc's profits. A stock is a "
+            "'disguised bond' whose coupon is retained earnings reinvested at the ROE — which is "
+            "why equities beat bonds over long tenures. The business analysis adds two new "
+            "lenses: a CAPITAL ALLOCATION table (Wipro created ₹19 of market value per rupee of "
+            "capital employed; across four studies, companies that RAISED their ROCE made 56-91% "
+            "of all wealth — 'better capital allocation has been consistently rewarded'), and an "
+            "AGE analysis (most wealth comes from companies under 30 years old). Speed still "
+            "lives in small size: sub-₹250-crore companies compounded at 49% versus 15% for the "
+            "billion-club, and Wipro itself started the period at just ₹573 crore. Commodity "
+            "share hit its highest ever (27%) — even the focused-business rule gets its caveat: "
+            "'total focus may not be a sufficient condition, but is a necessary one'."
+        ),
+        "prism": (
+            "The ROCE-improvement cross-table (55 of 85 raising ROCE made 84% of the wealth) is "
+            "the strongest multi-study formalization of the ROCE-expansion doctrine behind the "
+            "ROCE-trajectory and Economic Profit signals. The capital-allocation lens feeds the "
+            "capital-misallocation and Outsiders-style checks. Its appendix also settled an "
+            "engine citation: the claim that the top-7 fastest all had payback below 0.5× is "
+            "false (only 4 of 7 did) — the payback tiers now rest on the 5th and 6th studies' "
+            "verified band tables instead."
+        ),
+    },
 ]
