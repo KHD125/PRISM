@@ -1283,12 +1283,13 @@ def _render_market_pulse():
         "🔥 Inst Discovery":       "cat_inst_discovery",
     }
 
-    def _mp_clear_lens(keys):
-        """Reset a lens tab's filters by SETTING each key back to "All" — never `del`: deleting
-        an instantiated widget's key lets the frontend resurrect the stale value on the next
-        rerun (the Steel bug class; see ui_discovery.clear_all_filters)."""
-        for k in keys:
-            st.session_state[k] = "All"
+    def _mp_clear_lens(defaults):
+        """Reset controls by SETTING each key to ITS OWN default — never `del`: deleting an
+        instantiated widget's key lets the frontend resurrect the stale value on the next rerun
+        (the Steel bug class; see ui_discovery.clear_all_filters). A MAPPING, not a key list:
+        "All" is not a universal default (the Sectors size dial defaults to 5)."""
+        for k, v in defaults.items():
+            st.session_state[k] = v
 
     def _mp_lens_row(frame, prefix, with_tier=True):
         """The lens-filter row: Sector · [Wealth Tier ·] Market Cap · Catalyst · Clear.
@@ -1339,12 +1340,13 @@ def _render_market_pulse():
             out = out[out["market_category"] == cap]
         if cat != "All" and _MP_CATALYSTS[cat] in out.columns:
             out = out[out[_MP_CATALYSTS[cat]].fillna(0) == 1]
-        _n_active = sum(1 for k in keys if st.session_state.get(k, "All") != "All")
+        _defaults = {k: "All" for k in keys}
+        _n_active = sum(1 for k, d in _defaults.items() if st.session_state.get(k, d) != d)
         with slots[-1]:
             st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
             if _n_active:
                 st.button("🧹 Clear", key=f"mp_{prefix}_clear", use_container_width=True,
-                          on_click=_mp_clear_lens, args=(keys,))
+                          on_click=_mp_clear_lens, args=(_defaults,))
         return out, _n_active
 
     # ── Inner navigation tabs ──────────────────────────────────────
@@ -1689,7 +1691,7 @@ def _render_market_pulse():
         # so it stays correct if that ever stops being true rather than silently part-filtering a
         # sector and skewing its averages.
         _sec_src = df
-        _c1, _c2, _c3, _c4, _c5 = st.columns([2, 2, 2, 2, 2])
+        _c1, _c2, _c3, _c4, _c5, _c6 = st.columns([2, 2, 2, 2, 2, 1])
 
         with _c1:
             if "market_category" in df.columns:
@@ -1759,12 +1761,25 @@ def _render_market_pulse():
             # n=96. Measured 2026-08-27: 8 of the top 10 sectors held fewer than 12 stocks, and
             # raising this to 15 changes the top six COMPLETELY (0 of 6 in common). Default stays 5
             # so nothing moves for anyone who does not touch it.
+            # 1 ADDED 2026-08-30 (user request): shows EVERY sector, even single-stock ones.
+            # index=1 keeps the DEFAULT at 5 — the untouched tab is unchanged (pinned).
             _min_n = st.selectbox(
-                "Min stocks / sector", [5, 10, 15, 20, 30], index=0, key="mp_sec_minn",
+                "Min stocks / sector", [1, 5, 10, 15, 20, 30], index=1, key="mp_sec_minn",
                 help="Hides rows. A sector's % Qualify is only as trustworthy as its sample: at n=7 one "
                      "company moves it 14 points, at n=96 it moves it 1. Raise this to see only sectors "
-                     "big enough for the percentage to mean something.",
+                     "big enough for the percentage to mean something — or drop to 1 to see them all.",
             )
+
+        with _c6:
+            # Default-aware conditional Clear (same grammar as the lens rows): each control resets
+            # to ITS OWN default — "All" for the four filters, 5 for the size dial. Fixed slot,
+            # button only when something differs from default.
+            _SEC_DEFAULTS = {"mp_sec_cap": "All", "mp_sec_wealth": "All", "mp_sec_cyc": "All",
+                             "mp_sec_phase": "All", "mp_sec_minn": 5}
+            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+            if any(st.session_state.get(k, d) != d for k, d in _SEC_DEFAULTS.items()):
+                st.button("🧹 Clear", key="mp_sec_clear", use_container_width=True,
+                          on_click=_mp_clear_lens, args=(_SEC_DEFAULTS,))
 
         _sec_cap_ph.markdown(
             f"<div class='sec-cap'>Every sector with <strong>≥{_min_n} stocks</strong> — "
@@ -1938,7 +1953,7 @@ def _render_market_pulse():
             _ind_src["industry"] = _ind_src["industry"].astype(str).str.strip()
             _ind_src = _ind_src[~_ind_src["industry"].isin(["", "nan", "None"])]
 
-            _i1, _i2, _i3 = st.columns([2, 2, 2])
+            _i1, _i2, _i3, _i4 = st.columns([2, 2, 2, 1])
             with _i1:
                 if "market_category" in _ind_src.columns:
                     from config import MCAP_TIERS
@@ -1981,6 +1996,13 @@ def _render_market_pulse():
                          "no average, Δ or 💹 share changes. Industries that only partly touch "
                          "the sector (the ~ rows) stay under their dominant home.",
                 )
+            with _i4:
+                # Default-aware conditional Clear (same grammar as Sectors + the lens rows).
+                _IND_DEFAULTS = {"mp_ind_cap": "All", "mp_ind_wealth": "All", "mp_ind_sec": "All"}
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                if any(st.session_state.get(k, d) != d for k, d in _IND_DEFAULTS.items()):
+                    st.button("🧹 Clear", key="mp_ind_clear", use_container_width=True,
+                              on_click=_mp_clear_lens, args=(_IND_DEFAULTS,))
 
             if _ind_cap != "All":
                 _ind_src = _ind_src[_ind_src["market_category"] == _ind_cap]

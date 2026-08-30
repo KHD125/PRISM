@@ -440,8 +440,17 @@ def test_no_rowwise_iteration(block):
 
 def test_no_state_mutating_widgets_beyond_selectboxes(block):
     """Market Pulse owns no session state beyond its own widget keys. st.button/slider would
-    write state app.py owns."""
-    for banned in ("st.button(", "st.slider(", "st.number_input("):
+    write state app.py owns. ONE examined exception (2026-08-30, user-requested): the 🧹 Clear
+    button — a default-aware reset that only SETS this tab's own mp_ind_* keys via the shared
+    _mp_clear_lens callback (the app-wide conditional-Clear grammar). Any OTHER button stays
+    banned."""
+    buttons = re.findall(r"st\.button\([^)]*key=\"(\w+)\"", block)
+    assert buttons in ([], ["mp_ind_clear"]), f"unexamined button(s) in the Industry tab: {buttons}"
+    if buttons:
+        i = block.index('key="mp_ind_clear"')
+        assert "_mp_clear_lens" in block[i - 100:i + 200], (
+            "the Industry Clear must wire the shared default-aware reset, nothing else")
+    for banned in ("st.slider(", "st.number_input("):
         assert banned not in block, f"{banned} in the Industry tab"
 
 
@@ -449,9 +458,10 @@ def test_widget_keys_are_unique_to_this_tab(src, block):
     """A key collision with the Sectors tab would make one tab's control silently drive the
     other's — both tabs render on every run."""
     keys = re.findall(r'key="(\w+)"', block)
-    assert sorted(keys) == ["mp_ind_cap", "mp_ind_sec", "mp_ind_wealth"], (
-        f"expected the two RE-AGGREGATING filters (market-cap, wealth tier) plus the sector "
-        f"DRILL-DOWN row filter (added 2026-08-28, examined), found {keys}. The min-stocks dial "
+    assert sorted(keys) == ["mp_ind_cap", "mp_ind_clear", "mp_ind_sec", "mp_ind_wealth"], (
+        f"expected the two RE-AGGREGATING filters (market-cap, wealth tier), the sector "
+        f"DRILL-DOWN row filter (added 2026-08-28, examined), and the 🧹 Clear (added "
+        f"2026-08-30, examined — default-aware reset), found {keys}. The min-stocks dial "
         f"stays retired; any other widget arrived unexamined."
     )
     for k in keys:

@@ -158,7 +158,7 @@ def test_lens_clear_sets_all_and_never_deletes():
     src = _app_src()
     i = src.index("def _mp_clear_lens(")
     fn = src[i:src.index("def _mp_lens_row(")]
-    assert 'st.session_state[k] = "All"' in fn, "the reset no longer SETS keys to All"
+    assert "st.session_state[k] = v" in fn, "the reset no longer SETS keys to their defaults"
     assert "del " not in fn, "del in the lens reset — the resurrection class returns"
     j = src.index("if _n_active:")
     assert "st.button" in src[j:j + 250] and "_mp_clear_lens" in src[j:j + 250], (
@@ -195,3 +195,30 @@ def test_mp_catalysts_mirrors_ui_discovery():
     disc_map = _dict_literal(os.path.join(root, "ui", "ui_discovery.py"), "_CATALYSTS")
     assert app_map and disc_map, "one of the catalyst dicts vanished"
     assert app_map == disc_map, f"catalyst vocabularies drifted: app={app_map} vs discovery={disc_map}"
+
+
+def test_sectors_and_industry_clear_are_default_aware_and_complete():
+    """The Sectors/Industry Clear resets each control to ITS OWN default — "All" is not
+    universal (the size dial defaults to 5; resetting it to "All" would corrupt a numeric
+    selectbox). COMPLETENESS is the contract: every mp_sec_*/mp_ind_* widget key must appear
+    in its defaults map, so a future sixth control cannot ship without declaring its default."""
+    import re
+    src = _app_src()
+    i = src.index("_SEC_DEFAULTS = {")
+    sec_map = src[i:src.index("}", i)]
+    for k in ("mp_sec_cap", "mp_sec_wealth", "mp_sec_cyc", "mp_sec_phase"):
+        assert f'"{k}": "All"' in sec_map, f"{k} missing from _SEC_DEFAULTS"
+    assert '"mp_sec_minn": 5' in sec_map, "the size dial must reset to 5, never 'All'"
+    j = src.index("_IND_DEFAULTS = {")
+    ind_map = src[j:src.index("}", j)]
+    for k in ("mp_ind_cap", "mp_ind_wealth", "mp_ind_sec"):
+        assert f'"{k}": "All"' in ind_map, f"{k} missing from _IND_DEFAULTS"
+    # completeness: no mp_sec_/mp_ind_ WIDGET key exists outside its defaults map (clear buttons excluded)
+    widget_keys = set(re.findall(r'key="(mp_(?:sec|ind)_[a-z_]+)"', src))
+    declared = set(re.findall(r'"(mp_(?:sec|ind)_[a-z_]+)":', sec_map + ind_map))
+    missing = sorted(widget_keys - declared - {"mp_sec_clear", "mp_ind_clear"})
+    assert not missing, f"controls with NO declared reset default: {missing}"
+    # both buttons are conditional + wired to the default-aware reset
+    for anchor in ("_SEC_DEFAULTS.items())", "_IND_DEFAULTS.items())"):
+        k = src.index(anchor)
+        assert "st.button" in src[k:k + 300] and "_mp_clear_lens" in src[k:k + 300]

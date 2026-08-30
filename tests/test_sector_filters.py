@@ -86,8 +86,11 @@ def test_the_size_dial_defaults_to_the_old_hardcoded_floor(src):
     """Anyone who never touches it must see exactly the tab they saw before."""
     i = src.index('key="mp_sec_minn"')
     block = src[i - 400:i + 200]
-    assert "[5, 10, 15, 20, 30]" in block, f"the size options changed: {block[:200]}"
-    assert "index=0" in block, "the default is no longer the first option (5) -- behaviour changed"
+    # 1 ADDED 2026-08-30 (user request: a show-everything floor). The REAL invariant is that the
+    # DEFAULT still resolves to 5 -- anyone who never touches the dial sees the tab unchanged.
+    assert "[1, 5, 10, 15, 20, 30]" in block, f"the size options changed: {block[:200]}"
+    assert "index=1" in block, "the default no longer resolves to 5 -- untouched behaviour changed"
+    assert [1, 5, 10, 15, 20, 30][1] == 5   # the index-1 option IS 5 (self-check of this pin)
 
 
 def test_the_hardcoded_floor_is_gone(src):
@@ -172,7 +175,7 @@ def test_small_sectors_really_do_dominate_the_default_view(live):
 
 
 def test_the_floor_never_admits_a_sector_below_it(live):
-    for n in (5, 10, 15, 20, 30):
+    for n in (1, 5, 10, 15, 20, 30):
         g = _agg(live, n)
         if g.empty:
             continue
