@@ -191,38 +191,3 @@ def test_sectors_tab_still_has_its_own_index(src):
     assert n_tabs >= 5, f"only {n_tabs} tab labels parsed -- the extractor lost its teeth"
     used = {int(x) for x in re.findall(r"_mp_tabs\[(\d)\]", src)}
     assert used == set(range(n_tabs)), f"tab bodies {sorted(used)} do not cover the {n_tabs} tabs declared"
-
-
-# -- QGLP exclusion (2026-08-30, user's call) --------------------------------------------------
-def test_qglp_is_not_one_of_the_mosl_lenses(lenses, src):
-    """QGLP owns the tab immediately to the left, which breaks its four legs out in full.
-    Counting it here made this tab partly restate its neighbour; excluding it turns the number
-    into the complementary question — beyond the flagship, what ELSE independently agrees?
-    Measured at the change: 587 -> 527 stocks at the >=2 bar, top-50 overlap 43/50, and every
-    dropped stock was carried by QGLP plus exactly one other lens. Re-adding it silently would
-    restore the overlap, so the exclusion is pinned WITH its reason in the caption."""
-    assert "QGLP" not in lenses, (
-        "QGLP is back in the MOSL lens list — it has its own tab; this count is meant to measure "
-        "what agrees BEYOND the flagship"
-    )
-    assert "SQGLP Century Stock" in lenses, (
-        "SQGLP Century Stock is a DIFFERENT framework and must stay — dropping it would be an "
-        "over-correction of the QGLP exclusion"
-    )
-    assert "QGLP is not counted here" in src, (
-        "the caption no longer tells the reader the flagship is excluded — a silent omission is "
-        "worse than including it"
-    )
-
-
-def test_mosl_cohort_survives_the_exclusion(live, lenses):
-    """Liveness after the change: the >=2 cohort must stay a real, discriminating slice — not
-    collapse to a handful, not balloon into noise."""
-    tok = _tokens(live)
-    n = tok.map(lambda t: sum(1 for m in lenses if m in t))
-    share = float((n >= 2).mean())
-    assert 0.10 <= share <= 0.45, (
-        f"the >=2 convergence cohort is {share:.1%} of the universe — outside the band that makes "
-        f"the tab meaningful (measured 24.9% when QGLP was excluded)"
-    )
-    assert int(n.max()) >= 5, f"deepest agreement fell to {int(n.max())} — the pyramid collapsed"

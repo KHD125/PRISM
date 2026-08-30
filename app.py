@@ -1531,16 +1531,7 @@ def _render_market_pulse():
         # scoring_engine.run_full_scoring and are never persisted, so frameworks_passed is the only
         # surviving record. Persisting them would be the cleaner data model but it is an engine
         # change, and this is a display feature.
-        # QGLP DELIBERATELY EXCLUDED (2026-08-30, user's call): it is the flagship and it owns the
-        # tab immediately to the left, which shows its four legs broken out. Counting it here made
-        # this tab partly restate its neighbour; excluding it turns the number into the more useful
-        # complementary question — "beyond the flagship, what ELSE independently agrees?".
-        # Measured impact: 587 → 527 stocks at the ≥2 bar (24.9% of the universe, still healthy),
-        # top-50 overlap 43/50 so the ranking holds, deepest agreement 8 → 7 of 9. Every stock the
-        # exclusion drops was carried by QGLP + exactly one other lens. Note the substring hazard
-        # is UNCHANGED by this: "SQGLP Century Stock" stays in the list and exact-token parsing is
-        # still what keeps it from matching a bare "QGLP". Pinned by test_mosl_convergence_tab.
-        _MOSL_LENSES = ["Economic Moat", "Consistent in Volatile", "EP Hockey Stick",
+        _MOSL_LENSES = ["QGLP", "Economic Moat", "Consistent in Volatile", "EP Hockey Stick",
                         "CAP-GAP Compounder", "SQGLP Century Stock", "100x Candidate",
                         "Blue Chip Quality", "MOSL Wealth Creator", "Bruised Blue Chip 29"]
         _tok = df.get("frameworks_passed", pd.Series("", index=df.index)).fillna("").astype(str).map(
@@ -1558,10 +1549,8 @@ def _render_market_pulse():
             f"Creation lenses</b> (studies 16–30) a stock clears at once. Unlike a count across all "
             f"37 frameworks — where gate strictness varies by design and the numbers are not "
             f"comparable — these come from one research programme, so agreement between them means "
-            f"something. Showing stocks that clear <b>2 or more</b>; one lens is not convergence. "
-            f"<b>QGLP is not counted here</b> — the flagship has its own tab (🏛️ QGLP, with its four "
-            f"legs broken out), so this number answers the complementary question: beyond QGLP, what "
-            f"else independently agrees?</div>",
+            f"something. Showing stocks that clear <b>2 or more</b>; one lens is not convergence."
+            f"</div>",
             unsafe_allow_html=True,
         )
         # THE CAVEAT IS IN THE CAPTION, NOT A TOOLTIP. Measured 2026-08-27 with EXACT-TOKEN
@@ -1607,7 +1596,7 @@ def _render_market_pulse():
                     "name":             st.column_config.TextColumn("Stock", width="medium"),
                     "verdict_direction": st.column_config.TextColumn("Soundness", help="The engine's overall SOUND / MIXED / FLAWED gate. Most high-convergence names are FLAWED — the MOSL lenses do not read forensics or entry timing, and the soundness gate does."),
                     "red_flag_count":   st.column_config.NumberColumn("🚩 Flags", format="%.0f", width="small", help="Forensic red flags. The MOSL lenses gate quality/growth/longevity and NOT forensics, so this is the risk check the convergence count itself does not do."),
-                    "mosl_n":           st.column_config.ProgressColumn("MOSL", min_value=0, max_value=len(_MOSL_LENSES), format="%.0f", width="small", help=f"How many of the {len(_MOSL_LENSES)} Wealth Creation lenses this stock clears (QGLP excluded — it has its own tab)."),
+                    "mosl_n":           st.column_config.ProgressColumn("MOSL", min_value=0, max_value=len(_MOSL_LENSES), format="%.0f", width="small", help="How many of the 10 Wealth Creation lenses this stock clears."),
                     "composite_score":  st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f", width="small"),
                     "mosl_hits":        st.column_config.TextColumn("Lenses cleared", width="large"),
                 },
