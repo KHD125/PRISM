@@ -729,4 +729,426 @@ WCS_STUDIES = [
             "cyclicality-tier plus quality-gate combination in one sentence."
         ),
     },
+    {
+        "study": "11th Study", "years": "2001–2006", "pub": "January 2007",
+        "theme": "Terms of Trade — bargaining power you can read off the balance sheet",
+        "says": (
+            "The study defines TERMS OF TRADE as the ratio of a company's debtors to its "
+            "creditors — the lower the better. A business that collects fast from customers "
+            "while paying suppliers slowly is being FINANCED by the people it deals with, and "
+            "that only happens when it holds real bargaining power over both sides. Favourable "
+            "terms of trade are thus a moat you can measure directly from working capital, "
+            "without knowing anything qualitative about the company. The rest of the study "
+            "carries the series' recurring findings forward through a strong bull-market window."
+        ),
+        "prism": (
+            "Implemented directly as the terms-of-trade spread (payable days minus receivable "
+            "days — the days form of the study's debtors/creditors ratio) and the favourable-"
+            "terms flag. This read also settled a provenance question: the Buffett value-"
+            "creation-ratio concept the engine uses is Buffett's own, not from this study — "
+            "the false stamp was corrected."
+        ),
+    },
+    {
+        "study": "12th Study", "years": "2002–2007", "pub": "December 2007",
+        "theme": "The Next Trillion Dollar opportunity — a macro interlude",
+        "says": (
+            "A macro study, published near the top of the 2003-07 bull run: India's GDP was "
+            "approaching its first trillion dollars, and the study argues the NEXT trillion "
+            "would arrive far faster, lifting whole categories of businesses. The wealth-"
+            "creator rankings continue (biggest, fastest, and consistent lists), consumer "
+            "businesses again show the steadiest wealth creation, and the New-vs-Old economy "
+            "classification returns with the old economy now fully rehabilitated. There is no "
+            "new stock-screening framework in this study — its contribution is the trillion-"
+            "dollar macro thesis that later studies (the 14th's Winner Categories, the 30th's "
+            "Multi-Trillion tipping points) build into screenable form."
+        ),
+        "prism": (
+            "Substrate only — no framework to implement. Its main engine relevance is negative: "
+            "a compounder flag's claimed 12th-study origin was checked against the full text "
+            "and found fabricated (the study says nothing about reinvestment rates), so the "
+            "attribution was corrected while the logic — a sound quantitative construct — "
+            "stayed."
+        ),
+    },
+    {
+        "study": "13th Study", "years": "2003–2008", "pub": "December 2008",
+        "theme": "The Great, the Good and the Gruesome",
+        "says": (
+            "Raamdeo's adaptation of Buffett's 2007 letter, with exact numbers. GREAT "
+            "businesses earn a 10-year average adjusted ROE above 25%, never dip below 15% in "
+            "ANY year, and show a rising trend — high-return, low-capital-need 'perpetual "
+            "bonds'. GRUESOME businesses average below 10% — capital-hungry value destroyers "
+            "(airlines are Buffett's example). Everything between is merely GOOD. The adjusted "
+            "ROE strips excess cash from both profit and net worth so the operating business "
+            "is judged alone. The study also carries the 'sure shot' deep-value formulas — "
+            "P/E below 10, P/B below 1, P/S at most 1, payback at most 1 — the bear-market "
+            "shopping list, published in the depths of the 2008 crash."
+        ),
+        "prism": (
+            "Implemented twice: a book-faithful Great/Gruesome screen using the study's exact "
+            "ROE thresholds, and the Corporate Class taxonomy that drives a 50% score haircut "
+            "for Gruesome and a boost for Great — the latter deliberately uses ROCE with "
+            "reasoned thresholds, a documented deviation. The sure-shot formulas are the WCS "
+            "deep-value score. The 25%-Great bar was tightened to the book's own number after "
+            "this study's audit."
+        ),
+    },
+    {
+        "study": "14th Study", "years": "2004–2009", "pub": "December 2009",
+        "theme": "Winner Categories, Category Winners — the three-layer funnel",
+        "says": (
+            "The trillion-dollar thesis made screenable. Layer one: find WINNER CATEGORIES — "
+            "businesses expected to grow 18%+ a year, at least 1.5 times faster than nominal "
+            "GDP, with scalability. Layer two: within them, find CATEGORY WINNERS — companies "
+            "with entry barriers and great management, leading their category. Layer three: "
+            "a winning INVESTMENT adds reasonable valuation on top. A great company in a slow "
+            "category compounds slowly; a mediocre company in a fast category gets competed "
+            "away; the money is made where category growth and company leadership meet — "
+            "bought sensibly."
+        ),
+        "prism": (
+            "Implemented as the category-winner flag (top-tier ROCE within the sector plus "
+            "sustained revenue growth — the leadership proxy), the winner-category flag "
+            "(sector revenue growth at least 1.5× the universe median, the study's own "
+            "GDP-multiple rule made regime-robust), and their intersection — the rare 'winning "
+            "investment' cell that fires on about 4-5% of the universe."
+        ),
+    },
+    {
+        "study": "15th Study", "years": "2005–2010", "pub": "December 2010",
+        "theme": "UU Investing — profiting from the Unknown and Unknowable",
+        "says": (
+            "Built on Richard Zeckhauser's idea that the biggest returns live where outcomes "
+            "are not just risky but UNKNOWABLE — and most investors won't go. The study's "
+            "answer to pricing the unknowable is the payback ratio: market value divided by "
+            "the next five years' profits. Its band table is a monotonic ladder — payback "
+            "under 0.5 returned 61% a year, 0.5-to-1 returned 36%, 1-to-1.5 returned 23% — "
+            "'the most reliable valuation indicator of fastest wealth creation'. A low "
+            "payback means the price already returns itself in five years of earnings, so "
+            "the unknowable future comes nearly free."
+        ),
+        "prism": (
+            "The payback-ratio family implements this study's exact formula (market cap over "
+            "five years of growth-projected profits), with the tier flags grounded in its "
+            "verified band ladder. The UU setup flag combines the study's ingredients — small "
+            "size, sub-1 payback, and an ROE turnaround — into one screen for the "
+            "unknowable-but-cheap cell."
+        ),
+    },
+    {
+        "study": "16th Study", "years": "2006–2011", "pub": "December 2011",
+        "theme": "Blue Chip investing — dividends as the quality and timing signal",
+        "says": (
+            "The dividend study, built on Geraldine Weiss's six-screen filter: twenty years of "
+            "uninterrupted dividends; dividends raised in at least five of twelve years; "
+            "earnings growth in at least seven of twelve; 12-year average ROE of 15%+; at "
+            "least five million shares outstanding; and wide institutional ownership. Only 48 "
+            "companies — 1.5% of the market — passed. For WHEN to buy a blue chip, the study's "
+            "tool is the RELATIVE dividend yield: buy when the stock's yield is high against "
+            "its own history and against bonds, not merely when the P/E looks acceptable."
+        ),
+        "prism": (
+            "Implemented as the blue-chip quality flag covering five of Weiss's six screens "
+            "(the institutional-investor COUNT is not in the data — a documented omission) "
+            "plus the synthetic dividend-yield buy signal. The whole framework is dividend-"
+            "fed, which is why it stayed dark until the payout-ratio column was fixed at the "
+            "source — it self-revived to 90 passers the day the data healed."
+        ),
+    },
+    {
+        "study": "17th Study", "years": "2007–2012", "pub": "December 2012",
+        "theme": "Economic Moat — the fountainhead of wealth creation",
+        "says": (
+            "The moat study, with a testable definition: a company enjoys an ECONOMIC MOAT if "
+            "its ROE beat its sector average in at least six of eight years. Tracked forward "
+            "for a decade, the moat companies compounded 25% a year against 12% for the "
+            "moatless and 18% for the Sensex — and only 16% of them ever lost the moat. A "
+            "moat extends the Competitive Advantage Period: the longer a business earns above "
+            "its cost of capital before competition arrives, the more each rupee of current "
+            "profit is worth. Buffett's castle-and-moat image, finally with numbers attached."
+        ),
+        "prism": (
+            "Implemented as the Economic Moat Company flag — beating the sector average ROE "
+            "across at least four of five available time windows, a faithful proxy for the "
+            "study's six-of-eight-years persistence (with the study's own rule that peerless "
+            "companies qualify on high absolute ROE). Feeds the Wide Moat framework and the "
+            "moat axis throughout the app."
+        ),
+    },
+    {
+        "study": "18th Study", "years": "2008–2013", "pub": "December 2013",
+        "theme": "Uncommon Profits — the emergence and endurance of Value Creators",
+        "says": (
+            "A VALUE CREATOR is a company whose ROE consistently exceeds the cost of equity — "
+            "which the study puts at about 15% for India. Its two lenses: EMERGENCE, the "
+            "moment a young company first crosses into the value-creation zone (ROE reaching "
+            "15%+ for the first time), and ENDURANCE, staying there. The study's warning is "
+            "about 'pre-empting emergence' — buying before the crossing actually happens is "
+            "how hope substitutes for evidence. Emergence is powered by strong corporate "
+            "parentage and non-cyclical businesses; the returns to catching a genuine "
+            "emergence early are outsized."
+        ),
+        "prism": (
+            "Implemented as the emerging-value-creator flag: current ROE at or above 15% while "
+            "the five-year median sits below it — the first-time crossing, exactly as defined, "
+            "deliberately WAITING for the actual crossing per the study's own pitfall warning. "
+            "The 15% hurdle here is the study's own number, distinct from the 12% cost of "
+            "equity used system-wide."
+        ),
+    },
+    {
+        "study": "19th Study", "years": "2009–2014", "pub": "December 2014",
+        "theme": "100x — the power of growth, and the birth of SQGLP",
+        "says": (
+            "The flagship. Inspired by Thomas Phelps' '100 to 1 in the Stock Market', it asks "
+            "what turns a stock into a hundred-bagger and answers with SQGLP: S — Size, small "
+            "and unknown; Q — Quality of business AND management (integrity, competence, "
+            "growth mindset); G — Growth in earnings, driven by volume, price and margin; "
+            "L — Longevity of both the quality and the growth; P — a favourable Price with "
+            "re-rating room. The essential attitude is Phelps' 'vision, courage and patience': "
+            "buy right and hold on. Value migration — profit pools shifting from old "
+            "structures to new ones — is called the most predictable source of 100x returns."
+        ),
+        "prism": (
+            "Implemented as the SQGLP score (numeric proxies for all five pillars), the "
+            "Century Stock flag (4+ of 5 pillars), the SQGLP engine bonus, and the 100x "
+            "candidate screen. This study's audit also corrected a wrong-study attribution: "
+            "a secondary 100x screen citing the 17th actually belongs here, and its numeric "
+            "gates are engine constructions, now labeled as such."
+        ),
+    },
+    {
+        "study": "20th Study", "years": "2010–2015", "pub": "December 2015",
+        "theme": "Mid-to-Mega — the MQGLP journey up the market-cap ranks",
+        "says": (
+            "SQGLP for the middle of the market. Companies are ranked by size: MEGA is the "
+            "top 100, MID is ranks 101-300, MINI is the rest. The study hunts the MID-to-MEGA "
+            "transition — a rank-101-300 company crossing into the top 100 within about five "
+            "years. Its backtest: such journeys delivered a median 46% annual return, from "
+            "companies with portfolio ROE around 20%, bought at P/Es of 15-23 — and the odds "
+            "of the crossing are only 5-12%, which is why the payoff is rich. Munger's "
+            "'lollapalooza' — multiple forces compounding together — is the mechanism."
+        ),
+        "prism": (
+            "Implemented as the mid-to-mega candidate flag using ACTUAL market-cap ranks "
+            "101-300 (an earlier absolute-rupee band proxy was measurably wrong — only 1 of "
+            "34 candidates was truly Mid — and was fixed to the study's own rank definition), "
+            "plus the value-migration flag for within-sector share capture."
+        ),
+    },
+    {
+        "study": "21st Study", "years": "2011–2016", "pub": "December 2016",
+        "theme": "Focused investing — the power of allocation",
+        "says": (
+            "The study about HOW MUCH to buy, not what. Diversification protects capital but "
+            "dilutes conviction; wealth is created by concentrated portfolios of 15-20 stocks "
+            "where superior selection meets rational allocation. Kelly's formula gives the "
+            "three insights: seek asymmetric payoffs, create a genuine edge before betting, "
+            "and when you have both — bet big. The four keys are a clear goal, superior "
+            "stock selection, rational allocation, and active monitoring. Small positions in "
+            "great ideas are how good analysis produces mediocre results."
+        ),
+        "prism": (
+            "Implemented as the Kelly-Minervini sizing module behind the SEPA Risk & "
+            "Allocation cockpit: quarter-Kelly fractional sizing capped by the 1%-stop-risk "
+            "rule, computing an executable capital weight and rupee deployment per stock. "
+            "The study's 'bet big on asymmetry' is exactly why sizing scales with edge "
+            "rather than being equal-weighted."
+        ),
+    },
+    {
+        "study": "22nd Study", "years": "2012–2017", "pub": "December 2017",
+        "theme": "CAP & GAP — the power of longevity",
+        "says": (
+            "Two clocks govern a compounder. CAP — the Competitive Advantage Period — is how "
+            "long a company keeps earning returns above its cost of capital. GAP — the Growth "
+            "Advantage Period — is how long it keeps growing profits faster than the "
+            "benchmark (the study draws the line at 15%). The finding: you need BOTH — 'moat "
+            "without growth underperforms; growth without moat ends soon' — and companies "
+            "holding both for long are FEW. Longevity and speed are inversely related, and "
+            "the three traits of the long-lived are a clear strategy, a high-growth mindset, "
+            "and a high-growth industry. Its Moat-Growth Matrix names the four cells: True "
+            "Wealth Creators, Growth Traps, Quality Traps, Wealth Destroyers."
+        ),
+        "prism": (
+            "Implemented as the CAP and GAP extended flags (returns above the hurdle across "
+            "all windows; profit growth above 15% across all windows), the 0-4 CAP-GAP "
+            "score, the longevity framework pill, and the Moat×Growth quadrant label the "
+            "app shows everywhere — the study's own four names, verbatim."
+        ),
+    },
+    {
+        "study": "23rd Study", "years": "2013–2018", "pub": "November 2018",
+        "theme": "Valuation insights — what works, what doesn't",
+        "says": (
+            "The study that proves ALL GROWTH IS NOT GOOD. Intrinsic value is driven by ROE "
+            "and earnings growth together — but value is created only when ROE exceeds the "
+            "cost of equity. Below that line, growth actively DESTROYS value, because every "
+            "rupee of expansion must be funded at returns worse than what shareholders could "
+            "earn elsewhere: the study's own table shows a 10%-ROE company growing at 40% "
+            "producing deeply negative value. So low-ROE companies should fix ROE before "
+            "chasing growth, and high-ROE companies should chase growth hard. On price, "
+            "PEG below 1 is called near-infallible."
+        ),
+        "prism": (
+            "Implemented as the growth-value trap: growth at 15%+ while ROE sits below the "
+            "12% cost of equity draws a direct composite penalty — the exact profile the "
+            "study's table shows destroying value. The audit found this study's engine "
+            "implementation completely clean: thresholds, worked example, and citations all "
+            "verified exact."
+        ),
+    },
+    {
+        "study": "24th Study", "years": "2014–2019", "pub": "December 2019",
+        "theme": "Management integrity — understanding sharp practices",
+        "says": (
+            "The forensic study. Phil Fisher's weighting — management is 90% of the "
+            "investment case — meets Thomas Phelps' rule: run at the FIRST hint of sharp "
+            "practice. The core mechanism of manipulation is 'Credit P&L, Debit Balance "
+            "Sheet': inflate reported profits while stuffing the resulting financial trash "
+            "into balance-sheet corners. There is only one way to write honest accounts and "
+            "infinite ways to manipulate them, so the cash flow statement — much harder to "
+            "fake than the P&L — is the honest witness. Warning markers include related-party "
+            "deals, unchecked alpha leaders, accounting-policy changes, and compromised "
+            "auditors."
+        ),
+        "prism": (
+            "The doctrine behind the forensic layer: the accrual red flags (profit not backed "
+            "by cash), the CFO-to-profit checks, and the Schilit-style perimeter all screen "
+            "for exactly the credit-P&L-debit-balance-sheet pattern. The SQGLP quality "
+            "pillar's integrity gate (a red-flag ceiling) draws directly on this study."
+        ),
+    },
+    {
+        "study": "25th Study", "years": "2015–2020", "pub": "December 2020",
+        "theme": "The QGLP checklist — 25 questions, 25 years",
+        "says": (
+            "The silver-jubilee study distils everything into the master framework: QGLP. "
+            "Quality of business times quality of management; Growth in earnings; Longevity "
+            "of both; and a reasonable Price. The 25-question checklist walks the full "
+            "diligence: is the business profitable, with favourable terms of trade and "
+            "healthy margins? Does the DuPont decomposition show real return quality? Is "
+            "there a moat, and will growth happen within it? Is management able, honest, "
+            "with skin in the game and sensible capital allocation? Is the price backed by "
+            "margin of safety and liquidity? QGL tells you WHAT to buy; P tells you WHETHER "
+            "to buy it now."
+        ),
+        "prism": (
+            "The QGLP framework implements the checklist's quantifiable core: Q from "
+            "ROCE-rank plus promoter conduct, G from profit and EPS growth, L from ten-year "
+            "ROE persistence, P from the PEG zone — with hard gates on each. Nearly every "
+            "checklist question that data can answer maps to a live engine signal, from "
+            "DuPont attribution to the red-flag risk ceiling; the purely qualitative "
+            "questions (culture, succession) are the documented residue."
+        ),
+    },
+    {
+        "study": "26th Study", "years": "2016–2021", "pub": "December 2021",
+        "theme": "Atoms to Bits — wealth creation in the digital era",
+        "says": (
+            "Value migrates from ATOMS — physical, capital-heavy businesses that scale "
+            "linearly with plants and inventory — to BITS: asset-light, zero-marginal-cost, "
+            "network-effect businesses that scale without capital. The accounting twist: "
+            "current rules UNDERSTATE Bits profitability, because customer acquisition and "
+            "product development are expensed immediately — producing 'optical losses' at "
+            "genuinely valuable companies. So P/E misleads for Bits, and the study's "
+            "signature tool is PSG — Price-to-Sales relative to growth — used peer-relative "
+            "rather than against any fixed cutoff."
+        ),
+        "prism": (
+            "Implemented as the Atoms/Bits/Hybrid business-design label (a full sector "
+            "mapping shown through the app) and the PSG ratio surfaced beside it on the "
+            "tear-sheet — kept as a raw peer-relative number, deliberately without a "
+            "threshold, because the study itself sets none."
+        ),
+    },
+    {
+        "study": "27th Study", "years": "2017–2022", "pub": "December 2022",
+        "theme": "Consistents and Volatiles — execution is non-negotiable",
+        "says": (
+            "Only two kinds of company matter: CONSISTENTS, the source of outperformance, "
+            "and VOLATILES, the source of underperformance. A Consistent passes three exact "
+            "tests over fifteen years: annual profit never falls more than 10% more than "
+            "three times; NO single fall greater than 50%; and the final year's profit is "
+            "not below the starting year's. That is the whole definition — no growth "
+            "requirement, no valuation clause — because steady execution, compounded, beats "
+            "brilliance interrupted. The buying rule that completes it: purchase Consistents "
+            "below their median valuations."
+        ),
+        "prism": (
+            "Implemented as the consistency champion flag with the study's three criteria "
+            "proportionally scaled to the available five-year window, plus the volatile "
+            "flag as its near-inverse. A substrate audit later hardened it with the "
+            "'unverifiable is not passed' rule — a profit-to-loss collapse now counts as "
+            "the greater-than-50% fall it is, instead of being skipped."
+        ),
+    },
+    {
+        "study": "28th Study", "years": "2018–2023", "pub": "December 2023",
+        "theme": "Hockey-stick returns — the power of Economic Profit",
+        "says": (
+            "Accounting profit lies about value; ECONOMIC PROFIT — net worth times the gap "
+            "between ROE and the cost of equity — tells the truth. Rank all companies by EP "
+            "and you get the Power Curve: a few giants earn most of the economy's economic "
+            "profit while the bottom quintiles destroy it. The money is made by companies "
+            "MOVING UP the curve — quintile-3-to-2 and 2-to-1 journeys delivered 25-26% "
+            "annual returns — and most upmoves start from the middle quintiles, not the "
+            "bottom. What drives a move is TEM: the industry Trend, the company's Endowment, "
+            "and its own Moves. Adding P — the entry price (median hockey-stick entry P/E "
+            "was just 12) — completes the return recipe."
+        ),
+        "prism": (
+            "Implemented end to end: the Economic Profit family on a consistent reserves "
+            "basis, EP quintiles, the top-quintile quality bonus, the Hockey Stick pill "
+            "(with the study's own P gate — calibrated to its 10.8% base rate), and the "
+            "Approaching stage for negative-EP companies climbing with confirmation. This "
+            "study's audits were the program's hardest teachers: a sign-flip on negative "
+            "equity, sentinel fills, and a mixed cross-year basis were all found here and "
+            "became standing engine-wide rules."
+        ),
+    },
+    {
+        "study": "29th Study", "years": "2019–2024", "pub": "December 2024",
+        "theme": "Bruised Blue Chips — quality, fallen, bought near the lows",
+        "says": (
+            "Blue chips are aspirational but usually rich. The opportunity is the BRUISED "
+            "blue chip: a proven-quality company — at least ten years of track record, and "
+            "either top-50 size or top-250 with a decade of 20%+ ROE — that has fallen more "
+            "than 50% from its five-year high. The process is patient: keep a watchlist, "
+            "wait for genuine triggers (a sector tailwind, a change of management), and buy "
+            "only near book value — typically below 2× price-to-book. Quality bought broken "
+            "offers handsome returns with low risk of permanent loss, because the "
+            "franchise usually survives what the stock price did not."
+        ),
+        "prism": (
+            "Implemented with the study's verbatim criteria: the blue-chip definition (top-50 "
+            "or top-250 with ten-year ROE ≥20%), a bruised proxy from the 52-week-high "
+            "distance, and the P/B<2 entry gate. It fires on almost nothing near market "
+            "highs — verified as correct rarity, not a bug — and is built to activate in "
+            "drawdowns, exactly as a contrarian watchlist should."
+        ),
+    },
+    {
+        "study": "30th Study", "years": "2020–2025", "pub": "December 2025",
+        "theme": "The Multi-Trillion Dollar opportunity — sectors at the tipping point",
+        "says": (
+            "India's GDP quadrupled to four trillion dollars in seventeen years and can "
+            "quadruple again. The key: India's per-capita income (~$2,650) sits exactly where "
+            "China's was in 2007 — the point where discretionary consumption and financial "
+            "penetration go EXPONENTIAL on the S-curve rather than linear. The tipping-point "
+            "sectors are Financials (including the capital-markets ecosystem) and consumer "
+            "discretionary — autos, durables, retail, healthcare. Large caps are favoured "
+            "for the medium term. The 29 multi-trillion-dollar compounders it names are "
+            "leaders positioned on those curves."
+        ),
+        "prism": (
+            "Implemented as the sector-tailwind flag (the study's sector set, with the "
+            "pattern fixed against the real data after generic tokens silently excluded BSE "
+            "— the fastest wealth creator — from its own headline sector) and the Multi-"
+            "Trillion tipping-point flag, which narrows to the specific sectors AND requires "
+            "live inflection evidence: volume surge, earnings momentum, or a near-breakout "
+            "price."
+        ),
+    },
 ]
