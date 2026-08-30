@@ -222,3 +222,41 @@ def test_sectors_and_industry_clear_are_default_aware_and_complete():
     for anchor in ("_SEC_DEFAULTS.items())", "_IND_DEFAULTS.items())"):
         k = src.index(anchor)
         assert "st.button" in src[k:k + 300] and "_mp_clear_lens" in src[k:k + 300]
+
+
+# ── Column-header vocabulary (2026-08-30 final-build pass) ───────────────────────────────────
+def _configured_headers():
+    """Every ("column", "Header") pair from a st.column_config.*("Header"...) call in app.py."""
+    import re
+    src = _app_src()
+    pat = re.compile(r'"(?P<col>[a-z_0-9]+)":\s*st\.column_config\.\w+\(\s*"(?P<label>[^"]*)"')
+    out = {}
+    for m in pat.finditer(src):
+        out.setdefault(m.group("col"), set()).add(m.group("label"))
+    return out
+
+
+def test_no_dataframe_header_is_a_raw_column_name():
+    """Shipped UI must never show the dataframe's own snake_case column name. The Tsunami tab
+    displayed "name", "sector", "smart_money_flow", "market_category" and "buy_zone_label" raw,
+    and three tabs headed the stock column "name" while the Deep Scanner called it "Stock"."""
+    bad = sorted(f"{c} -> {l!r}" for c, labels in _configured_headers().items()
+                 for l in labels if l == c or (l.islower() and "_" in l))
+    assert not bad, "raw column names used as display headers: " + " | ".join(bad)
+
+
+def test_one_column_has_exactly_one_header_everywhere():
+    """THE CONSISTENCY PIN. The same column must carry the same name in every table it appears
+    in. red_flag_count once had THREE names across the app ("🚩" in Wealth, "🚩 Flags" in
+    QGLP/MOSL, "Red Flags" in the Deep Scanner) — a reader cannot learn a vocabulary that
+    changes per tab."""
+    clashes = {c: sorted(l) for c, l in _configured_headers().items() if len(l) > 1}
+    assert not clashes, f"columns headed differently in different tabs: {clashes}"
+
+
+def test_the_header_scan_has_teeth():
+    """Guard against the scan silently matching nothing (a vacuous pass — the failure mode that
+    bit the framework-pairing pin earlier the same day)."""
+    h = _configured_headers()
+    assert len(h) >= 20, f"header scan found only {len(h)} configured columns — the regex broke"
+    assert h.get("name") == {"Stock"}, f"the stock column is not uniformly 'Stock': {h.get('name')}"
