@@ -2486,7 +2486,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             _d48_known & (df["dist_52wh"] < 20),
             _d48_known,
         ],
-        ["IMMINENT", "NEAR", "FAR"],
+        # Emoji on the ACTIONABLE state only (2026-08-30, Deep Scanner surfacing): 🎯 marks the
+        # 11% worth acting on; NEAR/FAR stay plain so the rare glyph pops in a 20-row scan.
+        ["🎯 IMMINENT", "NEAR", "FAR"],
         default=""
     )
 
@@ -2501,7 +2503,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
                        & (df.get("adx_14w", pd.Series(np.nan, index=df.index)).fillna(0) > 20),
             _rsi_known,
         ],
-        ["OVERHEATED", "HIGH", "WEAK"],
+        # 🔥 (chase risk) and ⚡ (healthy momentum) glyph the two states a scanner acts on;
+        # WEAK stays plain (2026-08-30, Deep Scanner surfacing — same rare-glyph rule as D48).
+        ["🔥 OVERHEATED", "⚡ HIGH", "WEAK"],
         default=""
     )
 

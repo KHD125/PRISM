@@ -182,3 +182,41 @@ def test_results_sort_materializes_a_readable_column():
     from ui.ui_scanner import _SCANNER_HEADER_TIPS
     assert "not yet declared" in _SCANNER_HEADER_TIPS.get("result_when", ""), (
         "the result_when tip must explain that 'due' means the result is NOT yet declared")
+
+
+# ── D48/D49 surfaced in the Technical view (2026-08-30) ──────────────────────────────────────
+def test_technical_view_pairs_each_verdict_with_its_number():
+    """Breakout Readiness and Momentum Quality were computed, Reference-documented, and shown
+    NOWHERE (measured live: 🎯 IMMINENT 11.4%, 🔥 OVERHEATED 6.9% — a warning nothing displayed).
+    The design contract: each categorical VERDICT sits directly AFTER the number it interprets —
+    d49 after momentum_score, d48 after breakout_score — so 82 and 🎯 IMMINENT land in one glance.
+    Order is the UX; a reshuffle that keeps both columns but breaks adjacency fails here."""
+    src = _app_src()
+    i = src.index('"📈 Technical"')
+    import ast
+    view = ast.literal_eval(src[src.index("[", i):src.index("]", i) + 1])
+    for verdict, number in [("d49_momentum_quality", "momentum_score"),
+                            ("d48_breakout_readiness", "breakout_score")]:
+        assert verdict in view, f"{verdict} vanished from the Technical view — the orphan returns"
+        assert view.index(verdict) == view.index(number) + 1, (
+            f"{verdict} must sit directly after {number} (verdict-beside-its-number)")
+    # Clean headers + tooltips: both render as TextColumns with scanner tips.
+    assert '"d48_breakout_readiness": "Readiness"' in src
+    assert '"d49_momentum_quality": "Mom. Quality"' in src
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    for col in ("d48_breakout_readiness", "d49_momentum_quality"):
+        assert len(_SCANNER_HEADER_TIPS.get(col, "")) >= 60, f"{col} header tooltip missing/thin"
+
+
+def test_d48_d49_actionable_states_carry_their_glyphs():
+    """The rare-glyph rule: emoji ONLY on the states a scanner acts on (🎯 IMMINENT, 🔥 OVERHEATED,
+    ⚡ HIGH — 7-25%% each), plain text on the common rest — so the glyphs stay signals, not static.
+    Engine labels and Reference entries must agree exactly."""
+    import io as _io, os
+    eng = _io.open(os.path.join(os.path.dirname(__file__), "..", "core", "data_engine.py"),
+                   encoding="utf-8").read()
+    assert '["🎯 IMMINENT", "NEAR", "FAR"]' in eng
+    assert '["🔥 OVERHEATED", "⚡ HIGH", "WEAK"]' in eng
+    from ui.ui_reference_data import CONCEPT_REFERENCE
+    assert [l for l, _ in CONCEPT_REFERENCE["🎯 Breakout Readiness"]] == ["🎯 IMMINENT", "NEAR", "FAR"]
+    assert [l for l, _ in CONCEPT_REFERENCE["⚡ Momentum Quality"]] == ["🔥 OVERHEATED", "⚡ HIGH", "WEAK"]

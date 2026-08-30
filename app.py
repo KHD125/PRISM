@@ -592,8 +592,12 @@ with tabs[1]:
         "🔬 Forensic":  ["name","red_flag_count","red_flag_list","piotroski_fscore","forensic_score",
                          "forensic_multiplier","cfo_to_pat","accruals_ratio","debt_to_equity",
                          "promoter_holdings","pledged_percentage"],
-        "📈 Technical": ["name","close_price","dist_to_vstop","momentum_score","rsi_14d","dist_52wh",
-                         "crs_52w","weinstein_stage","breakout_score","smart_money_flow","tsunami_signal","vstop_green"],
+        # Technical view: each categorical VERDICT sits directly AFTER the number it interprets
+        # (2026-08-30 surfacing — d49 reads momentum/RSI, d48 reads breakout_score's distance
+        # inputs), so the table teaches itself: 82 and 🎯 IMMINENT land in the same glance.
+        "📈 Technical": ["name","close_price","dist_to_vstop","momentum_score","d49_momentum_quality",
+                         "rsi_14d","dist_52wh","breakout_score","d48_breakout_readiness",
+                         "crs_52w","weinstein_stage","smart_money_flow","tsunami_signal","vstop_green"],
     }
     _DS_SORTS = {
         "Score ↓":    ("composite_score", False),
@@ -744,6 +748,8 @@ with tabs[1]:
         "buy_zone_label": "Buy Zone",
         "red_flag_list": "Which Flags",
         "result_when": "🆕 Results",
+        "d48_breakout_readiness": "Readiness",
+        "d49_momentum_quality": "Mom. Quality",
     }.items():
         if _tc in _display_df.columns:
             _CC[_tc] = st.column_config.TextColumn(_tl, help=_SCANNER_HEADER_TIPS.get(_tc))

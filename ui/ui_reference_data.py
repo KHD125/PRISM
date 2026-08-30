@@ -198,14 +198,14 @@ CONCEPT_REFERENCE = {
     ],
     # ── d48_breakout_readiness — core/data_engine.py:2280 (distance to 52w/13w high)
     "🎯 Breakout Readiness": [
-        ("IMMINENT", "Within 10% of the 52-week high AND within 5% of the 13-week high — a breakout looks imminent."),
+        ("🎯 IMMINENT", "Within 10% of the 52-week high AND within 5% of the 13-week high — a breakout looks imminent."),
         ("NEAR", "Within 20% of the 52-week high — approaching breakout territory."),
         ("FAR", "More than 20% below the 52-week high — not near a breakout."),
     ],
     # ── d49_momentum_quality — core/data_engine.py:2289 (RSI + ADX)
     "⚡ Momentum Quality": [
-        ("OVERHEATED", "RSI above 70 — momentum is strong but overbought; pullback risk is elevated."),
-        ("HIGH", "RSI in the healthy 50–70 zone with a strong trend (ADX > 20) — high-quality momentum."),
+        ("🔥 OVERHEATED", "RSI above 70 — momentum is strong but overbought; pullback risk is elevated."),
+        ("⚡ HIGH", "RSI in the healthy 50–70 zone with a strong trend (ADX > 20) — high-quality momentum."),
         ("WEAK", "Momentum is weak — neither overbought nor in a confirmed strong trend."),
     ],
     # ── verdict coverage confidence — core/verdict_engine.py:92 (evidence coverage %)
