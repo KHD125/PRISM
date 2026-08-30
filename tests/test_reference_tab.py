@@ -150,3 +150,137 @@ def test_reference_two_mode_layout():
 
     # The inner-tab variable must NOT be _mp_tabs (would confuse the Market Pulse tab extractor).
     assert "_ref_tabs" in src and "_mp_tabs = st.tabs" not in browse
+
+
+# ── Framework double-documentation: DRIFT-PROOFING (2026-08-30 final-build sign-off) ─────────
+# The 37 frameworks are documented in TWO corpora ON PURPOSE — they do different jobs:
+#   _FW_META[name][2]        = the terse GATE SPEC (what it screens on) — feeds the tearsheet
+#                              pills, the Reference registry and the Markdown download.
+#   CONCEPT_REFERENCE[...]   = the plain-language MEANING (what it tells an investor).
+# Two texts for two jobs is legitimate; two texts that DRIFT is not. The 2026-08-30 sign-off
+# measured median word-overlap of 0.12 and found FIVE pairs naming mutually exclusive criteria
+# — Diamond's registry copy described a deep-value screen (engine: Mukherjea three-lens),
+# Quality Compounder's cited ROCE≥20/PAT-CAGR (engine: NFAT>4 + FCF-yield), Peaceful Investing
+# borrowed another framework's NFAT signal — plus a "17th WCS" attribution for 100x that the
+# study audit had already refuted (it is the 19th). Nothing caught any of it. These pins do.
+_METRIC_VOCAB = ["roce", "roe", "pat", "fcf", "cfo", "d/e", "debt", "peg", "p/e", "interest cover",
+                 "icr", "nfat", "asset turnover", "payout", "dividend", "rsi", "52w", "promoter",
+                 "pledge", "earnings yield", "g-sec", "cagr", "volatility", "market cap", "mcap",
+                 "working capital", "accrual", "yield"]
+
+
+def _metrics_named(text):
+    t = " " + str(text).lower() + " "
+    return {m for m in _METRIC_VOCAB if m in t}
+
+
+def _norm_fw(name):
+    """Framework identity, emoji-insensitive. Concept labels carry the pill emoji by design
+    ('🐘 100x Candidate'); the registry keys do not ('100x Candidate'). Comparing raw strings
+    pairs NOTHING and every check below passes vacuously — which is exactly what happened on
+    the first draft of these pins, and is why this helper exists."""
+    import re
+    return " ".join(re.sub(r"[^A-Za-z0-9&/→ -]", " ", str(name)).lower().split())
+
+
+def _framework_pairs():
+    """(name, concept_text, registry_text) for every framework documented in both corpora."""
+    from ui.ui_reference_data import CONCEPT_REFERENCE
+    from ui.ui_tearsheet import _FW_META
+    concept = {_norm_fw(l): e for c in CONCEPT_REFERENCE if "Framework" in c
+               for l, e in CONCEPT_REFERENCE[c]}
+    pairs = [(n, concept[_norm_fw(n)], meta[2]) for n, meta in _FW_META.items()
+             if _norm_fw(n) in concept]
+    assert len(pairs) >= 30, (
+        f"only {len(pairs)} framework pairs matched — the pairing key broke and every drift "
+        f"check below would pass vacuously"
+    )
+    return pairs
+
+
+def test_framework_names_are_identical_in_both_corpora():
+    """Name parity (emoji aside — the concept label carries the pill glyph by design) is what
+    makes the two copies checkable at all, and what lets a reader who saw a pill find the same
+    framework in the reference. A name in one corpus only is a silent orphan."""
+    from ui.ui_reference_data import CONCEPT_REFERENCE
+    from ui.ui_tearsheet import _FW_META
+    concept = {_norm_fw(l) for c in CONCEPT_REFERENCE if "Framework" in c
+               for l, _ in CONCEPT_REFERENCE[c]}
+    registry = {_norm_fw(n) for n in _FW_META}
+    assert concept == registry, (
+        f"framework names differ between corpora — only in concepts: {sorted(concept - registry)}; "
+        f"only in registry: {sorted(registry - concept)}"
+    )
+
+
+def test_registry_gate_specs_match_the_engine_gates():
+    """THE TRUTH PIN. _FW_META's description is the terse GATE SPEC shown on the tearsheet pill,
+    the Reference registry and the Markdown download — three surfaces asserting to a user what
+    the engine screens on. Each entry below was verified line-by-line against its gate in
+    core/scoring_engine.py during the 2026-08-30 final-build sign-off, which found FOUR of them
+    describing a screen the engine does not run (Diamond as a deep-value earnings-yield test,
+    Quality Compounder citing ROCE≥20/PAT-CAGR instead of its NFAT and FCF-yield gates, Long
+    Game citing PAT-CAGR/volatility instead of ICR≥5 and FCF/PAT≥60, Peaceful Investing
+    borrowing Quality Compounder's NFAT signal). MUST/MUST-NOT below are the signals the gate
+    actually tests — change them only after re-reading the gate."""
+    from ui.ui_tearsheet import _FW_META
+    # framework -> (tokens the gate DOES test — at least one must appear,
+    #               tokens the gate does NOT test — none may appear)
+    VERIFIED = {
+        "Diamond":            (["d/e", "cfo/pat", "fcf/cfo", "forensic"], ["earnings yield", "g-sec"]),
+        "Long Game Quality":  (["interest cover", "icr", "fcf/pat"],      ["volatility"]),
+        "Quality Compounder": (["nfat", "fcf yield"],                     ["pat cagr"]),
+        "Peaceful Investing": (["pillar", "profit stability", "debt fortress", "self-funded"], ["nfat"]),
+    }
+    bad = []
+    for fw, (must_any, must_not) in sorted(VERIFIED.items()):
+        d = _FW_META[fw][2].lower()
+        if not any(t in d for t in must_any):
+            bad.append(f"{fw}: names none of the signals its gate tests {must_any}")
+        for t in must_not:
+            if t in d:
+                bad.append(f"{fw}: claims {t!r}, which its engine gate does not test")
+    assert not bad, "registry gate specs contradicting the engine: " + " | ".join(bad)
+
+
+def test_every_framework_is_documented_in_all_three_corpora():
+    """Structural completeness across the three framework texts, each with a different job:
+    _FW_META = terse gate spec (pills/registry/download) · _FW_IDEA = the plain-language idea
+    ('?' tooltip) · CONCEPT_REFERENCE = the Reference-tab meaning. Two texts for two jobs is
+    legitimate; a framework MISSING from one of them is a hole a reader falls through."""
+    from ui.ui_reference_data import CONCEPT_REFERENCE
+    from ui.ui_tearsheet import _FW_META, _FW_IDEA
+    concept = {_norm_fw(l) for c in CONCEPT_REFERENCE if "Framework" in c
+               for l, _ in CONCEPT_REFERENCE[c]}
+    idea = {_norm_fw(n) for n in _FW_IDEA}
+    registry = {_norm_fw(n) for n in _FW_META}
+    assert registry == idea == concept, (
+        f"missing from concepts: {sorted(registry - concept)}; "
+        f"missing from ideas: {sorted(registry - idea)}; "
+        f"orphans not in the registry: {sorted((concept | idea) - registry)}"
+    )
+
+
+def test_no_refuted_study_attribution_survives_in_the_registry():
+    """Provenance corrected in the engine must be corrected in the UI. The 100x screen belongs
+    to the 19th Wealth Creation Study; the 17th is Economic Moat, and 'Mouse to Elephant'
+    appears zero times in the source study (established by the 19th-study audit). A stale
+    citation on a pill is a claim the product makes to a user."""
+    from ui.ui_tearsheet import _FW_META
+    desc = _FW_META["100x Candidate"][2]
+    assert "17th" not in desc, "the refuted 17th-WCS attribution is back on the 100x pill"
+    assert "19th" in desc, "the 100x description no longer records its real (19th WCS) lineage"
+
+
+def test_no_entry_promises_an_outcome():
+    """A reference explains; it never promises. This system's credibility rests on not
+    overclaiming, and after final sign-off nothing else polices the tone."""
+    import re
+    from ui.ui_reference_data import CONCEPT_REFERENCE
+    from ui.ui_tearsheet import _FW_META
+    promise = re.compile("(will (?:outperform|rise|deliver|beat|double)|"
+                         "guaranteed returns?|never fails|is a buy|should buy|"
+                         "sure[- ]?shot returns?)", re.I)
+    bad = [f"{l}: {e[:70]}" for cat in CONCEPT_REFERENCE.values() for l, e in cat if promise.search(e)]
+    bad += [f"{n} (registry): {m[2][:70]}" for n, m in _FW_META.items() if promise.search(m[2])]
+    assert not bad, "promise-language in the reference: " + " | ".join(bad)

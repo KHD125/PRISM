@@ -1257,7 +1257,12 @@ _FW_META = {
         "QGLP":                    (COLORS["purple"], "🥇", "Quality + Growth + Longevity + Price — Raamdeo"),
         "MOSL Wealth Creator":     (COLORS["gold"],   "🌟", "Raamdeo's Wealth Creator criteria from annual WCS"),
         "SQGLP Century Stock":     (COLORS["gold"],   "👑", "MOSL 19th: ≥4 of 5 SQGLP pillars (Size·Quality·Growth·Longevity·Price)"),
-        "100x Candidate":          (COLORS["gold"],   "🐘", "17th WCS Mouse-to-Elephant: PAT CAGR ≥20% + ROCE ≥20% + mcap ≤₹15k Cr + D/E <0.5 + ROE ≥15%"),
+        # PROVENANCE CORRECTED 2026-08-30: was "17th WCS Mouse-to-Elephant". The 19th-study audit
+        # established 100x is the 19th WCS (the 17th is Economic Moat) and that "Mouse to Elephant"
+        # appears 0× in it; the gates below are the ENGINE's construction, not the study's screen
+        # (the study's own is mcap<₹30b + value-migration + P/E<25x). The engine comment was fixed
+        # then; this pill text was not — pinned now by test_no_refuted_study_attribution_survives.
+        "100x Candidate":          (COLORS["gold"],   "🐘", "19th WCS lineage, engine-constructed gates: PAT CAGR ≥20% + ROCE ≥20% + mcap ≤₹15k Cr + D/E <0.5 + ROE ≥15%"),
         "Fallen Quality":          (COLORS["cyan"],   "🩹", "All-cap fallen quality: ROCE≥15% + PAT CAGR≥10%, >40% off 52WH, cheap vs own 10Y PE"),
         "CAP-GAP Compounder":      (COLORS["green"],  "📐", "22nd WCS: RoE ≥ 15% (10Y/5Y/now) + PAT growth ≥ 15% (10/5/3Y) — longevity proof"),
         "Economic Moat":           (COLORS["purple"], "🏰", "17th WCS: RoE above sector AVERAGE in ≥4 of 5 windows — sector-relative moat"),
@@ -1268,13 +1273,20 @@ _FW_META = {
         "Multi-Trillion Cap":      (COLORS["purple"], "🌐", "Sunrise sector at compounding velocity — 30th WCS"),
         # ── 📚 Fundamental & Cash Quality Moats ──
         "Coffee Can":              (COLORS["gold"],   "☕", "ROCE ≥15% for 10Y + Rev CAGR ≥10% — Mukherjea"),
-        "Diamond":                 (COLORS["cyan"],   "💎", "Deep value: Earnings Yield ≥ G-Sec + clean accounts"),
-        "Peaceful Investing":      (COLORS["gold"],   "🕊️", "Vijay Malik: NFAT + self-funded growth + clean accounts"),
+        # FOUR GATE SPECS CORRECTED 2026-08-30 against their engine gates (final-build sign-off).
+        # Each old text described a screen the engine does not run — Diamond was written as a
+        # deep-value earnings-yield test (it is Mukherjea's three-lens forensic compounder),
+        # Peaceful Investing borrowed Quality Compounder's NFAT signal (Malik gates 5 pillars),
+        # Long Game cited PAT-CAGR/volatility (its gate is ICR≥5 + FCF/PAT≥60), and Quality
+        # Compounder cited ROCE≥20/PAT-CAGR (its gate is ROCE≥15 + NFAT>4 + FCF-yield≥2).
+        # These strings show on the tearsheet pill, the Reference registry AND the download.
+        "Diamond":                 (COLORS["cyan"],   "💎", "Mukherjea Diamonds: ROCE ≥15% (10Y+5Y) + D/E <0.5 + CFO/PAT ≥80% + FCF/CFO ≥25% + zero forensic flags"),
+        "Peaceful Investing":      (COLORS["gold"],   "🕊️", "Vijay Malik: all 5 pillars — growth runway + profit stability + debt fortress + cash generation + self-funded"),
         "Unusual Billionaires":    (COLORS["purple"], "💰", "Saurabh Mukherjea: promoter-run compounders"),
-        "Long Game Quality":       (COLORS["purple"], "⏳", "10Y consistent PAT CAGR ≥ 15% + low volatility"),
+        "Long Game Quality":       (COLORS["purple"], "⏳", "Khandelwal fortress: interest cover ≥5× + FCF/PAT ≥60% after capex + ROCE ≥15% + D/E ≤0.5"),
         "Baid Compounder":         (COLORS["green"],  "📚", "Gautam Baid: 7Y ROCE ≥ 15% + 10Y Rev CAGR ≥ 12% + no-stumble consistency"),
         "Basant 30% Club":         (COLORS["gold"],   "🏅", "Basant Maheshwari: PAT CAGR ≥ 30% for 5Y + promoter"),
-        "Quality Compounder":      (COLORS["green"],  "⭐", "ROCE ≥ 20% + PAT CAGR ≥ 15% for 10Y — proven compounder"),
+        "Quality Compounder":      (COLORS["green"],  "⭐", "AKO three-circle: NFAT >4 (asset-light) + FCF yield ≥2% + ROCE ≥15% (10Y+5Y) + CFO/PAT ≥80%"),
         # ── ⚡ Technical Momentum & Growth Sieves ──
         "CAN SLIM":                (COLORS["blue"],   "📡", "O'Neil: EPS + Revenue + Institutional + Near High"),
         "SEPA Momentum":           (COLORS["blue"],   "⚡", "Mark Minervini: Stage 2 + RS + Earnings acceleration"),

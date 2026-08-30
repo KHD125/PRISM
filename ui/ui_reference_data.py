@@ -292,7 +292,9 @@ CONCEPT_REFERENCE = {
         ("📡 CAN SLIM", "O'Neil — elite growth at a confirmed breakout: current EPS & sales each +25%, 5-yr EPS ≥25%, ROE ≥17%, within 15% of the 52-wk high, volume ≥1.5×, top-20% RS, institutions buying, market not bearish. Very rare."),
         ("⚡ SEPA Momentum", "Minervini — Specific Entry Point Analysis: the trend template (above rising MAs), a volatility contraction (VCP), relative strength, institutional support, and an earnings catalyst."),
         ("🚀 Quality Momentum", "Wesley Gray's Quantitative Momentum — top-20% relative strength plus a governance guard (pledge ≤30%) and quality. Durable price momentum in a quality name."),
-        ("👓 Lynch Dream Framework", "Peter Lynch's growth-at-a-reasonable-price — strong EPS growth at PEG ≤~1, modest institutional ownership (room to be discovered), real free cash flow, and no inventory surge."),
+        # Name matches _FW_META / frameworks_passed exactly ("Lynch Dream") — the trailing
+        # "Framework" made this the one entry a pill-to-reference lookup could not resolve.
+        ("👓 Lynch Dream", "Peter Lynch's growth-at-a-reasonable-price — strong EPS growth at PEG ≤~1, modest institutional ownership (room to be discovered), real free cash flow, and no inventory surge."),
         ("📈 EP Improver", "MOSL 28th study's turnaround stage: economic profit still NEGATIVE but climbing, with returns, capital efficiency and margins all turning at once. The study calls this stage speculative — completed turnarounds earned its best returns, at lower odds. The step before 🏒 EP Hockey Stick."),
         ("😊 SMILE", "Vijay Kedia — Small size, Medium experience, Large aspiration, Extra-large potential, with Integrity: a ₹100–2,000 Cr small-cap, 5-yr growth ≥20%, ROCE ≥20%, honest management."),
     ],
