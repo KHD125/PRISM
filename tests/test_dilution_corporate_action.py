@@ -58,7 +58,12 @@ RECLASSIFY = {                       # pro-rata / structural → must NOT be Tie
     "New Delhi Television Ltd":                "3:4 rights issue, Sept-Oct 2025",
 }
 STAYS_DILUTION = {                   # real cash into the company at <1.5x → must STAY Tier 3
-    "Vraj Iron & Steel Ltd":    "IPO fresh issue Jun 2024 (8,260,869 shares)",
+    # Vraj Iron RETIRED 2026-08-30: its Jun-2024 IPO aged out of the rolling YoY share-count
+    # window on the 2026-08-28 data refresh (equity_shares == equity_shares_1yb == 32,982,619,
+    # so dilution_flag = 0 is CORRECT — no new dilution in the trailing year). The case proved
+    # the real-cash-raise direction while it was in-window; Saraswati carries it until it ages
+    # out too, at which point a fresher raise from the live data must replace it, not a forced
+    # re-flagging of an undiluted year.
     "Saraswati Saree Depot Ltd": "IPO Aug 2024",
 }
 

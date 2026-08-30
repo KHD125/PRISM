@@ -417,11 +417,33 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
     }
 
     if data_source == "upload" and uploaded_files is not None:
-        for name, (cols,) in sheet_configs.items():
-            if name in uploaded_files:
-                datasets[name] = _load_single_csv(uploaded_files[name], cols, name)
-            else:
-                raise FileNotFoundError(f"Missing uploaded file for {name}")
+        if "workbook" in uploaded_files:
+            # SINGLE-WORKBOOK UPLOAD (2026-08-30): one XLSX carrying the six contract tabs
+            # (SHEET_TAB_NAMES, §0 — read BY NAME, never by position/GID) — the exact same
+            # parse path as the Google Sheets download, so the two sources can never diverge.
+            try:
+                workbook = pd.ExcelFile(uploaded_files["workbook"], engine="openpyxl")
+            except Exception as e:
+                raise Exception(f"Could not read the uploaded file as an XLSX workbook: {e}")
+            available_tabs = list(workbook.sheet_names)
+            for name, (cols,) in sheet_configs.items():
+                tab_name = SHEET_TAB_NAMES[name]
+                if tab_name not in available_tabs:
+                    raise Exception(
+                        f"Tab '{tab_name}' not found in the uploaded workbook. "
+                        f"Available tabs: {available_tabs}. Tab names must match exactly."
+                    )
+                raw = workbook.parse(
+                    tab_name, header=0, na_values=_NA_VALS, keep_default_na=True
+                )
+                datasets[name] = _apply_column_mapping(raw, cols, name)
+                print(f"  ✅ {name} ('{tab_name}'): {len(datasets[name])} rows, {len(datasets[name].columns)} cols")
+        else:
+            for name, (cols,) in sheet_configs.items():
+                if name in uploaded_files:
+                    datasets[name] = _load_single_csv(uploaded_files[name], cols, name)
+                else:
+                    raise FileNotFoundError(f"Missing uploaded file for {name}")
     elif data_source == "sheet" and sheet_id:
         # Download the ENTIRE workbook once as XLSX, then read each tab BY NAME locally.
         # WHY XLSX and not per-tab CSV URLs:
@@ -3301,31 +3323,32 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # RR = 1 − (DPR/100). High RR = self-funding compounder; low RR = defensive income asset.
     # DPR fillna(0): no dividend data → full retention (conservative for growth companies).
     # clip(0,1): guards against DPR > 100 (data artefacts in some screeners).
-    # PARTIAL DATA GAP — REMEASURED 2026-08-27. The DPR source column was repaired in part on
-    # 2026-08-22, and the RR-gated signals woke up with it. The 2026-06-12 census note that stood
-    # here described a universe that no longer exists; every one of its four claims was false by
-    # the time it was replaced, which is why it is quoted below rather than quietly deleted:
-    #     "96% empty"                              → DPR is 41.2% populated
-    #     "RR ≡ 1.0 universe-wide"                 → RR = 1.0 on 69.8%, 589 distinct values
-    #     capital_misallocation_risk "passes for ALL" → fires 42.5%
-    #     flag_epoch2_compounder "INERT/always-pass"  → fires 14.7%
+    # PARTIAL DATA GAP — REMEASURED 2026-08-30 on the 2026-08-28 sheet refresh (the user's source
+    # fixes keep landing: coverage climbed again). The DPR source column was first repaired in part
+    # on 2026-08-22. The 2026-06-12 census note that stood here described a universe that no longer
+    # exists; every one of its four claims was false by the time it was replaced, which is why it
+    # is quoted below rather than quietly deleted (current measurements at right):
+    #     "96% empty"                              → DPR is 53.5% populated (41.2% on 2026-08-27)
+    #     "RR ≡ 1.0 universe-wide"                 → RR = 1.0 on 62.1%, 719 distinct values
+    #     capital_misallocation_risk "passes for ALL" → fires 42.3%
+    #     flag_epoch2_compounder "INERT/always-pass"  → fires 14.4%
     # The danger of the old note was not its arithmetic but its conclusion: it told a reader these
     # gates were inert and therefore safe to ignore. They are live and they move scores.
     #
-    # WHAT IS STILL TRUE. DPR remains missing on 58.8% of rows, and the fillna(0) above reads every
+    # WHAT IS STILL TRUE. DPR remains missing on 46.5% of rows, and the fillna(0) above reads every
     # one of those as "pays no dividend, retains everything" — the maximally incriminating reading
     # of absent evidence. That is the mirror of the "unverifiable is not passed" rule (CLAUDE.md §5):
     # here a gate CONDEMNS on evidence it does not have. Measured on capital_misallocation_risk,
     # which applies a 10% quality_score haircut (scoring_engine ~L641):
-    #     899 stocks flagged · 601 of them (66.9%) have NO DPR at all, so their "retains >50%" leg
-    #     is fabricated by the fillna; only 298 (33.1%) are flagged on real dividend evidence.
-    # The ranking harm is small — flagged names carry a 7.41 median 5Y ROCE against 18.20 unflagged
-    # and score 15.3 vs 55.8 on quality, so a 10% haircut on an already-low score reorders little.
+    #     895 stocks flagged · 496 of them (55.4%) have NO DPR at all, so their "retains >50%" leg
+    #     is fabricated by the fillna; only 399 (44.6%) are flagged on real dividend evidence.
+    # The ranking harm is small — flagged names carry a 7.39 median 5Y ROCE against 18.20 unflagged
+    # and score 15.1 vs 56.2 on quality, so a 10% haircut on an already-low score reorders little.
     # It is an honesty defect, not a wrong-answers defect. Sized here so nobody re-derives it.
     #
     # NOT FIXED HERE BY DELIBERATE STANDING DECISION (2026-06-14): guards that neutralise
     # DPR-degenerate signals are rejected — the source column gets fixed instead. That ruling was
-    # made at ~4% DPR coverage; at 41% the remaining repair would retire 601 fabricated
+    # made at ~4% DPR coverage; at 53.5% the remaining repair would retire 496 fabricated
     # condemnations, revive stagnant_cash_cow_flag (RR<0.30, still 0 — see tools/census.py:51,
     # where it is triaged as genuine rarity), and restore two one-legged gates to real two-leg tests.
     # Fire rates above are pinned by tests/test_reinvestment_rate_data_gap.py, which FAILS when the

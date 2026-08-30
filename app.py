@@ -222,8 +222,20 @@ with st.sidebar:
             if _sid and st.query_params.get("sheet") != _sid:
                 st.query_params["sheet"] = _sid
     elif st.session_state.data_source == "upload":
-        uploaded_files = st.file_uploader("Upload all 6 CSV files (Ratio, Income, Balance, Cashflow, Shareholding, Technical)", type="csv", accept_multiple_files=True)
-        if uploaded_files and len(uploaded_files) > 0:
+        uploaded_files = st.file_uploader(
+            "Upload ONE workbook (.xlsx with the 6 tabs) — or all 6 CSV files",
+            type=["xlsx", "csv"], accept_multiple_files=True)
+        # WORKBOOK PATH (2026-08-30): a single .xlsx (e.g. "PRISM 2026-08-28 Fri.xlsx") carries
+        # all six tabs read BY NAME (§0 contract) through the same parse path as Google Sheets.
+        # Takes precedence over any CSVs uploaded alongside it; the 6-CSV path below is unchanged.
+        _xlsx_uploads = [f for f in (uploaded_files or []) if f.name.lower().endswith(".xlsx")]
+        if _xlsx_uploads:
+            uploaded_dict = {"workbook": _xlsx_uploads[0]}
+            st.markdown(f"✅ **workbook** ← `{_xlsx_uploads[0].name}` — all 6 tabs read by name")
+            if len(_xlsx_uploads) > 1:
+                st.warning(f"Multiple workbooks uploaded — using `{_xlsx_uploads[0].name}`.")
+            data_ready = True
+        elif uploaded_files and len(uploaded_files) > 0:
             uploaded_dict = {}
             _unmatched = []
             for f in uploaded_files:

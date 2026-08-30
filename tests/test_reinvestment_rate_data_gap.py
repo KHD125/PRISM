@@ -116,7 +116,7 @@ def test_documented_epoch2_fire_rate_is_current(live, note):
 # -- 2. The evidence-fabrication measurement --------------------------------------------
 def test_documented_share_of_flags_resting_on_absent_dpr_is_current(live, note):
     """The load-bearing claim: most flagged stocks are condemned on a fillna, not on evidence."""
-    documented = _num(note, r"601 of them \(([\d.]+)%\)", "share of flags with no DPR")
+    documented = _num(note, r"496 of them \(([\d.]+)%\)", "share of flags with no DPR")
     flagged = live["capital_misallocation_risk"] == 1
     assert flagged.sum() > 0, "nothing is flagged -- the gate died; the comment needs a rewrite"
     actual = (flagged & live["dividend_payout_ratio"].isna()).sum() / flagged.sum() * 100

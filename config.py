@@ -27,7 +27,23 @@ def _get_actual_path(base, folder_name, file_name):
             }
             current = os.path.join(current, dir_map.get(part.lower(), part))
         file_map = {item.lower(): item for item in os.listdir(current)}
-        actual_file = file_map.get(file_name.lower(), file_name)
+        actual_file = file_map.get(file_name.lower())
+        if actual_file is None:
+            # DATED-EXPORT RESOLUTION (2026-08-30): the CSV drops are now named by the
+            # ingestion pipeline after their data session — "PRISM 2026-08-28 Fri - Ratio.csv"
+            # — where the date/day part changes on every refresh but the "PRISM" prefix and
+            # the "- <Tab>.csv" suffix are fixed. Match prefix+suffix case-insensitively and,
+            # if several vintages coexist, take the newest by modification time (ties broken
+            # by name, so resolution stays deterministic). The exact legacy name above still
+            # wins when present.
+            tab_suffix = "- " + file_name.lower().split("- ", 1)[-1]   # "- ratio.csv"
+            candidates = sorted(
+                (item for low, item in file_map.items()
+                 if low.startswith("prism") and low.endswith(tab_suffix)),
+                key=lambda it: (os.path.getmtime(os.path.join(current, it)), it),
+                reverse=True,
+            )
+            actual_file = candidates[0] if candidates else file_name
         return os.path.join(current, actual_file)
     except Exception:
         return os.path.join(base, *folder_name.replace("\\", "/").split("/"), file_name)

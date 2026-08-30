@@ -17,6 +17,7 @@ Spec ledger: docs/fisher_quality_specs.json
 """
 import functools
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -830,15 +831,11 @@ class TestLifecycleMappingRulesFixture:
 # config.py's _get_actual_path resolves to <project_root>/CSV Data/ (a
 # non-existent path) when data_source="local".  We bypass this by using
 # data_source="upload" and passing the real paths explicitly.
-_CSV_DATA_DIR = ROOT / "Other Resources" / "CSV Data"
-_UPLOADED_FILES = {
-    "ratio":        str(_CSV_DATA_DIR / "Prism - Ratio.csv"),
-    "income":       str(_CSV_DATA_DIR / "Prism - Income Statement.csv"),
-    "balance":      str(_CSV_DATA_DIR / "Prism - Balance Sheet.csv"),
-    "cashflow":     str(_CSV_DATA_DIR / "Prism - Cashflow.csv"),
-    "shareholding": str(_CSV_DATA_DIR / "Prism - Shareholdings.csv"),
-    "technical":    str(_CSV_DATA_DIR / "Prism - Technicals.csv"),
-}
+# 2026-08-30: hardcoded legacy filenames ("Prism - Ratio.csv") broke when the CSV drops moved
+# to dated-export names ("PRISM 2026-08-28 Fri - Ratio.csv"). config.CSV_FILES is the single
+# source of path truth and resolves BOTH shapes (newest vintage wins) — never re-hardcode names.
+from config import CSV_FILES as _CSV_FILES
+_UPLOADED_FILES = {k: str(v) for k, v in _CSV_FILES.items()}
 
 
 @functools.lru_cache(maxsize=1)
@@ -861,7 +858,7 @@ def _get_production_df():
 
 
 @pytest.mark.skipif(
-    not _CSV_DATA_DIR.is_dir(),
+    not os.path.isfile(_UPLOADED_FILES["ratio"]),
     reason="Local CSV data not present (code-only checkout) — Fisher integration tests need real data",
 )
 class TestFisherLifecycleDataIntegration:
