@@ -1293,61 +1293,99 @@ def _render_market_pulse():
 
     def _mp_lens_row(frame, prefix, with_tier=True):
         """The lens-filter row: Sector · [Wealth Tier ·] Market Cap · Catalyst · Clear.
+
+        MULTI-SELECT AND CASCADING (2026-08-30). Each control takes SEVERAL values (OR within a
+        control, AND across controls), and every control's options AND live counts are computed
+        from the frame already narrowed by the controls to its LEFT — so picking a sector
+        immediately reshapes the tier list and its numbers, and a dead-end combination cannot be
+        selected. Mirrors ui_discovery._ms_cascade rather than inventing a second dialect:
+        session_state is managed here (never a `default=` arg, which triggers Streamlit's
+        default-plus-state warning) and any stored selection is PRUNED to the current options
+        every run — mandatory, not optional, because cascading removes options and a keyed widget
+        whose stored value is absent from its options raises.
+
+        Measured before building (local CSVs): cascading narrows materially on the small cohorts —
+        QGLP 325 stocks, Sector=Auto Ancillaries takes tiers 6 to 4 and catalysts 5 to 4;
+        IT-Software takes catalysts 5 to 3 — moderately on MOSL, and barely on Wealth (the whole
+        universe, so most sectors still hold every tier). The counts earn their place on all three.
+
         Returns (filtered_frame, n_active). The 🧹 button materializes ONLY when a filter is
-        active, in a FIXED last slot — zero furniture when idle, zero layout jump when it
-        appears. Facets are honest: only values present in THIS lens's cohort are offered
-        (catalysts only if actually firing in it). Keys are seeded before instantiation and
-        re-seeded to "All" if a remembered value no longer exists in the cohort (the widget-
-        state law: a keyed selectbox whose state is missing from its options raises)."""
+        active, in a FIXED last slot — zero furniture when idle, zero layout jump when it appears.
+        """
         keys = ([f"mp_{prefix}_sec"] + ([f"mp_{prefix}_wt"] if with_tier else [])
                 + [f"mp_{prefix}_cap", f"mp_{prefix}_cat"])
-        _sec_opts = ["All"] + (sorted(frame["sector"].dropna().unique().tolist())
-                               if "sector" in frame.columns else [])
-        _wt_opts = ["All"] + [t for t in _WT_ORDER
-                              if "wealth_tier" in frame.columns and (frame["wealth_tier"] == t).any()]
-        _cap_opts = ["All"] + [c for c in _MP_CAP_ORDER
-                               if "market_category" in frame.columns and (frame["market_category"] == c).any()]
-        _cat_opts = ["All"] + [l for l, c in _MP_CATALYSTS.items()
-                               if c in frame.columns and int(frame[c].fillna(0).sum()) > 0]
-        _opts_for = {f"mp_{prefix}_sec": _sec_opts, f"mp_{prefix}_wt": _wt_opts,
-                     f"mp_{prefix}_cap": _cap_opts, f"mp_{prefix}_cat": _cat_opts}
-        for k in keys:
-            if st.session_state.setdefault(k, "All") not in _opts_for[k]:
-                st.session_state[k] = "All"
-        slots = st.columns([2.4, 1.6, 1.6, 1.9, 1.1] if with_tier else [2.9, 1.9, 2.2, 1.2])
-        with slots[0]:
-            sec = st.selectbox("Sector", _sec_opts, key=f"mp_{prefix}_sec",
-                               help="Slice this lens's cohort to one sector.")
+        slots = st.columns([2.6, 1.9, 1.9, 2.0, 1.0] if with_tier
+                           else [3.0, 2.2, 2.4, 1.1])
+        _cf = frame                      # progressively narrowed cascade frame
+
+        def _pick(slot, label, options, key, help_text, counts):
+            """One cascade-safe multiselect. `counts` maps option -> live count in the CURRENT
+            (already narrowed) frame; it is DISPLAY only — never baked into the option VALUES, or
+            the pruning below stops matching."""
+            st.session_state[key] = [v for v in st.session_state.get(key, []) if v in options]
+            with slot:
+                return st.multiselect(
+                    label, options, key=key, help=help_text,
+                    format_func=lambda v, _c=counts: f"{v}  ·  {_c.get(v, 0)}",
+                )
+
+        # 1 ── Sector (widest funnel first, so every later count reflects it)
+        _sec_opts = (sorted(_cf["sector"].dropna().astype(str).unique().tolist())
+                     if "sector" in _cf.columns else [])
+        _sec_n = _cf["sector"].astype(str).value_counts().to_dict() if _sec_opts else {}
+        sel_sec = _pick(slots[0], "Sector", _sec_opts, f"mp_{prefix}_sec",
+                        "Show only these sectors. Pick several — a stock matching ANY of them "
+                        "qualifies. Counts are live in this lens's cohort.", _sec_n)
+        if sel_sec:
+            _cf = _cf[_cf["sector"].astype(str).isin(sel_sec)]
+
         _i = 1
-        wt = "All"
+        # 2 ── Wealth tier (counted AFTER the sector narrowing — the cascade)
         if with_tier:
-            with slots[_i]:
-                wt = st.selectbox("Wealth tier", _wt_opts, key=f"mp_{prefix}_wt",
-                                  help="Cross-lens: this framework's passers × the wealth engine's tier.")
+            _wt_opts = [t for t in _WT_ORDER
+                        if "wealth_tier" in _cf.columns and (_cf["wealth_tier"] == t).any()]
+            _wt_n = _cf["wealth_tier"].astype(str).value_counts().to_dict() if _wt_opts else {}
+            sel_wt = _pick(slots[_i], "Wealth tier", _wt_opts, f"mp_{prefix}_wt",
+                           "Cross-lens: this framework's passers x the wealth engine's tier. Pick "
+                           "several (e.g. BUY★ and BUY together). Counts reflect the sector "
+                           "filter above.", _wt_n)
+            if sel_wt:
+                _cf = _cf[_cf["wealth_tier"].isin(sel_wt)]
             _i += 1
-        with slots[_i]:
-            cap = st.selectbox("Market cap", _cap_opts, key=f"mp_{prefix}_cap",
-                               help="Slice by market-cap tier (the sheet's Market Category).")
-        with slots[_i + 1]:
-            cat = st.selectbox("Catalyst", _cat_opts, key=f"mp_{prefix}_cat",
-                               help="Only stocks where this fast-moving inflection is firing right now.")
-        out = frame
-        if sec != "All" and "sector" in out.columns:
-            out = out[out["sector"] == sec]
-        if wt != "All" and "wealth_tier" in out.columns:
-            out = out[out["wealth_tier"] == wt]
-        if cap != "All" and "market_category" in out.columns:
-            out = out[out["market_category"] == cap]
-        if cat != "All" and _MP_CATALYSTS[cat] in out.columns:
-            out = out[out[_MP_CATALYSTS[cat]].fillna(0) == 1]
-        _defaults = {k: "All" for k in keys}
-        _n_active = sum(1 for k, d in _defaults.items() if st.session_state.get(k, d) != d)
+
+        # 3 ── Market cap
+        _cap_opts = [c for c in _MP_CAP_ORDER
+                     if "market_category" in _cf.columns and (_cf["market_category"] == c).any()]
+        _cap_n = _cf["market_category"].astype(str).value_counts().to_dict() if _cap_opts else {}
+        sel_cap = _pick(slots[_i], "Market cap", _cap_opts, f"mp_{prefix}_cap",
+                        "Market-cap tiers (the sheet's Market Category). Pick several; counts "
+                        "reflect every filter to the left.", _cap_n)
+        if sel_cap:
+            _cf = _cf[_cf["market_category"].isin(sel_cap)]
+
+        # 4 ── Catalyst (OR across the flags — a stock firing ANY selected catalyst qualifies)
+        _cat_n = {l: int(_cf[c].fillna(0).sum()) for l, c in _MP_CATALYSTS.items() if c in _cf.columns}
+        _cat_opts = [l for l in _MP_CATALYSTS if _cat_n.get(l, 0) > 0]
+        sel_cat = _pick(slots[_i + 1], "Catalyst", _cat_opts, f"mp_{prefix}_cat",
+                        "Fast-moving inflections firing right now. Pick several — ANY of them "
+                        "qualifies. Only catalysts alive in this cohort are offered.", _cat_n)
+        if sel_cat:
+            _hit = None
+            for _l in sel_cat:
+                _m = _cf[_MP_CATALYSTS[_l]].fillna(0) == 1
+                _hit = _m if _hit is None else (_hit | _m)
+            _cf = _cf[_hit]
+
+        # Reset value for a multiselect is [] — never "All", and never `del` (deleting an
+        # instantiated widget's key lets the frontend resurrect the stale value: the Steel bug).
+        _defaults = {k: [] for k in keys}
+        _n_active = sum(1 for k in keys if st.session_state.get(k))
         with slots[-1]:
             st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
             if _n_active:
                 st.button("🧹 Clear", key=f"mp_{prefix}_clear", use_container_width=True,
                           on_click=_mp_clear_lens, args=(_defaults,))
-        return out, _n_active
+        return _cf, _n_active
 
     # ── Inner navigation tabs ──────────────────────────────────────
     _mp_tabs = st.tabs([

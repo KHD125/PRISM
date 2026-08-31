@@ -166,14 +166,55 @@ def test_lens_clear_sets_all_and_never_deletes():
 
 
 def test_lens_row_seeds_and_stale_guards_every_key():
-    """Widget-state law, both halves: every key seeded BEFORE its selectbox instantiates, and
-    re-seeded to "All" when a remembered value no longer exists in the cohort's options
-    (a keyed selectbox whose state is missing from its options raises)."""
+    """Widget-state law, both halves — UPDATED 2026-08-30 for cascading MULTI-select. The stored
+    selection must be PRUNED to the current options BEFORE the widget instantiates. Under a
+    cascade this is mandatory rather than defensive: narrowing removes options every run, and a
+    keyed widget whose stored value is absent from its options raises. Pruning by assignment (not
+    `del`) also keeps the Steel-resurrection fix intact."""
     src = _app_src()
     i = src.index("def _mp_lens_row(")
     fn = src[i:src.index("    # ── Inner navigation tabs")]
-    assert 'st.session_state.setdefault(k, "All") not in _opts_for[k]' in fn
-    assert fn.index("_opts_for[k]") < fn.index("st.selectbox"), "seeding must precede instantiation"
+    prune = "st.session_state[key] = [v for v in st.session_state.get(key, []) if v in options]"
+    assert prune in fn, "the cascade no longer prunes stored selections to the live options"
+    assert fn.index(prune) < fn.index("st.multiselect"), "pruning must precede instantiation"
+    # Scan CODE only — the helper's own docstring explains the ban, and a naive substring
+    # search matches that explanation (the prose-vs-code trap this project has hit repeatedly).
+    body = fn.split(chr(34) * 3, 2)[2]
+    assert "default=" not in body, (
+        "passing default= alongside a key triggers Streamlit's default-plus-session-state warning "
+        "— ui_discovery._ms_cascade manages state itself and this must too"
+    )
+
+
+def test_lens_row_is_multiselect_and_cascades():
+    """THE CASCADE CONTRACT. Every control is a multi-select (OR within, AND across), and each
+    one's options AND counts come from `_cf` — the frame already narrowed by the controls to its
+    left. Measured: on the QGLP cohort, Sector=Auto Ancillaries takes the tier list 6 -> 4 and
+    catalysts 5 -> 4. A row that computed all four option lists from the unfiltered frame (the
+    pre-2026-08-30 behaviour) would show tiers that return zero rows."""
+    src = _app_src()
+    i = src.index("def _mp_lens_row(")
+    fn = src[i:src.index("    # ── Inner navigation tabs")]
+    assert "st.selectbox" not in fn, "a single-select control is back in the lens row"
+    assert fn.count("st.multiselect") >= 1 and "_pick(" in fn
+    # each stage must narrow _cf before the next stage reads it
+    for sel, col in [("sel_sec", "sector"), ("sel_wt", "wealth_tier"), ("sel_cap", "market_category")]:
+        assert f"if {sel}:" in fn, f"{sel} never narrows the cascade frame"
+    assert fn.index("sel_sec") < fn.index("_wt_opts") < fn.index("_cap_opts"), (
+        "the cascade order broke — later controls must be computed AFTER earlier narrowing"
+    )
+    # counts are display-only: baked into format_func, never into the option values
+    assert "format_func=lambda v, _c=counts" in fn, "facet counts are no longer display-only"
+
+
+def test_lens_reset_value_is_empty_list_not_all():
+    """A multi-select resets to [] — "All" was the SINGLE-select sentinel and would be a stale
+    value the pruning immediately strips, leaving the Clear button unable to clear."""
+    src = _app_src()
+    i = src.index("def _mp_lens_row(")
+    fn = src[i:src.index("    # ── Inner navigation tabs")]
+    assert "_defaults = {k: [] for k in keys}" in fn, "the lens reset no longer resets to []"
+    assert '{k: "All" for k in keys}' not in fn, "the single-select sentinel is back"
 
 
 def test_mp_catalysts_mirrors_ui_discovery():
