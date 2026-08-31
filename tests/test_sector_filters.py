@@ -18,8 +18,18 @@ REPLACED 2026-08-27 (user request): the re-aggregating slot held Cyclicality tie
 the Wealth Tier. Same semantics, same slot, so every behavioural contract below carries over.
 Cyclicality filtering still exists in the Discovery sidebar (sb_cyc) — no capability was lost.
 
-Four identical-looking selectboxes that behave in two different ways is a trap. The tests below
+Four identical-looking controls that behave in two different ways is a trap. The tests below
 assert the behaviour, not the label.
+
+MULTI-SELECT + CASCADE 2026-08-30 (user request). The four set-membership controls became
+multiselects driven by the shared `_mp_ms` helper: several values each (OR within a control, AND
+across), options and live counts computed from the frame already narrowed by the controls to the
+left. Every semantic above survives the change — what moved is `== scalar` → `.isin(list)` and
+`"All"` → `[]` as the neutral state. THE UNITS ARE THE NEW HAZARD, and they are pinned below: a
+re-aggregating filter's count is STOCKS (what gets re-averaged), a row filter's count is SECTORS
+(the rows it hides). One number, two possible meanings, is the "100% trap" class again.
+
+The size dial stays a SELECTBOX: it is a numeric threshold, not a set.
 
 WHY THE SIZE DIAL EXISTS, and why it is the important one. The floor was hardcoded at 5, and that
 is precisely why the ranking was dominated by tiny sectors: an extreme % Qualify is easy at n=7
@@ -58,6 +68,39 @@ def src():
 
 
 @pytest.fixture(scope="module")
+def ms_calls(src):
+    """Every `_mp_ms(...)` call in app.py, read from the AST.
+
+    A plain substring scan for a key would ALSO match the `_SEC_DEFAULTS` dict and stay green with
+    the control itself deleted — a vacuous pass. The AST asks the real question: is this key wired
+    to the cascade multiselect helper?
+    """
+    import ast as _ast
+    calls = [n for n in _ast.walk(_ast.parse(src))
+             if isinstance(n, _ast.Call) and getattr(n.func, "id", "") == "_mp_ms"]
+    assert len(calls) >= 7, f"only {len(calls)} _mp_ms calls found — this scan has lost its teeth"
+    return calls
+
+
+@pytest.fixture(scope="module")
+def ms_help(ms_calls):
+    """key -> help text, taken from the AST so implicitly-concatenated literals arrive JOINED.
+    Scanning the source text for a sentence that the line-wrapper split across two literals is the
+    substring-over-prose trap this suite has fallen into before."""
+    import ast as _ast
+    return {c.args[3].value: c.args[4].value for c in ms_calls
+            if isinstance(c.args[3], _ast.Constant) and isinstance(c.args[4], _ast.Constant)}
+
+
+@pytest.fixture(scope="module")
+def ms_keys(ms_calls):
+    """Literal keys only: the lens rows build theirs as f-strings (`f"mp_{prefix}_sec"`), which is
+    correct there and simply not what this file is about."""
+    import ast as _ast
+    return {c.args[3].value for c in ms_calls if isinstance(c.args[3], _ast.Constant)}
+
+
+@pytest.fixture(scope="module")
 def live():
     from core import run_scoring_pipeline
     with contextlib.redirect_stdout(_io.StringIO()):
@@ -77,9 +120,17 @@ def _agg(d, min_n=5):
 
 
 # -- 1. The controls exist, and the default changes nothing ---------------------------------
-@pytest.mark.parametrize("key", ["mp_sec_cap", "mp_sec_wealth", "mp_sec_cyc", "mp_sec_phase", "mp_sec_minn"])
-def test_each_control_is_present_with_its_own_key(src, key):
-    assert f'key="{key}"' in src, f"the {key} control is gone"
+@pytest.mark.parametrize("key", ["mp_sec_cap", "mp_sec_wealth", "mp_sec_cyc", "mp_sec_phase"])
+def test_each_control_is_present_with_its_own_key(ms_keys, key):
+    assert key in ms_keys, f"the {key} control is gone, or is no longer a cascade multiselect"
+
+
+def test_the_size_dial_stays_a_selectbox(src):
+    """A numeric THRESHOLD, not a set: 'at least 5 and at least 15' is not a question anyone asks,
+    and a multiselect would offer it."""
+    assert 'key="mp_sec_minn"' in src, "the mp_sec_minn control is gone"
+    i = src.index('key="mp_sec_minn"')
+    assert "st.selectbox" in src[i - 300:i], "the size dial stopped being a selectbox"
 
 
 def test_the_size_dial_defaults_to_the_old_hardcoded_floor(src):
@@ -119,10 +170,10 @@ def test_the_wealth_filter_is_actually_applied_before_aggregation(src):
     """STRUCTURAL, because the data-property test above is blind to app.py: it slices the live
     frame itself, so gutting the filter application in the app leaves it green (a mutation run
     proved exactly that). This pins that the selection reaches _sec_src BEFORE the groupby."""
-    i = src.index('key="mp_sec_wealth"')
+    i = src.index('"mp_sec_wealth"')
     j = src.index("_sec_stats = _sec_src.groupby", i)
     between = src[i:j]
-    assert '_sec_src[_sec_src["wealth_tier"] == _wt_sec]' in between, (
+    assert '_sec_src[_sec_src["wealth_tier"].isin(_wt_sec)]' in between, (
         "the Wealth Tier selection is no longer applied to _sec_src before aggregation -- the "
         "control renders but filters nothing"
     )
@@ -185,7 +236,7 @@ def test_the_floor_never_admits_a_sector_below_it(live):
 # -- 4. The two kinds are explained to the reader --------------------------------------------
 def test_the_help_text_distinguishes_the_two_behaviours(src):
     """Four identical-looking selectboxes behaving in two ways needs saying, not guessing."""
-    i = src.index('key="mp_sec_cap"')
+    i = src.index('"mp_sec_cap"')
     block = src[i - 900:i + 5200]      # widened 2026-08-28: the cyclicality control joined the row
     assert block.lower().count("re-aggregat") >= 3, (
         "the three re-aggregating controls no longer all say that they recompute the averages"
@@ -213,7 +264,7 @@ def test_tier_share_base_is_captured_before_the_wealth_filter(src):
     pre-wealth-filter roster. Captured after the filter, selecting any tier makes every
     surviving row read a meaningless 100% — the design review caught this before it shipped."""
     i = src.index("_sec_share_base = _sec_src")
-    j = src.index('_sec_src = _sec_src[_sec_src["wealth_tier"] == _wt_sec]')
+    j = src.index('_sec_src = _sec_src[_sec_src["wealth_tier"].isin(_wt_sec)]')
     assert i < j, "the share base is captured AFTER the wealth filter — the 100% trap is live"
     assert '_sec_share_base.groupby("sector")["wealth_tier"]' in src, (
         "the share aggregation no longer reads the pre-filter base — capturing it means nothing "
@@ -232,11 +283,13 @@ def test_the_100_percent_trap_is_real(live):
 
 
 def test_tier_share_is_exact_match_never_contains(src, live):
-    """'BUY' ⊂ 'BUY★' (the QGLP⊂SQGLP class). Structural: exact equality in the app. Live: the
-    two matchers genuinely disagree, so the pin has teeth."""
+    """'BUY' ⊂ 'BUY★' (the QGLP⊂SQGLP class). Structural: exact MEMBERSHIP in the app — `.isin`
+    over the selected tier set since the control went multi-select, which is still exact-match
+    per value and still not a substring test. Live: the two matchers genuinely disagree, so the
+    pin has teeth."""
     i = src.index("_sec_share_tier")
     seg = src[i:i + 2500]
-    assert "(s == _sec_share_tier)" in seg, "the share is no longer an exact-equality match"
+    assert "s.isin(_sec_share_tiers)" in seg, "the share is no longer an exact-membership match"
     assert ".str.contains" not in seg, "a contains-match crept into the tier share"
     star = live.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "BUY★").mean())
     loose = live.groupby("sector")["wealth_tier"].apply(
@@ -245,10 +298,26 @@ def test_tier_share_is_exact_match_never_contains(src, live):
 
 
 def test_tier_share_defaults_to_buy_star_and_the_label_follows(src):
-    """All → BUY★ (top of the forward-validated monotonic ladder); a selected tier renames the
-    column so its semantics are self-announcing."""
-    assert '_sec_share_tier = _wt_sec if _wt_sec != "All" else "BUY★"' in src
+    """Nothing selected → BUY★ (top of the forward-validated monotonic ladder); a selection renames
+    the column so its semantics are self-announcing. Multi-select 2026-08-30: the share follows the
+    SET, and the label degrades gracefully (one tier → its name, ≤3 → 'BUY★+BUY', more → a count)
+    because 'BUY★+BUY+WATCH★+WATCH %' would not fit a column header."""
+    assert '_sec_share_tiers = list(_wt_sec) if _wt_sec else ["BUY★"]' in src
     assert 'f"💹 {_sec_share_tier} %"' in src, "the column label no longer follows the filter"
+
+
+def test_the_tier_share_label_never_outgrows_a_column_header(src):
+    """Behavioural mirror of the label expression above, so the degradation is checked and not just
+    read: the ladder is 6 tiers deep and naming all six would produce a 40-character header."""
+    i = src.index("_sec_share_tiers = list(_wt_sec)")
+    expr = src[i:src.index("if _wt_sec:", i)]
+    ns = {}
+    for sel, want in [(["BUY★"], "BUY★"), (["BUY★", "BUY"], "BUY★+BUY"),
+                      (["BUY★", "BUY", "WATCH★", "WATCH"], "4 tiers"), ([], "BUY★")]:
+        ns["_wt_sec"] = sel
+        exec(expr.replace("\n" + " " * 8, "\n"), {}, ns)
+        assert ns["_sec_share_tier"] == want, f"{sel} labelled {ns['_sec_share_tier']!r}, want {want!r}"
+        assert len(ns["_sec_share_tier"]) <= 12, "the header label got long enough to be clipped"
 
 
 def test_tier_share_is_not_a_sort_key(src):
@@ -271,9 +340,9 @@ def test_cyclicality_really_does_vary_within_sectors(live):
 def test_cyclicality_filter_is_applied_before_the_share_base_and_the_groupby(src):
     """Ordering is the whole contract: cap → cyclicality → [💹 share base] → wealth → groupby.
     Applied after the share base, Defensive × BUY★ would silently show the ALL-stock share."""
-    i = src.index('_sec_src[_sec_src["cyclicality_tier"] == _cyc_sec]')
+    i = src.index('_sec_src[_sec_src["cyclicality_tier"].isin(_cyc_sec)]')
     j = src.index("_sec_share_base = _sec_src")
-    k = src.index('_sec_src = _sec_src[_sec_src["wealth_tier"] == _wt_sec]')
+    k = src.index('_sec_src = _sec_src[_sec_src["wealth_tier"].isin(_wt_sec)]')
     m = src.index("_sec_stats = _sec_src.groupby")
     assert i < j < k < m, "the cyclicality filter is out of order in the filter chain"
 
@@ -286,6 +355,114 @@ def test_cyclicality_slice_re_aggregates(live):
     assert len(common) > 5, "not enough overlap to compare"
     moved = (base.loc[common, "avg_composite"] - sliced.loc[common, "avg_composite"]).abs() > 0.01
     assert moved.any(), "slicing by cyclicality changed no sector average — it is not re-aggregating"
+
+
+# ── 7. Multi-select + cascade (2026-08-30) — the units rule, pinned ──────────────────────────
+def test_every_set_control_takes_several_values(src):
+    """The user's actual request. `.isin` on all four, nowhere a scalar `== _sel` that would
+    silently accept only the first pick."""
+    for var, col in [("_cap", "market_category"), ("_wt_sec", "wealth_tier"),
+                     ("_cyc_sec", "cyclicality_tier"), ("_phase", "sector_capital_phase")]:
+        assert f'["{col}"].isin({var})' in src, f"{var} is no longer applied as a set membership"
+        assert f'["{col}"] == {var}' not in src, f"{var} still has a scalar comparison somewhere"
+
+
+def test_the_re_aggregating_counts_are_stocks_and_the_row_filter_counts_sectors(src):
+    """THE UNITS RULE, and the reason this tab was held back a phase. The three re-aggregating
+    filters count STOCKS — value_counts over the stock frame. The capital-phase ROW filter counts
+    SECTORS, so its counts come from DE-DUPLICATED (sector, phase) pairs: counting its stocks
+    would put '412' beside an option that hides 9 rows."""
+    i = src.index('"mp_sec_phase"')
+    block = src[src.index("_scf = df"):i]      # from the cascade frame, so the counts are inside
+    for col in ["market_category", "cyclicality_tier", "wealth_tier"]:
+        assert f'_scf["{col}"].astype(str).value_counts()' in block, (
+            f"the {col} facet count is no longer a straight stock count"
+        )
+    ph = src[src.index("_ph_pairs"):i]
+    assert 'drop_duplicates()' in ph, "the capital-phase counts are no longer de-duplicated to sectors"
+    assert '["sector", "sector_capital_phase"]' in ph, "the phase count lost its sector pairing"
+
+
+def test_the_help_text_states_which_unit_each_count_is_in(ms_help):
+    """A bare number beside an option means nothing until you know what it counts, and the two
+    kinds sit in the same row."""
+    for k in ["mp_sec_cap", "mp_sec_wealth", "mp_sec_cyc"]:
+        assert "Counts are STOCKS" in ms_help[k], f"{k} stopped naming its unit"
+    assert "SECTORS, not stocks" in ms_help["mp_sec_phase"], (
+        "the row filter no longer warns that its unit differs from its neighbours'"
+    )
+
+
+def test_the_phase_count_really_would_mislead_as_stocks(live):
+    """Teeth for the rule above: the two units are far apart on live data, so labelling the row
+    filter with a stock count would be a real mislead, not a pedantic one."""
+    pairs = live[["sector", "sector_capital_phase"]].dropna().drop_duplicates()
+    sectors = pairs["sector_capital_phase"].value_counts()
+    stocks = live["sector_capital_phase"].dropna().value_counts()
+    assert not sectors.empty, "no capital phases on live data — probe is stale"
+    common = sectors.index.intersection(stocks.index)
+    assert (stocks[common] / sectors[common]).max() > 3, (
+        "stock and sector counts per phase are now within 3x of each other — re-measure before "
+        "relaxing the units rule"
+    )
+
+
+def test_the_cascade_narrows_left_to_right(src):
+    """Each control's options come from `_scf`, the frame already narrowed by the ones to its left
+    — never from `df`. A stale option list is how a cascade quietly starts lying: it keeps offering
+    a combination that yields nothing.
+
+    ONE ORDER, THREE TIMES OVER (fixed 2026-08-30 while pinning this). The row is laid out in the
+    order the filters are actually APPLIED — cap → cyclicality → wealth → phase — because the
+    application order is not free: the 💹 share base must be captured after cyclicality and before
+    wealth (test_cyclicality_filter_is_applied_before_the_share_base_and_the_groupby). The first
+    build put wealth second on screen but narrowed neither by the other, so 'Defensive × BUY★'
+    could be offered as a live pair when the intersection was empty. Column order, cascade order
+    and application order are now the same order.
+    """
+    block = src[src.index("_scf = df"):src.index('key="mp_sec_minn"')]
+    assert block.count("_scf[_scf[") == 3, "the three re-aggregating filters no longer all narrow _scf"
+    # GUARDED, not merely present: a mutation run put `if False:` above each narrowing line and an
+    # existence check stayed green. Whitespace-collapsed so the pin is indentation-agnostic.
+    flat = re.sub(r"\s+", " ", block)
+    for var, col in [("_cap", "market_category"), ("_cyc_sec", "cyclicality_tier"),
+                     ("_wt_sec", "wealth_tier")]:
+        assert f'if {var}: _scf = _scf[_scf["{col}"].isin({var})]' in flat, (
+            f"the {col} narrowing is no longer reached by its own selection"
+        )
+    for col in ["market_category", "cyclicality_tier", "wealth_tier", "sector_capital_phase"]:
+        assert f'df["{col}"]' not in block.replace("_scf", ""), (
+            f"the {col} facet reads the unfiltered universe again — the cascade is broken"
+        )
+    assert (block.index('_scf[_scf["market_category"]') < block.index('_scf["cyclicality_tier"]')
+            < block.index('_scf[_scf["cyclicality_tier"]') < block.index('_scf["wealth_tier"]')
+            < block.index('_scf[_scf["wealth_tier"]') < block.index("_ph_pairs")), (
+        "the cascade order broke — each control must be COUNTED before the next one narrows"
+    )
+
+
+def test_the_clear_resets_every_set_control_to_empty(src):
+    """[] is the neutral state now, not "All" — and a reset that SETS (never `del`) is the law
+    this whole app learned the hard way (the Steel bug: `del` lets the frontend resurrect the
+    stale value on the next run)."""
+    i = src.index("_SEC_DEFAULTS = {")
+    d = src[i:src.index("}", i) + 1]
+    for k in ["mp_sec_cap", "mp_sec_wealth", "mp_sec_cyc", "mp_sec_phase"]:
+        assert f'"{k}": []' in d, f"{k} does not reset to the empty selection"
+    assert '"mp_sec_minn": 5' in d, "the size dial no longer resets to its own default of 5"
+
+
+def test_the_sector_column_is_not_shown_under_its_raw_name(src):
+    """`reset_index()` turns the groupby key into a COLUMN, and a column with no config entry
+    renders under its raw snake_case name — this table displayed "sector". The app-wide header pin
+    (test_market_pulse_tabs::test_no_dataframe_header_is_a_raw_column_name) cannot catch it: that
+    scan reads st.column_config pairs, so a column with NO pair is invisible to it. Caught in the
+    browser instead, and pinned here where the table lives."""
+    i = src.index("_sec_stats[_sec_order].reset_index()")
+    block = src[i:src.index("hide_index=True", i)]
+    assert '"sector":' in block, "the sector column has no column_config — it renders raw"
+    assert 'st.column_config.TextColumn("Sector"' in block, (
+        "the sector column is no longer given a display name")
 
 
 def test_the_caption_points_to_the_industry_tab(src):

@@ -337,7 +337,11 @@ def test_sidebar_publishes_the_culprit_through_the_real_widget_machinery():
 
     at = AppTest.from_function(_zero_culprit_app)
     at.session_state["sb_minscore"] = 50          # above both composites -> guaranteed zero
-    at.run()
+    # EXPLICIT TIMEOUT. AppTest defaults to 3s, and this script renders the whole discovery
+    # sidebar; under a loaded machine (a parallel full-suite run) it overran and the failure looked
+    # exactly like a real regression -- it cost three verification runs on 2026-08-31 before being
+    # identified as a timeout. Nothing about the assertions changed.
+    at.run(timeout=30)
     assert not at.exception, f"sidebar raised: {at.exception}"
     out = [t.value for t in at.text]
     assert "N=0" in out, f"filter did not empty the frame: {out}"
@@ -350,7 +354,7 @@ def test_no_culprit_published_when_results_remain():
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_function(_zero_culprit_app)
-    at.run()
+    at.run(timeout=30)                            # see the sibling test: 3s default is too tight
     assert not at.exception, f"sidebar raised: {at.exception}"
     out = [t.value for t in at.text]
     assert "N=2" in out, f"unfiltered frame should keep both rows: {out}"

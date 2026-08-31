@@ -90,6 +90,21 @@ def block(src):
 
 
 @pytest.fixture(scope="module")
+def ms_help(src):
+    """key -> help text for this tab's cascade multiselects, read from the AST so that implicitly
+    concatenated literals arrive JOINED. Scanning the source text for a sentence the line-wrapper
+    split across two literals is the substring-over-prose trap this suite has hit before."""
+    out = {}
+    for n in ast.walk(ast.parse(src)):
+        if (isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_mp_ms"
+                and isinstance(n.args[3], ast.Constant)
+                and str(n.args[3].value).startswith("mp_ind_")):
+            out[n.args[3].value] = n.args[4].value
+    assert len(out) == 3, f"expected 3 Industry multiselects, found {sorted(out)}"
+    return out
+
+
+@pytest.fixture(scope="module")
 def live():
     from core import run_scoring_pipeline
     with contextlib.redirect_stdout(_io.StringIO()):
@@ -457,7 +472,11 @@ def test_no_state_mutating_widgets_beyond_selectboxes(block):
 def test_widget_keys_are_unique_to_this_tab(src, block):
     """A key collision with the Sectors tab would make one tab's control silently drive the
     other's — both tabs render on every run."""
-    keys = re.findall(r'key="(\w+)"', block)
+    # MULTI-SELECT 2026-08-30: the three filters pass their key POSITIONALLY to the shared
+    # _mp_ms cascade helper, so a `key="..."` scan alone now sees only the Clear button. Both
+    # forms are collected — the pin is about the key SET, not the calling convention.
+    keys = (re.findall(r'key="(\w+)"', block)
+            + re.findall(r'_mp_ms\([^,]+,[^,]+,[^,]+,\s*"(\w+)"', block))
     assert sorted(keys) == ["mp_ind_cap", "mp_ind_clear", "mp_ind_sec", "mp_ind_wealth"], (
         f"expected the two RE-AGGREGATING filters (market-cap, wealth tier), the sector "
         f"DRILL-DOWN row filter (added 2026-08-28, examined), and the 🧹 Clear (added "
@@ -466,7 +485,9 @@ def test_widget_keys_are_unique_to_this_tab(src, block):
     )
     for k in keys:
         assert k.startswith("mp_ind_"), f"key {k!r} is not namespaced to the Industry tab"
-        assert src.count(f'key="{k}"') == 1, f"key {k!r} is used more than once in app.py"
+        bindings = (src.count(f'key="{k}"')
+                    + len(re.findall(r'_mp_ms\([^,]+,[^,]+,[^,]+,\s*"' + k + '"', src)))
+        assert bindings == 1, f"key {k!r} drives {bindings} widgets in app.py, expected exactly 1"
 
 
 def test_missing_industry_column_is_handled(block):
@@ -481,7 +502,7 @@ def test_tier_share_base_is_captured_before_the_wealth_filter(block):
     """The 100% trap (see test_sector_filters for the live proof): the denominator must be the
     pre-wealth-filter roster."""
     i = block.index("_ind_share_base = _ind_src")
-    j = block.index('_ind_src = _ind_src[_ind_src["wealth_tier"] == _ind_wt]')
+    j = block.index('_ind_src = _ind_src[_ind_src["wealth_tier"].isin(_ind_wt)]')
     assert i < j, "the share base is captured AFTER the wealth filter — the 100% trap is live"
     assert '_ind_share_base.groupby("industry")["wealth_tier"]' in block, (
         "the share aggregation no longer reads the pre-filter base"
@@ -489,14 +510,19 @@ def test_tier_share_base_is_captured_before_the_wealth_filter(block):
 
 
 def test_tier_share_is_exact_match_never_contains(block):
+    """Exact MEMBERSHIP since the control went multi-select (2026-08-30): still one exact match per
+    selected tier, still never a substring test — "BUY" is a prefix of "BUY★"."""
     i = block.index("_ind_share_tier")
     seg = block[i:i + 2600]
-    assert "(s == _ind_share_tier)" in seg, "the share is no longer an exact-equality match"
+    assert "s.isin(_ind_share_tiers)" in seg, "the share is no longer an exact-membership match"
     assert ".str.contains" not in seg, "a contains-match crept into the tier share"
 
 
 def test_tier_share_defaults_to_buy_star_and_the_label_follows(block):
-    assert '_ind_share_tier = _ind_wt if _ind_wt != "All" else "BUY★"' in block
+    """Nothing selected → BUY★; a selection renames the column. Multi-select: the share follows the
+    SET and the label degrades (one tier → its name, ≤3 → joined, more → a count) so it still fits
+    a column header — the same grammar as the Sectors tab, pinned behaviourally there."""
+    assert '_ind_share_tiers = list(_ind_wt) if _ind_wt else ["BUY★"]' in block
     assert 'f"💹 {_ind_share_tier} %"' in block, "the column label no longer follows the filter"
 
 
@@ -525,7 +551,7 @@ def test_industry_tier_share_discriminates(live):
 def test_drill_down_is_applied_after_aggregation_and_sort(block):
     """Row-filter semantics: the drill must touch no average, Δ or 💹 share — so it must sit
     AFTER the aggregation, the delta, the share and the sort."""
-    i = block.index('_dom_sec.reindex(_ind_stats.index) == _ind_sec')
+    i = block.index('_dom_sec.reindex(_ind_stats.index).isin(_ind_sec)')
     assert block.index("_ind_stats = _ind_src.groupby") < i
     assert block.index('_ind_stats["delta_vs_sector"]') < i
     assert block.index('_ind_stats["pct_tier"]') < i
@@ -535,7 +561,7 @@ def test_drill_down_is_applied_after_aggregation_and_sort(block):
 def test_drill_down_matches_the_dominant_sector(block):
     """The drill matches _dom_sec — the same dominant-sector series the table displays — so a
     ~ row appears under its dominant home, never under a minority sector."""
-    assert '_dom_sec.reindex(_ind_stats.index) == _ind_sec' in block
+    assert '_dom_sec.reindex(_ind_stats.index).isin(_ind_sec)' in block
 
 
 def test_dom_share_is_index_aligned_for_the_drill(block):
@@ -550,3 +576,75 @@ def test_drill_options_are_sorted(block):
     """Determinism mandate: an unsorted unique() would reorder the dropdown per process."""
     i = block.index("_ind_sec_opts")
     assert "sorted(" in block[i:i + 140], "the drill-down options are not sorted"
+
+
+# ── Multi-select + cascade (2026-08-30) ──────────────────────────────────────────────────────
+def test_every_set_control_takes_several_values(block):
+    """The user's request. `.isin` everywhere, and nowhere a scalar `==` that would silently
+    honour only the first pick."""
+    for var, col in [("_ind_cap", "market_category"), ("_ind_wt", "wealth_tier")]:
+        assert f'["{col}"].isin({var})' in block, f"{var} is no longer applied as a set membership"
+        assert f'["{col}"] == {var}' not in block, f"{var} still has a scalar comparison"
+    assert ".isin(_ind_sec)" in block, "the drill-down takes only one sector again"
+
+
+def test_the_drill_down_counts_industries_not_stocks(block, ms_help):
+    """THE UNITS RULE. Market-cap and wealth are re-aggregating filters, so their facet counts are
+    STOCKS; the drill-down hides INDUSTRY ROWS, so its count must be industries-by-dominant-sector.
+    A stock count there would promise 412 rows and deliver 9."""
+    i = block.index("_ind_sec_n =")
+    seg = block[i:i + 200]
+    assert "_ind_dominant(" in seg, "the drill-down count no longer counts dominant-sector rows"
+    assert '_icf["sector"].astype(str).value_counts()' not in block, (
+        "the drill-down count reverted to a straight stock count — wrong unit"
+    )
+    for k, unit in [("mp_ind_cap", "Counts are STOCKS"), ("mp_ind_wealth", "Counts are STOCKS"),
+                    ("mp_ind_sec", "INDUSTRIES, not stocks")]:
+        assert unit in ms_help[k], f"the {k} help text no longer names its unit ({unit})"
+
+
+def test_the_two_units_really_are_far_apart(live):
+    """Teeth: on live data a sector holds a median of 3 industries but tens of stocks, so
+    mislabelling the drill-down count would be a large, not pedantic, error."""
+    d = live.dropna(subset=["industry", "sector"])
+    pair = (d.groupby(["industry", "sector"]).size().rename("n").reset_index()
+            .sort_values(["industry", "n", "sector"], ascending=[True, False, True]))
+    dom = pair.drop_duplicates("industry")
+    inds = dom["sector"].value_counts()
+    stocks = d["sector"].value_counts()
+    common = inds.index.intersection(stocks.index)
+    assert (stocks[common] / inds[common]).median() > 3, (
+        "stocks-per-sector and industries-per-sector have converged — re-measure the units rule"
+    )
+
+
+def test_the_dominant_sector_is_computed_once(block):
+    """The drill-down's counts and the table's own `_dom_sec` must be the SAME modal choice with
+    the SAME (count desc, sector asc) tie-break — two inline copies would drift the moment one is
+    edited, and the symptom would be an option promising rows the table does not show."""
+    assert block.count("def _ind_dominant(") == 1, "the shared dominant-sector helper is gone"
+    assert block.count("_ind_dominant(") == 3, (
+        "expected one definition and exactly two call sites (drill-down counts + the table)"
+    )
+    i = block.index("def _ind_dominant(")
+    body = block[i:block.index("_i1, _i2, _i3, _i4", i)]
+    assert 'ascending=[True, False, True]' in body, "the deterministic tie-break left the helper"
+    assert 'drop_duplicates("industry")' in body, "the helper stopped picking one sector per industry"
+
+
+def test_the_industry_cascade_narrows_left_to_right(block):
+    """Options and counts come from `_icf` — the frame already narrowed by the controls to the
+    left — so a dead-end combination cannot be offered."""
+    i = block.index("_icf = _ind_src")
+    seg = block[i:block.index('"mp_ind_sec"', i)]
+    # GUARDED, not merely present: a mutation run put `if False:` above each narrowing line and an
+    # existence check stayed green. Whitespace-collapsed so the pin is indentation-agnostic.
+    flat = re.sub(r"\s+", " ", seg)
+    for var, col in [("_ind_cap", "market_category"), ("_ind_wt", "wealth_tier")]:
+        assert f'if {var}: _icf = _icf[_icf["{col}"].isin({var})]' in flat, (
+            f"the {col} filter no longer narrows the cascade under its own selection"
+        )
+    assert seg.index('_icf[_icf["market_category"]') < seg.index('_icf["wealth_tier"].astype(str)'), (
+        "wealth facets are counted before the market-cap narrowing — the cascade order broke"
+    )
+    assert "_ind_dominant(_icf)" in block, "the drill-down counts read an un-narrowed frame"

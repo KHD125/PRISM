@@ -1291,7 +1291,28 @@ def _render_market_pulse():
         for k, v in defaults.items():
             st.session_state[k] = v
 
-    def _mp_lens_row(frame, prefix, with_tier=True):
+    def _mp_ms(slot, label, options, key, help_text, counts):
+        """THE ONE cascade-safe multiselect used by every Market Pulse filter row (lens rows,
+        Sectors, Industry) — one dialect, not three. Mirrors ui_discovery._ms_cascade: state is
+        managed here (no `default=` arg, which would trigger Streamlit's default-plus-state
+        warning) and the stored selection is PRUNED to the live options BEFORE the widget
+        instantiates. Under a cascade that pruning is mandatory: narrowing removes options every
+        run and a keyed widget whose stored value is absent from its options raises.
+
+        `counts` maps option -> live count in the CURRENT (already narrowed) frame. DISPLAY only:
+        never bake a volatile number into an option VALUE or the pruning stops matching. The UNIT
+        of that count differs by filter kind and the caller decides it — a re-aggregating filter
+        counts STOCKS (they are what gets re-averaged), a row filter counts the ROWS it hides
+        (sectors / industries). Mixing the two silently would be the units trap this row layout
+        was deliberately held back for."""
+        st.session_state[key] = [v for v in st.session_state.get(key, []) if v in options]
+        with slot:
+            return st.multiselect(
+                label, options, key=key, help=help_text,
+                format_func=lambda v, _c=counts: f"{v}  ·  {_c.get(v, 0)}",
+            )
+
+    def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
         """The lens-filter row: Sector · [Wealth Tier ·] Market Cap · Catalyst · Clear.
 
         MULTI-SELECT AND CASCADING (2026-08-30). Each control takes SEVERAL values (OR within a
@@ -1312,28 +1333,21 @@ def _render_market_pulse():
         Returns (filtered_frame, n_active). The 🧹 button materializes ONLY when a filter is
         active, in a FIXED last slot — zero furniture when idle, zero layout jump when it appears.
         """
+        # `extra_keys` are controls the TAB owns OUTSIDE this row (the Wealth tab keeps its own
+        # Tier control above the table). They filter nothing here — the tab already applied them —
+        # but they must count as active and must be reset by the 🧹, or a Clear sitting on screen
+        # would visibly clear the row and silently leave another filter running.
         keys = ([f"mp_{prefix}_sec"] + ([f"mp_{prefix}_wt"] if with_tier else [])
-                + [f"mp_{prefix}_cap", f"mp_{prefix}_cat"])
+                + [f"mp_{prefix}_cap", f"mp_{prefix}_cat"] + list(extra_keys))
         slots = st.columns([2.6, 1.9, 1.9, 2.0, 1.0] if with_tier
                            else [3.0, 2.2, 2.4, 1.1])
         _cf = frame                      # progressively narrowed cascade frame
-
-        def _pick(slot, label, options, key, help_text, counts):
-            """One cascade-safe multiselect. `counts` maps option -> live count in the CURRENT
-            (already narrowed) frame; it is DISPLAY only — never baked into the option VALUES, or
-            the pruning below stops matching."""
-            st.session_state[key] = [v for v in st.session_state.get(key, []) if v in options]
-            with slot:
-                return st.multiselect(
-                    label, options, key=key, help=help_text,
-                    format_func=lambda v, _c=counts: f"{v}  ·  {_c.get(v, 0)}",
-                )
 
         # 1 ── Sector (widest funnel first, so every later count reflects it)
         _sec_opts = (sorted(_cf["sector"].dropna().astype(str).unique().tolist())
                      if "sector" in _cf.columns else [])
         _sec_n = _cf["sector"].astype(str).value_counts().to_dict() if _sec_opts else {}
-        sel_sec = _pick(slots[0], "Sector", _sec_opts, f"mp_{prefix}_sec",
+        sel_sec = _mp_ms(slots[0], "Sector", _sec_opts, f"mp_{prefix}_sec",
                         "Show only these sectors. Pick several — a stock matching ANY of them "
                         "qualifies. Counts are live in this lens's cohort.", _sec_n)
         if sel_sec:
@@ -1345,7 +1359,7 @@ def _render_market_pulse():
             _wt_opts = [t for t in _WT_ORDER
                         if "wealth_tier" in _cf.columns and (_cf["wealth_tier"] == t).any()]
             _wt_n = _cf["wealth_tier"].astype(str).value_counts().to_dict() if _wt_opts else {}
-            sel_wt = _pick(slots[_i], "Wealth tier", _wt_opts, f"mp_{prefix}_wt",
+            sel_wt = _mp_ms(slots[_i], "Wealth tier", _wt_opts, f"mp_{prefix}_wt",
                            "Cross-lens: this framework's passers x the wealth engine's tier. Pick "
                            "several (e.g. BUY★ and BUY together). Counts reflect the sector "
                            "filter above.", _wt_n)
@@ -1357,7 +1371,7 @@ def _render_market_pulse():
         _cap_opts = [c for c in _MP_CAP_ORDER
                      if "market_category" in _cf.columns and (_cf["market_category"] == c).any()]
         _cap_n = _cf["market_category"].astype(str).value_counts().to_dict() if _cap_opts else {}
-        sel_cap = _pick(slots[_i], "Market cap", _cap_opts, f"mp_{prefix}_cap",
+        sel_cap = _mp_ms(slots[_i], "Market cap", _cap_opts, f"mp_{prefix}_cap",
                         "Market-cap tiers (the sheet's Market Category). Pick several; counts "
                         "reflect every filter to the left.", _cap_n)
         if sel_cap:
@@ -1366,7 +1380,7 @@ def _render_market_pulse():
         # 4 ── Catalyst (OR across the flags — a stock firing ANY selected catalyst qualifies)
         _cat_n = {l: int(_cf[c].fillna(0).sum()) for l, c in _MP_CATALYSTS.items() if c in _cf.columns}
         _cat_opts = [l for l in _MP_CATALYSTS if _cat_n.get(l, 0) > 0]
-        sel_cat = _pick(slots[_i + 1], "Catalyst", _cat_opts, f"mp_{prefix}_cat",
+        sel_cat = _mp_ms(slots[_i + 1], "Catalyst", _cat_opts, f"mp_{prefix}_cat",
                         "Fast-moving inflections firing right now. Pick several — ANY of them "
                         "qualifies. Only catalysts alive in this cohort are offered.", _cat_n)
         if sel_cat:
@@ -1678,19 +1692,27 @@ def _render_market_pulse():
                 + "</div>",
                 unsafe_allow_html=True,
             )
-            _wt_pick = st.selectbox(
-                "Tier", ["All"] + _WT_ORDER, key="mp_wealth_tier",
-                label_visibility="collapsed",
-                help="Filter to one tier. The table always sorts strongest tier first, then by Vel%.",
-            )
+            # MULTI-SELECT 2026-08-30 (user request): several tiers at once — "BUY★ and BUY" and
+            # "WATCH★ and WATCH" are the two readings this tab is actually used for, and neither
+            # was expressible one tier at a time. Same shared _mp_ms helper as every other Market
+            # Pulse filter, so the counts-on-options grammar is identical. The label is VISIBLE
+            # here (it was collapsed for the selectbox): an empty multiselect shows only a generic
+            # placeholder, and a collapsed label takes its help tooltip down with it.
+            _wt_n = {str(k): int(v) for k, v in _wt_counts.items()} if len(_wt_counts) else {}
+            _wt_pick = _mp_ms(st.container(), "Tier", [t for t in _WT_ORDER if _wt_n.get(t, 0)],
+                              "mp_wealth_tier",
+                              "Filter to these tiers — pick several (BUY★ + BUY, or the two "
+                              "WATCH grades together); a stock in ANY of them qualifies. The "
+                              "table always sorts strongest tier first, then by Vel%.", _wt_n)
             _wl = df.copy()
             _wl["_wt_ord"] = _wl["wealth_tier"].map({t: i for i, t in enumerate(_WT_ORDER)})
             _wl["_warn_txt"] = np.where(_wl["wealth_warn"].fillna(0) == 1, "⚠", "")
-            if _wt_pick != "All":
-                _wl = _wl[_wl["wealth_tier"] == _wt_pick]
+            if _wt_pick:
+                _wl = _wl[_wl["wealth_tier"].isin(_wt_pick)]
             _w_total = len(_wl)
-            # Tier stays the tab own control above; the lens row adds Sector/Cap/Catalyst.
-            _wl, _w_act = _mp_lens_row(_wl, "w", with_tier=False)
+            # Tier stays the tab's own control above — but it is declared to the lens row as an
+            # extra key so the row's 🧹 Clear resets it along with Sector/Cap/Catalyst.
+            _wl, _w_act = _mp_lens_row(_wl, "w", extra_keys=("mp_wealth_tier",), with_tier=False)
             if _wl.empty:
                 st.info("No stock in this tier matches the lens filters — 🧹 Clear resets them.")
             _wl = _wl.sort_values(["_wt_ord", "wealth_vel_pct"], ascending=[True, False])
@@ -1740,91 +1762,88 @@ def _render_market_pulse():
         # so it stays correct if that ever stops being true rather than silently part-filtering a
         # sector and skewing its averages.
         _sec_src = df
-        _c1, _c2, _c3, _c4, _c5, _c6 = st.columns([2, 2, 2, 2, 2, 1])
+        # MULTI-SELECT + CASCADE (2026-08-30 Phase 2). Each control takes several values (OR
+        # within, AND across) and every option list + count is computed from the frame already
+        # narrowed by the controls to its left. THE UNITS DIFFER BY FILTER KIND, which is why this
+        # tab was held back a phase: the three RE-AGGREGATING filters (market-cap, wealth,
+        # cyclicality) count STOCKS -- those are what gets re-averaged -- while the capital-phase
+        # ROW filter counts SECTORS, because sectors are the rows it hides. Labelling a sector-row
+        # filter with a stock count would put two units side by side, the "100% trap" class.
+        _c1, _c2, _c3, _c4, _c5, _c6 = st.columns([2.1, 2.4, 1.8, 1.9, 1.5, 1.0])
+        _scf = df                                  # progressively narrowed cascade frame (STOCKS)
 
-        with _c1:
-            if "market_category" in df.columns:
-                from config import MCAP_TIERS
-                _cap_opts = ["All"] + [t for t in MCAP_TIERS if (df["market_category"] == t).any()]
-                _cap = st.selectbox(
-                    "Market-cap tier", _cap_opts,
-                    format_func=lambda t: t if t == "All" else f"{MCAP_TIERS[t]['emoji']} {t}",
-                    key="mp_sec_cap",
-                    help="Re-aggregates: keeps only stocks in this tier, then recomputes every sector average.",
-                )
-            else:
-                _cap = "All"
+        # 1 -- Market-cap tier (re-aggregating; counts = stocks)
+        from config import MCAP_TIERS
+        if "market_category" in _scf.columns:
+            _cap_n = _scf["market_category"].astype(str).value_counts().to_dict()
+            _cap_opts = [t for t in MCAP_TIERS if _cap_n.get(t, 0) > 0]
+            _cap = _mp_ms(_c1, "Market-cap tier", _cap_opts, "mp_sec_cap",
+                          "Re-aggregates: keeps only stocks in these tiers, then recomputes every "
+                          "sector average. Counts are STOCKS. Pick several - any of them qualifies.",
+                          _cap_n)
+            if _cap:
+                _scf = _scf[_scf["market_category"].isin(_cap)]
+        else:
+            _cap = []
 
-        with _c2:
-            # 2026-08-27: Cyclicality tier → Wealth Tier in this slot (user request). 2026-08-28:
-            # cyclicality RETURNED as a third control (below) once measurement showed the swap had
-            # quietly lost a capability — 42 of 81 sectors hold MORE THAN ONE cyclicality tier
-            # (Chemicals only 44% its dominant one), so "sector averages over Defensive stocks
-            # only" is a stock-level re-aggregation no Discovery filter or row-hide can rebuild.
-            # Two-kinds architecture now: re-aggregating = Market-cap + Wealth + Cyclicality ·
-            # row filters = Capital phase + Min size.
-            _WT_SEC = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
-            if "wealth_tier" in df.columns:
-                _wt_sec_opts = ["All"] + [t for t in _WT_SEC if (df["wealth_tier"] == t).any()]
-                _wt_sec = st.selectbox(
-                    "Wealth tier", _wt_sec_opts, key="mp_sec_wealth",
-                    help="Re-aggregates: keeps only stocks in this wealth tier, then recomputes every "
-                         "sector average and % Qualify over the survivors. 'BUY★, grouped by sector' "
-                         "shows where the improving-wealth names concentrate.",
-                )
-            else:
-                _wt_sec = "All"
+        # 2 -- Cyclicality tier (re-aggregating; counts = stocks). Canonical order, not alphabetical.
+        _CYC_SEC = ["Defensive", "Sensitive / Structural-Growth", "Cyclical",
+                    "Deep Cyclical / Commodity", "Financials", "Catch-all"]
+        if "cyclicality_tier" in _scf.columns:
+            _cyc_n = _scf["cyclicality_tier"].astype(str).value_counts().to_dict()
+            _cyc_opts = [t for t in _CYC_SEC if _cyc_n.get(t, 0) > 0]
+            _cyc_sec = _mp_ms(_c2, "Cyclicality tier", _cyc_opts, "mp_sec_cyc",
+                              "Re-aggregates: tiers cross sector lines (42 of 81 sectors hold more "
+                              "than one), so this is a STOCK filter - hiding whole sectors could not "
+                              "answer 'how do sectors rank among Defensive stocks only'. Counts are "
+                              "STOCKS and reflect the market-cap filter to the left.", _cyc_n)
+            if _cyc_sec:
+                _scf = _scf[_scf["cyclicality_tier"].isin(_cyc_sec)]
+        else:
+            _cyc_sec = []
 
-        with _c3:
-            # Canonical tier order (defensive → deep cyclical), not alphabetical — the economic
-            # spectrum reads left to right. Presence-checked like the other re-aggregators.
-            _CYC_SEC = ["Defensive", "Sensitive / Structural-Growth", "Cyclical",
-                        "Deep Cyclical / Commodity", "Financials", "Catch-all"]
-            if "cyclicality_tier" in df.columns:
-                _cyc_opts = ["All"] + [t for t in _CYC_SEC if (df["cyclicality_tier"] == t).any()]
-                _cyc_sec = st.selectbox(
-                    "Cyclicality tier", _cyc_opts, key="mp_sec_cyc",
-                    help="Re-aggregates: keeps only stocks in this cyclicality tier, then recomputes "
-                         "every sector average, % Qualify and the 💹 share over the survivors. "
-                         "Tiers cross sector lines (42 of 81 sectors hold more than one), so this "
-                         "is a stock filter — hiding whole sectors could not answer 'how do "
-                         "sectors rank among Defensive stocks only'.",
-                )
-            else:
-                _cyc_sec = "All"
+        # 3 -- Wealth tier (re-aggregating; counts = stocks, after cap AND cyclicality)
+        _WT_SEC = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
+        if "wealth_tier" in _scf.columns:
+            _wt_n = _scf["wealth_tier"].astype(str).value_counts().to_dict()
+            _wt_opts = [t for t in _WT_SEC if _wt_n.get(t, 0) > 0]
+            _wt_sec = _mp_ms(_c3, "Wealth tier", _wt_opts, "mp_sec_wealth",
+                             "Re-aggregates over the survivors. 'BUY★ and BUY, grouped by sector' "
+                             "shows where the improving-wealth names concentrate. Counts are STOCKS "
+                             "and reflect every filter to the left.", _wt_n)
+            if _wt_sec:
+                _scf = _scf[_scf["wealth_tier"].isin(_wt_sec)]
+        else:
+            _wt_sec = []
 
-        with _c4:
-            if "sector_capital_phase" in df.columns:
-                _ph_opts = ["All"] + sorted(df["sector_capital_phase"].dropna().unique().tolist())
-                _phase = st.selectbox(
-                    "Capital phase", _ph_opts, key="mp_sec_phase",
-                    help="Hides rows. The phase is a SECTOR attribute (constant within a sector), so this "
-                         "shows or hides whole sectors and changes no average.",
-                )
-            else:
-                _phase = "All"
+        # 4 -- Capital phase (ROW filter; counts = SECTORS, the rows it hides)
+        if "sector_capital_phase" in _scf.columns:
+            _ph_pairs = _scf[["sector", "sector_capital_phase"]].dropna().drop_duplicates()
+            _ph_n = _ph_pairs["sector_capital_phase"].value_counts().to_dict()
+            _ph_opts = sorted(_ph_n)
+            _phase = _mp_ms(_c4, "Capital phase", _ph_opts, "mp_sec_phase",
+                            "Hides rows. The phase is a SECTOR attribute (constant within a sector), "
+                            "so this shows or hides whole sectors and changes no average - the counts "
+                            "are therefore SECTORS, not stocks.", _ph_n)
+        else:
+            _phase = []
 
         with _c5:
-            # THE FLOOR IS NOW A DIAL. It was hardcoded at 5, and that is why the ranking was
-            # dominated by tiny sectors: an extreme % Qualify is easy at n=7 and near-impossible at
-            # n=96. Measured 2026-08-27: 8 of the top 10 sectors held fewer than 12 stocks, and
-            # raising this to 15 changes the top six COMPLETELY (0 of 6 in common). Default stays 5
-            # so nothing moves for anyone who does not touch it.
             # 1 ADDED 2026-08-30 (user request): shows EVERY sector, even single-stock ones.
-            # index=1 keeps the DEFAULT at 5 — the untouched tab is unchanged (pinned).
+            # index=1 keeps the DEFAULT at 5 - the untouched tab is unchanged (pinned). This stays a
+            # SELECTBOX by design: it is a numeric THRESHOLD, not a set-membership filter.
             _min_n = st.selectbox(
                 "Min stocks / sector", [1, 5, 10, 15, 20, 30], index=1, key="mp_sec_minn",
                 help="Hides rows. A sector's % Qualify is only as trustworthy as its sample: at n=7 one "
                      "company moves it 14 points, at n=96 it moves it 1. Raise this to see only sectors "
-                     "big enough for the percentage to mean something — or drop to 1 to see them all.",
+                     "big enough for the percentage to mean something - or drop to 1 to see them all.",
             )
 
         with _c6:
-            # Default-aware conditional Clear (same grammar as the lens rows): each control resets
-            # to ITS OWN default — "All" for the four filters, 5 for the size dial. Fixed slot,
-            # button only when something differs from default.
-            _SEC_DEFAULTS = {"mp_sec_cap": "All", "mp_sec_wealth": "All", "mp_sec_cyc": "All",
-                             "mp_sec_phase": "All", "mp_sec_minn": 5}
+            # Default-aware conditional Clear: each control resets to ITS OWN default - [] for the
+            # four multiselects, 5 for the size dial. Fixed slot, button only when something differs.
+            _SEC_DEFAULTS = {"mp_sec_cap": [], "mp_sec_wealth": [], "mp_sec_cyc": [],
+                             "mp_sec_phase": [], "mp_sec_minn": 5}
             st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
             if any(st.session_state.get(k, d) != d for k, d in _SEC_DEFAULTS.items()):
                 st.button("🧹 Clear", key="mp_sec_clear", use_container_width=True,
@@ -1841,10 +1860,10 @@ def _render_market_pulse():
             unsafe_allow_html=True,
         )
 
-        if _cap != "All":
-            _sec_src = _sec_src[_sec_src["market_category"] == _cap]
-        if _cyc_sec != "All" and "cyclicality_tier" in _sec_src.columns:
-            _sec_src = _sec_src[_sec_src["cyclicality_tier"] == _cyc_sec]
+        if _cap:
+            _sec_src = _sec_src[_sec_src["market_category"].isin(_cap)]
+        if _cyc_sec and "cyclicality_tier" in _sec_src.columns:
+            _sec_src = _sec_src[_sec_src["cyclicality_tier"].isin(_cyc_sec)]
         # 💹 TIER-SHARE BASE — captured AFTER the cap and cyclicality filters, BEFORE the wealth
         # filter, so Defensive × BUY★ reads "BUY★ share among the sector's Defensive stocks". The share
         # column answers "how much of this group's FULL roster is tier X?"; computed after the
@@ -1853,13 +1872,17 @@ def _render_market_pulse():
         # under every OTHER filter. The tier shown follows the filter selection; All → BUY★,
         # the top of the forward-validated monotonic ladder.
         _sec_share_base = _sec_src
-        _sec_share_tier = _wt_sec if _wt_sec != "All" else "BUY★"
-        if _wt_sec != "All":
-            _sec_src = _sec_src[_sec_src["wealth_tier"] == _wt_sec]
-        if _cap != "All" or _wt_sec != "All" or _cyc_sec != "All":
-            _bits = " · ".join(b for b in [_cap if _cap != "All" else "",
-                                           _cyc_sec if _cyc_sec != "All" else "",
-                                           _wt_sec if _wt_sec != "All" else ""] if b)
+        # The tier-share column now follows the SET of selected tiers (share of the roster in ANY
+        # of them); nothing selected keeps the BUY★ default - the top of the validated ladder.
+        _sec_share_tiers = list(_wt_sec) if _wt_sec else ["BUY★"]
+        _sec_share_tier = (_sec_share_tiers[0] if len(_sec_share_tiers) == 1
+                           else ("+".join(_sec_share_tiers) if len(_sec_share_tiers) <= 3
+                                 else f"{len(_sec_share_tiers)} tiers"))
+        if _wt_sec:
+            _sec_src = _sec_src[_sec_src["wealth_tier"].isin(_wt_sec)]
+        if _cap or _wt_sec or _cyc_sec:
+            _bits = " · ".join(b for b in [", ".join(_cap), ", ".join(_cyc_sec),
+                                           ", ".join(_wt_sec)] if b)
             st.caption(f"📊 {len(_sec_src):,} stocks ({_bits}) across "
                        f"{_sec_src['sector'].nunique()} sectors — averages recomputed on this subset.")
 
@@ -1882,7 +1905,7 @@ def _render_market_pulse():
         if "wealth_tier" in _sec_share_base.columns:
             _sec_stats["pct_tier"] = (
                 _sec_share_base.groupby("sector")["wealth_tier"]
-                .apply(lambda s: 100.0 * (s == _sec_share_tier).mean())
+                .apply(lambda s: 100.0 * s.isin(_sec_share_tiers).mean())
                 .reindex(_sec_stats.index)
             )
         # Sort by % Qualify (breadth), then Score — so the most-INVESTABLE sectors lead. Sorting by
@@ -1891,8 +1914,8 @@ def _render_market_pulse():
         _sec_stats = (_sec_stats[_sec_stats["stocks"] >= _min_n]
                       .sort_values(["pct_qualify", "avg_composite"], ascending=False))
         # Phase applied AFTER aggregation — a row filter, so the survivors' averages are untouched.
-        if _phase != "All" and "sector_capital_phase" in df.columns:
-            _keep = set(df.loc[df["sector_capital_phase"] == _phase, "sector"].dropna().unique())
+        if _phase and "sector_capital_phase" in df.columns:
+            _keep = set(df.loc[df["sector_capital_phase"].isin(_phase), "sector"].dropna().unique())
             _sec_stats = _sec_stats[_sec_stats.index.isin(_keep)]
 
         if _sec_stats.empty:
@@ -1908,6 +1931,12 @@ def _render_market_pulse():
             st.dataframe(
                 _sec_stats[_sec_order].reset_index(),
                 column_config={
+                    # reset_index() materializes the groupby key as a COLUMN, and a column with no
+                    # config entry renders under its raw snake_case name -- this table showed
+                    # "sector" on screen. The 2026-08-30 header-vocabulary pass missed it because
+                    # its scan only inspects columns that HAVE a column_config entry, so a column
+                    # with none was invisible to it. Found in the browser 2026-08-31.
+                    "sector":        st.column_config.TextColumn("Sector", width="medium"),
                     "stocks":        st.column_config.NumberColumn("Count", format="%.0f"),
                     "pct_qualify":   st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%",
                                        help="Share of the sector's stocks that clear all hard gates — its quality breadth. "
@@ -2002,66 +2031,94 @@ def _render_market_pulse():
             _ind_src["industry"] = _ind_src["industry"].astype(str).str.strip()
             _ind_src = _ind_src[~_ind_src["industry"].isin(["", "nan", "None"])]
 
-            _i1, _i2, _i3, _i4 = st.columns([2, 2, 2, 1])
-            with _i1:
-                if "market_category" in _ind_src.columns:
-                    from config import MCAP_TIERS
-                    _ind_cap_opts = ["All"] + [t for t in MCAP_TIERS
-                                               if (_ind_src["market_category"] == t).any()]
-                    _ind_cap = st.selectbox(
-                        "Market-cap tier", _ind_cap_opts,
-                        format_func=lambda t: t if t == "All" else f"{MCAP_TIERS[t]['emoji']} {t}",
-                        key="mp_ind_cap",
-                        help="Re-aggregates: keeps only stocks in this tier, then recomputes every "
-                             "industry average AND its sector baseline over the same survivors.",
-                    )
-                else:
-                    _ind_cap = "All"
-            with _i2:
-                if "wealth_tier" in _ind_src.columns:
-                    _ind_wt_opts = ["All"] + [t for t in ["BUY★", "BUY", "WATCH★", "WATCH",
-                                                          "AVOID", "N/A"]
-                                              if (_ind_src["wealth_tier"] == t).any()]
-                    _ind_wt = st.selectbox(
-                        "Wealth tier", _ind_wt_opts, key="mp_ind_wealth",
-                        help="Re-aggregates. 'BUY★, grouped by industry' shows where the "
-                             "improving-wealth names actually concentrate — a far sharper answer "
-                             "than the same question asked of an 81-value sector.",
-                    )
-                else:
-                    _ind_wt = "All"
-            with _i3:
-                # SECTOR DRILL-DOWN (2026-08-28) — the navigation the tab pair implies: spot a
-                # sector on 📈 Sectors, open 🏭 Industry, see its internal dispersion. A ROW
-                # FILTER applied AFTER aggregation (matches on the DOMINANT sector), so every
-                # number — averages, Δ, 💹 share — is exactly what the unfiltered table shows.
-                # Sectors hold a median of 3 industries (max 38), so this turns 355 rows into a
-                # focused split. sorted() — determinism mandate.
-                _ind_sec_opts = ["All"] + sorted(_ind_src["sector"].dropna().astype(str).unique().tolist())
-                _ind_sec = st.selectbox(
-                    "Sector (drill-down)", _ind_sec_opts, key="mp_ind_sec",
-                    help="Hides rows: shows only industries whose MAJORITY of stocks sit in this "
-                         "sector (the table's own 'dominant sector'). Applied after aggregation — "
-                         "no average, Δ or 💹 share changes. Industries that only partly touch "
-                         "the sector (the ~ rows) stay under their dominant home.",
-                )
+            def _ind_dominant(frame):
+                """industry -> its DOMINANT sector (+ that sector's stock count `n`).
+
+                ONE definition, two call sites — the drill-down's option list/counts below and the
+                table's own `_dom_sec`/`_dom_share` further down. Industry is NOT nested inside
+                sector (136 of 355 span more than one), so "the" sector of an industry is a modal
+                choice, and an unsorted mode is non-deterministic across processes
+                (PYTHONHASHSEED). The explicit (count desc, sector asc) tie-break is the whole
+                reason this is a function rather than two copies that could drift apart.
+                """
+                pair = (frame.groupby(["industry", "sector"]).size().rename("n")
+                        .reset_index()
+                        .sort_values(["industry", "n", "sector"], ascending=[True, False, True]))
+                return pair.drop_duplicates("industry").set_index("industry")
+
+            # MULTI-SELECT + CASCADE (2026-08-30 Phase 2) — same two-kinds/two-units grammar as
+            # Sectors: the RE-AGGREGATING filters (market-cap, wealth) count STOCKS, the ROW filter
+            # (sector drill-down) counts INDUSTRIES, because industries are the rows it hides.
+            _i1, _i2, _i3, _i4 = st.columns([2.2, 2.0, 2.4, 1.0])
+            _icf = _ind_src                            # cascade frame, narrowed left to right
+
+            # 1 -- Market-cap tier (re-aggregating; counts = stocks)
+            from config import MCAP_TIERS
+            if "market_category" in _icf.columns:
+                _ind_cap_n = _icf["market_category"].astype(str).value_counts().to_dict()
+                _ind_cap_opts = [t for t in MCAP_TIERS if _ind_cap_n.get(t, 0) > 0]
+                _ind_cap = _mp_ms(_i1, "Market-cap tier", _ind_cap_opts, "mp_ind_cap",
+                                  "Re-aggregates: keeps only stocks in these tiers, then recomputes "
+                                  "every industry average AND its sector baseline over the same "
+                                  "survivors. Counts are STOCKS.", _ind_cap_n)
+                if _ind_cap:
+                    _icf = _icf[_icf["market_category"].isin(_ind_cap)]
+            else:
+                _ind_cap = []
+
+            # 2 -- Wealth tier (re-aggregating; counts = stocks, after the cap narrowing)
+            if "wealth_tier" in _icf.columns:
+                _ind_wt_n = _icf["wealth_tier"].astype(str).value_counts().to_dict()
+                _ind_wt_opts = [t for t in ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
+                                if _ind_wt_n.get(t, 0) > 0]
+                _ind_wt = _mp_ms(_i2, "Wealth tier", _ind_wt_opts, "mp_ind_wealth",
+                                 "Re-aggregates. 'BUY★ and BUY, grouped by industry' shows where the "
+                                 "improving-wealth names actually concentrate — a far sharper answer "
+                                 "than the same question asked of an 81-value sector. Counts are "
+                                 "STOCKS and reflect the market-cap filter to the left.", _ind_wt_n)
+                if _ind_wt:
+                    _icf = _icf[_icf["wealth_tier"].isin(_ind_wt)]
+            else:
+                _ind_wt = []
+
+            # 3 -- SECTOR DRILL-DOWN (2026-08-28) — the navigation the tab pair implies: spot a
+            # sector on 📈 Sectors, open 🏭 Industry, see its internal dispersion. A ROW FILTER
+            # applied AFTER aggregation (matches on the DOMINANT sector), so every number —
+            # averages, Δ, 💹 share — is exactly what the unfiltered table shows. Sectors hold a
+            # median of 3 industries (max 38), so this turns 355 rows into a focused split.
+            # The counts are INDUSTRIES-BY-DOMINANT-SECTOR, computed off `_icf` — the frame the
+            # table itself will aggregate — so the number beside an option is exactly the number of
+            # rows it leaves. Counting industries that merely TOUCH the sector would overstate it.
+            _ind_sec_n = (_ind_dominant(_icf)["sector"].value_counts().to_dict()
+                          if not _icf.empty else {})
+            _ind_sec_opts = sorted(_ind_sec_n)         # sorted() — determinism mandate
+            _ind_sec = _mp_ms(_i3, "Sector (drill-down)", _ind_sec_opts, "mp_ind_sec",
+                              "Hides rows: shows only industries whose MAJORITY of stocks sit in "
+                              "these sectors (the table's own 'dominant sector'). Applied after "
+                              "aggregation — no average, Δ or 💹 share changes. Counts are "
+                              "INDUSTRIES, not stocks. Industries that only partly touch a sector "
+                              "(the ~ rows) stay under their dominant home.", _ind_sec_n)
+
             with _i4:
                 # Default-aware conditional Clear (same grammar as Sectors + the lens rows).
-                _IND_DEFAULTS = {"mp_ind_cap": "All", "mp_ind_wealth": "All", "mp_ind_sec": "All"}
+                _IND_DEFAULTS = {"mp_ind_cap": [], "mp_ind_wealth": [], "mp_ind_sec": []}
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                 if any(st.session_state.get(k, d) != d for k, d in _IND_DEFAULTS.items()):
                     st.button("🧹 Clear", key="mp_ind_clear", use_container_width=True,
                               on_click=_mp_clear_lens, args=(_IND_DEFAULTS,))
 
-            if _ind_cap != "All":
-                _ind_src = _ind_src[_ind_src["market_category"] == _ind_cap]
+            if _ind_cap:
+                _ind_src = _ind_src[_ind_src["market_category"].isin(_ind_cap)]
             # 💹 TIER-SHARE BASE — same design as the Sectors tab: captured AFTER the cap filter,
             # BEFORE the wealth filter, so the share column keeps the FULL roster as denominator
             # (computed after the filter it would read 100% everywhere). All → BUY★.
             _ind_share_base = _ind_src
-            _ind_share_tier = _ind_wt if _ind_wt != "All" else "BUY★"
-            if _ind_wt != "All":
-                _ind_src = _ind_src[_ind_src["wealth_tier"] == _ind_wt]
+            _ind_share_tiers = list(_ind_wt) if _ind_wt else ["BUY★"]
+            _ind_share_tier = (_ind_share_tiers[0] if len(_ind_share_tiers) == 1
+                               else ("+".join(_ind_share_tiers) if len(_ind_share_tiers) <= 3
+                                     else f"{len(_ind_share_tiers)} tiers"))
+            if _ind_wt:
+                _ind_src = _ind_src[_ind_src["wealth_tier"].isin(_ind_wt)]
 
             st.markdown(
                 f"<div class='sec-cap'>All <strong>{_ind_src['industry'].nunique()} industries</strong>, "
@@ -2093,16 +2150,13 @@ def _render_market_pulse():
             if "wealth_tier" in _ind_share_base.columns and not _ind_stats.empty:
                 _ind_stats["pct_tier"] = (
                     _ind_share_base.groupby("industry")["wealth_tier"]
-                    .apply(lambda s: 100.0 * (s == _ind_share_tier).mean())
+                    .apply(lambda s: 100.0 * s.isin(_ind_share_tiers).mean())
                     .reindex(_ind_stats.index)
                 )
             if _ind_stats.empty:
                 st.info("No stocks match these filters — widen the selection.")
             else:
-                _ind_pair = (_ind_src.groupby(["industry", "sector"]).size().rename("n")
-                             .reset_index()
-                             .sort_values(["industry", "n", "sector"], ascending=[True, False, True]))
-                _ind_dom  = _ind_pair.drop_duplicates("industry").set_index("industry")
+                _ind_dom  = _ind_dominant(_ind_src)
                 _dom_sec  = _ind_dom["sector"].reindex(_ind_stats.index)
                 # pd.Series (not a bare array): the drill-down below row-filters _ind_stats, and
                 # positional alignment would silently pair shares with the wrong industries.
@@ -2148,9 +2202,9 @@ def _render_market_pulse():
                                                     "~ " + _dom_sec.astype(str),
                                                     _dom_sec.astype(str))
 
-                if _ind_cap != "All" or _ind_wt != "All":
-                    _ind_bits = " · ".join(b for b in [_ind_cap if _ind_cap != "All" else "",
-                                                       _ind_wt if _ind_wt != "All" else ""] if b)
+                if _ind_cap or _ind_wt:
+                    _ind_bits = " · ".join(b for b in [", ".join(_ind_cap),
+                                                       ", ".join(_ind_wt)] if b)
                     st.caption(f"🏭 {len(_ind_src):,} stocks ({_ind_bits}) across "
                                f"{_ind_src['industry'].nunique()} industries — averages and the "
                                f"sector baseline both recomputed on this subset.")
@@ -2162,10 +2216,10 @@ def _render_market_pulse():
 
                 # SECTOR DRILL-DOWN — row filter, applied AFTER every number is computed: matches
                 # the dominant sector, so no average, Δ or 💹 share moves (pinned).
-                if _ind_sec != "All":
-                    _ind_stats = _ind_stats[_dom_sec.reindex(_ind_stats.index) == _ind_sec]
+                if _ind_sec:
+                    _ind_stats = _ind_stats[_dom_sec.reindex(_ind_stats.index).isin(_ind_sec)]
                     if _ind_stats.empty:
-                        st.info(f"No industry has {_ind_sec} as its dominant sector under these "
+                        st.info(f"No industry has {', '.join(_ind_sec)} as its dominant sector under these "
                                 f"filters — its stocks live inside industries that mostly sit "
                                 f"elsewhere (the ~ rows of their own homes).")
 

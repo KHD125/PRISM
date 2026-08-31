@@ -141,13 +141,45 @@ def test_config_tab_is_never_fragmented():
 def test_lens_rows_wired_into_the_three_tabs():
     """QGLP and MOSL had ZERO controls over 328/586-row cohorts; the lens row (Sector · Wealth
     Tier · Market Cap · Catalyst · conditional Clear) fixes that. Wealth keeps its own Tier
-    selectbox, so its row is with_tier=False — passing True there would render a SECOND tier
-    control beside the first."""
+    control above the table, so its row is with_tier=False — passing True there would render a
+    SECOND tier control beside the first.
+
+    That own control went MULTI-SELECT 2026-08-30 on the user's call, and it is declared to the
+    row via `extra_keys` — it filters nothing inside the row (the tab has already applied it) but
+    it counts as active and the row's 🧹 resets it. Without that, a Clear sitting on screen would
+    visibly clear Sector/Cap/Catalyst and silently leave the tier filter running."""
     src = _app_src()
     assert '_mp_lens_row(_mp_qglp, "qglp")' in src, "QGLP tab lost its lens row"
     assert '_mp_lens_row(_mosl, "mosl")' in src, "MOSL tab lost its lens row"
-    assert '_mp_lens_row(_wl, "w", with_tier=False)' in src, (
-        "Wealth tab's lens row must be with_tier=False — its own Tier selectbox already exists")
+    assert '_mp_lens_row(_wl, "w", extra_keys=("mp_wealth_tier",), with_tier=False)' in src, (
+        "Wealth tab's lens row must stay with_tier=False (its own Tier control exists) AND declare "
+        "that control via extra_keys, or the 🧹 Clear leaves it running")
+
+
+def test_the_wealth_tabs_own_tier_control_is_multi_select():
+    """The user's request, and the two readings it unblocks: "BUY★ and BUY" (the buy-grade half of
+    the ladder) and "WATCH★ and WATCH" (both turnaround grades). Neither was expressible one tier
+    at a time — the control was a selectbox."""
+    import ast as _ast
+    src = _app_src()
+    call = next((n for n in _ast.walk(_ast.parse(src))
+                 if isinstance(n, _ast.Call) and getattr(n.func, "id", "") == "_mp_ms"
+                 and isinstance(n.args[3], _ast.Constant) and n.args[3].value == "mp_wealth_tier"),
+                None)
+    assert call is not None, "the Tier control is no longer a cascade multiselect"
+    assert '"Tier", ["All"] + _WT_ORDER' not in src, "the single-pick Tier selectbox is back"
+    assert '_wl[_wl["wealth_tier"].isin(_wt_pick)]' in src, (
+        "the tier selection is not applied as a set — only the first pick would survive")
+    assert '_wl["wealth_tier"] == _wt_pick' not in src, "a scalar tier comparison is still there"
+
+
+def test_the_tier_options_offer_no_empty_tier():
+    """Counts ride on the options, so offering a 0-stock tier would be a visible dead end."""
+    src = _app_src()
+    i = src.index('"mp_wealth_tier"')
+    seg = src[i - 400:i]
+    assert "[t for t in _WT_ORDER if _wt_n.get(t, 0)]" in seg, (
+        "the Tier options no longer drop tiers that hold nothing")
 
 
 def test_lens_clear_sets_all_and_never_deletes():
@@ -172,8 +204,10 @@ def test_lens_row_seeds_and_stale_guards_every_key():
     keyed widget whose stored value is absent from its options raises. Pruning by assignment (not
     `del`) also keeps the Steel-resurrection fix intact."""
     src = _app_src()
-    i = src.index("def _mp_lens_row(")
-    fn = src[i:src.index("    # ── Inner navigation tabs")]
+    # the cascade mechanics live in the hoisted _mp_ms helper (shared by every Market Pulse row
+    # since Phase 2 — one dialect, not three); the lens row is one of its callers.
+    i = src.index("def _mp_ms(")
+    fn = src[i:src.index("    def _mp_lens_row(")]
     prune = "st.session_state[key] = [v for v in st.session_state.get(key, []) if v in options]"
     assert prune in fn, "the cascade no longer prunes stored selections to the live options"
     assert fn.index(prune) < fn.index("st.multiselect"), "pruning must precede instantiation"
@@ -195,8 +229,10 @@ def test_lens_row_is_multiselect_and_cascades():
     src = _app_src()
     i = src.index("def _mp_lens_row(")
     fn = src[i:src.index("    # ── Inner navigation tabs")]
+    helper = src[src.index("def _mp_ms("):src.index("    def _mp_lens_row(")]
     assert "st.selectbox" not in fn, "a single-select control is back in the lens row"
-    assert fn.count("st.multiselect") >= 1 and "_pick(" in fn
+    assert "st.multiselect" in helper and "_mp_ms(" in fn, (
+        "the lens row no longer routes through the shared _mp_ms cascade helper")
     # each stage must narrow _cf before the next stage reads it
     for sel, col in [("sel_sec", "sector"), ("sel_wt", "wealth_tier"), ("sel_cap", "market_category")]:
         assert f"if {sel}:" in fn, f"{sel} never narrows the cascade frame"
@@ -204,7 +240,7 @@ def test_lens_row_is_multiselect_and_cascades():
         "the cascade order broke — later controls must be computed AFTER earlier narrowing"
     )
     # counts are display-only: baked into format_func, never into the option values
-    assert "format_func=lambda v, _c=counts" in fn, "facet counts are no longer display-only"
+    assert "format_func=lambda v, _c=counts" in helper, "facet counts are no longer display-only"
 
 
 def test_lens_reset_value_is_empty_list_not_all():
@@ -239,23 +275,28 @@ def test_mp_catalysts_mirrors_ui_discovery():
 
 
 def test_sectors_and_industry_clear_are_default_aware_and_complete():
-    """The Sectors/Industry Clear resets each control to ITS OWN default — "All" is not
-    universal (the size dial defaults to 5; resetting it to "All" would corrupt a numeric
-    selectbox). COMPLETENESS is the contract: every mp_sec_*/mp_ind_* widget key must appear
-    in its defaults map, so a future sixth control cannot ship without declaring its default."""
+    """The Sectors/Industry Clear resets each control to ITS OWN default — one value is not
+    universal: the four set-membership controls reset to [] (multi-select, 2026-08-30) while the
+    size dial resets to 5, and resetting THAT to [] would corrupt a numeric selectbox.
+    COMPLETENESS is the contract: every mp_sec_*/mp_ind_* widget key must appear in its defaults
+    map, so a future sixth control cannot ship without declaring its default."""
     import re
     src = _app_src()
     i = src.index("_SEC_DEFAULTS = {")
     sec_map = src[i:src.index("}", i)]
     for k in ("mp_sec_cap", "mp_sec_wealth", "mp_sec_cyc", "mp_sec_phase"):
-        assert f'"{k}": "All"' in sec_map, f"{k} missing from _SEC_DEFAULTS"
-    assert '"mp_sec_minn": 5' in sec_map, "the size dial must reset to 5, never 'All'"
+        assert f'"{k}": []' in sec_map, f"{k} missing from _SEC_DEFAULTS (or not reset to empty)"
+    assert '"mp_sec_minn": 5' in sec_map, "the size dial must reset to 5, never to a selection"
     j = src.index("_IND_DEFAULTS = {")
     ind_map = src[j:src.index("}", j)]
     for k in ("mp_ind_cap", "mp_ind_wealth", "mp_ind_sec"):
-        assert f'"{k}": "All"' in ind_map, f"{k} missing from _IND_DEFAULTS"
-    # completeness: no mp_sec_/mp_ind_ WIDGET key exists outside its defaults map (clear buttons excluded)
-    widget_keys = set(re.findall(r'key="(mp_(?:sec|ind)_[a-z_]+)"', src))
+        assert f'"{k}": []' in ind_map, f"{k} missing from _IND_DEFAULTS (or not reset to empty)"
+    # completeness: no mp_sec_/mp_ind_ WIDGET key exists outside its defaults map (clear buttons
+    # excluded). Both calling conventions counted — the multiselects pass their key positionally
+    # to the shared _mp_ms helper, so a `key="..."` scan alone would see almost nothing.
+    widget_keys = (set(re.findall(r'key="(mp_(?:sec|ind)_[a-z_]+)"', src))
+                   | set(re.findall(r'_mp_ms\([^,]+,[^,]+,[^,]+,\s*"(mp_(?:sec|ind)_[a-z_]+)"', src)))
+    assert len(widget_keys) >= 8, f"the completeness scan found only {widget_keys} — it has lost its teeth"
     declared = set(re.findall(r'"(mp_(?:sec|ind)_[a-z_]+)":', sec_map + ind_map))
     missing = sorted(widget_keys - declared - {"mp_sec_clear", "mp_ind_clear"})
     assert not missing, f"controls with NO declared reset default: {missing}"
