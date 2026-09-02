@@ -128,6 +128,34 @@ def _ordered_present(frame: pd.DataFrame, col: str, order) -> list:
     return opts
 
 
+def keep_selected(options, stored) -> list:
+    """Live option list + every stored pick the cascade has narrowed OUT of it, appended last.
+
+    THE ONE RULE for every cascading filter on BOTH surfaces (the sidebar's _ms_cascade and its
+    two selectboxes here; app.py's Market Pulse `_mp_ms` imports it): never silently drop what the
+    user chose. A keyed Streamlit widget raises when its stored value is absent from `options`, and
+    the first design answered that by PRUNING the stored selection to the live list — which
+    switched the filter OFF and showed MORE stocks, not zero. Measured 2026-09-02: Wealth Tier=BUY★
+    then Sector=Air Transport Service (a sector with no BUY★) returned the sector's 4 non-BUY★
+    names where the honest answer is 0, the culprit banner never fired because the filter was
+    never applied, and 106 of the cascade's ordered pairs could do it. Keeping the pick in the
+    option list — after the live options, so canonical order is untouched — lets every count
+    lookup render its honest 0, the filter apply, the result read 0, and the culprit name it.
+
+    `stored` may be a list (multiselect) or a scalar (selectbox). Pure; unit-tested."""
+    if stored is None:
+        extra = []
+    elif isinstance(stored, str) or not hasattr(stored, "__iter__"):
+        extra = [stored]
+    else:
+        extra = list(stored)
+    out = list(options)
+    for v in extra:
+        if v not in out:
+            out.append(v)
+    return out
+
+
 def _remove_one_filter(key) -> None:
     """Chip ✕ callback — drop one filter (re-inits to its show-all default on the auto-rerun the
     button fires). Runs BEFORE any widget instantiates, so popping a widget-key is safe (no
@@ -207,17 +235,21 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # before each widget renders, preventing Streamlit's "value not in options" crash.
         def _ms_cascade(label, options, key, default, help=None, format_func=None, count_col=None):
             """Cascade-safe multiselect. Fully manages session_state (no `default=` arg, which
-            avoids Streamlit's default-plus-session-state warning) and prunes any stale stored
-            selection down to the current options each run. Empty selection = no filter.
+            avoids Streamlit's default-plus-session-state warning). A stored pick the cascade has
+            narrowed out is KEPT in the option list with its honest count of 0 (keep_selected) —
+            never pruned, which would switch the filter off and widen the result. Empty selection
+            = no filter.
             format_func lets the OPTION VALUES stay stable (so pruning holds) while the DISPLAY
             can vary per run (e.g. a live count) — never bake volatile text into the values.
             count_col: when given (and no explicit format_func), each option is auto-annotated with
             its LIVE count in the cascade frame `_cf` at THIS point — so the number reflects every
             filter above it (the 'smart faceted' feel). Counts live in the display only."""
-            if key not in st.session_state:
-                st.session_state[key] = [v for v in default if v in options]
-            else:
-                st.session_state[key] = [v for v in st.session_state[key] if v in options]
+            # Seed by assignment BEFORE instantiating (the Steel resurrection fix), and keep every
+            # stored pick — a value the cascade narrowed out is appended to the options so the
+            # widget cannot raise and the filter still applies (reads 0, names itself as culprit).
+            stored = list(st.session_state.get(key, default))
+            st.session_state[key] = stored
+            options = keep_selected(options, stored)
             if format_func is None and count_col is not None and count_col in _cf.columns:
                 _vc = _cf[count_col].astype(str).value_counts().to_dict()
                 # ❔ Unknown facet count = the honest holes (NaN/blank) PLUS any literal
@@ -255,17 +287,19 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cf = _narrow(_cf, _label_mask(_cf["market_category"], sel_mcap), "Market Cap")
 
             # 2. Sector — only sectors within the chosen market categories
-            _sector_opts = ["All"] + sorted(_cf["sector"].dropna().unique().tolist())
-            _sec_vc = _cf["sector"].value_counts().to_dict()
             # SEED-BEFORE-INSTANTIATE (2026-08-29, the user's Steel repro): deleting a widget
             # key does NOT clear the widget's frontend state — a selectbox with no session value
             # asks the frontend, which still remembers the old pick, and the cleared filter
             # RESURRECTS on the next rerun. _ms_cascade multiselects were always immune because
             # they unconditionally re-seed the key pre-instantiation; every non-multiselect
             # widget now does the same, which is what makes delete-based Clear-All authoritative.
-            if ("sb_sector" not in st.session_state
-                    or st.session_state["sb_sector"] not in _sector_opts):
-                st.session_state["sb_sector"] = "All"
+            # KEPT, NOT RESET (2026-09-02): a stored sector the Market-Cap filter narrowed out used
+            # to snap back to "All" — the selectbox form of the silent widening. It now stays in
+            # the list (reading `· 0`), the filter applies, and the culprit names it.
+            st.session_state.setdefault("sb_sector", "All")
+            _sector_opts = keep_selected(["All"] + sorted(_cf["sector"].dropna().unique().tolist()),
+                                         st.session_state["sb_sector"])
+            _sec_vc = _cf["sector"].value_counts().to_dict()
             sel_sector = st.selectbox(
                 "Sector", _sector_opts, key="sb_sector",
                 format_func=lambda v: "All" if v == "All" else f"{v}  ·  {_sec_vc.get(v, 0)}",
@@ -275,11 +309,15 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cf = _narrow(_cf, _cf["sector"] == sel_sector, "Sector")
 
             # 3. Industry — only industries within the chosen categories AND sector
-            _industry_opts = ["All"] + sorted(_cf["industry"].dropna().unique().tolist())
+            # Same keep-not-reset rule as Sector. Consequence worth knowing: after CHANGING the
+            # sector, a previously chosen industry stays selected (reading `· 0`) and the result
+            # is 0 with the culprit banner pointing at it — one ✕ click, instead of the old
+            # silent snap to "All". One rule everywhere beats a special case here: 136 of 355
+            # industries span more than one sector, so Industry is a facet, not a strict child.
+            st.session_state.setdefault("sb_industry", "All")
+            _industry_opts = keep_selected(["All"] + sorted(_cf["industry"].dropna().unique().tolist()),
+                                           st.session_state["sb_industry"])
             _ind_vc = _cf["industry"].value_counts().to_dict()
-            if ("sb_industry" not in st.session_state
-                    or st.session_state["sb_industry"] not in _industry_opts):
-                st.session_state["sb_industry"] = "All"
             sel_industry = st.selectbox(
                 "Industry", _industry_opts, key="sb_industry",
                 format_func=lambda v: "All" if v == "All" else f"{v}  ·  {_ind_vc.get(v, 0)}",
@@ -473,7 +511,9 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _avail_fw = set(_extract_frameworks(_cf))
             _fam_present = [(e, lbl, clr, fws) for (e, lbl, clr, fws) in FRAMEWORK_CATEGORIES
                             if any(f in _avail_fw for f in fws)]
-            _fam_meta = {lbl: (e, clr, fws) for (e, lbl, clr, fws) in _fam_present}
+            # Over ALL families, not just the present ones: keep_selected can hand the widget a
+            # family the cascade narrowed out, and its format_func / mask must still resolve it.
+            _fam_meta = {lbl: (e, clr, fws) for (e, lbl, clr, fws) in FRAMEWORK_CATEGORIES}
             _fam_avail_n = {lbl: sum(1 for f in fws if f in _avail_fw)
                             for (e, lbl, clr, fws) in _fam_present}
             sel_fam = _ms_cascade(

@@ -83,7 +83,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_radar_chart, render_sidebar_brand,
                 render_reference, render_concepts, render_flags, render_frameworks,
                 render_wcs_studies, build_reference_markdown)
-from ui.ui_discovery import render_discovery_sidebar, clear_all_filters
+from ui.ui_discovery import render_discovery_sidebar, clear_all_filters, keep_selected
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
@@ -1295,9 +1295,12 @@ def _render_market_pulse():
         """THE ONE cascade-safe multiselect used by every Market Pulse filter row (lens rows,
         Sectors, Industry) — one dialect, not three. Mirrors ui_discovery._ms_cascade: state is
         managed here (no `default=` arg, which would trigger Streamlit's default-plus-state
-        warning) and the stored selection is PRUNED to the live options BEFORE the widget
-        instantiates. Under a cascade that pruning is mandatory: narrowing removes options every
-        run and a keyed widget whose stored value is absent from its options raises.
+        warning) and a stored pick the cascade has narrowed out is KEPT in the option list with its
+        honest count of 0 (ui_discovery.keep_selected — ONE rule for both filter surfaces). It was
+        PRUNED until 2026-09-02, which switched the filter off and WIDENED the result: Wealth
+        Tier=BUY★ + a sector holding no BUY★ showed the whole sector instead of 0. Keeping the
+        value in the options is what stops a keyed widget raising; applying it is what keeps the
+        answer honest.
 
         `counts` maps option -> live count in the CURRENT (already narrowed) frame. DISPLAY only:
         never bake a volatile number into an option VALUE or the pruning stops matching. The UNIT
@@ -1305,7 +1308,9 @@ def _render_market_pulse():
         counts STOCKS (they are what gets re-averaged), a row filter counts the ROWS it hides
         (sectors / industries). Mixing the two silently would be the units trap this row layout
         was deliberately held back for."""
-        st.session_state[key] = [v for v in st.session_state.get(key, []) if v in options]
+        stored = list(st.session_state.get(key, []))
+        st.session_state[key] = stored
+        options = keep_selected(options, stored)
         with slot:
             return st.multiselect(
                 label, options, key=key, help=help_text,

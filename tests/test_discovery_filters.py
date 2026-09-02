@@ -19,7 +19,7 @@ from pathlib import Path
 
 from config import FRAMEWORK_CATEGORIES
 from core.cyclicality_map import TIER_LABELS
-from ui.ui_discovery import _CHIP_META, _compute_active_chips, _family_count
+from ui.ui_discovery import _CHIP_META, _compute_active_chips, _family_count, keep_selected
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DISC = (_ROOT / "ui" / "ui_discovery.py").read_text(encoding="utf-8")
@@ -361,6 +361,103 @@ def test_no_culprit_published_when_results_remain():
     assert "CULPRIT=" in out, f"culprit key must exist and be empty: {out}"
 
 
+# ── Never silently drop what the user chose (2026-09-02) ──────────────────────────────────────
+def test_keep_selected_appends_dead_picks_last_and_never_duplicates():
+    """THE ONE RULE both filter surfaces share (ui_discovery._ms_cascade + both selectboxes, and
+    app.py's _mp_ms imports it — one definition). A stored pick that the cascade has narrowed
+    out of the live options is KEPT — appended after the live options, so the canonical order is
+    untouched and Streamlit's value-not-in-options crash cannot occur — and it renders with its
+    honest count of 0. The old rule PRUNED it, which switched the filter off and showed MORE
+    stocks: Wealth Tier=BUY★ then Sector=Air Transport Service returned the sector's 4 non-BUY★
+    names where the honest answer is 0 (measured 2026-09-02, 106 cascade pairs affected)."""
+    assert keep_selected(["a", "b"], ["b", "z"]) == ["a", "b", "z"]
+    assert keep_selected(["a", "b"], []) == ["a", "b"]
+    assert keep_selected([], ["z"]) == ["z"]
+    assert keep_selected(["a"], ["z", "z"]) == ["a", "z"], "a repeated stored value must not duplicate"
+    assert keep_selected(["a", "b"], ["b", "a"]) == ["a", "b"], "live order wins over stored order"
+    assert keep_selected(["a"], "All") == ["a", "All"], "a scalar (selectbox) value is kept too"
+    assert keep_selected(["All", "a"], "All") == ["All", "a"], "a live scalar is not appended again"
+
+
+def _widening_app():
+    """Mini-app for AppTest: a 2-row frame whose two rows disagree on EVERY facet, so a downstream
+    pick can always be narrowed out by an upstream one."""
+    import pandas as _pd
+    import streamlit as _st
+
+    from ui.ui_discovery import render_discovery_sidebar
+
+    df = _pd.DataFrame({
+        "name":             ["A", "B"],
+        "sector":           ["P", "Q"],
+        "industry":         ["P-ind", "Q-ind"],
+        "market_category":  ["Large Cap", "Nano Cap"],
+        "wealth_tier":      ["BUY★", "AVOID"],
+        "conviction_tier":  [1, 2],
+        "piotroski_fscore": [5, 6],
+        "red_flag_count":   [0, 1],
+        "quality_score":    [10.0, 12.0],
+        "composite_score":  [10.0, 12.0],
+    })
+    filt = render_discovery_sidebar(df)
+    _st.text(f"N={len(filt)}")
+    _st.text(f"CULPRIT={filt.attrs.get('zero_culprit', '<MISSING>')}")
+    _st.text(f"WT={_st.session_state.get('sb_wealthtier')}")
+    _st.text(f"SECTOR={_st.session_state.get('sb_sector')}")
+
+
+def _run(at):
+    at.run(timeout=30)
+    assert not at.exception, f"sidebar raised: {at.exception}"
+    return {t.value.split("=", 1)[0]: t.value.split("=", 1)[1] for t in at.text}
+
+
+def test_upstream_pick_cannot_switch_off_a_downstream_multiselect():
+    """Wealth Tier=BUY★ (downstream) then Sector=Q, which holds no BUY★ (upstream). The honest
+    result is ZERO and the culprit is the tier filter — not the whole of sector Q with the tier
+    quietly dropped. The stored selection must survive the run intact."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_function(_widening_app)
+    at.session_state["sb_wealthtier"] = ["BUY★"]
+    r = _run(at)
+    assert r["N"] == "1", f"tier filter alone should keep exactly A: {r}"
+    at.session_state["sb_sector"] = "Q"
+    r = _run(at)
+    assert r["N"] == "0", f"the tier filter was silently dropped — the widening is back: {r}"
+    assert r["CULPRIT"] == "Wealth Tier", f"the culprit must name the filter that emptied it: {r}"
+    assert r["WT"] == "['BUY★']", f"the user's pick was pruned from session state: {r}"
+
+
+def test_upstream_pick_cannot_switch_off_a_downstream_selectbox():
+    """Same law for the two selectboxes: Sector=P then Market Category=Nano Cap (which P lacks).
+    The old seed-before-instantiate reset the sector to 'All' whenever it fell out of the live
+    list — the same silent widening in selectbox clothing."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_function(_widening_app)
+    at.session_state["sb_sector"] = "P"
+    r = _run(at)
+    assert r["N"] == "1", f"sector filter alone should keep exactly A: {r}"
+    at.session_state["sb_mcap"] = ["Nano Cap"]
+    r = _run(at)
+    assert r["N"] == "0", f"the sector filter reset itself to All — the widening is back: {r}"
+    assert r["CULPRIT"] == "Sector", f"the culprit must name the sector filter: {r}"
+    assert r["SECTOR"] == "P", f"the user's sector pick was reset: {r}"
+
+
+def test_no_filter_site_prunes_a_stored_selection_any_more():
+    """Structural: the prune comprehension is gone from _ms_cascade, the 'reset to All when absent'
+    seeds are gone from both selectboxes, and all three route through keep_selected."""
+    i = _DISC.index("def _ms_cascade(")
+    body = _DISC[i:_DISC.index("_cf = df", i)]
+    assert "if v in options]" not in body, "_ms_cascade still prunes the stored selection"
+    assert "keep_selected(" in body, "_ms_cascade does not route through keep_selected"
+    for opts in ("_sector_opts", "_industry_opts"):
+        assert f"not in {opts}" not in _DISC, f"a selectbox still resets to All when its value leaves {opts}"
+    assert _DISC.count("keep_selected(") >= 3, "expected _ms_cascade + both selectboxes to use keep_selected"
+
+
 def test_all_filter_sites_route_through_choke_point():
     """Static pin: NO filter application may bypass the _narrow choke point (`_cf = _cf[` == 0),
     and the funnel's zero-state must actually read the culprit log."""
@@ -383,9 +480,12 @@ def test_every_non_multiselect_widget_seeds_its_key_before_instantiating():
     discipline onto every non-multiselect sb_ widget, which is what makes delete-based Clear-All
     authoritative for ALL widget kinds. AppTest cannot catch a regression here (no frontend to
     resurrect from), so the seed is pinned structurally."""
+    # 2026-09-02: the two selectboxes seed with setdefault like every other non-multiselect —
+    # the old `not in st.session_state or not in <opts>` form ALSO reset a stored pick to "All"
+    # whenever the cascade narrowed it out (the selectbox form of the silent widening).
     for key, seed in [
-        ("sb_sector",    '"sb_sector" not in st.session_state'),
-        ("sb_industry",  '"sb_industry" not in st.session_state'),
+        ("sb_sector",    'st.session_state.setdefault("sb_sector"'),
+        ("sb_industry",  'st.session_state.setdefault("sb_industry"'),
         ("sb_maxrf",     'st.session_state.setdefault("sb_maxrf"'),
         ("sb_mincov",    'st.session_state.setdefault("sb_mincov"'),
         ("sb_hidestale", 'st.session_state.setdefault("sb_hidestale"'),

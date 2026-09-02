@@ -198,19 +198,27 @@ def test_lens_clear_sets_all_and_never_deletes():
 
 
 def test_lens_row_seeds_and_stale_guards_every_key():
-    """Widget-state law, both halves — UPDATED 2026-08-30 for cascading MULTI-select. The stored
-    selection must be PRUNED to the current options BEFORE the widget instantiates. Under a
-    cascade this is mandatory rather than defensive: narrowing removes options every run, and a
-    keyed widget whose stored value is absent from its options raises. Pruning by assignment (not
-    `del`) also keeps the Steel-resurrection fix intact."""
+    """Widget-state law — UPDATED 2026-09-02: the stored selection is KEPT, never pruned.
+    `keep_selected` (ONE definition, imported from ui_discovery so both filter surfaces obey one
+    rule) appends any stored pick the cascade narrowed out to the option list BEFORE the widget
+    instantiates — so Streamlit's value-not-in-options crash cannot occur AND the filter stays
+    applied with an honest count of 0. Pruning did the opposite: it switched the filter off and
+    WIDENED the result (Wealth Tier=BUY★ + Sector=Air Transport Service showed the sector's 4
+    non-BUY★ names instead of 0). Seeding by assignment (not `del`) keeps the Steel fix intact."""
     src = _app_src()
     # the cascade mechanics live in the hoisted _mp_ms helper (shared by every Market Pulse row
     # since Phase 2 — one dialect, not three); the lens row is one of its callers.
     i = src.index("def _mp_ms(")
     fn = src[i:src.index("    def _mp_lens_row(")]
-    prune = "st.session_state[key] = [v for v in st.session_state.get(key, []) if v in options]"
-    assert prune in fn, "the cascade no longer prunes stored selections to the live options"
-    assert fn.index(prune) < fn.index("st.multiselect"), "pruning must precede instantiation"
+    assert "if v in options]" not in fn, "the cascade prunes stored selections again — the widening class"
+    keep = "options = keep_selected(options, stored)"
+    assert keep in fn, "_mp_ms does not route through the shared keep_selected rule"
+    assert fn.index(keep) < fn.index("st.multiselect"), "keeping must precede instantiation"
+    seed = "st.session_state[key] = stored"
+    assert seed in fn and fn.index(seed) < fn.index("st.multiselect"), "the key is no longer seeded by assignment"
+    j = src.index("from ui.ui_discovery import")
+    assert "keep_selected" in src[j:src.index(chr(10), j)], (
+        "app.py must import keep_selected from ui_discovery — one definition, two surfaces")
     # Scan CODE only — the helper's own docstring explains the ban, and a naive substring
     # search matches that explanation (the prose-vs-code trap this project has hit repeatedly).
     body = fn.split(chr(34) * 3, 2)[2]
