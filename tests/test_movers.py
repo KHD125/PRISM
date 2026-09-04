@@ -320,6 +320,15 @@ def test_restrict_filters_every_section_by_current_id_but_never_dropped(res):
     assert list(r["dropped"]["name"]) == ["Epsilon"], "dropped must not be filtered — it has no current side"
     assert r["counts"]["wealth_up"] == 1 and r["counts"]["rank"] == 1
     assert res["counts"]["rank"] == 6, "restrict must not mutate the original result"
+    # SCOPE HONESTY (found in the browser): with the lens on Steel the header read "2,101 stocks"
+    # over tables showing 69 names, and the universe churn rate sat unlabelled beside them.
+    assert r["n_both"] == 1, f"the header's stock count must follow the lens, got {r['n_both']}"
+    assert res["n_both"] == 6, "restrict must not mutate the original count"
+    assert r["restricted"] is True and not res.get("restricted"), "the restriction is not declared"
+    assert r["churn"] == res["churn"], "churn cannot be recomputed from sections — it must stay universe-wide"
+    from ui.ui_movers import _churn_line
+    assert "whole universe" in _churn_line(r["churn"], True), "a filtered page hides the churn's real scope"
+    assert "whole universe" not in _churn_line(res["churn"], False)
 
 
 # ── 5. Ladders mirror the app ────────────────────────────────────────────────
@@ -409,10 +418,11 @@ def _movers_app():
     c = _pd.DataFrame([["A", "Alpha", "S", "Mid Cap", "BUY★", "SOUND", 1, 180, 70.0, 1, 1, 3, 5],
                        ["B", "Beta", "S", "Mid Cap", "AVOID", "FLAWED", 5, 800, 25.0, 0, 0, 7, 40]], columns=cols)
     res = compute_movers(p, c)
-    render_movers(res, {"prev_vintage": "2026-09-24", "cur_vintage": "2026-12-29",
-                        "prev_label": "FY27Q1", "cur_label": "FY27Q2", "engine": "abc1234",
-                        "prev_regime": "SIDEWAYS", "cur_regime": "BULL", "mode": "Hybrid", "profile": "Balanced"})
+    picked = render_movers(res, {"prev_vintage": "2026-09-24", "cur_vintage": "2026-12-29",
+                                 "prev_label": "FY27Q1", "cur_label": "FY27Q2", "engine": "abc1234",
+                                 "prev_regime": "SIDEWAYS", "cur_regime": "BULL", "mode": "Hybrid", "profile": "Balanced"})
     _st.text(f"UP={list(res['wealth_up']['name'])}")
+    _st.text(f"PICKED={picked}")
 
 
 def test_render_movers_renders_every_section_without_exception():
@@ -422,7 +432,81 @@ def test_render_movers_renders_every_section_without_exception():
     assert not at.exception, f"render raised: {at.exception}"
     html = " ".join(m.value for m in at.markdown)
     for needle in ("FY27Q1 → FY27Q2", "regime changed", "Churn — share of stocks whose label changed",
-                   "wealth tier</b> 100%", "What matters", "Wealth tier — upgrades", "Rank climbers",
+                   "wealth tier</b> 100%", "What matters", "Upgrades", "Climbers",
                    "Red flags — rises", "Fresh results", "New to the universe"):
         assert needle in html, f"section/header {needle!r} missing from the render"
-    assert "UP=['Alpha']" in [t.value for t in at.text]
+    out = [t.value for t in at.text]
+    assert "UP=['Alpha']" in out
+    assert "PICKED=None" in out, "with no row clicked the module must return None, never a default pick"
+
+
+def test_the_evidence_sections_live_behind_five_sub_tabs():
+    """THE LAYOUT FIX. Rendered flat, the sixteen sections made a 7,820px page — 10.7 screens,
+    thirteen tables at their height cap, and ⭐ What matters (the whole point of the materiality
+    pass) as one of sixteen equals. The star stays open; the fifteen evidence sections go behind
+    five st.tabs — the language Market Pulse already speaks, and the one container that holds its
+    selection across a rerun on Streamlit 1.54 (st.expander has no persistent open state)."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_movers_app)
+    at.run(timeout=30)
+    labels = [t.label for t in at.tabs]
+    assert len(labels) == 5, f"expected exactly five evidence sub-tabs, got {labels}"
+    for i, head in enumerate(["💹 Wealth", "🧭 Soundness", "📈 Rank", "🚦 Gates & flags", "🆕 Universe"]):
+        assert labels[i].startswith(head + " · "), f"tab {i} is {labels[i]!r}, expected '{head} · <count>'"
+    # ⭐ What matters must NOT be inside a tab — it is the page
+    src = open(_MOV, encoding="utf-8").read()
+    i, j = src.index('_section("⭐ What matters'), src.index("_ev = st.tabs(")
+    assert i < j, "What matters was pushed inside/below the evidence tabs — it is the page, not evidence"
+
+
+def test_truncation_is_stated_never_silent():
+    """A section header that says 1,992 above a table showing 40 promises what it cannot deliver —
+    the same quiet mislead as a mislabelled unit. _block always states 'showing N of M'."""
+    src = open(_MOV, encoding="utf-8").read()
+    i = src.index("def _section(")
+    body = src[i:src.index("def _block(")]
+    assert "showing {shown} of {n:,}" in body, "the truncation disclosure is gone from the section header"
+    blk = src[src.index("def _block("):src.index("def _churn_line(")]
+    assert "shown=min(len(df), limit)" in blk, "_block no longer tells the header how much is shown"
+    star = src[src.index('_section("⭐ What matters'):src.index("picked = _table(")]
+    assert "shown=min(len(mat), 40)" in star, "the star section hides its own truncation"
+    # every evidence section goes through _block, so none can drift into a bare _section+_table
+    ev = src[src.index("_ev = st.tabs("):]
+    assert "_table(" not in ev, "an evidence section bypasses _block — its truncation would be silent"
+    assert ev.count("_block(") == 15, f"expected 15 evidence sections via _block, found {ev.count('_block(')}"
+
+
+def test_noise_columns_are_hidden_and_label_prev_twins_are_kept():
+    """Identity, the thing that moved, the delta, where it stands. Market cap repeated in sixteen
+    tables is noise; a raw 0/1 gate column is noise in sections defined BY that transition; a
+    numeric `_prev` twin is redundant beside its delta. The LABEL twins stay — 'was AVOID, now
+    BUY★' is the entire content of a ladder move."""
+    from ui.ui_movers import _HDR
+    for hidden in ("market_category", "gate_pass", "tsunami_signal", "rank_prev",
+                   "composite_score_prev", "conviction_tier_prev", "red_flag_count_prev", JOIN_KEY):
+        assert _HDR[hidden] is None, f"{hidden} is visible again — noise in every table"
+    assert _HDR["wealth_tier_prev"] == "was" and _HDR["verdict_direction_prev"] == "was"
+    assert _HDR["wealth_tier"] == "Wealth tier" and _HDR["verdict_direction"] == "Soundness"
+
+
+def test_what_matters_is_click_to_tearsheet_and_the_module_stays_stateless():
+    """The loop this tab was missing: it named the candidates and could not pass them on, while
+    Tsunami, QGLP and Discovery all hand a clicked row to the Tear-Sheet. Selection is on ⭐ What
+    matters ONLY — one obvious affordance, and sixteen competing selection widgets would make
+    'which pick wins' ambiguous. The module returns the name; app.py owns the session_state."""
+    src = open(_MOV, encoding="utf-8").read()
+    assert src.count('on_select="rerun"') == 1, "selection must exist on exactly one table"
+    assert 'selection_mode="single-row"' in src
+    assert "st.session_state" not in src, "ui_movers must never touch session_state — app.py owns it"
+    assert "return picked" in src, "render_movers no longer returns the clicked stock"
+    star = src[src.index('_section("⭐ What matters'):src.index("_ev = st.tabs(")]
+    assert "select=True" in star, "the star table is not selectable"
+    assert "click a row to load it into the tear-sheet" in star.lower(), (
+        "the star section does not tell the reader the rows are clickable")
+    assert "click The Tear-Sheet tab" in star, "no confirmation banner after a pick"
+    # The non-selectable branch must return None. Every _block discards it today, so a phantom
+    # pick there changes nothing observable (a mutation run confirmed it is an equivalent mutant)
+    # — which is exactly why the contract is pinned here rather than left to be discovered by the
+    # first caller that reads the value.
+    nosel = src[src.index("    if not select:"):src.index("    sel = st.dataframe(")]
+    assert "return None" in nosel, "the non-selectable branch must return None, never a phantom pick"

@@ -324,59 +324,99 @@ def restrict(res: dict, ids) -> dict:
             out[k] = v[v[JOIN_KEY].astype(str).isin(keep)].reset_index(drop=True)
         else:
             out[k] = v
+    # SCOPE HONESTY (found in the browser, 2026-09-04). `ident` holds one row per both-side stock
+    # and IS filtered above, so the header's stock count must be re-derived from it — it read
+    # "2,101 stocks" over tables showing 69 Steel names. CHURN cannot be recomputed here (it needs
+    # the before/after label pairs the merge held, which no section frame carries), so it is
+    # MARKED instead: the number stays true of the whole universe and the header says so. A
+    # universe rate printed beside a filtered table, unlabelled, is the scope-mislabel class.
+    out["n_both"] = int(len(out["ident"])) if isinstance(out.get("ident"), pd.DataFrame) else res["n_both"]
+    out["restricted"] = True
     out["counts"] = {k: int(len(v)) for k, v in out.items() if isinstance(v, pd.DataFrame)}
     return out
 
 
 # ── Rendering (stateless) ─────────────────────────────────────────────────────
+# None = HIDDEN. Four kinds of column earn their width and nothing else does: identity (Stock,
+# Sector), the thing that moved, the delta, and where the stock now stands. Hidden deliberately:
+# the join key; market_category (constant noise repeated in every table — market cap is one click
+# away on the tear-sheet); gate_pass / tsunami_signal (raw 0/1, and the sections they belong to
+# are defined BY those transitions); and every NUMERIC `_prev` twin, because the delta beside the
+# current value already carries it. The LABEL `_prev` twins stay — "was AVOID, now BUY★" is the
+# whole content of a ladder move.
 _HDR = {
-    JOIN_KEY: None, "name": "Stock", "sector": "Sector", "market_category": "Market Cap",
-    "rank": "Rank", "rank_prev": "Rank was", "rank_delta": "Δ Rank",
-    "composite_score": "Score", "composite_score_prev": "Score was", "composite_delta": "Δ Score",
-    "conviction_tier": "Tier", "conviction_tier_prev": "Tier was", "tier_delta": "Δ Tier",
-    "wealth_tier": "Now", "wealth_tier_prev": "Was", "steps": "Rungs",
-    "verdict_direction": "Now", "verdict_direction_prev": "Was",
-    "red_flag_count": "🚩 Flags", "red_flag_count_prev": "🚩 Flags was", "flag_delta": "Δ Flags",
-    "result_age_days": "Days since result", "gate_pass": "Gate", "tsunami_signal": "Tsunami",
-    "why": "Why",
+    JOIN_KEY: None, "market_category": None, "gate_pass": None, "tsunami_signal": None,
+    "rank_prev": None, "composite_score_prev": None, "conviction_tier_prev": None,
+    "red_flag_count_prev": None,
+    "name": "Stock", "sector": "Sector", "why": "Why",
+    "rank": "Rank", "rank_delta": "Δ Rank",
+    "composite_score": "Score", "composite_delta": "Δ Score",
+    "conviction_tier": "Tier", "tier_delta": "Δ Tier",
+    "wealth_tier": "Wealth tier", "wealth_tier_prev": "was", "steps": "Rungs",
+    "verdict_direction": "Soundness", "verdict_direction_prev": "was",
+    "red_flag_count": "🚩 Flags", "flag_delta": "Δ Flags",
+    "result_age_days": "Days since result",
 }
 
 
-def _table(df: pd.DataFrame, limit: int = 40) -> None:
-    """One section table. Column names are never shown raw: every column has a header in _HDR,
-    the join key is hidden, and the rest follow the app-wide vocabulary (Stock · Sector · Score
-    · 🚩 Flags). Capped at `limit` rows — the count in the section title says how many exist."""
+def _table(df: pd.DataFrame, limit: int = 40, select: bool = False, cap_px: int = 420):
+    """One section table. Column names are never shown raw: every visible column has a header in
+    _HDR, and the hidden ones are declared there as None. Capped at `limit` rows — the section
+    header states "showing 40 of 1,992" whenever that bites, because a count the table cannot
+    deliver is the same quiet mislead as a mislabelled unit.
+
+    `select=True` turns on single-row selection and RETURNS the chosen stock name (or None). The
+    module stays stateless: it reads the selection Streamlit hands back and returns it; app.py
+    owns the session_state write that stages the tear-sheet."""
     if df.empty:
         st.markdown(f"<div style='font-size:0.74rem;color:{COLORS['text_muted']};"
                     f"padding:2px 0 10px 2px;'>none</div>", unsafe_allow_html=True)
-        return
+        return None
     show = [c for c in df.columns if _HDR.get(c, c) is not None]
     cfg = {}
     for c in show:
         label = _HDR.get(c, c.replace("_", " ").title())
-        if c in ("composite_score", "composite_score_prev", "composite_delta"):
+        if c in ("composite_score", "composite_delta"):
             cfg[c] = st.column_config.NumberColumn(label, format="%+.1f" if "delta" in c else "%.1f", width="small")
-        elif c in ("rank", "rank_prev", "rank_delta", "steps", "tier_delta", "flag_delta",
-                   "red_flag_count", "red_flag_count_prev", "result_age_days", "conviction_tier",
-                   "conviction_tier_prev"):
+        elif c in ("rank", "rank_delta", "steps", "tier_delta", "flag_delta",
+                   "red_flag_count", "result_age_days", "conviction_tier"):
             cfg[c] = st.column_config.NumberColumn(label, format="%+d" if ("delta" in c or c == "steps") else "%d", width="small")
         else:
-            cfg[c] = st.column_config.TextColumn(label, width="medium" if c == "name" else "small")
-    st.dataframe(df[show].head(limit).reset_index(drop=True), column_config=cfg,
-                 use_container_width=True, hide_index=True,
-                 height=min(420, 60 + min(len(df), limit) * 35))
+            cfg[c] = st.column_config.TextColumn(
+                label, width="large" if c == "why" else ("medium" if c == "name" else "small"))
+    head = df[show].head(limit).reset_index(drop=True)
+    kw = dict(column_config=cfg, use_container_width=True, hide_index=True,
+              height=min(cap_px, 60 + len(head) * 35))
+    if not select:
+        st.dataframe(head, **kw)
+        return None
+    sel = st.dataframe(head, on_select="rerun", selection_mode="single-row", **kw)
+    rows = sel.selection.rows if sel is not None and hasattr(sel, "selection") else []
+    return str(df.iloc[rows[0]]["name"]) if rows and "name" in df.columns else None
 
 
-def _section(title: str, n: int, note: str = "") -> None:
+def _section(title: str, n: int, note: str = "", shown: int = None) -> None:
+    """Section header: title, true count, and — when the table is truncated — exactly how much of
+    it you are looking at."""
+    trunc = ("" if shown is None or shown >= n else
+             f"<span style='font-size:0.68rem;color:{COLORS['gold']};'>showing {shown} of {n:,}</span>")
     st.markdown(
-        f"<div style='display:flex;align-items:baseline;gap:8px;margin:14px 0 4px 0;'>"
+        f"<div style='display:flex;align-items:baseline;gap:8px;margin:14px 0 4px 0;flex-wrap:wrap;'>"
         f"<span style='font-size:0.9rem;font-weight:800;color:{COLORS['text_primary']};'>{title}</span>"
-        f"<span style='font-size:0.72rem;font-weight:700;color:{COLORS['purple']};'>{n}</span>"
+        f"<span style='font-size:0.72rem;font-weight:700;color:{COLORS['purple']};'>{n:,}</span>"
+        + trunc
         + (f"<span style='font-size:0.68rem;color:{COLORS['text_muted']};'>{note}</span>" if note else "")
         + "</div>", unsafe_allow_html=True)
 
 
-def _churn_line(churn: dict) -> str:
+def _block(title: str, df: pd.DataFrame, note: str = "", limit: int = 40) -> None:
+    """Header + table, with the truncation stated. The pair is always written together, so it
+    cannot drift into a count the table does not honour."""
+    _section(title, len(df), note, shown=min(len(df), limit))
+    _table(df, limit=limit)
+
+
+def _churn_line(churn: dict, restricted: bool = False) -> str:
     """The header's first line: what share of comparable stocks changed, per label. High churn is
     a fact about the ENGINE's label stability — 47% of wealth tiers flipping in one quarter says
     the thresholds sit where small data changes cross them — and it belongs at the top."""
@@ -385,14 +425,20 @@ def _churn_line(churn: dict) -> str:
     names = {"wealth_tier": "wealth tier", "verdict_direction": "soundness",
              "red_flag_count": "red-flag count", "gate_pass": "gate"}
     bits = [f"<b>{names[k]}</b> {v:.0%}" for k, v in churn.items() if k in names and v == v]
+    scope = (f" <span style='font-weight:400;color:{COLORS['gold']};'>(whole universe — the lens "
+             f"filter below does not narrow this)</span>" if restricted else "")
     return (f"<div style='color:{COLORS['text_primary']};font-weight:700;margin-top:8px;'>"
-            f"Churn — share of stocks whose label changed: " + " · ".join(bits) + "</div>")
+            f"Churn — share of stocks whose label changed: " + " · ".join(bits) + scope + "</div>")
 
 
-def render_movers(res: dict, meta: dict) -> None:
+def render_movers(res: dict, meta: dict):
     """The Movers page below the picker. `meta` carries what only the caller knows:
     prev_vintage, cur_vintage (ISO), prev_label, cur_label (FY quarter), engine, prev_regime,
-    cur_regime, mode, profile."""
+    cur_regime, mode, profile.
+
+    RETURNS the stock name clicked in ⭐ What matters, or None — the module never writes
+    session_state (app.py owns it and stages the tear-sheet), which is what keeps this file
+    stateless while still closing the loop from a mover to its full analysis."""
     c = res["counts"]
     same_engine = meta.get("prev_engine", meta.get("engine")) == meta.get("engine")
     regime_note = ("" if meta.get("prev_regime") == meta.get("cur_regime") else
@@ -411,7 +457,7 @@ def render_movers(res: dict, meta: dict) -> None:
         f"{'' if same_engine else ' ⚠ differs'} · {meta.get('mode', '')}/{meta.get('profile', '')}</span>"
         f"<span style='color:{COLORS['text_muted']};'>regime {meta.get('prev_regime', '?')} → {meta.get('cur_regime', '?')}</span>"
         f"</div>"
-        + _churn_line(res.get("churn", {}))
+        + _churn_line(res.get("churn", {}), bool(res.get("restricted")))
         + f"<div style='color:{COLORS['text_secondary']};margin-top:6px;'>Both sides scored by the "
         f"<b>same engine, moments apart</b>, so every move below is the company changing — never PRISM "
         f"changing{regime_note}.</div>"
@@ -422,50 +468,57 @@ def render_movers(res: dict, meta: dict) -> None:
            if any(q in meta.get("cur_label", "") for q in ("Q1", "Q3")) else "")
         + "</div>", unsafe_allow_html=True)
 
-    # THE FIRST TABLE: material moves only, capped. Measured on the first live run, the six full
-    # sections held 400 upgrades, 450 downgrades and ~1,000 rank moves — a firehose nobody reads.
-    # This is the thirty rows that matter; everything below is the evidence behind them.
+    # THE PAGE IS ONE TABLE PLUS ITS EVIDENCE. Measured on the first live run, rendering all
+    # sixteen sections flat produced a 7,820px page — 10.7 screens of scrolling, thirteen tables
+    # pinned at their height cap, and ⭐ What matters (the entire point of the materiality pass)
+    # sitting as one of sixteen equals. The star stays open and selectable; the fifteen evidence
+    # sections go behind five sub-tabs, which is the st.tabs language Market Pulse already speaks
+    # and which — unlike st.expander on Streamlit 1.54 — holds its selection across a rerun.
     mat = material(res)
     _section("⭐ What matters", len(mat),
-             "into / out of BUY★ · crossed the gate · new Tsunami · top-25 rank jumps · |Δ flags| ≥ 3 — one row per stock")
-    _table(mat, limit=40)
+             "into / out of BUY★ · crossed the gate · new Tsunami · top-25 rank jumps · |Δ flags| ≥ 3 "
+             "— one row per stock. Click a row to load it into the Tear-Sheet.",
+             shown=min(len(mat), 40))
+    picked = _table(mat, limit=40, select=True, cap_px=560)
+    if picked:
+        st.markdown(
+            f"<div style='padding:9px 14px;margin:6px 0 2px 0;background:rgba(139,92,246,0.07);"
+            f"border:1px solid rgba(139,92,246,0.3);border-radius:8px;font-size:0.8rem;'>"
+            f"🔬 <strong style='color:{COLORS['text_primary']};'>{picked}</strong> set — "
+            f"<strong style='color:{COLORS['blue']};'>click The Tear-Sheet tab</strong> for full analysis."
+            f"</div>", unsafe_allow_html=True)
 
-    _section("💹 Wealth tier — upgrades", c["wealth_up"], "rungs climbed on BUY★ › BUY › WATCH★ › WATCH › AVOID")
-    _table(res["wealth_up"])
-    _section("💹 Wealth tier — downgrades", c["wealth_down"])
-    _table(res["wealth_down"])
-    if c["wealth_unverifiable"]:
-        _section("💹 Wealth tier — unverifiable", c["wealth_unverifiable"], "moved to or from N/A: an input went missing or came back — not a verdict")
-        _table(res["wealth_unverifiable"])
-
-    _section("🧭 Soundness — improved", c["sound_up"], "FLAWED › MIXED › SOUND")
-    _table(res["sound_up"])
-    _section("🧭 Soundness — worsened", c["sound_down"])
-    _table(res["sound_down"])
-
-    r = res["rank"]
-    _section("📈 Rank climbers", int((r["rank_delta"] > 0).sum()) if not r.empty else 0, "Δ Rank positive = climbed")
-    _table(r[r["rank_delta"] > 0] if not r.empty else r)
-    _section("📉 Rank fallers", int((r["rank_delta"] < 0).sum()) if not r.empty else 0)
-    _table(r[r["rank_delta"] < 0].iloc[::-1] if not r.empty else r)
-
-    _section("✅ New gate passers", c["gate_new"])
-    _table(res["gate_new"])
-    _section("❌ Lost the gate", c["gate_lost"])
-    _table(res["gate_lost"])
-    _section("🌊 New Tsunami setups", c["tsunami_new"])
-    _table(res["tsunami_new"])
-
-    fl = res["flags"]
-    _section("🚩 Red flags — rises", int((fl["flag_delta"] > 0).sum()) if not fl.empty else 0, "forensics deteriorating")
-    _table(fl[fl["flag_delta"] > 0] if not fl.empty else fl)
-    _section("🚩 Red flags — falls", int((fl["flag_delta"] < 0).sum()) if not fl.empty else 0)
-    _table(fl[fl["flag_delta"] < 0].iloc[::-1] if not fl.empty else fl)
-
-    _section("🆕 Fresh results", c["fresh"], "a result landed between the two vintages")
-    _table(res["fresh"])
-
-    _section("➕ New to the universe", c["new"], "no deltas — there is no previous side")
-    _table(res["new"])
-    _section("➖ Dropped from the universe", c["dropped"])
-    _table(res["dropped"])
+    r, fl = res["rank"], res["flags"]
+    r_up = r[r["rank_delta"] > 0] if not r.empty else r
+    r_dn = r[r["rank_delta"] < 0].iloc[::-1] if not r.empty else r
+    fl_up = fl[fl["flag_delta"] > 0] if not fl.empty else fl
+    fl_dn = fl[fl["flag_delta"] < 0].iloc[::-1] if not fl.empty else fl
+    _ev = st.tabs([
+        f"💹 Wealth · {c['wealth_up'] + c['wealth_down'] + c['wealth_unverifiable']:,}",
+        f"🧭 Soundness · {c['sound_up'] + c['sound_down']:,}",
+        f"📈 Rank · {len(r_up) + len(r_dn):,}",
+        f"🚦 Gates & flags · {c['gate_new'] + c['gate_lost'] + c['tsunami_new'] + c['flags']:,}",
+        f"🆕 Universe · {c['fresh'] + c['new'] + c['dropped']:,}",
+    ])
+    with _ev[0]:
+        _block("Upgrades", res["wealth_up"], "rungs climbed on BUY★ › BUY › WATCH★ › WATCH › AVOID")
+        _block("Downgrades", res["wealth_down"])
+        _block("Unverifiable", res["wealth_unverifiable"],
+               "moved to or from N/A: an input went missing or came back — not a verdict")
+    with _ev[1]:
+        _block("Improved", res["sound_up"], "FLAWED › MIXED › SOUND")
+        _block("Worsened", res["sound_down"])
+    with _ev[2]:
+        _block("Climbers", r_up, "Δ Rank positive = climbed")
+        _block("Fallers", r_dn)
+    with _ev[3]:
+        _block("New gate passers", res["gate_new"])
+        _block("Lost the gate", res["gate_lost"])
+        _block("New Tsunami setups", res["tsunami_new"])
+        _block("Red flags — rises", fl_up, "forensics deteriorating")
+        _block("Red flags — falls", fl_dn)
+    with _ev[4]:
+        _block("Fresh results", res["fresh"], "a result landed between the two vintages")
+        _block("New to the universe", res["new"], "no deltas — there is no previous side")
+        _block("Dropped from the universe", res["dropped"])
+    return picked

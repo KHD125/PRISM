@@ -2470,7 +2470,7 @@ def _render_market_pulse():
                         _mv_cur_f, _mv_act = _mp_lens_row(df, "mv")
                         if _mv_act:
                             _mv_res = restrict(_mv_res, _mv_cur_f[_MV_KEY])
-                        render_movers(_mv_res, {
+                        _mv_picked = render_movers(_mv_res, {
                             "prev_vintage": _mv_prev_v, "cur_vintage": _mv_cur_v,
                             "prev_label": _mv_prev_q, "cur_label": _mv_cur_q,
                             "engine": _mv_engine(), "prev_engine": _mv_engine(),
@@ -2478,6 +2478,16 @@ def _render_market_pulse():
                             "cur_regime": str(df.attrs.get("detected_market_regime", "SIDEWAYS")),
                             "mode": analysis_mode, "profile": scoring_profile,
                         })
+                        # CLICK A MOVER, READ ITS TEAR-SHEET — the same handoff Tsunami and QGLP
+                        # use, and the loop this tab was missing: it found the candidates and
+                        # could not pass them on. Stage a transient key + rerun rather than
+                        # setting the xray_stock widget key (this tab renders AFTER the Tear-Sheet
+                        # selectbox, so a direct set raises set-after-instantiation). The
+                        # change-guard is essential: st.dataframe's selection persists across
+                        # reruns, so an unguarded set+rerun would loop forever.
+                        if _mv_picked and _mv_picked != st.session_state.get("xray_stock"):
+                            st.session_state["_pending_xray"] = _mv_picked
+                            st.rerun()
 
 
 with tabs[3]:

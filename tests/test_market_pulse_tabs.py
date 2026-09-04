@@ -183,6 +183,24 @@ def test_movers_previous_side_is_rescored_by_the_same_engine_behind_a_click():
         "the archived copy must take the canonical pipeline with the same mode/profile")
 
 
+def test_movers_hands_a_clicked_row_to_the_tearsheet():
+    """THE LOOP. Tsunami, QGLP and Discovery all hand a clicked row to the Tear-Sheet; Movers named
+    the candidates and could not pass them on, so the reader had to retype a name in another tab.
+    render_movers RETURNS the pick (the module never touches session_state) and app.py stages the
+    transient `_pending_xray` + reruns — never a direct xray_stock set, because this tab renders
+    AFTER the Tear-Sheet selectbox. The change-guard is load-bearing: st.dataframe's selection
+    persists across reruns, so an unguarded set+rerun loops forever."""
+    _, blk = _movers_block()
+    assert "_mv_picked = render_movers(" in blk, "the clicked stock is not captured from the page"
+    guard = 'if _mv_picked and _mv_picked != st.session_state.get("xray_stock"):'
+    assert guard in blk, "the change-guard is missing — an unguarded set+rerun is an infinite loop"
+    stage = blk[blk.index(guard):]
+    assert 'st.session_state["_pending_xray"] = _mv_picked' in stage, "the pick is never staged"
+    assert "st.rerun()" in stage, "nothing reruns, so the Tear-Sheet never consumes the staged pick"
+    assert 'st.session_state["xray_stock"] = _mv_picked' not in blk, (
+        "a direct widget-key set raises set-after-instantiation from this tab")
+
+
 def test_movers_diffs_whole_frames_and_applies_the_lens_afterwards():
     """The lens narrows the CURRENT side AFTER the diff. Filtering the current frame first would
     turn every filtered-out stock into a fake 'dropped' row."""
