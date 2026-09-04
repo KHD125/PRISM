@@ -79,6 +79,56 @@ def test_app_download_sig_uses_the_exact_digest_not_the_lossy_sum():
         "under a different analysis mode / profile")
 
 
+# ── The download IS the Cloud-side snapshot (2026-09-02) ─────────────────────────────────────
+def test_stamp_snapshot_prefixes_the_four_provenance_columns():
+    """ONE snapshot format for both destinations (the 📥 download in the browser, tools/snapshot.py
+    on disk): vintage · source · engine · scored-day, in front of the untouched frame. The vintage is
+    the identity — a snapshot named by the click date mislabels the data it holds."""
+    from ui.ui_export import stamp_snapshot
+    df = pd.DataFrame({"name": ["A"], "composite_score": [50.0]})
+    out = stamp_snapshot(df, "2026-08-28", "sheet")
+    assert list(out.columns[:4]) == ["snapshot_vintage", "snapshot_source", "engine_version", "scored_at"]
+    assert out["snapshot_vintage"].iloc[0] == "2026-08-28"
+    assert out["snapshot_source"].iloc[0] == "sheet"
+    assert list(out.columns[4:]) == ["name", "composite_score"], "the frame itself must be untouched"
+    assert list(df.columns) == ["name", "composite_score"], "stamping mutated the caller's frame"
+    assert stamp_snapshot(df, None, "local")["snapshot_vintage"].iloc[0] == "unknown", (
+        "an unknown vintage must say so — never today's date dressed up as the data's date")
+
+
+def test_engine_version_is_a_short_hash_or_unknown():
+    """A delta between two snapshots scored by DIFFERENT engines cannot tell 'the company moved'
+    from 'we fixed a bug'. The stamp must be a git short hash, or an honest 'unknown' — never an
+    exception, never an empty string."""
+    import re
+    from ui.ui_export import engine_version
+    v = engine_version()
+    assert re.fullmatch(r"[0-9a-f]{7,40}|unknown", v), v
+    assert engine_version() == v, "the stamp must be stable within a process"
+
+
+def test_download_is_named_by_the_data_vintage_and_stamped():
+    """The sidebar download used today's date in its filename: a download of 28-Aug data taken on
+    the 15th was named the 15th. It is named by the sheet's own vintage now, falls back to the
+    click date ONLY when the sheet carries no date, passes vintage+source into the stamped cached
+    export, and puts vintage + engine into the cache key so a refreshed sheet or a redeployed engine
+    can never be served stale bytes."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8")
+    i = src.index("with _scored_dl_ph.container():")
+    blk = src[i:src.index('mime="text/csv"', i)]
+    assert 'file_name=f"prism_scored_{_fname_date}_{len(filt)}stocks.csv"' in blk, (
+        "the download filename no longer carries the data vintage")
+    assert "_date.today().isoformat()}_{len(filt)}" not in blk, "the click date names the file again"
+    assert "_fresh.data_date.isoformat() if _fresh.is_known else None" in blk, (
+        "the vintage must come from the sheet's own date (sheet_meta), unknown when it has none")
+    assert "scored_universe_csv(_dl_sig, filt, _vintage, st.session_state.data_source)" in blk, (
+        "the export is no longer stamped with vintage + source")
+    sig = blk[blk.index("_dl_sig = ("):blk.index("st.download_button(")]
+    assert "_vintage" in sig and "engine_version()" in sig, (
+        "vintage and engine must be in the cache key — a stale CSV would otherwise survive a refresh")
+
+
 def test_download_cache_is_bounded():
     """12.3 MB per full-universe entry, one entry per distinct filter state, container RAM is
     finite: the cache must declare max_entries so a long filter session can't grow unbounded."""

@@ -399,7 +399,7 @@ with st.sidebar:
     # your sidebar filters (every column), or the whole universe when nothing is filtered. Distinct
     # from the Deep Scanner's curated (~40-col) export and the All-Data single-row export.
     from datetime import date as _date
-    from ui.ui_export import scored_universe_csv, universe_signature
+    from ui.ui_export import engine_version, scored_universe_csv, universe_signature
     _scored_dl_ph = st.empty()
 
     regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
@@ -423,11 +423,19 @@ filt = render_discovery_sidebar(df)
 # different one-stock filter states both hashed to "1|90.00" and the second download served the
 # first stock's CSV — 2026-08-29 audit; pinned in tests/test_export.py). No filter → whole universe.
 with _scored_dl_ph.container():
-    _dl_sig = f"{_score_key}|{universe_signature(filt['name'])}"
+    # NAMED BY THE DATA VINTAGE, NOT THE CLICK DATE (2026-09-02). This download is the Cloud-side
+    # snapshot: the sheet's own date is the identity of the data (a download of 28-Aug data taken
+    # on the 15th is 28-Aug data), so the file is named by it and stamped with it. Only when the
+    # sheet carries no date does the click date stand in. The vintage and the engine hash enter
+    # the cache key so a refreshed sheet or a redeployed engine can never be served stale bytes.
+    _vintage = _fresh.data_date.isoformat() if _fresh.is_known else None
+    _fname_date = _vintage or _date.today().isoformat()
+    _dl_sig = (f"{_score_key}|{universe_signature(filt['name'])}|{_vintage}|{engine_version()}"
+               f"|{_date.today().isoformat()}")
     st.download_button(
         f"📥 Download {len(filt):,} stocks · all {df.shape[1]} cols",
-        data=scored_universe_csv(_dl_sig, filt),
-        file_name=f"prism_scored_{_date.today().isoformat()}_{len(filt)}stocks.csv",
+        data=scored_universe_csv(_dl_sig, filt, _vintage, st.session_state.data_source),
+        file_name=f"prism_scored_{_fname_date}_{len(filt)}stocks.csv",
         mime="text/csv",
         use_container_width=True,
         help="Downloads the CURRENTLY FILTERED stocks (every column) as Excel-safe CSV — reflects your "
