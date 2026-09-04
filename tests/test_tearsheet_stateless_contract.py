@@ -54,3 +54,19 @@ def test_tearsheet_uses_no_banned_streamlit_widgets():
         "st.metric layout bloat (CLAUDE.md §5). Offending calls:\n  "
         + "\n  ".join(f"line {ln}: st.{attr}(...)" for ln, attr in hits)
     )
+
+
+# ui_movers.py (2026-09-04) adopts the SAME contract on purpose: it renders a two-vintage diff and
+# owns nothing — the vintage picker and the compare button live in app.py. A widget here would
+# write session_state that app.py owns; st.columns/st.metric would reintroduce the padding bloat
+# the header strip is written in inline flex to avoid.
+_MOVERS = os.path.join(os.path.dirname(__file__), "..", "ui", "ui_movers.py")
+
+
+def test_movers_uses_no_banned_streamlit_widgets():
+    hits = _banned_st_calls(_MOVERS)
+    assert hits == [], (
+        "ui/ui_movers.py must contain no state-mutating widgets or st.columns/st.metric "
+        "(stateless like the tear-sheet; app.py owns the picker + button). Offending calls:\n  "
+        + "\n  ".join(f"line {ln}: st.{attr}(...)" for ln, attr in hits)
+    )

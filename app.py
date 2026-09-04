@@ -159,6 +159,39 @@ def get_scored_data(clean_df: pd.DataFrame, analysis_mode: str, scoring_profile:
     """
     return run_scoring_pipeline(clean_df, analysis_mode, scoring_profile)
 
+
+@st.cache_data(show_spinner=False, max_entries=3)
+def _load_vintage_clean(copy_id: str):
+    """🔁 Movers, phase 1: an ARCHIVED vintage (a Drive copy of the data sheet, by id) through
+    the IDENTICAL loader the live sheet takes — XLSX download, six tabs by name, merge, coerce,
+    derive. Cached on the copy id alone: the clean frame does not depend on mode or profile, so
+    switching profiles re-scores (phase 2) without re-downloading. max_entries=3 — each entry is
+    a full 2,100 × ~700 frame."""
+    return fetch_and_clean_data("sheet", None, copy_id)
+
+
+@st.cache_data(show_spinner=False, max_entries=3)
+def _score_vintage(copy_id: str, engine: str, analysis_mode: str, scoring_profile: str, _clean):
+    """🔁 Movers, phase 2: the canonical 4-step pipeline with the SAME mode and profile as the
+    live frame — so both sides of the diff are scored by the same engine moments apart, and a
+    difference can only be the company changing. A scored file from the past would confound
+    "the company moved" with "we fixed a bug"; this never can.
+
+    Cached on (copy id, engine hash, mode, profile); `_clean` is underscored so Streamlit does
+    not hash the frame on every call — the four strings ARE the identity. The regime is returned
+    beside the frame because a cached DataFrame's `.attrs` is not a contract worth relying on
+    across pickling."""
+    scored = run_scoring_pipeline(_clean, analysis_mode, scoring_profile)
+    return scored, str(scored.attrs.get("detected_market_regime", "SIDEWAYS"))
+
+
+@st.cache_data(show_spinner=False, ttl=900, max_entries=4)
+def _load_archive_index(index_id: str):
+    """The PRISM Archive Index (dates · quarter labels · copy ids · status) — one small sheet
+    the Apps Script archiver maintains. 15-minute TTL: it changes at most once a day."""
+    from ui.ui_movers import load_index
+    return load_index(index_id)
+
 inject_css()
 
 # Data Source UI
@@ -1422,7 +1455,9 @@ def _render_market_pulse():
         "💹 Wealth",
         "📈 Sectors",
         "🏭 Industry",
+        "🔁 Movers",
     ])   # Stage 3: dropped dead "💙 Blue Chips" (0% fires) + brittle "🚀 Tipping Points" (folded into Sectors)
+         # 🔁 Movers APPENDED 2026-09-04 (index 6) — same rule: appended, never inserted.
          # 🏭 Industry APPENDED 2026-08-28 — appended, never inserted: each `with _mp_tabs[i]` body
          # binds by index, so inserting anywhere earlier renders existing content into a new tab.
 
@@ -2301,6 +2336,148 @@ def _render_market_pulse():
                     f'clean subdivision of sector.</div>',
                     unsafe_allow_html=True,
                 )
+
+    # ══ Movers ═════════════════════════════════════════════════════
+    # APPENDED 2026-09-04 at index 6. What changed since the previous DATA VINTAGE — the one
+    # question no other surface answers, and the engine's own thesis (direction beats level)
+    # applied to itself. The previous side is an ARCHIVED Drive copy of the data sheet,
+    # re-scored with the RUNNING engine (_load_vintage): same engine on both sides by
+    # construction, so a move is the company changing, never PRISM changing. The diff and the
+    # page are pure/stateless in ui/ui_movers.py; every widget (index id, picker, button, the
+    # lens row) lives here because this file owns session state.
+    with _mp_tabs[6]:
+        from datetime import date as _mv_today
+        from core.sheet_meta import fetch_sheet_title, parse_data_date
+        from ui.ui_export import engine_version as _mv_engine
+        from ui.ui_movers import (JOIN_KEY as _MV_KEY, compute_movers, default_vintage, fy_quarter,
+                                  render_movers, restrict)
+
+        st.markdown(
+            f"<div class='sec-cap'>What changed since the previous <b>data vintage</b>. The previous "
+            f"side is an archived copy of the data sheet, <b>re-scored by this engine right now</b> — "
+            f"so every move below is the company changing, never PRISM changing. Market-wide "
+            f"(ignores sidebar filters); the lens row narrows the current side.</div>",
+            unsafe_allow_html=True,
+        )
+
+        # ── 1. Where the archive lives: secrets first, then a box (seed-before-instantiate) ──
+        try:
+            _mv_default_id = str(st.secrets.get("ARCHIVE_INDEX_SHEET_ID", "") or "")
+        except Exception:                    # no secrets file at all (local dev without one)
+            _mv_default_id = ""
+        if "mp_mv_index" not in st.session_state:
+            st.session_state["mp_mv_index"] = _mv_default_id
+        _mv_id = st.text_input(
+            "Archive index sheet ID — or one archived copy's ID", key="mp_mv_index",
+            placeholder="ID of 'PRISM Archive Index' (set ARCHIVE_INDEX_SHEET_ID in secrets to prefill)",
+            help="The Apps Script archiver keeps an index sheet of every archived vintage. Paste its "
+                 "ID once here (or set ARCHIVE_INDEX_SHEET_ID in Streamlit secrets). A single archived "
+                 "copy's ID also works — its vintage is read from the sheet's own name.",
+        ).strip()
+
+        if not _mv_id:
+            st.info("No archive configured. Paste the PRISM Archive Index sheet ID above (or set "
+                    "ARCHIVE_INDEX_SHEET_ID in secrets). Nothing to compare until then.")
+        else:
+            # ── 2. Resolve: an index (many vintages) or a single copy (one vintage from its name) ──
+            _mv_ok, _mv_err = None, None
+            try:
+                _mv_ok = _load_archive_index(_mv_id)
+            except ValueError:               # not an index → maybe a copy: read its own name
+                _title = fetch_sheet_title(extract_spreadsheet_id(_mv_id))
+                _d = parse_data_date(_title)
+                if _d is None:
+                    _mv_err = (f"'{_title or _mv_id}' is neither a PRISM Archive Index nor a "
+                               f"'PRISM YYYY-MM-DD' copy — nothing to compare against.")
+                else:
+                    _mv_ok = pd.DataFrame({"vintage_date": [_d.isoformat()],
+                                           "fy_quarter": [fy_quarter(_d.isoformat())],
+                                           "spreadsheet_id": [extract_spreadsheet_id(_mv_id)]})
+            except Exception as _e:
+                _mv_err = (f"Could not read the archive: {_e}. Check the ID and that the sheet is "
+                           f"shared (Anyone with the link → Viewer).")
+
+            if _mv_err:
+                st.error(_mv_err)
+            elif _mv_ok is None or _mv_ok.empty:
+                st.info("The archive index has no usable ('ok') vintage yet. The first archived "
+                        "quarter appears there after the ingest archives it.")
+            else:
+                # ── 3. Pick the previous vintage. Options are index ROWS, not cascade facets:
+                # a stored id that is no longer in the index cannot be loaded at all, so
+                # snapping to the default here is honest, not the silent-widening class.
+                _mv_ids = list(_mv_ok["spreadsheet_id"])
+                _mv_lab = dict(zip(_mv_ok["spreadsheet_id"],
+                                   _mv_ok["fy_quarter"] + " · " + _mv_ok["vintage_date"]))
+                _mv_def = default_vintage(_mv_ok)["spreadsheet_id"]
+                if st.session_state.get("mp_mv_pick") not in _mv_ids:
+                    st.session_state["mp_mv_pick"] = _mv_def
+                _mv_pick = st.selectbox("Previous vintage", _mv_ids, key="mp_mv_pick",
+                                        format_func=lambda i: _mv_lab.get(i, i),
+                                        help="Default = the most recent on-cycle quarter (a clean quarter "
+                                             "boundary). Off-cycle rows are real data captured mid-quarter.")
+                _mv_prev_v = str(_mv_ok.loc[_mv_ok["spreadsheet_id"] == _mv_pick, "vintage_date"].iloc[0])
+                _mv_prev_q = str(_mv_ok.loc[_mv_ok["spreadsheet_id"] == _mv_pick, "fy_quarter"].iloc[0])
+                _mv_cur_v = _fresh.data_date.isoformat() if _fresh.is_known else _mv_today.today().isoformat()
+                _mv_cur_q = fy_quarter(_mv_cur_v)
+
+                # ── 4. The re-score is ~1 minute once per (copy, engine, mode, profile). Market
+                # Pulse is a fragment and every inner tab body renders on every run, so it runs
+                # ONLY behind an explicit click; the click's choice persists so reruns keep showing.
+                if st.button(f"🔁 Compare with {_mv_lab[_mv_pick]}", key="mp_mv_go"):
+                    st.session_state["mp_mv_loaded"] = _mv_pick
+                if st.session_state.get("mp_mv_loaded") != _mv_pick:
+                    st.info(f"Click **Compare** to re-score the {_mv_prev_q} copy ({_mv_prev_v}) with "
+                            f"the current engine and diff it against today's data ({_mv_cur_v}). "
+                            f"About a minute the first time; instant after.")
+                else:
+                    # PHASED, TIMED PROGRESS — the minute is the price of scoring a second universe
+                    # with the same engine (no honest shortcut exists); showing where it goes is
+                    # what keeps it from feeling like a hang. Phases: download+derive (cached on
+                    # the copy) → score (cached on copy+engine+mode+profile) → diff (< 0.1 s).
+                    _mv_res = None
+                    with st.status(f"Comparing with {_mv_prev_q} ({_mv_prev_v})…", expanded=False) as _mv_st:
+                        try:
+                            _t0 = time.perf_counter()
+                            _mv_st.update(label="① Downloading the archived copy and deriving signals…")
+                            _mv_clean = _load_vintage_clean(_mv_pick)
+                            _t1 = time.perf_counter()
+                            _mv_st.write(f"① Downloaded + derived: {len(_mv_clean):,} stocks · {_t1 - _t0:.0f}s")
+                            _mv_st.update(label=f"② Scoring with engine {_mv_engine()} ({analysis_mode}/{scoring_profile})…")
+                            _mv_prev_df, _mv_prev_regime = _score_vintage(
+                                _mv_pick, _mv_engine(), analysis_mode, scoring_profile, _mv_clean)
+                            _t2 = time.perf_counter()
+                            _mv_st.write(f"② Scored · regime {_mv_prev_regime} · {_t2 - _t1:.0f}s")
+                            _mv_st.update(label="③ Diffing against today's data…")
+                            # The calendar gap makes 'fresh results' exact (reported AFTER the
+                            # previous vintage) — see compute_movers(days_between=...).
+                            _mv_gap = (_mv_today.fromisoformat(_mv_cur_v) - _mv_today.fromisoformat(_mv_prev_v)).days
+                            _mv_res = compute_movers(_mv_prev_df, df, days_between=_mv_gap)
+                            _t3 = time.perf_counter()
+                            _mv_st.write(f"③ Diffed: {_mv_res['n_both']:,} stocks on both sides · {_t3 - _t2:.2f}s")
+                            _mv_st.update(label=f"Compared with {_mv_prev_q} ({_mv_prev_v}) in {_t3 - _t0:.0f}s",
+                                          state="complete")
+                        except Exception as _e:
+                            _mv_st.update(label=f"Could not compare with the {_mv_prev_q} copy", state="error")
+                            st.error(f"Could not load or diff the {_mv_prev_q} copy: {_e}")
+                            _mv_res = None
+                    if _mv_res is not None:
+                        if _mv_prev_v == _mv_cur_v:
+                            st.warning("The previous copy carries the SAME vintage date as today's "
+                                       "data — nothing can have moved. Pick an older vintage.")
+                        # Lens row narrows the CURRENT side, applied AFTER the diff (never before —
+                        # a filtered-out stock would otherwise read as 'dropped').
+                        _mv_cur_f, _mv_act = _mp_lens_row(df, "mv")
+                        if _mv_act:
+                            _mv_res = restrict(_mv_res, _mv_cur_f[_MV_KEY])
+                        render_movers(_mv_res, {
+                            "prev_vintage": _mv_prev_v, "cur_vintage": _mv_cur_v,
+                            "prev_label": _mv_prev_q, "cur_label": _mv_cur_q,
+                            "engine": _mv_engine(), "prev_engine": _mv_engine(),
+                            "prev_regime": _mv_prev_regime,
+                            "cur_regime": str(df.attrs.get("detected_market_regime", "SIDEWAYS")),
+                            "mode": analysis_mode, "profile": scoring_profile,
+                        })
 
 
 with tabs[3]:

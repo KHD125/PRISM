@@ -85,8 +85,11 @@ def block(src):
     """Just the Industry tab's own source — so a check cannot accidentally pass on the Sectors
     tab's very similar code sitting directly above it."""
     start = src.index("# ══ Industry ══")
-    end = src.index("# ━━━", start)
-    return src[start:end]
+    # The block ends at the NEXT inner-tab header or the section divider, whichever comes first.
+    # 🔁 Movers was appended after Industry on 2026-09-04; slicing to the divider alone would
+    # pull its widgets into these pins (found the moment it landed).
+    ends = [i for i in (src.find("# ══ ", start + 20), src.find("# ━━━", start)) if i != -1]
+    return src[start:min(ends)]
 
 
 @pytest.fixture(scope="module")

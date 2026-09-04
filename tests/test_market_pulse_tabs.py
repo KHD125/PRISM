@@ -67,8 +67,12 @@ def test_market_pulse_tab_set_is_exact():
     """Order matters as much as membership: every `with _mp_tabs[i]` body is bound by index, so a
     reordering silently renders the wrong content into the wrong tab."""
     labels = _mp_tab_labels()
+    # 🔁 Movers APPENDED 2026-09-04 (index 6): what changed since the previous data vintage —
+    # not dead (every column it diffs moves between refreshes), not brittle (a join + a diff,
+    # zero thresholds, zero scoring, pure + stateless in ui/ui_movers.py), not redundant (no
+    # surface shows change over time; Vel% is a financial delta, not a scoring delta).
     assert labels == ["🌊 Tsunami", "🏛️ QGLP", "🔭 MOSL", "💹 Wealth", "📈 Sectors",
-                      "🏭 Industry"], labels
+                      "🏭 Industry", "🔁 Movers"], labels
 
 
 def test_removed_renderers_are_not_called():
@@ -85,7 +89,7 @@ def test_removed_renderers_are_not_imported():
 
 def test_tab_extractor_has_teeth():
     labels = _mp_tab_labels()
-    assert labels is not None and len(labels) == 6
+    assert labels is not None and len(labels) == 7
 
 
 def test_the_stage_3_removals_were_not_quietly_restored():
@@ -135,6 +139,60 @@ def test_config_tab_is_never_fragmented():
     )
     assert "NEVER FRAGMENT THIS TAB" in cfg, "the tombstone comment explaining WHY is gone"
     assert 'key="cfg_mode"' in cfg, "cfg_mode moved out of Config — re-verify the fragment safety story"
+
+
+# ── 🔁 Movers wiring (2026-09-04) — the rules app.py must keep, pinned where they live ───────
+def _movers_block():
+    src = _app_src()
+    i = src.index("with _mp_tabs[6]:")
+    return src, src[i:src.index("with tabs[3]:", i)]
+
+
+def test_movers_is_the_appended_seventh_tab_and_stateless_where_it_should_be():
+    """Body bound to index 6 (appended, never inserted); the diff + page live in ui_movers,
+    every widget lives here."""
+    src, blk = _movers_block()
+    assert "from ui.ui_movers import" in blk and "render_movers(" in blk and "compute_movers(" in blk
+    assert "def compute_movers" not in src and "def render_movers" not in src, (
+        "the diff/page must live in ui/ui_movers.py, not be re-implemented in app.py")
+
+
+def test_movers_previous_side_is_rescored_by_the_same_engine_behind_a_click():
+    """SAME ENGINE BY CONSTRUCTION: the archived copy goes through _load_vintage with the engine
+    hash, mode and profile of the live frame — never a stored score. And that ~1-minute re-score
+    runs ONLY after the Compare button: Market Pulse is a fragment whose every inner-tab body
+    renders on every run."""
+    src, blk = _movers_block()
+    # PHASED (2026-09-04): download+derive is cached on the copy alone, scoring on
+    # copy+engine+mode+profile — so a profile switch re-scores without re-downloading, and the
+    # st.status shows where the minute goes. The same-engine rule is unchanged.
+    assert "_score_vintage(" in blk and "_mv_pick, _mv_engine(), analysis_mode, scoring_profile, _mv_clean)" in blk, (
+        "the previous vintage is not re-scored with the live engine/mode/profile")
+    assert "_mv_clean = _load_vintage_clean(_mv_pick)" in blk, "the archived copy no longer takes the live loader"
+    assert blk.index('key="mp_mv_go"') < blk.index("_load_vintage_clean("), "the load is not gated behind the button"
+    assert "st.status(" in blk and blk.index("st.status(") < blk.index("_load_vintage_clean("), (
+        "the phased progress container is gone — a bare minute reads as a hang")
+    for fn in ("def _load_vintage_clean(", "def _score_vintage("):
+        i = src.index(fn)
+        deco = src[src.rindex("@st.cache_data", 0, i):i]
+        assert "max_entries" in deco, f"{fn} must be cached with a bound — each entry is a full frame"
+    i = src.index("def _load_vintage_clean(")
+    assert 'fetch_and_clean_data("sheet", None, copy_id)' in src[i:i + 900], "the copy must take the live loader path"
+    j = src.index("def _score_vintage(")
+    assert "run_scoring_pipeline(_clean, analysis_mode, scoring_profile)" in src[j:j + 1200], (
+        "the archived copy must take the canonical pipeline with the same mode/profile")
+
+
+def test_movers_diffs_whole_frames_and_applies_the_lens_afterwards():
+    """The lens narrows the CURRENT side AFTER the diff. Filtering the current frame first would
+    turn every filtered-out stock into a fake 'dropped' row."""
+    _, blk = _movers_block()
+    call = "compute_movers(_mv_prev_df, df, days_between=_mv_gap)"
+    assert call in blk, "the diff must run on the whole live frame, with the vintage gap for exact fresh-results"
+    assert blk.index(call) < blk.index("restrict(_mv_res"), "restrict must follow the diff, never precede it"
+    assert 'compute_movers(_mv_prev_df, _mv_cur_f' not in blk
+    assert "_mv_gap = (_mv_today.fromisoformat(_mv_cur_v) - _mv_today.fromisoformat(_mv_prev_v)).days" in blk, (
+        "the gap must be the calendar days between the two vintage dates")
 
 
 # ── Lens-filter rows on QGLP / MOSL / Wealth (2026-08-30) ────────────────────────────────────
