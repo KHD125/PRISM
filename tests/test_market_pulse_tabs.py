@@ -201,6 +201,29 @@ def test_movers_hands_a_clicked_row_to_the_tearsheet():
         "a direct widget-key set raises set-after-instantiation from this tab")
 
 
+def test_movers_reason_chips_use_the_shared_cascade_helper_and_the_button_relabels():
+    """The reason chips on ⭐ What matters are the ONE Market Pulse multiselect dialect (_mp_ms:
+    keep_selected rule, live counts = stocks per reason) and reach the stateless module through
+    meta["reasons"] — never a second widget dialect, never session_state read inside ui_movers.
+    And once a compare has run for the picked vintage the button says "↻ Re-compare", because a
+    button that still says "Compare" invites a click that appears to do nothing."""
+    _, blk = _movers_block()
+    assert "_mv_rc = reason_counts(_mv_res)" in blk, "the chip counts must come from reason_counts (same tagging as material)"
+    assert '_mp_ms(st.container(), "What matters — reasons", list(_mv_rc),' in blk, (
+        "the reason chips are not the shared _mp_ms cascade helper")
+    assert '"mp_mv_why",' in blk and '"reasons": _mv_why,' in blk, "the selection does not reach render_movers via meta"
+    assert blk.index("_mv_rc = reason_counts(") < blk.index("_mv_picked = render_movers("), (
+        "chips must render (and be read) before the page that filters by them")
+    assert '_mv_done = st.session_state.get("mp_mv_loaded") == _mv_pick' in blk
+    assert 'f"↻ Re-compare with {_mv_lab[_mv_pick]}" if _mv_done' in blk, "the button does not relabel after a compare"
+    # Seen live: on the click run the button is instantiated BEFORE the click is known, so without
+    # a rerun it still reads "Compare" over a page that has just compared.
+    i = blk.index('if st.button(_mv_btn, key="mp_mv_go"):')
+    click_body = blk[i:blk.index('if st.session_state.get("mp_mv_loaded") != _mv_pick', i)]
+    assert 'st.session_state["mp_mv_loaded"] = _mv_pick' in click_body and "st.rerun()" in click_body, (
+        "the click must stage the pick AND rerun, or the label lags one run behind")
+
+
 def test_movers_diffs_whole_frames_and_applies_the_lens_afterwards():
     """The lens narrows the CURRENT side AFTER the diff. Filtering the current frame first would
     turn every filtered-out stock into a fake 'dropped' row."""

@@ -331,6 +331,103 @@ def test_restrict_filters_every_section_by_current_id_but_never_dropped(res):
     assert "whole universe" not in _churn_line(res["churn"], False)
 
 
+def test_material_direction_is_up_down_or_mixed(res):
+    """↑ every reason improves · ↓ every reason deteriorates · ↕ mixed. Alpha: → BUY★, gate ✓,
+    🌊 new — all good. Beta: gate ✗, rank −680, flags +5 — all bad. Zeta: flags −3 — good."""
+    from ui.ui_movers import material
+    m = material(res, top_rank=2, min_flags=3)
+    d = dict(zip(m["name"], m["direction"]))
+    assert d["Alpha"] == "↑" and d["Beta"] == "↓" and d["Zeta"] == "↑" and d["Gamma"] == "↑"
+    assert list(m.columns)[1] == "direction", "direction must be the first visible column"
+    mixed = _v(("M", "M", "WATCH★", "SOUND", 2, 10, 50.0, 1, 0, 1, 5))
+    mixed_c = _v(("M", "M", "BUY★", "SOUND", 2, 10, 50.0, 0, 0, 1, 5))    # into BUY★ but lost the gate
+    mm = material(compute_movers(mixed, mixed_c), top_rank=0, min_flags=99)
+    assert list(mm["direction"]) == ["↕"] and mm["why"].iloc[0] == "→ BUY★ · gate ✗"
+
+
+def test_material_reason_filter_applies_before_the_cap_and_keeps_all_reasons(res):
+    """A chip selects STOCKS, not words: a kept stock shows every reason it has. And the filter
+    runs on the full set — filtering the visible 40 would miss a match ranked 41st."""
+    from ui.ui_movers import material
+    only_gate_lost = material(res, top_rank=2, min_flags=3, reasons=["gate ✗"])
+    assert list(only_gate_lost["name"]) == ["Beta"]
+    assert only_gate_lost["why"].iloc[0] == "gate ✗ · rank −680 · flags +5", "the kept stock lost its other reasons"
+    flags = material(res, top_rank=2, min_flags=3, reasons=["flags"])
+    assert set(flags["name"]) == {"Beta", "Zeta"}, "the numeric token must cover every magnitude and sign"
+    assert material(res, top_rank=2, min_flags=3, reasons=["🌊 new"])["name"].tolist() == ["Alpha"]
+    assert material(res, top_rank=2, min_flags=3, reasons=["BUY★ →"]).empty
+    # before-the-cap: cap=1 with a reason that only the LAST-ranked material stock has must still find it
+    assert list(material(res, top_rank=2, min_flags=3, cap=1, reasons=["flags"])["name"]) == ["Beta"]
+    assert len(material(res, top_rank=2, min_flags=3, cap=1)) == 1
+    assert len(material(res, top_rank=2, min_flags=3, cap=None)) == 4, "cap=None must return everything"
+
+
+def test_cap_none_returns_every_material_row_beyond_forty():
+    """The download depends on cap=None meaning EVERYTHING. The six-stock fixture cannot tell
+    cap=None from head(40) (a mutation run proved it), so this builds 60 gate-crossers: the table
+    shows 40, the download must carry 60."""
+    from ui.ui_movers import material
+    rows_p = [(f"S{i:02d}", f"Stock{i:02d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 0, 0, 2, 30) for i in range(60)]
+    rows_c = [(f"S{i:02d}", f"Stock{i:02d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 1, 0, 2, 30) for i in range(60)]
+    res60 = compute_movers(_v(*rows_p), _v(*rows_c))
+    assert len(material(res60, top_rank=0, min_flags=99)) == 40, "the default cap must still be 40"
+    assert len(material(res60, top_rank=0, min_flags=99, cap=None)) == 60, "cap=None must return every row"
+    assert len(material(res60, top_rank=0, min_flags=99, cap=None, reasons=["gate ✓"])) == 60
+    assert material(res60, top_rank=0, min_flags=99, cap=None, reasons=["gate ✗"]).empty
+
+
+def test_flag_threshold_is_the_quarters_top_decile_floored_at_three():
+    """MEASURED June→Sep: median |Δ flags| 2, 80% of stocks changed, so a fixed ≥3 admitted 553
+    stocks (the bulk); the 90th percentile was 5 (181). The rule: top decile of non-zero |Δ|,
+    never below the floor, and the floor alone when too few changed for a percentile to mean
+    anything. A fixed number is wrong in both directions."""
+    from ui.ui_movers import flag_threshold, material
+    # small sample -> floor only (the six-stock fixture: 2 changed, so 3)
+    assert flag_threshold(compute_movers(PREV, CUR)) == 3
+    # noisy quarter: 100 changed, deltas 1..10 with a long tail of 1s and 2s -> 90th pct = 5 -> 5
+    deltas = [1] * 50 + [2] * 30 + [3] * 8 + [4] * 2 + [5] * 5 + [6] * 3 + [8] * 2
+    rows_p = [(f"S{i:03d}", f"Stock{i:03d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 0, 0, 5, 30) for i in range(100)]
+    rows_c = [(f"S{i:03d}", f"Stock{i:03d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 0, 0, 5 + d, 30) for i, d in enumerate(deltas)]
+    noisy = compute_movers(_v(*rows_p), _v(*rows_c))
+    assert flag_threshold(noisy) == 5
+    m = material(noisy, top_rank=0)
+    assert len(m) == 10 and m["why"].str.startswith("flags +").all(), "only |Δ| ≥ 5 (the tail) is material in a noisy quarter"
+    # quiet quarter: 100 changed but every |Δ| is 1 or 2 -> percentile 2 < floor -> floor holds (3), nothing material
+    rows_q = [(f"S{i:03d}", f"Stock{i:03d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 0, 0, 5 + (1 if i % 2 else 2), 30) for i in range(100)]
+    quiet = compute_movers(_v(*rows_p), _v(*rows_q))
+    assert flag_threshold(quiet) == 3 and material(quiet, top_rank=0).empty
+    # the header states the effective value — never a hardcoded 3
+    src = open(_MOV, encoding="utf-8").read()
+    star = src[src.index('_section("⭐ What matters'):src.index("picked = _table(mat")]
+    assert "{flag_threshold(res)}" in star and "|Δ flags| ≥ 3" not in star, "the star note hardcodes the threshold"
+    tag = src[src.index("def _tag_reasons("):src.index("def reason_counts(")]
+    assert "flag_threshold(res, floor=min_flags)" in tag, "_tag_reasons does not use the calibrated threshold"
+
+
+def test_reason_counts_match_material_and_use_canonical_order(res):
+    from ui.ui_movers import REASON_TOKENS, material, reason_counts
+    rc = reason_counts(res, top_rank=2, min_flags=3)
+    assert rc == {"→ BUY★": 1, "gate ✓": 1, "gate ✗": 1, "🌊 new": 1, "rank": 2, "flags": 2}
+    assert list(rc) == [k for k in REASON_TOKENS if k in rc], "counts must follow the canonical token order"
+    for tok, n in rc.items():
+        assert len(material(res, top_rank=2, min_flags=3, reasons=[tok])) == n, f"{tok}: chip count ≠ filtered rows"
+    assert reason_counts(compute_movers(PREV.iloc[0:0], CUR.iloc[0:0])) == {}
+
+
+def test_star_table_is_uncapped_in_material_but_shown_capped_with_a_download():
+    """The 40 on screen are stated; the download carries the whole material set."""
+    src = open(_MOV, encoding="utf-8").read()
+    i = src.index("mat = material(res")
+    # end at the RENDER's own `r, fl = res[...]` line — `_tag_reasons` has an earlier
+    # `up, dn, r, fl = res[...]` that a naive index() would hit, yielding an empty slice
+    star = src[i:src.index("r, fl = res", i)]
+    assert 'material(res, reasons=meta.get("reasons"), cap=None)' in star, "the star must compute UNCAPPED"
+    assert "shown=min(len(mat), 40)" in star and "picked = _table(mat, limit=40" in star
+    assert "st.download_button(" in star and "_to_csv_bytes(mat" in star, "no download of the full set"
+    assert "prism_movers_" in star, "the download is not named by the two vintages"
+    assert "st.session_state" not in src, "ui_movers must stay stateless — download_button writes none"
+
+
 # ── 5. Ladders mirror the app ────────────────────────────────────────────────
 def test_wealth_ladder_matches_the_apps_wt_order_minus_unverifiable():
     src = open(_APP, encoding="utf-8").read()

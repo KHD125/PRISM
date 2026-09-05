@@ -315,6 +315,24 @@ def _implied_growth_from_pb(pb, roe, cost_of_equity: float):
     return np.where(denom > 0.0, (cost_of_equity * pb - roe) / denom, np.nan)
 
 
+def _xlsx_engine() -> str:
+    """The pandas Excel engine for the ONE loading path (§0: one workbook, tabs by name).
+
+    MEASURED 2026-09-04 on the real six-tab workbook: openpyxl parses it in 8.1s, calamine in
+    0.7s, and the two agree on every one of 432,072 cells. The scoring engine itself takes 2.7s,
+    so the parser — not the engine — was the load-time bottleneck for the live sheet, the
+    uploaded workbook and the Movers archive copy alike.
+
+    calamine is a Rust wheel. If it is ever missing on a host (Streamlit Cloud without a wheel
+    for its Python), fall back to openpyxl: today's speed, never a boot failure. Decided BEFORE
+    the download so a fallback can never download twice. Pinned by tests/test_xlsx_engine.py."""
+    try:
+        import python_calamine  # noqa: F401
+        return "calamine"
+    except ImportError:
+        return "openpyxl"
+
+
 def extract_spreadsheet_id(url_or_id: str) -> str:
     """Extracts the Google Sheets ID from a full URL."""
     import re
@@ -422,7 +440,7 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
             # (SHEET_TAB_NAMES, §0 — read BY NAME, never by position/GID) — the exact same
             # parse path as the Google Sheets download, so the two sources can never diverge.
             try:
-                workbook = pd.ExcelFile(uploaded_files["workbook"], engine="openpyxl")
+                workbook = pd.ExcelFile(uploaded_files["workbook"], engine=_xlsx_engine())
             except Exception as e:
                 raise Exception(f"Could not read the uploaded file as an XLSX workbook: {e}")
             available_tabs = list(workbook.sheet_names)
@@ -457,7 +475,7 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
         parsed_id = extract_spreadsheet_id(sheet_id)
         xlsx_url = f"https://docs.google.com/spreadsheets/d/{parsed_id}/export?format=xlsx"
         try:
-            workbook = pd.ExcelFile(xlsx_url, engine="openpyxl")
+            workbook = pd.ExcelFile(xlsx_url, engine=_xlsx_engine())
         except Exception as e:
             raise Exception(
                 f"Could not download the spreadsheet as XLSX. Check the Sheet ID/URL and "

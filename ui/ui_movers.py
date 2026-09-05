@@ -23,6 +23,7 @@ import pandas as pd
 import streamlit as st
 
 from config import COLORS
+from ui.ui_export import _to_csv_bytes
 
 JOIN_KEY = "company_id"
 # The wealth ladder, best first. N/A means "an input is missing — never condemned on absent
@@ -91,10 +92,10 @@ def default_vintage(ok: pd.DataFrame):
 def load_index(sheet_id: str) -> pd.DataFrame:
     """Fetch the archive index by id (the same XLSX export path the data loader uses — never
     per-tab CSV, never gviz) and return usable_vintages of its first tab."""
-    from core.data_engine import extract_spreadsheet_id
+    from core.data_engine import _xlsx_engine, extract_spreadsheet_id
     xid = extract_spreadsheet_id(sheet_id)
     wb = pd.ExcelFile(f"https://docs.google.com/spreadsheets/d/{xid}/export?format=xlsx",
-                      engine="openpyxl")
+                      engine=_xlsx_engine())
     return usable_vintages(wb.parse(wb.sheet_names[0]))
 
 
@@ -275,12 +276,34 @@ def _signed(s: pd.Series) -> pd.Series:
     return pd.Series(np.where(v > 0, "+" + v.astype(str), "−" + (-v).astype(str)), index=s.index)
 
 
-def material(res: dict, top_rank: int = 25, min_flags: int = 3, cap: int = 40) -> pd.DataFrame:
-    """'What matters' — one row per stock with a MATERIAL move, reasons joined in a fixed order:
-    into / out of BUY★ (ladder moves only — an N/A transition is unverifiable, not a verdict),
-    crossed the gate either way, a new Tsunami setup, the `top_rank` biggest |Δ rank|, and
-    |Δ flags| ≥ `min_flags`. Sorted by number of reasons (desc), then rank; capped at `cap`.
-    The six full sections underneath are the evidence; this is the page's first table. Pure."""
+GOOD_REASONS = ("→ BUY★", "gate ✓", "🌊 new", "rank +", "flags −")   # a move that improves the stock
+REASON_TOKENS = ("→ BUY★", "BUY★ →", "gate ✓", "gate ✗", "🌊 new", "rank", "flags")
+
+
+def flag_threshold(res: dict, floor: int = 3, pct: float = 0.90, min_n: int = 50) -> int:
+    """How big a red-flag change has to be to count as MATERIAL this quarter: the top decile of
+    non-zero |Δ flags|, never below `floor`.
+
+    MEASURED (June-29 → Sep-03): the median |Δ flags| was 2 and 80% of stocks changed, so a fixed
+    ≥ 3 admitted 553 stocks — the bulk, not the tail. The 90th percentile was 5 (181 stocks). A
+    fixed number is wrong in both directions: too loose in a noisy quarter, and in a quiet one a
+    percentile alone would crown a Δ of 1 "material" — hence the floor. Below `min_n` changed
+    stocks a percentile is noise, so the floor stands alone. Pure; the render states the value."""
+    fl = res.get("flags")
+    if fl is None or fl.empty or "flag_delta" not in fl.columns:
+        return int(floor)
+    a = fl["flag_delta"].abs()
+    a = a[a > 0]
+    if len(a) < min_n:
+        return int(floor)
+    return int(max(floor, int(np.ceil(a.quantile(pct)))))
+
+
+def _tag_reasons(res: dict, top_rank: int, min_flags: int) -> pd.DataFrame:
+    """One row per (stock, reason): company_id · why · tok · good. THE single place the material
+    reasons are defined, so material() and reason_counts() can never disagree about what counts.
+    `tok` is the filter token: the whole reason for label moves ("→ BUY★", "gate ✓" …), the first
+    word for the numeric ones ("rank", "flags") so a chip covers every magnitude."""
     def tag(frame, why):
         return frame[[JOIN_KEY]].assign(why=why)
 
@@ -294,22 +317,62 @@ def material(res: dict, top_rank: int = 25, min_flags: int = 3, cap: int = 40) -
         top = r.reindex(r["rank_delta"].abs().sort_values(ascending=False, kind="mergesort").index).head(top_rank)
         parts.append(top[[JOIN_KEY]].assign(why="rank " + _signed(top["rank_delta"])))
     if not fl.empty:
-        big = fl[fl["flag_delta"].abs() >= min_flags]
+        big = fl[fl["flag_delta"].abs() >= flag_threshold(res, floor=min_flags)]
         parts.append(big[[JOIN_KEY]].assign(why="flags " + _signed(big["flag_delta"])))
-    cols_out = [JOIN_KEY, "name", "sector", "why", "wealth_tier", "rank", "rank_delta"]
-    reasons = pd.concat(parts, ignore_index=True)
-    if reasons.empty:
+    tagged = pd.concat(parts, ignore_index=True)
+    if tagged.empty:
+        return pd.DataFrame(columns=[JOIN_KEY, "why", "tok", "good"])
+    first = tagged["why"].str.split(" ").str[0]
+    tagged["tok"] = np.where(first.isin(["rank", "flags"]), first, tagged["why"])
+    tagged["good"] = tagged["why"].str.startswith(GOOD_REASONS)
+    return tagged
+
+
+def reason_counts(res: dict, top_rank: int = 25, min_flags: int = 3) -> dict:
+    """{reason token: number of distinct stocks carrying it} — the live counts on the reason
+    chips, from the SAME tagging material() uses. Canonical token order, present tokens only."""
+    t = _tag_reasons(res, top_rank, min_flags)
+    if t.empty:
+        return {}
+    n = t.groupby("tok")[JOIN_KEY].nunique()
+    return {k: int(n[k]) for k in REASON_TOKENS if k in n.index}
+
+
+def material(res: dict, top_rank: int = 25, min_flags: int = 3, cap=40, reasons=None) -> pd.DataFrame:
+    """'What matters' — one row per stock with a MATERIAL move, reasons joined in a fixed order:
+    into / out of BUY★ (ladder moves only — an N/A transition is unverifiable, not a verdict),
+    crossed the gate either way, a new Tsunami setup, the `top_rank` biggest |Δ rank|, and
+    |Δ flags| ≥ `min_flags`. Sorted by number of reasons (desc), then rank; capped at `cap`
+    (None = everything, for the download).
+
+    `reasons` (tokens from REASON_TOKENS) keeps the stocks carrying ANY selected reason — applied
+    to the FULL set BEFORE the cap, because filtering the visible 40 would silently miss every
+    match that ranked 41st or lower. A kept stock shows ALL its reasons: the filter chooses the
+    stocks, not the words. `direction` is ↑ when every reason improves, ↓ when every reason
+    deteriorates, ↕ when mixed. Pure."""
+    cols_out = [JOIN_KEY, "direction", "name", "sector", "why", "wealth_tier", "rank", "rank_delta"]
+    tagged = _tag_reasons(res, top_rank, min_flags)
+    if tagged.empty:
         return pd.DataFrame(columns=cols_out)
-    reasons["_o"] = reasons["why"].str.split(" ").str[0].map(_REASON_ORDER)
-    reasons = reasons.sort_values([JOIN_KEY, "_o"], kind="mergesort")
-    agg = reasons.groupby(JOIN_KEY, sort=True).agg(why=("why", " · ".join), n=("why", "size")).reset_index()
+    if reasons:
+        keep_ids = tagged.loc[tagged["tok"].isin(list(reasons)), JOIN_KEY].unique()
+        tagged = tagged[tagged[JOIN_KEY].isin(keep_ids)]
+        if tagged.empty:
+            return pd.DataFrame(columns=cols_out)
+    tagged = tagged.assign(_o=tagged["why"].str.split(" ").str[0].map(_REASON_ORDER))
+    tagged = tagged.sort_values([JOIN_KEY, "_o"], kind="mergesort")
+    agg = (tagged.groupby(JOIN_KEY, sort=True)
+           .agg(why=("why", " · ".join), n=("why", "size"), good=("good", "sum"))
+           .reset_index())
+    agg["direction"] = np.select([agg["good"] == agg["n"], agg["good"] == 0], ["↑", "↓"], "↕")
     ident = res["ident"]
     for c in ("sector", "wealth_tier"):
         if c not in ident.columns:
             ident = ident.assign(**{c: np.nan})
     m = agg.merge(ident, on=JOIN_KEY, how="left")
     m = m.sort_values(["n", "rank", "name"], ascending=[False, True, True], kind="mergesort")
-    return m[cols_out].head(cap).reset_index(drop=True)
+    m = m[cols_out].reset_index(drop=True)
+    return m if cap is None else m.head(cap)
 
 
 def restrict(res: dict, ids) -> dict:
@@ -348,7 +411,7 @@ _HDR = {
     JOIN_KEY: None, "market_category": None, "gate_pass": None, "tsunami_signal": None,
     "rank_prev": None, "composite_score_prev": None, "conviction_tier_prev": None,
     "red_flag_count_prev": None,
-    "name": "Stock", "sector": "Sector", "why": "Why",
+    "name": "Stock", "sector": "Sector", "why": "Why", "direction": "Dir",
     "rank": "Rank", "rank_delta": "Δ Rank",
     "composite_score": "Score", "composite_delta": "Δ Score",
     "conviction_tier": "Tier", "tier_delta": "Δ Tier",
@@ -474,12 +537,25 @@ def render_movers(res: dict, meta: dict):
     # sitting as one of sixteen equals. The star stays open and selectable; the fifteen evidence
     # sections go behind five sub-tabs, which is the st.tabs language Market Pulse already speaks
     # and which — unlike st.expander on Streamlit 1.54 — holds its selection across a rerun.
-    mat = material(res)
+    # UNCAPPED here: the table shows the top 40 and states it; the 📥 below carries the rest.
+    # The reason chips (app.py, meta["reasons"]) filter INSIDE material, before the cap.
+    mat = material(res, reasons=meta.get("reasons"), cap=None)
     _section("⭐ What matters", len(mat),
-             "into / out of BUY★ · crossed the gate · new Tsunami · top-25 rank jumps · |Δ flags| ≥ 3 "
-             "— one row per stock. Click a row to load it into the Tear-Sheet.",
+             f"into / out of BUY★ · crossed the gate · new Tsunami · top-25 rank jumps · |Δ flags| ≥ "
+             f"{flag_threshold(res)} (this quarter's top decile, floor 3) — one row per stock. "
+             f"↑ improving · ↓ deteriorating · ↕ mixed. Click a row to load it into the Tear-Sheet.",
              shown=min(len(mat), 40))
     picked = _table(mat, limit=40, select=True, cap_px=560)
+    if not mat.empty:
+        # A download is the honest answer to "showing 40 of 63": the other 23 are one click away.
+        # st.download_button writes no session_state, so it belongs here beside its table.
+        st.download_button(
+            f"📥 Download all {len(mat):,} material movers (CSV)",
+            data=_to_csv_bytes(mat.drop(columns=[JOIN_KEY])),
+            file_name=f"prism_movers_{meta.get('prev_vintage', 'prev')}_to_{meta.get('cur_vintage', 'cur')}.csv",
+            mime="text/csv", key="mp_mv_dl",
+            help="Every stock the chips currently select, not just the 40 on screen. Excel-safe UTF-8.",
+        )
     if picked:
         st.markdown(
             f"<div style='padding:9px 14px;margin:6px 0 2px 0;background:rgba(139,92,246,0.07);"

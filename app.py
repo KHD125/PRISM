@@ -2350,7 +2350,7 @@ def _render_market_pulse():
         from core.sheet_meta import fetch_sheet_title, parse_data_date
         from ui.ui_export import engine_version as _mv_engine
         from ui.ui_movers import (JOIN_KEY as _MV_KEY, compute_movers, default_vintage, fy_quarter,
-                                  render_movers, restrict)
+                                  reason_counts, render_movers, restrict)
 
         st.markdown(
             f"<div class='sec-cap'>What changed since the previous <b>data vintage</b>. The previous "
@@ -2424,8 +2424,19 @@ def _render_market_pulse():
                 # ── 4. The re-score is ~1 minute once per (copy, engine, mode, profile). Market
                 # Pulse is a fragment and every inner tab body renders on every run, so it runs
                 # ONLY behind an explicit click; the click's choice persists so reruns keep showing.
-                if st.button(f"🔁 Compare with {_mv_lab[_mv_pick]}", key="mp_mv_go"):
+                # Once a compare has run for THIS pick the label says so — "Compare" again would
+                # invite a click that appears to do nothing; "Re-compare" is a re-run, which is
+                # what it does (the caches make it instant unless the engine or profile changed).
+                _mv_done = st.session_state.get("mp_mv_loaded") == _mv_pick
+                _mv_btn = (f"↻ Re-compare with {_mv_lab[_mv_pick]}" if _mv_done
+                           else f"🔁 Compare with {_mv_lab[_mv_pick]}")
+                if st.button(_mv_btn, key="mp_mv_go"):
                     st.session_state["mp_mv_loaded"] = _mv_pick
+                    # Rerun so the label above is recomputed: on the click run itself the
+                    # button was instantiated BEFORE the click was known and still reads
+                    # "Compare" over a page that has just compared (seen live). The rerun
+                    # costs nothing — every frame it needs is cached by then.
+                    st.rerun()
                 if st.session_state.get("mp_mv_loaded") != _mv_pick:
                     st.info(f"Click **Compare** to re-score the {_mv_prev_q} copy ({_mv_prev_v}) with "
                             f"the current engine and diff it against today's data ({_mv_cur_v}). "
@@ -2470,6 +2481,16 @@ def _render_market_pulse():
                         _mv_cur_f, _mv_act = _mp_lens_row(df, "mv")
                         if _mv_act:
                             _mv_res = restrict(_mv_res, _mv_cur_f[_MV_KEY])
+                        # REASON CHIPS for ⭐ What matters — the same cascading multi-select every
+                        # Market Pulse filter uses (keep_selected rule, live counts = stocks carrying
+                        # the reason). The filter is applied INSIDE material, before its cap:
+                        # filtering the visible 40 would miss every match ranked 41st or lower.
+                        _mv_rc = reason_counts(_mv_res)
+                        _mv_why = _mp_ms(st.container(), "What matters — reasons", list(_mv_rc),
+                                         "mp_mv_why",
+                                         "Keep only stocks carrying ANY selected reason (they keep all "
+                                         "their reasons). Empty = every material mover. Counts are stocks.",
+                                         _mv_rc)
                         _mv_picked = render_movers(_mv_res, {
                             "prev_vintage": _mv_prev_v, "cur_vintage": _mv_cur_v,
                             "prev_label": _mv_prev_q, "cur_label": _mv_cur_q,
@@ -2477,6 +2498,7 @@ def _render_market_pulse():
                             "prev_regime": _mv_prev_regime,
                             "cur_regime": str(df.attrs.get("detected_market_regime", "SIDEWAYS")),
                             "mode": analysis_mode, "profile": scoring_profile,
+                            "reasons": _mv_why,
                         })
                         # CLICK A MOVER, READ ITS TEAR-SHEET — the same handoff Tsunami and QGLP
                         # use, and the loop this tab was missing: it found the candidates and
