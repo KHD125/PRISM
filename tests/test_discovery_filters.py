@@ -499,6 +499,74 @@ def test_the_two_new_filters_have_chips_and_narrow_through_the_choke_point():
         assert label in _DISC, f"{label} never reaches _narrow — the culprit log cannot name it"
 
 
+def _new_filters_app():
+    """Mini-app for AppTest: drives the REAL sidebar over a 3-row frame built so every new filter
+    discriminates — including against its own inversion."""
+    import pandas as _pd
+    import streamlit as _st
+
+    from ui.ui_discovery import render_discovery_sidebar
+
+    df = _pd.DataFrame({
+        "name":                      ["A", "B", "C"],
+        "sector":                    ["X", "X", "X"],
+        "industry":                  ["Y", "Y", "Y"],
+        "conviction_tier":           [1, 2, 3],
+        "piotroski_fscore":          [5, 6, 7],
+        "red_flag_count":            [0, 1, 2],
+        "quality_score":             [10.0, 12.0, 14.0],
+        "composite_score":           [10.0, 12.0, 14.0],
+        "capital_allocation_signal": ["💰 Returning Capital", "⚠️ Raising Capital", "💰 Returning Capital"],
+        "negative_wc_flag":          [1, 0, 0],
+    })
+    filt = render_discovery_sidebar(df)
+    _st.text(f"N={len(filt)}")
+    _st.text(f"KEPT={sorted(filt['name'].tolist())}")
+
+
+def _run_new(**state):
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_new_filters_app)
+    for k, v in state.items():
+        at.session_state[k] = v
+    at.run(timeout=30)
+    assert not at.exception, f"sidebar raised: {at.exception}"
+    out = {t.value.split("=", 1)[0]: t.value.split("=", 1)[1] for t in at.text}
+    return out
+
+
+def test_the_two_new_filters_actually_filter_through_the_real_widget_machinery():
+    """BEHAVIOURAL, because the structural pins above are not enough — a mutation run proved they
+    stay green when a filter is rendered but NEVER APPLIED (`if False and ...`) and when the
+    float-funded mask is INVERTED. Source text is not behaviour; this runs the real cascade."""
+    assert _run_new()["KEPT"] == "['A', 'B', 'C']", "unfiltered baseline is wrong"
+    # capital allocation selects by label, and is not inverted
+    assert _run_new(sb_capalloc=["💰 Returning Capital"])["KEPT"] == "['A', 'C']"
+    assert _run_new(sb_capalloc=["⚠️ Raising Capital"])["KEPT"] == "['B']"
+    assert _run_new(sb_capalloc=["💰 Returning Capital", "⚠️ Raising Capital"])["N"] == "3", "OR within the control"
+    # float-funded keeps ONLY negative working capital (inversion would keep B and C)
+    assert _run_new(sb_floatfunded=True)["KEPT"] == "['A']"
+    assert _run_new(sb_floatfunded=False)["N"] == "3", "unticked must filter nothing"
+    # AND across controls, and the pair composes
+    assert _run_new(sb_capalloc=["💰 Returning Capital"], sb_floatfunded=True)["KEPT"] == "['A']"
+    assert _run_new(sb_capalloc=["⚠️ Raising Capital"], sb_floatfunded=True)["N"] == "0", (
+        "an empty intersection must be empty, not silently widened")
+
+
+def test_the_new_filters_name_themselves_as_the_zero_results_culprit():
+    """The funnel's zero-state must name the dial to loosen — so both must apply through _narrow,
+    not merely appear in the source."""
+    from streamlit.testing.v1 import AppTest
+    for state, culprit in [({"sb_capalloc": ["⚠️ Raising Capital"], "sb_floatfunded": True}, "Float-Funded"),
+                           ({"sb_floatfunded": True, "sb_minscore": 50}, "Min Score")]:
+        at = AppTest.from_function(_new_filters_app)
+        for k, v in state.items():
+            at.session_state[k] = v
+        at.run(timeout=30)
+        assert not at.exception, f"sidebar raised: {at.exception}"
+        assert "N=0" in [t.value for t in at.text], f"expected an empty frame for {state}"
+
+
 def test_the_rejected_candidates_stay_out():
     """Two candidates from the same sweep were REJECTED by measurement and must not drift in.
     dilution_vampire_flag: P(rf>=3 | flag) = 99% — reachable by lowering Max red flags, and an
