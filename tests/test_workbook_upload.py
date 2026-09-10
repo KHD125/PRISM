@@ -102,6 +102,114 @@ def test_workbook_upload_loads_all_six_tabs_by_name():
     assert float(ds["ratio"]["roce_med_10y"].iloc[0]) == 11.5
 
 
+# ── LOCAL WORKBOOK (2026-09-10) ──────────────────────────────────────────────────────────────
+# The data folder now holds ONE workbook ("PRISM 2026-09-09 Wed.xlsx") where it used to hold six
+# dated CSVs, and `load_all_csvs("local")` still looked only for `PRISM <date> - <Tab>.csv`. The
+# whole suite went red — 184 errors, all FileNotFoundError — because every test that loads local
+# data died. The deployed app was unaffected (it runs in sheet mode), which is exactly why this
+# needs a contract test: the breakage is invisible from production.
+def _write_mini_workbook(path):
+    from config import SHEET_TAB_NAMES
+    tabs = {"ratio": {"companyId": [1, 2], "Name": ["A Ltd", "B Ltd"], "ROCE Median 10 Years": [11.5, 9.0]},
+            "income": {"companyId": [1, 2], "Name": ["A Ltd", "B Ltd"], "PAT": [10.0, 20.0]},
+            "balance": {"companyId": [1, 2], "Name": ["A Ltd", "B Ltd"], "Debt": [1.0, 2.0]},
+            "cashflow": {"companyId": [1, 2], "Name": ["A Ltd", "B Ltd"], "Operating Cash Flow": [5.0, 6.0]},
+            "shareholding": {"companyId": [1, 2], "Name": ["A Ltd", "B Ltd"], "Promoter Holdings": [60.0, 40.0]},
+            "technical": {"companyId": [1, 2], "Name": ["A Ltd", "B Ltd"], "Close Price": [100.0, 200.0]}}
+    with pd.ExcelWriter(path, engine="openpyxl") as xw:
+        for key, cols in tabs.items():
+            pd.DataFrame(cols).to_excel(xw, sheet_name=SHEET_TAB_NAMES[key], index=False)
+
+
+def test_local_falls_back_to_the_newest_prism_workbook(tmp_path, monkeypatch):
+    """When the dated CSVs are absent, `local` must resolve the newest PRISM workbook and parse it
+    through the SAME by-name path the upload and sheet modes use — not a second parser that could
+    drift from the §0 contract."""
+    import contextlib
+
+    import core.data_engine as de
+    old = tmp_path / "PRISM 2026-09-01 Mon.xlsx"
+    new = tmp_path / "PRISM 2026-09-09 Wed.xlsx"
+    _write_mini_workbook(old)
+    time.sleep(0.05)
+    _write_mini_workbook(new)
+    monkeypatch.setattr(de, "CSV_FILES", {k: str(tmp_path / f"Prism - {v}.csv")
+                                          for k, v in {"ratio": "Ratio", "income": "Income Statement",
+                                                       "balance": "Balance Sheet", "cashflow": "Cashflow",
+                                                       "shareholding": "Shareholdings",
+                                                       "technical": "Technicals"}.items()})
+    assert de._resolve_local_workbook() == str(new), "must pick the NEWEST workbook"
+    with contextlib.redirect_stdout(io.StringIO()):
+        ds = de.load_all_csvs("local")
+    assert sorted(ds) == ["balance", "cashflow", "income", "ratio", "shareholding", "technical"]
+    assert float(ds["ratio"]["roce_med_10y"].iloc[0]) == 11.5, "the workbook was not really parsed"
+
+
+def test_local_takes_the_newest_vintage_in_either_format(tmp_path, monkeypatch):
+    """NEWEST WINS, ACROSS FORMATS — not a format preference. config.py already rules that "if
+    several vintages coexist, take the newest by modification time"; a "CSVs always win" rule
+    would be a second, conflicting one and would serve STALE data the day an old CSV set
+    outranked a fresh workbook. Proven in BOTH directions, because a rule that only holds one
+    way round is not a rule."""
+    import contextlib
+
+    import core.data_engine as de
+    names = {"ratio": "Ratio", "income": "Income Statement", "balance": "Balance Sheet",
+             "cashflow": "Cashflow", "shareholding": "Shareholdings", "technical": "Technicals"}
+    rows = {"ratio": "companyId,Name,ROCE Median 10 Years\n1,A Ltd,77.7\n",
+            "income": "companyId,Name,PAT\n1,A Ltd,10\n",
+            "balance": "companyId,Name,Debt\n1,A Ltd,1\n",
+            "cashflow": "companyId,Name,Operating Cash Flow\n1,A Ltd,5\n",
+            "shareholding": "companyId,Name,Promoter Holdings\n1,A Ltd,60\n",
+            "technical": "companyId,Name,Close Price\n1,A Ltd,100\n"}
+    monkeypatch.setattr(de, "CSV_FILES", {k: str(tmp_path / f"Prism - {v}.csv") for k, v in names.items()})
+
+    def load():
+        with contextlib.redirect_stdout(io.StringIO()):
+            return de.load_all_csvs("local")
+
+    # CSVs written LAST -> the CSVs are the newest vintage -> 77.7
+    _write_mini_workbook(tmp_path / "PRISM 2026-09-09 Wed.xlsx")
+    time.sleep(0.05)
+    for k, v in names.items():
+        (tmp_path / f"Prism - {v}.csv").write_text(rows[k], encoding="utf-8")
+    assert float(load()["ratio"]["roce_med_10y"].iloc[0]) == 77.7, "stale workbook beat fresher CSVs"
+
+    # now the WORKBOOK is rewritten last -> it is the newest vintage -> 11.5
+    time.sleep(0.05)
+    _write_mini_workbook(tmp_path / "PRISM 2026-09-09 Wed.xlsx")
+    assert float(load()["ratio"]["roce_med_10y"].iloc[0]) == 11.5, "stale CSVs beat a fresher workbook"
+
+
+def test_local_with_neither_csvs_nor_workbook_fails_loud(tmp_path, monkeypatch):
+    """An empty folder must raise the original FileNotFoundError, not a confusing workbook error."""
+    import contextlib
+
+    import core.data_engine as de
+    monkeypatch.setattr(de, "CSV_FILES", {k: str(tmp_path / f"Prism - {k}.csv")
+                                          for k in ["ratio", "income", "balance", "cashflow",
+                                                    "shareholding", "technical"]})
+    assert de._resolve_local_workbook() is None
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            de.load_all_csvs("local")
+        raise AssertionError("an empty data folder loaded without error")
+    except FileNotFoundError:
+        pass
+
+
+def test_the_local_workbook_resolver_ignores_unrelated_xlsx(tmp_path, monkeypatch):
+    """Only 'PRISM*.xlsx' qualifies — the folder also holds exports and scratch files, and picking
+    one of those would parse a stranger's spreadsheet as the universe."""
+    import core.data_engine as de
+    (tmp_path / "Watchlist export.xlsx").write_bytes(b"not a workbook")
+    (tmp_path / "prism_scored_2026-08-26.csv").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(de, "CSV_FILES", {"ratio": str(tmp_path / "Prism - Ratio.csv")})
+    assert de._resolve_local_workbook() is None, "a non-PRISM xlsx was accepted as the universe"
+    _write_mini_workbook(tmp_path / "PRISM 2026-09-09 Wed.xlsx")
+    assert de._resolve_local_workbook().endswith("PRISM 2026-09-09 Wed.xlsx")
+
+
 def test_workbook_with_missing_tab_fails_loud():
     """A workbook missing a contract tab must raise naming the tab — silently proceeding
     would score the whole universe on a part-empty merge (the flat-scores regression class)."""

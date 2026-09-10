@@ -51,7 +51,13 @@ from test_data_quality_fixes import _frame
 # ── Verified against public record, 2026-08-25 ──────────────────────────────────────────
 RECLASSIFY = {                       # pro-rata / structural → must NOT be Tier 3
     "BSE Ltd":                                 "2:1 bonus, record date 23 May 2025",
-    "Indraprastha Gas Ltd":                    "1:1 bonus, record date 31 Jan 2025",
+    # Indraprastha Gas RETIRED 2026-09-10: its 1:1 bonus (record date 31 Jan 2025) aged out of
+    # the rolling YoY share-count window on the 2026-09-09 refresh — equity_shares ==
+    # equity_shares_1yb == 1,400,001,600, so dilution_pct = 0.0 and flag 0 is CORRECT. NOT a
+    # missing-data zero: `shares_valid` is True on both legs, the counts are simply unchanged.
+    # No replacement is needed here — FIVE cases remain and they still cover all three action
+    # types (BSE Ltd 2:1, Shilchar 1:2 and Samvardhana 1:2 bonuses; Sigma Solve split; NDTV
+    # rights), which is what this direction has to prove.
     "Shilchar Technologies Ltd":               "1:2 bonus, record date 6 Jun 2025",
     "Samvardhana Motherson International Ltd": "1:2 bonus, record date 18 Jul 2025",
     "Sigma Solve Ltd":                         "1:10 stock split, 2025",
@@ -64,7 +70,15 @@ STAYS_DILUTION = {                   # real cash into the company at <1.5x → m
     # the real-cash-raise direction while it was in-window; Saraswati carries it until it ages
     # out too, at which point a fresher raise from the live data must replace it, not a forced
     # re-flagging of an undiluted year.
-    "Saraswati Saree Depot Ltd": "IPO Aug 2024",
+    # Saraswati Saree Depot RETIRED 2026-09-10, exactly as the note above predicted it would:
+    # its Aug-2024 IPO aged out on the 2026-09-09 refresh (equity_shares ==
+    # equity_shares_1yb == 39,599,800 → dilution_pct 0.0, flag 0 is CORRECT). Per that rule a
+    # FRESHER raise from live data replaces it rather than a forced re-flagging of an
+    # undiluted year. Belrise is a strictly better carrier than the two it succeeds: a
+    # Rs 22,097 Cr company (Saraswati was Rs 236 Cr), so the classification actually moves a
+    # stock a user would hold, and at 48.57% it sits just UNDER the 50% corporate-action
+    # threshold — the exact discriminating zone this direction has to defend.
+    "Belrise Industries Ltd": "IPO May 2025 — Rs 2,150 Cr entirely fresh issue, listed 28 May 2025",
 }
 
 

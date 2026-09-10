@@ -111,7 +111,13 @@ def test_stocks_beyond_the_edge_are_counted_on_the_chart(live):
 
 def test_axis_adapts_to_a_filtered_universe(live):
     """A low-growth filter must not keep a wide empty canvas."""
-    calm = live[live["pat_gr_5y"].fillna(0).between(-10, 30)]
+    # Slice on the SAME expression the renderer plots (Growth_X = pat_gr_5y -> pat_gr_3y), not on
+    # pat_gr_5y.fillna(0). The old form let 472 stocks with a NaN 5y figure (26.5% of the slice)
+    # in through the fillna, and each carried an unconstrained pat_gr_3y -- up to 2,585%. That is
+    # the "NaN counted as a real value" class: the slice was never calm, so the p98 it fed the
+    # axis was 150.2 instead of 28.8 and this test measured the leak rather than the viewport.
+    _growth = live["pat_gr_5y"].fillna(live["pat_gr_3y"])
+    calm = live[_growth.between(-10, 30)]
     if len(calm) < 30:
         pytest.skip("not enough rows in the calm slice")
     fig, _ = _render(calm)

@@ -3,7 +3,7 @@ test_deep_signal_chips.py
 =========================
 Contract for the two chip strips under the verdict scorecard (ui_tearsheet.render_verdict_scorecard):
 🔬 DEEP SIGNALS (WCS · Econ-Profit · VCR · Terms-of-Trade · Cash-Machine) and
-⏱️ ENTRY TIMING (RS · Traj · EPS-Accel · Vol).
+⏱️ ENTRY TIMING (RS · Traj · EPS-Accel · Vol · Base).
 
 TWO THINGS THIS FILE DEFENDS.
 
@@ -20,13 +20,23 @@ TWO THINGS THIS FILE DEFENDS.
    Diagnosing "display and threshold disagree" is not enough; you have to ask whether the
    threshold MEANS something before choosing the remedy.
 
-2. NOTHING NEW BELONGS ON THE TIMING STRIP.
-   Measured 2026-08-27 against every timing column in the frame: above_sma200 0.80, breakout_score
-   0.79, dist_52wh 0.75, crs_52w 0.68, rsi_14d 0.61, dist_52wl 0.45 — all far above the 0.29 the
-   four existing chips reach among themselves. The one genuinely orthogonal candidate,
-   trend_breakout (0.088), fires on 6 of 2,117 stocks (0.3%) and is ALREADY on screen via
-   trend_modifier's "🚀 Breakout". The strip is complete; this file records why so the analysis is
-   not redone from scratch, and fails if the premise stops holding.
+2. NOTHING JOINS THE TIMING STRIP WITHOUT CLEARING THE BAR — AND ONCE, SOMETHING DID.
+   Measured 2026-08-27: above_sma200 0.80, breakout_score 0.79, dist_52wh 0.75, crs_52w 0.68,
+   rsi_14d 0.61, dist_52wl 0.45 — all far above the 0.29 the four chips reached among themselves.
+   The strip was declared complete, and this file kept that judgement as a LIVE rule rather than a
+   comment: test_no_timing_candidate_has_quietly_become_worth_adding fails the moment any rejected
+   candidate becomes more orthogonal to the shown chips than they are to each other.
+
+   IT FIRED ON 2026-09-10, and that is the point of writing tripwires instead of prose. On the
+   2026-09-09 refresh (universe 2,116 → 2,716) dist_52wl moved 0.45 → 0.140 against a bar of 0.238
+   — more independent of the strip than the strip is of itself. It was ADMITTED as the 5th chip,
+   "Base", because it also cleared the two bars that had rejected trend_breakout: it is not rare
+   (0% NaN, deciles 6.6 → 132.8) and it was not already on screen (its only surface was SEPA
+   Pillar L, a binary gated at ≥30% firing 58% inside a framework card). Every other candidate
+   stayed redundant at 0.598–0.806. The bar for a SIXTH chip is the five's own 0.24.
+
+   trend_breakout (0.088) remains rejected on the unchanged half of its reasoning: it fires on
+   0.37% of stocks and already reaches the screen via trend_modifier's "🚀 Breakout".
 
 Run with: pytest tests/test_deep_signal_chips.py -v
 """
@@ -50,7 +60,8 @@ from data_engine import (coerce_numeric_columns, compute_derived_signals, load_a
 
 _TEARSHEET = os.path.join(os.path.dirname(__file__), "..", "ui", "ui_tearsheet.py")
 
-TIMING_CHIPS = ["rs_score", "trajectory_score", "eps_acceleration", "volume_score"]
+TIMING_CHIPS = ["rs_score", "trajectory_score", "eps_acceleration", "volume_score",
+                "dist_52wl"]      # "Base" admitted 2026-09-10 -- see section 2 above
 
 
 @pytest.fixture(scope="module")
@@ -207,7 +218,9 @@ def test_no_timing_candidate_has_quietly_become_worth_adding(live, src):
     for k in TIMING_CHIPS:
         c.loc[k, k] = 0.0
     bar = float(c.max().max())
-    cands = ["above_sma200", "breakout_score", "dist_52wh", "crs_52w", "rsi_14d", "dist_52wl"]
+    # dist_52wl left this list on 2026-09-10 -- it is a SHOWN chip now, and a chip cannot be
+    # its own candidate (it would correlate 1.0 with itself and the check would be vacuous).
+    cands = ["above_sma200", "breakout_score", "dist_52wh", "crs_52w", "rsi_14d"]
     checked = 0
     for cand in cands:
         if cand not in live.columns or live[cand].dtype.kind not in "if":
@@ -215,8 +228,10 @@ def test_no_timing_candidate_has_quietly_become_worth_adding(live, src):
         checked += 1
         cor = max(abs(live[cand].corr(live[k])) for k in TIMING_CHIPS)
         assert cor > bar, (
-            f"{cand} now correlates {cor:.3f} with the shown chips, BELOW the {bar:.3f} the four "
-            f"reach among themselves. It has become a genuine addition -- re-judge the strip."
+            f"{cand} now correlates {cor:.3f} with the shown chips, BELOW the {bar:.3f} they "
+            f"reach among themselves. It has become a genuine addition -- re-judge the strip. "
+            f"This is how Base joined on 2026-09-10; see section 2 of the module docstring for "
+            f"the two further bars a candidate must clear (not rare, not already on screen)."
         )
     assert checked >= 4, "the candidate list went stale; most columns no longer exist"
 
@@ -228,8 +243,9 @@ def test_the_one_orthogonal_candidate_is_still_too_rare_and_already_shown(live, 
     assert "trend_breakout" in live.columns
     rate = live["trend_breakout"].fillna(0).mean()
     assert rate < 0.05, (
-        f"trend_breakout now fires on {rate:.1%} of stocks (was 0.3%). It is the one timing signal "
-        f"orthogonal to the strip; if it is no longer rare, it deserves a chip."
+        f"trend_breakout now fires on {rate:.1%} of stocks (was 0.37%). It is the remaining timing "
+        f"signal orthogonal to the strip; if it is no longer rare, it deserves a chip -- the same "
+        f"way Base earned one on 2026-09-10."
     )
     assert (live["trend_modifier"].astype(str).str.contains("Breakout").sum() > 0), (
         "trend_modifier no longer surfaces Breakout, so trend_breakout is now invisible -- the "

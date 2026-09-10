@@ -1456,7 +1456,9 @@ def _render_market_pulse():
         "📈 Sectors",
         "🏭 Industry",
         "🔁 Movers",
-    ])   # Stage 3: dropped dead "💙 Blue Chips" (0% fires) + brittle "🚀 Tipping Points" (folded into Sectors)
+    ])   # Stage 3: dropped "💙 Blue Chips" + brittle "🚀 Tipping Points" (folded into Sectors).
+         # Blue Chips' reason CORRECTED 2026-09-10: not dead (bruised_blue_chip fires 47/2717 = 1.7%) but
+         # REDUNDANT — Framework 7, the sidebar's 💎 Bruised Blue Chip flag and Movers all reach it already.
          # 🔁 Movers APPENDED 2026-09-04 (index 6) — same rule: appended, never inserted.
          # 🏭 Industry APPENDED 2026-08-28 — appended, never inserted: each `with _mp_tabs[i]` body
          # binds by index, so inserting anywhere earlier renders existing content into a new tab.

@@ -1,9 +1,19 @@
 """Contract: the Market Pulse inner-tab set, pinned so a tab cannot be re-added — or a removed
 renderer re-wired — without a conscious change.
 
-STAGE 3 (2026-06-18) cut the set to {Tsunami, QGLP, Sectors}, dropping 💙 Blue Chips (fired on 0%
-of the universe — dead) and 🚀 Tipping Points (brittle; folded into an enhanced Sectors view).
+STAGE 3 (2026-06-18) cut the set to {Tsunami, QGLP, Sectors}, dropping 💙 Blue Chips and
+🚀 Tipping Points (brittle; folded into an enhanced Sectors view).
 Those two stay out, and the renderer checks below are what keep them out.
+
+💙 BLUE CHIPS — REASON CORRECTED 2026-09-10. Stage 3 removed it as DEAD ("fired on 0% of the
+universe"). That claim is now measurably FALSE: on the 2,717-stock universe `bruised_blue_chip` fires
+47 times (1.7%) — alive, and in the census's healthy band. The tab still stays out, for the reason
+that IS still true: it is REDUNDANT THREE WAYS — (1) the Discovery sidebar's Candidate Flags filter
+offers 💎 Bruised Blue Chip directly, (2) Framework 7 renders the same gate on every tearsheet, and
+(3) the Movers multibagger group already surfaces stocks entering the state. A whole inner tab to
+re-list 47 names three other surfaces already reach is a fourth door onto one room. Keeping the dead
+justification would have hidden a live signal behind a stale number — the record is corrected here so
+a future reader re-litigates the RIGHT question (redundancy), not a refuted one (liveness).
 
 🔭 MOSL ADDED 2026-08-27, and this file did its job: the change failed here first and had to be
 justified rather than slipped in. Neither Stage-3 removal reason applies to it —
@@ -94,10 +104,12 @@ def test_tab_extractor_has_teeth():
 
 def test_the_stage_3_removals_were_not_quietly_restored():
     """The two tabs Stage 3 deleted must stay deleted -- adding MOSL is not licence to bring back
-    a dead 0%-firing tab or the brittle one that was folded into Sectors."""
+    the redundant one or the brittle one that was folded into Sectors."""
     labels = _mp_tab_labels() or []
     joined = " ".join(labels)
-    assert "Blue Chip" not in joined, "💙 Blue Chips fired on 0% of the universe; it stays out"
+    assert "Blue Chip" not in joined, (
+        "💙 Blue Chips is redundant with Framework 7 + the sidebar's Candidate Flags filter; it stays out"
+    )
     assert "Tipping" not in joined, "🚀 Tipping Points was folded into Sectors; it stays out"
 
 

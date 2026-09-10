@@ -6,6 +6,9 @@ computes 36+ derived signals using pure vectorized Pandas.
 Zero iterrows(), zero apply(). Sub-second on 2,108 stocks.
 """
 
+import glob
+import os
+
 import pandas as pd
 import numpy as np
 import warnings
@@ -315,6 +318,26 @@ def _implied_growth_from_pb(pb, roe, cost_of_equity: float):
     return np.where(denom > 0.0, (cost_of_equity * pb - roe) / denom, np.nan)
 
 
+def _resolve_local_workbook():
+    """Newest `PRISM*.xlsx` sitting beside the CSV drops, or None.
+
+    ONE NAMING RULE FOR BOTH FORMATS: the ingestion pipeline names every drop "PRISM …", so this
+    matches the same case-insensitive `startswith("prism")` prefix the dated-CSV resolver in
+    config.py already uses — and breaks ties the same way (newest by mtime, then by name, so
+    resolution is deterministic). Anything else in that folder — a watchlist export, a scored
+    CSV, scratch — is ignored, because parsing a stranger's spreadsheet as the universe would be
+    silent and total."""
+    try:
+        folder = os.path.dirname(CSV_FILES["ratio"])
+        cands = [p for p in glob.glob(os.path.join(folder, "*.xlsx"))
+                 if os.path.basename(p).lower().startswith("prism")]
+        if not cands:
+            return None
+        return sorted(cands, key=lambda p: (os.path.getmtime(p), p), reverse=True)[0]
+    except Exception:
+        return None
+
+
 def _xlsx_engine() -> str:
     """The pandas Excel engine for the ONE loading path (§0: one workbook, tabs by name).
 
@@ -498,12 +521,85 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
             except Exception as e:
                 raise Exception(f"Failed to load '{tab_name}' tab from Google Sheets: {e}")
     else:
+        # LOCAL WORKBOOK FALLBACK (2026-09-10). The ingestion drop is now a single
+        # "PRISM <date> <Day>.xlsx" where it used to be six dated CSVs, and this branch looked
+        # only for `PRISM <date> - <Tab>.csv` — so every local load died with FileNotFoundError
+        # (184 suite errors; the deployed app was fine because it runs in sheet mode, which is
+        # exactly what made the breakage invisible from production).
+        #
+        # NEWEST VINTAGE WINS, ACROSS FORMATS — not "CSV first". config.py's resolver already
+        # rules that "if several vintages coexist, take the newest by modification time"; a
+        # format preference would be a second, conflicting rule, and it would serve STALE data
+        # the day an old CSV set outranks a fresh workbook. One rule, one folder.
+        #
+        # This DELEGATES to the upload branch rather than re-implementing the parse: one workbook
+        # path for all three sources, so the §0 tabs-by-name contract and its wrong-tab guard can
+        # never drift between them (the same one-definition rule as _xlsx_engine).
+        _wb = _resolve_local_workbook()
+        _csv = CSV_FILES["ratio"]
+        if _wb is not None and (not os.path.exists(_csv)
+                                or os.path.getmtime(_wb) > os.path.getmtime(_csv)):
+            print(f"  📘 newest local vintage is a workbook: {os.path.basename(_wb)}")
+            return load_all_csvs("upload", uploaded_files={"workbook": _wb})
         for name, (cols,) in sheet_configs.items():
             path = CSV_FILES[name]
             datasets[name] = _load_single_csv(path, cols, name)
             print(f"  ✅ {name}: {len(datasets[name])} rows, {len(datasets[name].columns)} cols")
 
     return datasets
+
+
+def _collapse_dual_listings(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per COMPANY. A stock listed on both exchanges arrives as two rows with distinct
+    company_ids (BSE:BCONCEPTS / NSE:BCONCEPTS) and the same `name`; this keeps the NSE listing.
+
+    WHY THIS EXISTS (2026-09-10). Brand Concepts Ltd appeared twice on the 2026-09-09 refresh --
+    the first duplicate name this universe has ever carried -- and it broke two things at once:
+
+      * REACHABILITY. app.py selects a stock by NAME and resolves it with
+        `df[df.name == selected].iloc[0]`, so one of the two rows was silently unreachable and the
+        Tear-Sheet export shipped whichever row .iloc[0] happened to land on. Pinned by
+        tests/test_all_data_export.py::test_stock_and_the_old_expression_are_still_the_same_row,
+        which is what caught this.
+      * DOUBLE-COUNTING, the larger defect. Two rows for one economic entity inflate every sector
+        and industry aggregate, every fire-rate census, and every Movers diff -- a company would
+        count twice toward the breadth numbers those surfaces exist to report.
+
+    WHY NSE WINS: it is the deeper book, so its market cap and technicals are the ones a buyer
+    actually transacts against (192.01 vs BSE's 192.22 on the pair that prompted this -- the same
+    company, priced twice). The tie-break is total: NSE, then BSE, then the lowest company_id, so
+    a venue this rule has never seen still collapses DETERMINISTICALLY rather than by row order.
+
+    Rows with a missing name are never collapsed -- NaN is not an identity, and treating several
+    of them as "the same company" is the sentinel bug this codebase bans.
+    """
+    if "name" not in df.columns or "company_id" not in df.columns:
+        return df
+
+    named = df["name"].notna()
+    dup = named & df["name"].duplicated(keep=False)
+    if not dup.any():
+        return df
+
+    exch = df["company_id"].astype(str).str.split(":").str[0].str.upper()
+    rank = exch.map({"NSE": 0, "BSE": 1}).fillna(2).astype(int)
+
+    ordered = (df.assign(_rank=rank, _cid=df["company_id"].astype(str))
+                 .loc[named]
+                 .sort_values(["_rank", "_cid"], kind="mergesort"))
+    keep = set(ordered.drop_duplicates(subset="name", keep="first").index)
+
+    drop_mask = dup & ~df.index.isin(keep)
+    if not drop_mask.any():
+        return df
+
+    for nm, grp in sorted(df.loc[dup, ["name", "company_id"]].groupby("name")):
+        kept = [c for i, c in zip(grp.index, grp["company_id"]) if i in keep]
+        gone = [c for i, c in zip(grp.index, grp["company_id"]) if i not in keep]
+        print(f"  DUAL LISTING: {nm} -> kept {kept[0] if kept else '?'}, "
+              f"dropped {', '.join(sorted(gone))}")
+
+    return df.loc[~drop_mask].copy()
 
 
 def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -530,6 +626,8 @@ def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
             suffixes=("", f"_{name}")
         )
         print(f"  ✅ Merged {name}: {len(master)} rows, {len(master.columns)} cols")
+
+    master = _collapse_dual_listings(master)
 
     print(f"\n📊 Master DataFrame: {len(master)} stocks × {len(master.columns)} columns")
     return master
@@ -3345,32 +3443,36 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # RR = 1 − (DPR/100). High RR = self-funding compounder; low RR = defensive income asset.
     # DPR fillna(0): no dividend data → full retention (conservative for growth companies).
     # clip(0,1): guards against DPR > 100 (data artefacts in some screeners).
-    # PARTIAL DATA GAP — REMEASURED 2026-08-30 on the 2026-08-28 sheet refresh (the user's source
-    # fixes keep landing: coverage climbed again). The DPR source column was first repaired in part
-    # on 2026-08-22. The 2026-06-12 census note that stood here described a universe that no longer
-    # exists; every one of its four claims was false by the time it was replaced, which is why it
-    # is quoted below rather than quietly deleted (current measurements at right):
-    #     "96% empty"                              → DPR is 53.5% populated (41.2% on 2026-08-27)
-    #     "RR ≡ 1.0 universe-wide"                 → RR = 1.0 on 62.1%, 719 distinct values
-    #     capital_misallocation_risk "passes for ALL" → fires 42.3%
-    #     flag_epoch2_compounder "INERT/always-pass"  → fires 14.4%
+    # PARTIAL DATA GAP — REMEASURED 2026-09-10 on the 2026-09-09 sheet refresh (universe 2,116 →
+    # 2,717; the user's source fixes keep landing and coverage climbed again). The DPR source
+    # column was first repaired in part on 2026-08-22. The 2026-06-12 census note that stood here
+    # described a universe that no longer exists; every one of its four claims was false by the
+    # time it was replaced, which is why it is quoted below rather than quietly deleted (current
+    # measurements at right):
+    #     "96% empty"                              → DPR is 62.2% populated (53.5% on 2026-08-30)
+    #     "RR ≡ 1.0 universe-wide"                 → RR = 1.0 on 62.6%, 889 distinct values
+    #     capital_misallocation_risk "passes for ALL" → fires 40.9%
+    #     flag_epoch2_compounder "INERT/always-pass"  → fires 16.9%
     # The danger of the old note was not its arithmetic but its conclusion: it told a reader these
     # gates were inert and therefore safe to ignore. They are live and they move scores.
     #
-    # WHAT IS STILL TRUE. DPR remains missing on 46.5% of rows, and the fillna(0) above reads every
+    # WHAT IS STILL TRUE. DPR remains missing on 37.8% of rows, and the fillna(0) above reads every
     # one of those as "pays no dividend, retains everything" — the maximally incriminating reading
     # of absent evidence. That is the mirror of the "unverifiable is not passed" rule (CLAUDE.md §5):
     # here a gate CONDEMNS on evidence it does not have. Measured on capital_misallocation_risk,
     # which applies a 10% quality_score haircut (scoring_engine ~L641):
-    #     895 stocks flagged · 496 of them (55.4%) have NO DPR at all, so their "retains >50%" leg
-    #     is fabricated by the fillna; only 399 (44.6%) are flagged on real dividend evidence.
-    # The ranking harm is small — flagged names carry a 7.39 median 5Y ROCE against 18.20 unflagged
-    # and score 15.1 vs 56.2 on quality, so a 10% haircut on an already-low score reorders little.
-    # It is an honesty defect, not a wrong-answers defect. Sized here so nobody re-derives it.
+    #     1,110 stocks flagged · 476 of them (42.9%) have NO DPR at all, so their "retains >50%" leg
+    #     is fabricated by the fillna; 634 (57.1%) are flagged on real dividend evidence.
+    # THE DEFECT IS SHRINKING, AND THAT IS THE POINT OF REMEASURING: the fabricated share has fallen
+    # 55.4% → 42.9% as DPR coverage rose 53.5% → 62.2%, so real evidence now carries the majority of
+    # these flags for the first time. The ranking harm stays small — flagged names carry a 7.05
+    # median 5Y ROCE against 18.53 unflagged and score 15.0 vs 54.7 on quality, so a 10% haircut on
+    # an already-low score reorders little. It is an honesty defect, not a wrong-answers defect.
+    # Sized here so nobody re-derives it.
     #
     # NOT FIXED HERE BY DELIBERATE STANDING DECISION (2026-06-14): guards that neutralise
     # DPR-degenerate signals are rejected — the source column gets fixed instead. That ruling was
-    # made at ~4% DPR coverage; at 53.5% the remaining repair would retire 496 fabricated
+    # made at ~4% DPR coverage; at 62.2% the remaining repair would retire 476 fabricated
     # condemnations, revive stagnant_cash_cow_flag (RR<0.30, still 0 — see tools/census.py:51,
     # where it is triaged as genuine rarity), and restore two one-legged gates to real two-leg tests.
     # Fire rates above are pinned by tests/test_reinvestment_rate_data_gap.py, which FAILS when the

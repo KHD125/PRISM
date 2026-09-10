@@ -577,8 +577,8 @@ def render_ep_power_curve_module(stock: pd.Series):
                        "📉 Value Trap = negative and not improving. "
                        "Note: the 🏒 EP Hockey Stick FRAMEWORK is stricter — it also requires a "
                        "P/E of 20x or less (the 28th WCS's TEM-P: Trends/Endowment/Moves lift "
-                       "economic profit, but the RETURN needs a cheap entry). 533 stocks show 🚀 "
-                       "here; 211 pass the framework. So a stock can be a Hockey Stick on this "
+                       "economic profit, but the RETURN needs a cheap entry). 663 stocks show 🚀 "
+                       "here; 268 pass the framework. So a stock can be a Hockey Stick on this "
                        "card and still have no pill in the Frameworks tab — that is the price "
                        "gate, not a disagreement.") +
         _ep_metric("Wealth Tier", f"{_wt_val}{_wt_warn}", _wt_sub, _wt_clr, COLORS["text_muted"],
@@ -2102,25 +2102,50 @@ def render_verdict_scorecard(stock: pd.Series):
 
     # ── ⏱️ Entry Timing: momentum reads — the WHEN, NOT part of the WHAT verdict above ──
     # The 6 axes weigh SELECTION and are blind to momentum (fundamentals select, technicals time).
-    # 4 orphans verified alive + orthogonal on live data (max pairwise corr 0.29, remeasured
-    # 2026-08-27 — this line previously claimed 0.17): relative
-    # strength, price trajectory, earnings acceleration, volume confirmation. Thresholds are
-    # quartile-grounded. Reuses the _ds() chip so it reads as auxiliary, not a 7th verdict axis.
+    # Orphans verified alive + orthogonal on live data: relative strength, price trajectory,
+    # earnings acceleration, volume confirmation. Thresholds are quartile-grounded. Reuses the
+    # _ds() chip so it reads as auxiliary, not a 7th verdict axis.
+    #
+    # 5th CHIP — Base, ADDED 2026-09-10 by the strip's own tripwire, not by taste. The strip was
+    # declared closed on evidence in 2026-08-27, and tests/test_deep_signal_chips.py holds that
+    # evidence as a live rule: if any rejected candidate ever becomes MORE orthogonal to the shown
+    # chips than they are to each other, it FAILS and demands a fresh judgement. On the 2026-09-09
+    # refresh it fired. dist_52wl now reaches max |corr| 0.140 against the four (0.031 traj · 0.043
+    # vol · 0.076 accel · 0.140 rs) where those four reach 0.238 among THEMSELVES — so it is more
+    # independent of the strip than the strip is of itself. Every other candidate stayed redundant
+    # (above_sma200 0.789 · breakout_score 0.806 · dist_52wh 0.754 · crs_52w 0.722 · rsi_14d 0.598).
+    #
+    # WHY IT PASSES THE BAR THAT REJECTED trend_breakout, which was ALSO orthogonal (0.088): that
+    # one was rejected for being rare (fires 0.37%) AND already named in trend_modifier. Neither
+    # holds here. dist_52wl is 0% NaN and spreads across the whole universe (deciles 6.6 → 132.8),
+    # and its only existing surface is SEPA Pillar L — a BINARY gated at ≥30% that fires 58%, a
+    # coin-flip buried in a framework card, not a reading. It answers the one question the other
+    # four cannot: is there a base under this, or have I already missed the move?
+    #
+    # THRESHOLDS ARE THE BOOK'S, not fitted: green ≥30% is Minervini Trend Template Criterion 6
+    # verbatim (the same constant behind sepa_low_base), red ≤10% is "no base under it at all".
+    # Live tri-state 58% green · 26.4% amber · 15.6% red — no bucket owns the universe.
+    #
+    # The five chips now reach max pairwise corr 0.24 among themselves (rs↔traj, unchanged — adding
+    # Base did not tighten the strip), and THAT is the bar any sixth candidate has to beat.
     def _good(green: bool, red: bool):
         return True if green else (False if red else None)
 
     _rs, _traj   = _v("rs_score"), _v("trajectory_score")
     _accel, _vsc = _v("eps_acceleration"), _v("volume_score")
+    _base        = _v("dist_52wl")
     _rs_ok    = None if _rs    != _rs    else _good(_rs   >= 70,  _rs   <= 30)
     _traj_ok  = None if _traj  != _traj  else _good(_traj >= 0.5, _traj <  0)
     _accel_ok = None if _accel != _accel else _good(_accel >= 10, _accel <  0)
     _vol_ok   = None if _vsc   != _vsc   else _good(_vsc  >= 60,  _vsc  <= 20)
+    _base_ok  = None if _base  != _base  else _good(_base >= 30,  _base <= 10)
     timing = "".join([
         _ds("RS",        (f"{_rs:.0f}"    if _rs   == _rs   else "—"), _rs_ok),
         _ds("Traj",      (f"{_traj:+.2f}" if _traj == _traj else "—"), _traj_ok),
         _ds("EPS-Accel", ("▲" if _accel_ok is True else "▼" if _accel_ok is False
                           else "·" if _accel == _accel else "—"),       _accel_ok),
         _ds("Vol",       (f"{_vsc:.0f}"   if _vsc  == _vsc  else "—"),  _vol_ok),
+        _ds("Base",      (f"+{_base:.0f}%" if _base == _base else "—"), _base_ok),
     ])
     st.markdown(
         f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 12px 0;">'
