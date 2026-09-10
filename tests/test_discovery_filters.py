@@ -17,6 +17,8 @@ test_cyclicality.py and sector_capital_phase by test_capital_cycle_sector.py (re
 """
 from pathlib import Path
 
+import pytest
+
 from config import FRAMEWORK_CATEGORIES
 from core.cyclicality_map import TIER_LABELS
 from ui.ui_discovery import _CHIP_META, _compute_active_chips, _family_count, keep_selected
@@ -565,6 +567,140 @@ def test_the_new_filters_name_themselves_as_the_zero_results_culprit():
         at.run(timeout=30)
         assert not at.exception, f"sidebar raised: {at.exception}"
         assert "N=0" in [t.value for t in at.text], f"expected an empty frame for {state}"
+
+
+# ── EVERY filter must actually filter (2026-09-10) ───────────────────────────────────────────
+# MEASURED before this existed: mutating each filter's guard to `if False and …` — rendered,
+# counted, chipped, applying NOTHING — left 27 of 31 filters UNDETECTED by the whole suite. Only
+# Market Cap and Sector (the widening tests) and the two 2026-09-10 admissions were protected.
+# A broken filter never crashes; it returns MORE stocks than it should, and every number on
+# screen stays plausible. This table closes that gap for the whole sidebar.
+#
+# THE FRAME: 3 rows. On every LABEL column A and C share a value and B differs, so selecting
+# A's value must yield [A, C] and selecting B's must yield [B] — which fails an inverted mask
+# as well as a dead one. On every FLAG column only A fires, so a flag filter must yield [A].
+def _all_filters_app():
+    import pandas as _pd
+    import streamlit as _st
+
+    from ui.ui_discovery import render_discovery_sidebar
+
+    lab = lambda a, b: [a, b, a]          # A and C share; B differs
+    flag = lambda: [1, 0, 0]              # only A fires
+    df = _pd.DataFrame({
+        "name": ["A", "B", "C"],
+        # ── 🏢 Universe
+        "market_category":   lab("Mega Cap", "Nano Cap"),
+        "sector":            lab("P", "Q"),
+        "industry":          lab("P-ind", "Q-ind"),
+        "cyclicality_tier":  lab("Defensive", "Cyclical"),
+        "sector_capital_phase": lab("⚖️ Neutral", "🔥 Hot Capital (caution)"),
+        # ── 🎯 Decision & Class
+        "conviction_tier":   [1, 2, 1],
+        "verdict_direction": lab("SOUND", "FLAWED"),
+        "wealth_tier":       lab("BUY★", "AVOID"),
+        "corporate_class":   lab("🏆 GREAT", "💀 GRUESOME"),
+        "capital_allocation_signal": lab("💰 Returning Capital", "⚠️ Raising Capital"),
+        # ── 🛡️ Safety
+        "red_flag_count":    [0, 9, 0],
+        "piotroski_fscore":  [8, 2, 8],                       # -> 💪 Strong / ⚠️ Weak / 💪 Strong
+        "cash_machine_label": lab("💰 Cash Machine", "📄 Paper Profits"),
+        "data_coverage_pct": [95.0, 10.0, 95.0],
+        "result_stale_flag": [0, 1, 0],                       # Hide-stale drops B
+        # ── 🧬 Frameworks
+        "frameworks_passed": ["Diamond, QGLP", "Fisher Quality", "Diamond"],
+        # ── 💰 Moat · Value · Entry
+        "moat_growth_quad":  lab("⭐ Wealth Creator", "💀 Wealth Destroyer"),
+        "peg_zone":          lab("💎 Deep Value", "🔴 Overpriced"),
+        "buy_zone_label":    lab("🟢 Perfect Entry (Low Risk)", "🔻 Below Stop (Trend Broken)"),
+        "negative_wc_flag":  flag(),
+        # ── 📈 Trend · Style · Flow
+        "weinstein_stage":   lab("📈 Stage 2 Advancing", "📉 Stage 4 Declining"),
+        "lynch_category":    lab("Fast Grower", "Declining"),
+        "mef_label":         lab("🟢 Expanding", "🔴 Degrading"),
+        "cf_triangle":       lab("✅ Self-Funding", "🚨 Debt Trap — Avoid"),
+        "smart_money_flow":  lab("🌊💎 Elite Accumulation", "❌ Distribution"),
+        # ── 🔥 Catalysts & Alerts · 🚀 Multibagger
+        "ep_power_curve":    lab("🚀 Hockey Stick", "📉 Value Trap"),
+        "earnings_power_box": lab("📦 Earnings Power", "⚠️ Weakest"),
+        "cat_capacity":      flag(),
+        "sell_alert_cash_collapse": flag(),
+        "mosl_100x_candidate": flag(),
+        # ── 🌊 Refine
+        "gate_pass":         [1, 0, 1],
+        "quality_score":     [90.0, 5.0, 90.0],
+        "composite_score":   [90.0, 5.0, 90.0],
+    })
+    filt = render_discovery_sidebar(df)
+    _st.text(f"KEPT={sorted(filt['name'].tolist())}")
+
+
+# (session_state to set, expected survivors). Each case sets exactly ONE filter; every other
+# control sits at its show-all default, so a case measures that filter alone.
+_FILTER_CASES = [
+    ("sb_mcap",        {"sb_mcap": ["Mega Cap"]},                    ["A", "C"]),
+    ("sb_sector",      {"sb_sector": "P"},                           ["A", "C"]),
+    ("sb_industry",    {"sb_industry": "Q-ind"},                     ["B"]),
+    ("sb_cyc",         {"sb_cyc": ["Defensive"]},                    ["A", "C"]),
+    ("sb_capphase",    {"sb_capphase": ["🔥 Hot Capital (caution)"]}, ["B"]),
+    ("sb_tier",        {"sb_tier": [1]},                             ["A", "C"]),
+    ("sb_verdict",     {"sb_verdict": ["SOUND"]},                    ["A", "C"]),
+    ("sb_wealthtier",  {"sb_wealthtier": ["AVOID"]},                 ["B"]),
+    ("sb_corpclass",   {"sb_corpclass": ["🏆 GREAT"]},               ["A", "C"]),
+    ("sb_capalloc",    {"sb_capalloc": ["💰 Returning Capital"]},    ["A", "C"]),
+    ("sb_maxrf",       {"sb_maxrf": 2},                              ["A", "C"]),
+    ("sb_piotier",     {"sb_piotier": ["💪 Strong (≥7)"]},           ["A", "C"]),
+    ("sb_cashmach",    {"sb_cashmach": ["📄 Paper Profits"]},        ["B"]),
+    ("sb_mincov",      {"sb_mincov": 50},                            ["A", "C"]),
+    ("sb_hidestale",   {"sb_hidestale": True},                       ["A", "C"]),
+    ("sb_fw_include",  {"sb_fw_include": ["QGLP"]},                  ["A"]),
+    ("sb_fw_exclude",  {"sb_fw_exclude": ["Diamond"]},               ["B"]),
+    ("sb_fw_combine",  {"sb_fw_combine": ["Diamond", "QGLP"]},       ["A"]),
+    ("sb_fwfam",       {"sb_fwfam": ["Fisher"]},                     ["B"]),
+    ("sb_moat",        {"sb_moat": ["⭐ Wealth Creator"]},           ["A", "C"]),
+    ("sb_peg_zone",    {"sb_peg_zone": ["🔴 Overpriced"]},           ["B"]),
+    ("sb_buy_zone",    {"sb_buy_zone": ["🟢 Perfect Entry (Low Risk)"]}, ["A", "C"]),
+    ("sb_floatfunded", {"sb_floatfunded": True},                     ["A"]),
+    ("sb_weinstein",   {"sb_weinstein": ["📈 Stage 2 Advancing"]},   ["A", "C"]),
+    ("sb_lynchcat",    {"sb_lynchcat": ["Declining"]},               ["B"]),
+    ("sb_mef",         {"sb_mef": ["🟢 Expanding"]},                 ["A", "C"]),
+    ("sb_cftri",       {"sb_cftri": ["🚨 Debt Trap — Avoid"]},       ["B"]),
+    ("sb_smartflow",   {"sb_smartflow": ["🌊💎 Elite Accumulation"]}, ["A", "C"]),
+    ("sb_eppc",        {"sb_eppc": ["🚀 Hockey Stick"]},             ["A", "C"]),
+    ("sb_epbox",       {"sb_epbox": ["⚠️ Weakest"]},                 ["B"]),
+    ("sb_catalyst",    {"sb_catalyst": ["cat_capacity"]},            ["A"]),
+    ("sb_sellalert",   {"sb_sellalert": ["sell_alert_cash_collapse"]}, ["A"]),
+    ("sb_mbsetup",     {"sb_mbsetup": ["mosl_100x_candidate"]},      ["A"]),
+    ("sb_gate",        {"sb_gate": True},                            ["A", "C"]),
+    ("sb_minq",        {"sb_minq": 50},                              ["A", "C"]),
+    ("sb_minscore",    {"sb_minscore": 50},                          ["A", "C"]),
+]
+
+
+@pytest.mark.parametrize("key,state,expected", _FILTER_CASES, ids=[c[0] for c in _FILTER_CASES])
+def test_every_sidebar_filter_actually_filters(key, state, expected):
+    """One case per filter, driven through the REAL widget machinery. Catches a filter that is
+    rendered but never applied, one whose mask is inverted, and one that honours only its first
+    pick — none of which a source-text scan can see."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_all_filters_app)
+    for k, v in state.items():
+        at.session_state[k] = v
+    at.run(timeout=30)
+    assert not at.exception, f"{key} raised: {at.exception}"
+    kept = next(t.value for t in at.text if t.value.startswith("KEPT="))
+    assert kept == f"KEPT={expected}", f"{key}: expected {expected}, got {kept.split('=', 1)[1]}"
+
+
+def test_the_filter_case_table_covers_every_registered_filter():
+    """Teeth: the table above must not silently fall behind the sidebar. Every chip-registered
+    key needs a case, or the next filter ships unprotected exactly as these 27 did."""
+    from ui.ui_discovery import _CHIP_META
+    covered = {k for k, _s, _e in _FILTER_CASES}
+    registered = {k for k, _h, _kind in _CHIP_META}
+    missing = sorted(registered - covered)
+    assert not missing, f"registered filters with no behavioural case: {missing}"
+    assert not sorted(covered - registered), "a case names a key that is not a registered filter"
 
 
 def test_the_rejected_candidates_stay_out():
