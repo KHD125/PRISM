@@ -3543,6 +3543,42 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["reinvestment_rate"].fillna(0.0) * (df["roce"] - COST_OF_EQUITY)
     )
 
+    # ROCE EXPANSION — the TRAJECTORY axis of the Moat-Growth plane (added 2026-09-10).
+    #
+    # WHY. moat_growth_quad's own note concedes it is "a snapshot of position TODAY": its moat axis
+    # is roce_med_5y >= 15, a LEVEL. But the recurring conclusion across all 30 MOSL Wealth Creation
+    # studies is ROCE *EXPANSION* — a business earning more on capital than it used to. That axis did
+    # not exist anywhere in the frame, so the engine could not see it and no surface could show it.
+    # Measured consequence on the 2026-09-09 data: Bharti Airtel (ROCE 10.99 -> 18.42) reads
+    # "Growth Trap" and Interglobe Aviation (6.53 -> 16.64) reads "Wealth Destroyer" — the 10Y median
+    # holds the LEVEL down while the direction is invisible. 182 stocks are expanding without being
+    # Wealth Creators yet; that set was unreachable.
+    #
+    # BASIS. Both terms are MEDIANS FROM THE SAME FAMILY (cross-year basis rule, CLAUDE.md §5) — a
+    # roce_med_3y minus a roce_med_10y, never a median minus a differently-constructed level. The
+    # windows NEST (the 10Y contains the 3Y), so the delta is DAMPED, never inflated: a real
+    # improvement reads smaller than it was, which is the safe direction for a signal nobody has
+    # validated forward yet.
+    #
+    # THE GUARD, AND WHY IT IS NOT COSMETIC. A company without deep history has all four medians
+    # computed over the SAME few years, so they come out identical and the naive subtraction returns
+    # exactly 0.00 — "flat" fabricated out of absent evidence, which is what already went wrong in
+    # roce_trajectory (34% of it sits at exactly 0.00). Measured against an independent witness
+    # (pat_5yb present = deep history): all-four-medians-identical fires on 50.5% of shallow-history
+    # firms but only 2.0% of deep ones, and it cuts exact-zeros among survivors from 11.8% to 1.3%.
+    # The rejected alternative, guarding on roce_med_5y == roce_med_10y, cleans up no better (1.4%)
+    # while over-guarding deep-history firms at 7.4% and costing 11pp more of the universe. So the
+    # collapse test is defined on the OPERANDS THEMSELVES: if every window agrees exactly, the
+    # windows carry no time information and the honest answer is NaN, not zero.
+    #
+    # DISPLAY + FILTER ONLY. Nothing here reaches composite_score. Feeding an unvalidated trajectory
+    # into the score is the threshold-guessing anti-pattern this engine retired; the forward test is
+    # the December vintage, and this column is a candidate for it, not a passenger in it.
+    _rc3, _rc5  = df["roce_med_3y"], df["roce_med_5y"]
+    _rc7, _rc10 = df["roce_med_7y"], df["roce_med_10y"]
+    _windows_collapsed = (_rc3 == _rc5) & (_rc5 == _rc7) & (_rc7 == _rc10)
+    df["roce_expansion"] = (_rc3 - _rc10).where(~_windows_collapsed)
+
     # DuPont ROE attribution: first-order decomposition of year-on-year ROE change into three
     # sources — margin improvement, asset-efficiency improvement, and leverage expansion.
     # ROE = NPM × Asset_Turnover × Financial_Leverage (where Lev = Total_Assets / Net_Worth).

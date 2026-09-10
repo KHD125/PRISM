@@ -41,6 +41,7 @@ _SCANNER_HEADER_TIPS = {
     "governance_bonus":       _GLOSSARY["Governance Score"],
     "piotroski_fscore":       _GLOSSARY["Piotroski"],
     "roce":                   _GLOSSARY["ROCE Current"],
+    "roce_expansion":         ("Change in ROCE, in percentage points: the median of the last 3 years minus the median of the last 10. Positive means the business earns more on each rupee of capital than it used to — the direction, where ROCE itself is only the level. Blank when the company lacks enough history for the two windows to differ."),
     "opm":                    _GLOSSARY["OPM"],
     "cfo_to_pat":             _GLOSSARY["CFO/PAT"],
     "valuation_score":        _GLOSSARY["Valuation Scr"],
