@@ -20,7 +20,8 @@ from config import COLORS, FRAMEWORK_CATEGORIES
 _CHIP_META = [
     ("sb_mcap", "Market Cap", "ms"), ("sb_sector", "Sector", "sel"), ("sb_industry", "Industry", "sel"),
     ("sb_cyc", "Cyclicality", "ms"), ("sb_capphase", "Capital Phase", "ms"), ("sb_tier", "Tier", "ms"),
-    ("sb_verdict", "Soundness", "ms"), ("sb_wealthtier", "Wealth Tier", "ms"), ("sb_corpclass", "Corp Class", "ms"), ("sb_maxrf", "Max Red Flags", "max"),
+    ("sb_verdict", "Soundness", "ms"), ("sb_wealthtier", "Wealth Tier", "ms"), ("sb_corpclass", "Corp Class", "ms"),
+    ("sb_capalloc", "Capital Allocation", "ms"), ("sb_floatfunded", "Float-Funded", "bool"), ("sb_maxrf", "Max Red Flags", "max"),
     ("sb_piotier", "Piotroski", "ms"), ("sb_cashmach", "Cash Machine", "ms"), ("sb_mincov", "Min Coverage", "min"), ("sb_hidestale", "Hide Stale", "bool"),
     ("sb_fwfam", "FW Family", "ms"),
     ("sb_fw_exclude", "Exclude FW", "ms"), ("sb_fw_include", "Include FW", "ms"), ("sb_fw_combine", "Combine FW", "ms"),
@@ -350,7 +351,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cf = _narrow(_cf, _label_mask(_cf["sector_capital_phase"], sel_cap), "Capital Phase")
             st.caption(f"→ {len(_cf):,} remaining")
 
-        with _grp("🎯 Decision & Class", "sb_tier", "sb_verdict", "sb_wealthtier", "sb_corpclass", expanded=True):
+        with _grp("🎯 Decision & Class", "sb_tier", "sb_verdict", "sb_wealthtier", "sb_corpclass", "sb_capalloc", expanded=True):
             # 4. Conviction Tier — only tiers present in the remaining stocks
             _tier_opts = sorted(int(t) for t in _cf["conviction_tier"].dropna().unique())
             sel_tier = _ms_cascade("Conviction Tier", _tier_opts, "sb_tier", default=[],
@@ -391,6 +392,24 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                    count_col="corporate_class")
             if sel_corp and "corporate_class" in _cf.columns:
                 _cf = _narrow(_cf, _label_mask(_cf["corporate_class"], sel_corp), "Corp Class")
+
+            # 4d. Capital Allocation — the OUTSIDERS axis: is management RETURNING capital
+            # (buybacks/dividends) or RAISING it (dilution)? Computed by the engine and shown in
+            # All Data, but unscreenable until 2026-09-10. Admitted on measurement: 3 well-spread
+            # values (Returning 22% · Neutral 70% · Raising 8%) and genuinely orthogonal — its
+            # largest overlap with ANY existing filter is 34% (💰 Cash Machine). Sits beside
+            # Corporate Class because both read management, but they are NOT the same read:
+            # corporate_class grades capital-allocation QUALITY, this names its DIRECTION.
+            _CAPALLOC_ORDER = ["💰 Returning Capital", "⚖️ Neutral", "⚠️ Raising Capital"]
+            _capalloc_opts = _ordered_present(_cf, "capital_allocation_signal", _CAPALLOC_ORDER)
+            sel_capalloc = _ms_cascade("Capital Allocation", _capalloc_opts, "sb_capalloc", default=[],
+                                       help="What management does with the cash. 💰 Returning = buybacks/"
+                                            "dividends (the Outsiders pattern); ⚠️ Raising = dilution. "
+                                            "Empty = all.",
+                                       count_col="capital_allocation_signal")
+            if sel_capalloc and "capital_allocation_signal" in _cf.columns:
+                _cf = _narrow(_cf, _label_mask(_cf["capital_allocation_signal"], sel_capalloc),
+                              "Capital Allocation")
             st.caption(f"→ {len(_cf):,} remaining")
 
         with _grp("🛡️ Safety", "sb_maxrf", "sb_piotier", "sb_cashmach", "sb_mincov", "sb_hidestale", expanded=False):
@@ -610,7 +629,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 )
             st.caption(f"→ {len(_cf):,} remaining")
 
-        with _grp("💰 Moat · Value · Entry", "sb_moat", "sb_peg_zone", "sb_buy_zone", expanded=False):
+        with _grp("💰 Moat · Value · Entry", "sb_moat", "sb_peg_zone", "sb_buy_zone", "sb_floatfunded", expanded=False):
             # 6. Moat-Growth quadrant — only quadrants present in the remaining stocks
             _MOAT_ORDER = ["⭐ Wealth Creator", "🛡️ Quality Trap", "⚡ Growth Trap", "💀 Wealth Destroyer"]
             _moat_opts = _ordered_present(_cf, "moat_growth_quad", _MOAT_ORDER)
@@ -645,6 +664,24 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                        count_col="buy_zone_label")
             if sel_buy_zone and "buy_zone_label" in _cf.columns:
                 _cf = _narrow(_cf, _label_mask(_cf["buy_zone_label"], sel_buy_zone), "Buy Zone")
+
+            # 8a. Float-funded — NEGATIVE working capital: customers and suppliers fund the
+            # business, so growth needs no capital of its own (the Dhandho/float read, and why it
+            # belongs with Moat rather than Safety — it is pricing power, not risk).
+            # Admitted 2026-09-10 as the MOST orthogonal candidate in the All-Data gap sweep:
+            # fires 11.8%, only 13% overlap with the nearest existing filter, and — decisively —
+            # P(red_flag_count>=3 | flag) = 80%, EXACTLY the universe baseline. It is independent
+            # of forensic severity, so Max-red-flags cannot express it; and it is an INCLUSION
+            # screen, which a `<=` threshold could never be. (Its sibling candidates
+            # dilution_vampire_flag and cyclical_mirage_flag were REJECTED on the same test at
+            # 99% and 91% — those ARE slices of red_flag_count>=3.)
+            st.session_state.setdefault("sb_floatfunded", False)   # seed-before-instantiate
+            if st.checkbox("💧 Float-funded only (negative working capital)", value=False,
+                           key="sb_floatfunded",
+                           help="Show only businesses funded by their own customers/suppliers — "
+                                "negative working capital. Growth costs them no capital.") \
+                    and "negative_wc_flag" in _cf.columns:
+                _cf = _narrow(_cf, _cf["negative_wc_flag"].fillna(0) == 1, "Float-Funded")
             st.caption(f"→ {len(_cf):,} remaining")
 
         with _grp("📈 Trend · Style · Flow", "sb_weinstein", "sb_lynchcat", "sb_mef",
@@ -873,9 +910,10 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     _pct = (_fin_n / _uni_n) if _uni_n else 0.0
     _active_total = _active_n(
         "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict",
-        "sb_wealthtier", "sb_corpclass",
+        "sb_wealthtier", "sb_corpclass", "sb_capalloc",
         "sb_maxrf", "sb_piotier", "sb_cashmach", "sb_mincov", "sb_hidestale",
         "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
+        "sb_floatfunded",
         "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
         "sb_catalyst", "sb_sellalert", "sb_eppc", "sb_epbox", "sb_mbsetup",
         "sb_gate", "sb_minq", "sb_minscore",

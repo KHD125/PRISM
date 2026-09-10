@@ -458,6 +458,57 @@ def test_no_filter_site_prunes_a_stored_selection_any_more():
     assert _DISC.count("keep_selected(") >= 3, "expected _ms_cascade + both selectboxes to use keep_selected"
 
 
+# ── Two filters admitted 2026-09-10 (All-Data gap sweep) ─────────────────────────────────────
+def test_capital_allocation_filter_is_registered_and_cascades():
+    """💰 Capital Allocation — the OUTSIDERS axis (buybacks/dividends vs dilution), computed by the
+    engine and shown in All Data but unscreenable until now. MEASURED on live data: 3 well-spread
+    values (Returning 22% · Neutral 70% · Raising 8%) and ORTHOGONAL — max overlap with ANY existing
+    filter is 34% (vs 💰 Cash Machine). 'Returning capital AND BUY★' was previously inexpressible."""
+    grp = next(l for l in _DISC.splitlines() if '_grp("🎯 Decision & Class"' in l)
+    assert "sb_capalloc" in grp, "not registered in the 🎯 Decision & Class group badge"
+    i = _DISC.rindex("_active_n(")
+    assert "sb_capalloc" in _DISC[i:_DISC.index(")", i)], "missing from the funnel total"
+    assert '_ms_cascade("Capital Allocation"' in _DISC, "must be the shared cascade multiselect"
+    assert 'count_col="capital_allocation_signal"' in _DISC, "no live facet counts"
+    assert '_label_mask(_cf["capital_allocation_signal"], sel_capalloc)' in _DISC, (
+        "must use _label_mask so the ❔ Unknown sentinel claims the honest holes")
+
+
+def test_float_funded_filter_is_registered_and_seeds_before_instantiating():
+    """💧 Float-funded (negative working capital) — customers fund the business (the Dhandho/float
+    read). MEASURED: fires 11.8%, and only 13% overlap with the nearest existing filter — the most
+    orthogonal candidate in the whole All-Data gap. Crucially it is an INCLUSION screen that
+    Max-red-flags cannot express: P(rf>=3 | flag) is 80%, EXACTLY the universe baseline, so it is
+    independent of forensic severity rather than a slice of it."""
+    grp = next(l for l in _DISC.splitlines() if '_grp("💰 Moat · Value · Entry"' in l)
+    assert "sb_floatfunded" in grp, "not registered in the 💰 Moat · Value · Entry group badge"
+    i = _DISC.rindex("_active_n(")
+    assert "sb_floatfunded" in _DISC[i:_DISC.index(")", i)], "missing from the funnel total"
+    assert 'st.session_state.setdefault("sb_floatfunded", False)' in _DISC, (
+        "the Steel repro: every non-multiselect must seed before instantiating")
+    j = _DISC.index('st.session_state.setdefault("sb_floatfunded"')
+    assert j < _DISC.index('key="sb_floatfunded"'), "seeded AFTER the widget — resurrection class"
+
+
+def test_the_two_new_filters_have_chips_and_narrow_through_the_choke_point():
+    from ui.ui_discovery import _CHIP_META
+    kinds = {k: kind for k, _h, kind in _CHIP_META}
+    assert kinds.get("sb_capalloc") == "ms", "Capital Allocation chip missing/wrong kind"
+    assert kinds.get("sb_floatfunded") == "bool", "Float-funded chip missing/wrong kind"
+    for label in ('"Capital Allocation")', '"Float-Funded")'):
+        assert label in _DISC, f"{label} never reaches _narrow — the culprit log cannot name it"
+
+
+def test_the_rejected_candidates_stay_out():
+    """Two candidates from the same sweep were REJECTED by measurement and must not drift in.
+    dilution_vampire_flag: P(rf>=3 | flag) = 99% — reachable by lowering Max red flags, and an
+    exclusion-only use case. cyclical_mirage_flag: 91%, same. Their absence is a decision, not an
+    oversight (the Safety group's own comment recorded the original census)."""
+    for col in ("dilution_vampire_flag", "cyclical_mirage_flag"):
+        assert f'_cf["{col}"]' not in _DISC, (
+            f"{col} became a filter, but it is subsumed by red_flag_count>=3 — re-measure first")
+
+
 def test_all_filter_sites_route_through_choke_point():
     """Static pin: NO filter application may bypass the _narrow choke point (`_cf = _cf[` == 0),
     and the funnel's zero-state must actually read the culprit log."""
