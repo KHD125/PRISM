@@ -6,8 +6,14 @@ Contract for `roce_expansion` — the TRAJECTORY axis of the Moat-Growth plane.
 WHY THIS COLUMN EXISTS. `moat_growth_quad` concedes in its own comment that it is "a snapshot of
 position TODAY": its moat axis is `roce_med_5y >= 15`, a LEVEL. The recurring conclusion across all
 30 MOSL Wealth Creation studies is ROCE *EXPANSION*. That axis existed nowhere in the frame, so
-Bharti Airtel (ROCE 10.99 -> 18.42) reads "Growth Trap" and Interglobe Aviation (6.53 -> 16.64)
-reads "Wealth Destroyer" -- the 10Y median holds the level down while the direction is invisible.
+Bharti Airtel (10Y median 10.99 -> 3Y median 18.42, current 19.44) reads "Growth Trap" -- a correct
+five-year statement (5Y median 12.33) with the direction invisible.
+
+IT LAGS. A difference of medians keeps reading "expanding" after a business gives the improvement
+back: 132 of 397 expanders (33.2%) sit more than 2pp below their own 3Y median TODAY, 57 below the
+10Y. Interglobe Aviation (6.53 -> 16.64, current 4.64) was cited in the first draft of this file
+and withdrawn. Not a defect -- every trailing metric lags, and a median is the right instrument for
+a cycle question -- but a PLACEMENT CONSTRAINT, and section 5 below turns it into a contract.
 
 THREE THINGS THIS FILE DEFENDS, each of which has a matching failure already on the record:
 
@@ -31,6 +37,7 @@ Run with: pytest tests/test_roce_expansion.py -v
 import contextlib
 import io as _io
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -165,8 +172,8 @@ def test_the_blind_spot_it_was_built_for_is_actually_visible(live):
     expanding = (live["roce_expansion"] >= 5).fillna(False)
     not_yet = expanding & (live["moat_growth_quad"] != "⭐ Wealth Creator")
     assert not_yet.sum() > 50, (
-        f"only {int(not_yet.sum())} stocks are 'improving into quality' -- the reason this column "
-        f"was added was that this set is large and unreachable"
+        f"only {int(not_yet.sum())} stocks are expanding by this measure without being Wealth "
+        f"Creators -- the reason this column was added was that this set is large and unreachable"
     )
 
 
@@ -184,4 +191,24 @@ def test_it_is_in_the_quality_view_and_has_a_display_format():
     assert "pp" in entry, (
         f"roce_expansion is measured in PERCENTAGE POINTS of ROCE; its header must say so, not "
         f"imply a percent change: {entry}"
+    )
+
+
+def test_roce_sits_beside_roce_expansion_in_the_quality_view():
+    """THE SAFETY PROPERTY. roce_expansion is a difference of MEDIANS and it lags: on the 2026-09-09
+    data 132 of 397 'expanding' stocks (33.2%) have a CURRENT roce more than 2pp below their own 3Y
+    median, and 57 have fallen back below the 10Y median. A reader who sees only '+10.1pp' is
+    misled; a reader who sees '4.64 | +10.1pp' is not. The adjacency is what makes a lagging signal
+    safe to show, so it is a CONTRACT, not a layout preference -- the verdict-beside-its-number rule
+    already pinned for D48/D49, applied to the number that CORRECTS rather than the number that
+    scores. Move roce_expansion to another view, or drop roce from this one, and this fails."""
+    src = _io.open(_APP, encoding="utf-8").read()
+    i = src.index('"\U0001f4ca Quality":')
+    preset = src[i:src.index("],", i)]
+    cols = re.findall(r'"([a-z_0-9]+)"', preset)
+    assert "roce" in cols, f"roce has left the Quality view; roce_expansion now stands uncorrected: {cols}"
+    assert "roce_expansion" in cols, f"roce_expansion has left the Quality view: {cols}"
+    assert abs(cols.index("roce") - cols.index("roce_expansion")) == 1, (
+        f"roce and roce_expansion must be ADJACENT in the Quality view -- the current number is the "
+        f"correction for a lagging trajectory, and a column apart is a column unread. Order: {cols}"
     )

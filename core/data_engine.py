@@ -3549,10 +3549,21 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # is roce_med_5y >= 15, a LEVEL. But the recurring conclusion across all 30 MOSL Wealth Creation
     # studies is ROCE *EXPANSION* — a business earning more on capital than it used to. That axis did
     # not exist anywhere in the frame, so the engine could not see it and no surface could show it.
-    # Measured consequence on the 2026-09-09 data: Bharti Airtel (ROCE 10.99 -> 18.42) reads
-    # "Growth Trap" and Interglobe Aviation (6.53 -> 16.64) reads "Wealth Destroyer" — the 10Y median
-    # holds the LEVEL down while the direction is invisible. 182 stocks are expanding without being
+    # Measured consequence on the 2026-09-09 data: Bharti Airtel (10Y median 10.99 -> 3Y median
+    # 18.42, current 19.44) reads "Growth Trap" because its 5Y median is 12.33 — a CORRECT five-year
+    # statement with the direction invisible. 182 stocks are expanding by this measure without being
     # Wealth Creators yet; that set was unreachable.
+    #
+    # IT LAGS, AND THE RECORD WAS CORRECTED FOR IT (2026-09-11). This is a difference of MEDIANS, so
+    # a business that improved and then gave it back still reads "expanding": on the same data 132
+    # of the 397 stocks at >= +5pp (33.2%) have a CURRENT roce more than 2pp below their own 3Y
+    # median, and 57 have fallen back below the 10Y median. Interglobe Aviation was first cited here
+    # as a headline example (6.53 -> 16.64) — its current roce is 4.64, and it was withdrawn. That is
+    # not a defect: every trailing metric lags, and a median is MORE stable than a point reading,
+    # which is the right instrument for a cycle-level question. It is a PLACEMENT CONSTRAINT: this
+    # column is only safe to read BESIDE the current roce, which is where the Deep Scanner's Quality
+    # view puts it (pinned as adjacency in tests/test_roce_expansion.py). It must never stand alone
+    # on a hero pill or a chip.
     #
     # BASIS. Both terms are MEDIANS FROM THE SAME FAMILY (cross-year basis rule, CLAUDE.md §5) — a
     # roce_med_3y minus a roce_med_10y, never a median minus a differently-constructed level. The
