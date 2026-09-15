@@ -115,6 +115,25 @@ def test_deep_scanner_wires_header_help_tooltips():
     )
 
 
+def test_glossary_has_no_duplicate_keys():
+    """A repeated key in the _RAW_GLOSSARY literal is SILENT — Python keeps the last one, so the
+    Reference tab serves whichever copy happens to be lower in the file while the earlier one
+    looks correct in review. Hit for real on 2026-09-15 adding the two ROCE deltas: two pairs
+    landed, the stale pair won, and the rendered text was the draft rather than the correction.
+    The dict collapses duplicates at import, so this must read the SOURCE."""
+    import collections
+    import re
+
+    src = (Path(__file__).resolve().parent.parent / "ui" / "ui_components.py").read_text(
+        encoding="utf-8")
+    start = src.index("_RAW_GLOSSARY = {")
+    block = src[start: src.index("\n}", start)]
+    keys = re.findall(r'^\s{4}"([^"]+)":', block, re.M)
+    dupes = {k: n for k, n in collections.Counter(keys).items() if n > 1}
+    assert not dupes, f"duplicate glossary keys (the later copy silently wins): {dupes}"
+    assert len(keys) > 150, f"only {len(keys)} keys parsed — the scan lost its teeth"
+
+
 def test_scanner_tips_reuse_the_shared_glossary():
     """The scanner must pull its tips from the SAME glossary as the tearsheet — one definition,
     no drift between the grid header and the tearsheet '?' chip."""

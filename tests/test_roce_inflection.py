@@ -275,10 +275,42 @@ def test_it_sits_beside_roce_expansion_in_the_quality_view():
     assert quality.index('"roce_expansion"') < quality.index('"roce_inflection"')
 
 
+def test_both_roce_deltas_are_in_the_reference_glossary():
+    """The Reference tab renders _RAW_GLOSSARY. roce_expansion shipped 2026-09-10 with a scanner
+    tooltip but NO glossary entry, so 'ROCE' in Reference search returned three entries and
+    neither delta column for five days. Both are now there."""
+    from ui.ui_components import _RAW_GLOSSARY
+    for label in ("ROCE Δ 10Y", "ROCE Δ 2Y"):
+        assert label in _RAW_GLOSSARY, f"{label!r} missing from the Reference glossary"
+        assert len(_RAW_GLOSSARY[label].strip()) >= 40, f"{label!r} entry too short to be real"
+
+
+def test_the_grid_header_and_the_glossary_cannot_drift():
+    """Same contract as test_scanner_tips_reuse_the_shared_glossary: ONE definition. The text is
+    duplicated in ui_scanner (deliberately, by the user's call) so this pins them equal instead."""
+    from ui.ui_components import _RAW_GLOSSARY
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    for col, label in (("roce_expansion", "ROCE Δ 10Y"), ("roce_inflection", "ROCE Δ 2Y")):
+        assert _SCANNER_HEADER_TIPS[col] == _RAW_GLOSSARY[label], (
+            f"{col!r} grid tooltip has drifted from the {label!r} glossary entry"
+        )
+
+
+def test_the_tooltip_explains_the_degenerate_roce_blank():
+    """Ksolves (ROCE 148.9%) renders 'None' with all three years present — a tooltip that says
+    blank only means missing years would leave the reader unable to explain what they see."""
+    from ui.ui_components import _RAW_GLOSSARY
+    text = _RAW_GLOSSARY["ROCE Δ 2Y"]
+    assert "100%" in text, "the degenerate-ROCE guard is invisible to the reader"
+
+
 def test_it_carries_a_header_tooltip():
     """Every Deep Scanner preset column must explain itself — the rule that caught the
     roce_expansion author shipping without one."""
-    src = _io.open(os.path.join(_UI, "ui_scanner.py"), encoding="utf-8").read()
-    m = re.search(r'"roce_inflection":\s*\(\s*"([^"]{40,})"', src)
-    assert m, "no header tooltip registered for roce_inflection"
-    assert "ROCE" in m.group(1)
+    # Assert the RESOLVED value, never the source text: the tip is sourced from _GLOSSARY, so a
+    # regex looking for a string literal reports "no tooltip" on a perfectly wired column. That
+    # is the source-scan trap this repo has already paid for twice.
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    tip = _SCANNER_HEADER_TIPS.get("roce_inflection", "")
+    assert len(tip.strip()) >= 40, "no usable header tooltip registered for roce_inflection"
+    assert "ROCE" in tip

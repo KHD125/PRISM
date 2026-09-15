@@ -636,6 +636,8 @@ _RAW_GLOSSARY = {
     "ROCE Current":  "Return on Capital Employed — out of every ₹100 the business puts to work (its own money + debt), how much yearly profit it earns. Higher means a better money-making machine.",
     "ROCE 10Y Med":  "The middle (median) ROCE over the last 10 years — shows whether high returns are durable, not a one-year fluke.",
     "ROCE 5Y Med":   "The middle (median) ROCE over the last 5 years — a more recent read on return quality.",
+    "ROCE Δ 10Y":    "Change in ROCE, in percentage points: the median of the last 3 years minus the median of the last 10. Positive means the business earns more on each rupee of capital than it used to — the direction, where ROCE itself is only the level. Blank when the company lacks enough history for the two windows to differ.",
+    "ROCE Δ 2Y":     "Change in ROCE, in percentage points, over a SHORT window: the latest year minus the average of the two years before it. Where ROCE Δ 10Y asks whether the business has re-rated over a decade, this asks whether it turned recently — the two agree only loosely, so read them together. Positive means the most recent year beat its own two-year base. Blank when any of the three years is missing, or when ROCE is above 100% — capital employed is then near zero and the ratio carries no information.",
     "ROE Current":   "Return on Equity — yearly profit earned on the shareholders' own money only (excludes debt). How hard your equity is working.",
     "ROE 10Y Med":   "The middle (median) ROE over 10 years — shows if equity returns have stayed strong over a full cycle.",
     "NPM":           "Net Profit Margin — of every ₹100 of sales, how much is left as final profit after all costs and taxes.",
