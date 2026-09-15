@@ -3590,6 +3590,55 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _windows_collapsed = (_rc3 == _rc5) & (_rc5 == _rc7) & (_rc7 == _rc10)
     df["roce_expansion"] = (_rc3 - _rc10).where(~_windows_collapsed)
 
+    # ── ROCE INFLECTION — the SHORT-window companion to roce_expansion ─────────────────
+    # roce_expansion reads STRUCTURAL re-rating (3Y median vs decade). This reads a RECENT
+    # turn: the latest year against its own two-year base. They are not two versions of one
+    # signal — measured Spearman +0.051 between them, and of 697 stocks one flags only 357
+    # appear in the other. Source: the published Screener.in screen of Ishmohit Arora (SOIC),
+    # whose second condition is "ROCE preceding year > average ROCE (3 years)".
+    #
+    # BOOK FIDELITY VS MATH (§5) — the literal form is BACKWARDS here, so math wins and the
+    # deviation is recorded. The vendor's 3Y window is exactly {roce, roce_1yb, roce_2yb}:
+    # roce_med_3y equals median(roce, roce_1yb, roce_2yb) on 100.0% of rows, verified. That
+    # puts roce_1yb INSIDE the baseline it is tested against and collapses the condition to
+    # roce_1yb > (roce + roce_2yb) / 2 — a local-peak test on the MIDDLE year. Measured live:
+    # it fires on 586 of 586 (100.0%) businesses that peaked and are now falling, and on only
+    # 262 of 482 (54.4%) that are steadily rising (roce_2yb < roce_1yb < roce). It selects
+    # deterioration. The corrected form below — latest against its own prior base, with no
+    # self-inclusion — fires on 100.0% of rising and 25.9% of peaked. Screener.in may window
+    # its 3Y average differently, in which case the source screen is sound there and only the
+    # translation into these columns was wrong.
+    #
+    # NO COLLAPSE GUARD, deliberately. roce_expansion needs one because nested medians over a
+    # short history come out identical and fabricate 0.00. These are three DISTINCT yearly
+    # observations: measured, 0 rows (0.00%) carry all three equal and 2 rows (0.07%) land on
+    # exactly 0.00. A guard would be error handling for an impossible scenario (§2). NaN
+    # propagates on its own when an operand is absent — 11.9% of the universe, left NaN rather
+    # than filled, because "no third year of history" is not "no inflection".
+    #
+    # DEGENERATE-ROCE GUARD, and it is load-bearing for the SORT. ROCE is EBIT / capital
+    # employed, so as capital employed approaches zero the ratio explodes and carries no
+    # information about returns. Without this guard the first live census put Sharp India
+    # (roce 34,166.67) at the top of the column, followed by VISA Chrome (+1,465) and GTL
+    # Infrastructure (+674) — a descending sort would have opened on garbage. roce_expansion
+    # never showed this because medians damp extremes; a difference of yearly levels does not.
+    # The threshold was chosen by inspection, not taste: across all three years p99 = 78.9 and
+    # p99.5 = 110.9, and every name in the 100-300 band is a distressed micro-cap with erratic
+    # ROCE (Hindustan Motors -0.10/58.79/155.02, Pipan Oils -189.91/-8.99/-40.05), not an
+    # asset-light compounder. Costs 53 stocks (1.95%). NaN rather than clip: a degenerate ROCE
+    # has no inflection to report, and clipping would fabricate a bounded value from a
+    # meaningless one (§5 "unverifiable is not passed").
+    #
+    # Units are PERCENTAGE POINTS, not percent. DISPLAY + SORT ONLY: nothing here reaches
+    # composite_score. The forward test is the December vintage.
+    _ri_now, _ri_1yb, _ri_2yb = df["roce"], df["roce_1yb"], df["roce_2yb"]
+    _ri_degenerate = (
+        (_ri_now.abs() > 100.0) | (_ri_1yb.abs() > 100.0) | (_ri_2yb.abs() > 100.0)
+    )
+    df["roce_inflection"] = (
+        _ri_now - (_ri_1yb + _ri_2yb) / 2.0
+    ).where(~_ri_degenerate)
+
     # DuPont ROE attribution: first-order decomposition of year-on-year ROE change into three
     # sources — margin improvement, asset-efficiency improvement, and leverage expansion.
     # ROE = NPM × Asset_Turnover × Financial_Leverage (where Lev = Total_Assets / Net_Worth).

@@ -42,6 +42,7 @@ _SCANNER_HEADER_TIPS = {
     "piotroski_fscore":       _GLOSSARY["Piotroski"],
     "roce":                   _GLOSSARY["ROCE Current"],
     "roce_expansion":         ("Change in ROCE, in percentage points: the median of the last 3 years minus the median of the last 10. Positive means the business earns more on each rupee of capital than it used to — the direction, where ROCE itself is only the level. Blank when the company lacks enough history for the two windows to differ."),
+    "roce_inflection":        ("Change in ROCE, in percentage points, over a SHORT window: the latest year minus the average of the two years before it. Where ROCE Δ 10Y asks whether the business has re-rated over a decade, this asks whether it turned recently — the two agree only loosely, so read them together. Positive means the most recent year beat its own two-year base. Blank when any of the three years is missing."),
     "opm":                    _GLOSSARY["OPM"],
     "cfo_to_pat":             _GLOSSARY["CFO/PAT"],
     "valuation_score":        _GLOSSARY["Valuation Scr"],
