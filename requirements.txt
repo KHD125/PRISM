@@ -14,12 +14,15 @@
 # plotly>=5.18.0
 # streamlit-aggrid>=0.3.15
 
-
+# PINNED EXACTLY. Cloud rebuilds from this file on every deploy, so a floor (>=) means the
+# deployed engine is NOT the one the tests verified. pandas is capped at 2.x by streamlit
+# 1.54.0's own metadata (pandas<3) — see tests/test_dependency_contract.py.
 streamlit==1.54.0
-pandas==3.0.0
+pandas==2.3.3
 numpy==2.4.2
 openpyxl==3.1.5          # RUNTIME-ONLY: _xlsx_engine() names it as a STRING, never imports it
 python-calamine==0.7.0
 pillow==12.1.0
 plotly==6.5.2
 requests==2.32.5         # core/sheet_meta.py:84 — was undeclared, rode in on streamlit
+
