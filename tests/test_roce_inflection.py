@@ -67,6 +67,39 @@ def _num(df, c):
     return pd.to_numeric(df[c], errors="coerce")
 
 
+def _spearman(a, b):
+    """Spearman rho WITHOUT scipy -- Pearson on ranks, which is the definition, not an approximation.
+
+    `Series.corr(method="spearman")` imports scipy, and scipy is NOT in requirements.txt (production
+    never calls .corr() at all). It happened to be installed in the dev venv, so these three tests
+    passed locally and died the moment the suite ran against the DEPLOYED dependency set -- the
+    undeclared-dependency class, in the test layer this time.
+
+    Verified equal on the exact three pairs below against the real 2,716-row frame: worst absolute
+    difference 1.39e-17, i.e. float noise. Tie handling is load-bearing (roce_inflection carries 182
+    duplicate values) and pandas .rank() defaults to 'average', the same convention scipy uses.
+    """
+    return a.rank().corr(b.rank())
+
+
+def test_the_spearman_helper_is_a_real_spearman():
+    """Pins the helper itself, on hand-computable cases — the three tests below trust it.
+
+    Without this, the docstring's "identical to scipy" claim is an assertion nobody checks, and a
+    future edit to plain `.corr()` (Pearson on VALUES, not ranks) would slide through: the three
+    live thresholds are loose bounds, so they do not notice a changed correlation measure.
+    """
+    assert _spearman(pd.Series([1, 2, 3, 4, 5]), pd.Series([5, 4, 3, 2, 1])) == pytest.approx(-1.0)
+    assert _spearman(pd.Series([1, 2, 3, 4, 5]), pd.Series([2, 4, 6, 8, 10])) == pytest.approx(1.0)
+    # monotone-but-not-linear: Spearman is 1.0 where Pearson is not — the case that separates them
+    assert _spearman(pd.Series([1, 2, 3, 4]), pd.Series([1, 2, 4, 800])) == pytest.approx(1.0)
+    assert pd.Series([1, 2, 3, 4]).corr(pd.Series([1, 2, 4, 800])) < 0.95, (
+        "fixture no longer discriminates rank correlation from value correlation")
+    # ties must take AVERAGE ranks (scipy's convention): ranks [1, 2.5, 2.5, 4] vs [1, 2, 3, 4]
+    assert _spearman(pd.Series([1, 2, 2, 3]), pd.Series([1, 2, 3, 4])) == pytest.approx(
+        4.5 / (22.5 ** 0.5))
+
+
 # -- 1. The value ------------------------------------------------------------------------
 
 def test_the_column_exists_and_is_the_documented_difference(live):
@@ -133,7 +166,7 @@ def test_the_literal_source_form_is_not_what_shipped(live):
     shipped = _num(live, "roce_inflection")
     both = literal.notna() & shipped.notna()
     assert not np.allclose(shipped[both], literal[both], atol=1e-6)
-    rho = shipped[both].corr(literal[both], method="spearman")
+    rho = _spearman(shipped[both], literal[both])
     assert rho < 0.75, f"shipped column has drifted back toward the literal form (rho={rho:+.3f})"
 
 
@@ -195,7 +228,7 @@ def test_it_is_not_wired_into_the_composite(live):
         "i": _num(live, "roce_inflection"),
         "c": _num(live, "composite_score"),
     }).dropna()
-    rho = sub["i"].corr(sub["c"], method="spearman")
+    rho = _spearman(sub["i"], sub["c"])
     assert abs(rho) < 0.45, f"roce_inflection tracks composite_score too closely (rho={rho:+.3f})"
 
 
@@ -214,7 +247,7 @@ def test_it_is_not_a_restatement_of_roce_expansion(live):
         "i": _num(live, "roce_inflection"),
         "e": _num(live, "roce_expansion"),
     }).dropna()
-    rho = sub["i"].corr(sub["e"], method="spearman")
+    rho = _spearman(sub["i"], sub["e"])
     assert abs(rho) < 0.40, f"roce_inflection has collapsed into roce_expansion (rho={rho:+.3f})"
 
 

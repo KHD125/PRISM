@@ -79,12 +79,21 @@ def test_both_excelfile_sites_route_through_the_helper():
         "a bare calamine engine string would turn a missing wheel into a boot failure")
 
 
-def test_requirements_carry_the_dependency_with_a_wheel_safe_floor():
+def test_requirements_carry_the_dependency_at_a_wheel_safe_version():
+    """Both engines must be DECLARED, at a version that ships wheels — under == or >=.
+
+    Was written as `^python-calamine>=`, which asserted the FORM rather than the guarantee. When
+    requirements.txt moved from floors to exact pins on 2026-09-17 (a floor means the deployed
+    engine is not the one the suite verified — the outage that day proved it), this went red on a
+    file that satisfies every guarantee it exists to protect. Accepts either operator now; what it
+    still refuses is calamine going missing (Cloud would silently run the 8.1s path) or openpyxl
+    going missing (a missing Rust wheel would become a boot failure instead of a slow load).
+    """
     req = open(os.path.join(_ROOT, "requirements.txt"), encoding="utf-8").read()
-    m = re.search(r"^python-calamine>=([\d.]+)", req, re.M)
+    m = re.search(r"^python-calamine(?:==|>=)([\d.]+)", req, re.M)
     assert m, "requirements.txt does not list python-calamine — Cloud would silently run the slow path"
     assert tuple(int(x) for x in m.group(1).split(".")) >= (0, 2), "pin a version that ships manylinux wheels"
-    assert re.search(r"^openpyxl>=", req, re.M), "openpyxl must stay — it is the fallback"
+    assert re.search(r"^openpyxl(?:==|>=)", req, re.M), "openpyxl must stay — it is the fallback"
 
 
 @pytest.mark.skipif(not os.path.exists(_XLSX), reason="local workbook not present")
