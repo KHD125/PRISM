@@ -16,11 +16,10 @@
 
 
 streamlit==1.54.0
-pandas>=2.0.0
-numpy>=1.24.0
-openpyxl>=3.1.0
-python-calamine>=0.7.0
-pillow>=10.0.0
-plotly>=5.18.0
-streamlit-aggrid>=0.3.15
-psutil>=5.9.0
+pandas==3.0.0
+numpy==2.4.2
+openpyxl==3.1.5          # RUNTIME-ONLY: _xlsx_engine() names it as a STRING, never imports it
+python-calamine==0.7.0
+pillow==12.1.0
+plotly==6.5.2
+requests==2.32.5         # core/sheet_meta.py:84 — was undeclared, rode in on streamlit
