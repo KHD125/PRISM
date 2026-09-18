@@ -64,15 +64,34 @@ RATIO_COLS = {
     "NPM Median 3 Years":   "npm_med_3y",
     "NPM":                  "npm",
     "NPM Latest Quarter":   "npm_latest_q",
+    "NPM Preceding Year Quarter": "npm_pyq",
     "NPM 1 Year Back":      "npm_1yb",
     # MARGINS — OPERATING (opm_med_3y dropped — opm_med_5y is the alpha signal; opm annual kept for OPM delta)
     "OPM Median 5 Years":   "opm_med_5y",
     "OPM":                  "opm",
     "OPM Latest Quarter":   "opm_latest_q",
+    "OPM Preceding Year Quarter": "opm_pyq",
     "OPM 1 Year Back":      "opm_1yb",
     # MARGINS — GROSS (annual gpm dropped — gpm_med_5y covers long-run; gpm_latest_q is freshest single signal)
     "GPM Median 5 Years":   "gpm_med_5y",
     "GPM Latest Quarter":   "gpm_latest_q",
+    "GPM Preceding Year Quarter": "gpm_pyq",
+    # ── *_pyq: THE SAME QUARTER ONE YEAR AGO — mapped 2026-09-18, NOT YET WIRED ────────────
+    # These exist to repair a SCORED basis mismatch that ui_tearsheet.py ~L4396 already documents
+    # against itself: the seven *_acceleration columns are three unrelated things, and two of them
+    # reach composite_score —
+    #     npm_acceleration = latest QUARTER − the ANNUAL figure 1Y back   (weight 0.15)
+    #     opm_acceleration = latest QUARTER − the ANNUAL figure 1Y back   (weight 0.10)
+    #     gpm_acceleration = latest QUARTER − the 5Y MEDIAN               (a third base again)
+    # A quarter minus an annual number is not a delta (§5 cross-year basis rule) and it folds
+    # SEASONALITY into a signal that is read as structural: a festive-quarter margin against an
+    # annual base reads as "accelerating" when nothing changed.
+    # With these, each becomes latest_q − same_quarter_last_year: one basis, seasonality cancelled.
+    # DELIBERATELY NOT WIRED IN THIS CHANGE — rebasing a scored input moves composite_score for the
+    # whole universe, which §5 signal-liveness says needs a live /census, and the source sheet does
+    # not carry these columns yet (verified 2026-09-18 against the 08-28 CSVs and the 09-09 xlsx).
+    # tests/test_pyq_margin_basis.py is the tripwire: it SKIPS while they are absent and goes RED
+    # the moment real data arrives, so the rebasing cannot be forgotten.
     # VALUATION
     "PEG":                               "peg",
     "EV To EBITDA":                      "ev_ebitda",
@@ -243,6 +262,20 @@ TECHNICAL_COLS = {
     # PRIMARY TRIGGER (VSTOP 14W 2.5 — optimal timeframe + sensitivity)
     "VSTOP 14W 2.5": "vstop_value",
     "Last VSTOP Change 14W 2.5": "last_vstop_change",
+    # ── Mapped 2026-09-18, NOT YET WIRED (source sheet does not carry them yet) ────────────
+    # Listed Days — the column docs/known-issues.md names as the reason the dilution IPO tier
+    # "cannot be built": "There is no listing-date column, and history depth does not discriminate
+    # — roce_med_10y is 0% NaN among Tier-3 because the vendor carries PRE-IPO financials, so a
+    # company listed last year is indistinguishable from a thirty-year-old one." This resolves the
+    # 85 recent IPOs whose equity_shares_1yb is a pre-listing shell count, and the Belrise (hard-
+    # rejected at 0% gate_pass) vs Vodafone Idea (fully exonerated) pair two points of share
+    # multiple apart. It does NOT separate a bonus from a QIP for an established company.
+    "Listed Days": "listed_days",
+    # Returns Since Result — price move measured in EVENT time, anchored to the result date.
+    # Every momentum column here is fixed-calendar (50D/26W/52W) and straddles the announcement
+    # arbitrarily: a result 3 days old and one 80 days old are measured identically. Post-earnings
+    # announcement drift is the one thing 724 columns cannot currently see.
+    "Returns Since Result": "returns_since_result",
     # RELATIVE STRENGTH — Nifty 500 only (right benchmark for small/mid cap universe)
     "CRS Vs Nifty 500 50D": "crs_50d",
     "CRS Vs Nifty 500 52W": "crs_52w",
