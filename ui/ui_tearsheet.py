@@ -4395,8 +4395,13 @@ def _sector_peer_strip_html(stock: pd.Series) -> str:
 # WHY THE TWO SECTIONS ARE SEPARATED AND LABELLED WITH THEIR OWN BASES. The engine carries seven
 # columns whose names all end in _acceleration, and they are THREE unrelated things:
 #     pat/rev/ebitda_acceleration = 3Y CAGR - 5Y CAGR   → a true acceleration (rate of a rate)
-#     npm/opm_acceleration        = latest QUARTER - the ANNUAL figure 1Y back
-#     gpm_acceleration            = latest QUARTER - the 5Y MEDIAN   (a third base again)
+#     npm/opm/gpm_acceleration    = latest QUARTER - THE SAME QUARTER ONE YEAR AGO (*_pyq)
+#         REBASED 2026-09-18. These were three DIFFERENT bases and two of them were scored:
+#         npm/opm measured the latest quarter against the ANNUAL figure 1Y back, and gpm against
+#         the 5Y MEDIAN. A quarter minus an annual number is not a delta, and it folded seasonality
+#         into a signal read as structural — measurably: the old GPM form had a universe median of
+#         +6.07pp, claiming the typical company's gross margin was improving six points. On the
+#         same-quarter basis that median is +0.00pp. See core/data_engine.py for the full evidence.
 #     ebit_acceleration           = EBIT growth - EBITDA growth, SAME window — a D&A-intensity
 #                                   spread, not a time comparison at all; deliberately NOT shown
 #                                   here, because it does not answer this card's question.
@@ -4410,9 +4415,12 @@ _ACCEL_GROWTH = [
     ("EBITDA",  "ebitda_acceleration", "ebitda_gr_3y", "ebitda_gr_5y"),
 ]
 _ACCEL_MARGIN = [
-    ("NPM", "npm_acceleration", "npm_latest_q", "npm_1yb",    "1Y back"),
-    ("OPM", "opm_acceleration", "opm_latest_q", "opm_1yb",    "1Y back"),
-    ("GPM", "gpm_acceleration", "gpm_latest_q", "gpm_med_5y", "5Y median"),
+    # The base column and its on-screen label must track core/data_engine.py's formula exactly —
+    # a stale label beside a corrected number is worse than the original defect, because it reads
+    # as authoritative. Pinned by tests/test_pyq_margin_basis.py.
+    ("NPM", "npm_acceleration", "npm_latest_q", "npm_pyq", "same qtr LY"),
+    ("OPM", "opm_acceleration", "opm_latest_q", "opm_pyq", "same qtr LY"),
+    ("GPM", "gpm_acceleration", "gpm_latest_q", "gpm_pyq", "same qtr LY"),
 ]
 
 

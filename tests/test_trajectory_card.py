@@ -88,11 +88,23 @@ def test_growth_section_names_both_windows(live):
 
 
 def test_every_margin_row_prints_its_own_base(live):
-    """NPM/OPM measure against 1Y back, GPM against a 5Y median. Three rows, two bases -- if the
-    page does not say so per row, the reader assumes they match."""
+    """Every margin row must print the base it was measured against.
+
+    REWRITTEN 2026-09-18, and the reason is the point. This test was born because the three rows
+    carried TWO bases -- NPM/OPM against the ANNUAL figure 1Y back, GPM against a 5Y MEDIAN -- so a
+    reader who could not see that would compare numbers that were not comparable. The engine has
+    since been rebased: all three now measure the latest quarter against THE SAME QUARTER ONE YEAR
+    AGO (*_pyq), which is what made the mismatch go away rather than merely labelling it.
+
+    The INVARIANT survives the fix and is what stays pinned: the base is named on the page, and it
+    is the CURRENT one -- so a silent revert to either retired base fails here as well as in
+    tests/test_pyq_margin_basis.py.
+    """
     txt = _text(_render(live.iloc[0]))
-    assert "1Y back" in txt, "the NPM/OPM base vanished from the page"
-    assert "5Y median" in txt, "the GPM base vanished -- it is NOT 1Y back like the rows above it"
+    assert txt.count("same qtr LY") >= 3, (
+        f"every margin row must name its base; found {txt.count('same qtr LY')} of 3 in: {txt[:200]!r}")
+    assert "1Y back" not in txt, "a margin row reverted to the retired ANNUAL 1Y-back base"
+    assert "vs 5Y median" not in txt, "a margin row reverted to the retired 5Y-median base"
 
 
 def test_margin_block_is_not_called_an_acceleration(live):

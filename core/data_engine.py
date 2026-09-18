@@ -794,9 +794,45 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["roe_current_vs_med"] = df["roe"] - df["roe_med_10y"]
     _de_nan = pd.Series(np.nan, index=df.index)
 
-    df["npm_acceleration"] = df.get("npm_latest_q", _de_nan) - df.get("npm_1yb",    _de_nan)
-    df["opm_acceleration"] = df.get("opm_latest_q", _de_nan) - df.get("opm_1yb",    _de_nan)
-    df["gpm_acceleration"] = df.get("gpm_latest_q", _de_nan) - df.get("gpm_med_5y", _de_nan)
+    # ── MARGIN ACCELERATION — REBASED onto the same quarter one year ago (2026-09-18) ─────────
+    # WAS, and ui/ui_tearsheet.py ~L4396 already documented it against this engine:
+    #     npm/opm_acceleration = latest QUARTER − the ANNUAL figure 1Y back
+    #     gpm_acceleration     = latest QUARTER − the 5Y MEDIAN   (a third base again)
+    # A quarter minus an annual number is not a delta (§5 cross-year basis rule) and it folds
+    # SEASONALITY into a number read as structural: a festive-quarter margin measured against an
+    # annual base reads as "accelerating" when nothing changed. npm_acceleration carries weight
+    # 0.15 and opm_acceleration 0.10 in the margin facet, so this reached composite_score.
+    #
+    # THE BIAS WAS MEASURABLE, not theoretical. On the 2026-09-18 vintage the GPM form had a
+    # median of +6.07pp — i.e. it claimed the TYPICAL company's gross margin was improving by six
+    # percentage points, when a properly centred measure puts the median at +0.00pp. Rebasing
+    # flips the sign of 41.0% of GPM rows, 21.6% of OPM, 23.1% of NPM; median |change| ~1.7pp.
+    #
+    # *_pyq WAS VERIFIED TO BE WHAT ITS NAME CLAIMS before being trusted with a scored input —
+    # source column names lie (roce_med_3y precedent). Two-sided test on live data: pyq correlates
+    # with the PRIOR year's annual figure MORE than latest_q does (opm +0.869 vs +0.810, npm +0.804
+    # vs +0.719) AND the cross-check reverses (against the CURRENT annual, latest_q wins: opm
+    # +0.870 vs +0.805). A previous-quarter column would order both of those the other way round.
+    # It is also not an existing column renamed: identical on ≤0.4% of rows against every sibling.
+    #
+    # BOTH TERMS NOW COME FROM THE SAME FAMILY — two quarterly observations one year apart.
+    #
+    # NO FALLBACK TO THE OLD BASIS when *_pyq is missing (93.4% coverage for npm/opm, 83.4% for
+    # gpm). Filling the gap with the previous formula would put TWO BASES IN ONE COLUMN, which is
+    # the exact defect the tearsheet comment exists to warn about and would make the number's
+    # meaning depend on coverage. NaN propagates instead; _compute_margin_score ranks with
+    # .fillna(50), so a missing quarter reads as "no information", never as good or bad news.
+    # CONSEQUENCE, stated: an OLD vintage without these columns yields an all-NaN acceleration and
+    # every stock takes the neutral 50 on that leg — pinned by tests/test_pyq_margin_basis.py so
+    # it is a known, tested property rather than a surprise when comparing archived vintages.
+    #
+    # KNOWN LIMITATION, measured and left alone: 108 stocks (4.0%) carry gpm_latest_q == 100.0 —
+    # financials, where a gross margin is not a meaningful quantity. Their delta is exactly 0.00.
+    # Not guarded, because a guard chosen without evidence of harm is taste, not measurement, and
+    # gpm_acceleration is display-only (zero references in scoring_engine.py).
+    df["npm_acceleration"] = df.get("npm_latest_q", _de_nan) - df.get("npm_pyq", _de_nan)
+    df["opm_acceleration"] = df.get("opm_latest_q", _de_nan) - df.get("opm_pyq", _de_nan)
+    df["gpm_acceleration"] = df.get("gpm_latest_q", _de_nan) - df.get("gpm_pyq", _de_nan)
 
     # ── MOSL Wealth Creation Alpha Signals ──
     # economic_profit_spread: ROCE minus India cost of equity (COST_OF_EQUITY from config).
@@ -3482,30 +3518,31 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # described a universe that no longer exists; every one of its four claims was false by the
     # time it was replaced, which is why it is quoted below rather than quietly deleted (current
     # measurements at right):
-    #     "96% empty"                              → DPR is 62.2% populated (53.5% on 2026-08-30)
-    #     "RR ≡ 1.0 universe-wide"                 → RR = 1.0 on 62.6%, 889 distinct values
+    #     "96% empty"                              → DPR is 70.9% populated (62.2% on 2026-09-09)
+    #     "RR ≡ 1.0 universe-wide"                 → RR = 1.0 on 60.6%, 928 distinct values
     #     capital_misallocation_risk "passes for ALL" → fires 40.9%
     #     flag_epoch2_compounder "INERT/always-pass"  → fires 16.9%
     # The danger of the old note was not its arithmetic but its conclusion: it told a reader these
     # gates were inert and therefore safe to ignore. They are live and they move scores.
     #
-    # WHAT IS STILL TRUE. DPR remains missing on 37.8% of rows, and the fillna(0) above reads every
+    # WHAT IS STILL TRUE. DPR remains missing on 29.1% of rows, and the fillna(0) above reads every
     # one of those as "pays no dividend, retains everything" — the maximally incriminating reading
     # of absent evidence. That is the mirror of the "unverifiable is not passed" rule (CLAUDE.md §5):
     # here a gate CONDEMNS on evidence it does not have. Measured on capital_misallocation_risk,
     # which applies a 10% quality_score haircut (scoring_engine ~L641):
-    #     1,110 stocks flagged · 476 of them (42.9%) have NO DPR at all, so their "retains >50%" leg
-    #     is fabricated by the fillna; 634 (57.1%) are flagged on real dividend evidence.
+    #     1,110 stocks flagged · 358 of them (32.3%) have NO DPR at all, so their "retains >50%" leg
+    #     is fabricated by the fillna; 752 (67.7%) are flagged on real dividend evidence.
     # THE DEFECT IS SHRINKING, AND THAT IS THE POINT OF REMEASURING: the fabricated share has fallen
-    # 55.4% → 42.9% as DPR coverage rose 53.5% → 62.2%, so real evidence now carries the majority of
-    # these flags for the first time. The ranking harm stays small — flagged names carry a 7.05
-    # median 5Y ROCE against 18.53 unflagged and score 15.0 vs 54.7 on quality, so a 10% haircut on
+    # 55.4% → 42.9% → 32.3% as DPR coverage rose 53.5% → 62.2% → 70.9% (remeasured on the 2026-09-18
+    # vintage), so real evidence now carries more than two thirds of these flags. The ranking harm
+    # stays small — flagged names carry a 7.05
+    # median 5Y ROCE against 18.52 unflagged and score 15.0 vs 54.4 on quality, so a 10% haircut on
     # an already-low score reorders little. It is an honesty defect, not a wrong-answers defect.
     # Sized here so nobody re-derives it.
     #
     # NOT FIXED HERE BY DELIBERATE STANDING DECISION (2026-06-14): guards that neutralise
     # DPR-degenerate signals are rejected — the source column gets fixed instead. That ruling was
-    # made at ~4% DPR coverage; at 62.2% the remaining repair would retire 476 fabricated
+    # made at ~4% DPR coverage; at 70.9% the remaining repair would retire 358 fabricated
     # condemnations, revive stagnant_cash_cow_flag (RR<0.30, still 0 — see tools/census.py:51,
     # where it is triaged as genuine rarity), and restore two one-legged gates to real two-leg tests.
     # Fire rates above are pinned by tests/test_reinvestment_rate_data_gap.py, which FAILS when the

@@ -96,6 +96,86 @@ def test_the_deferral_is_explained_where_the_mapping_lives():
     )
 
 
+# ── 1b. The rebasing itself, once it shipped ─────────────────────────────────────────────
+
+def _nan_frame(n=12, **overrides):
+    """compute_derived_signals needs every mapped column present; build that from the mapping
+    dicts themselves so the fixture cannot rot as columns are added."""
+    import numpy as np
+    from core import data_engine as de
+    cols = set()
+    for d in (de.COMMON_COLS, de.RATIO_COLS, de.INCOME_COLS, de.BALANCE_COLS,
+              de.CASHFLOW_COLS, de.SHAREHOLDING_COLS, de.TECHNICAL_COLS):
+        cols |= set(d.values())
+    f = pd.DataFrame({c: [np.nan] * n for c in sorted(cols)})
+    f["company_id"] = [f"NSE:T{i}" for i in range(n)]
+    f["name"] = [f"Test Co {i}" for i in range(n)]
+    for k, v in overrides.items():
+        f[k] = v
+    return f
+
+
+@pytest.mark.parametrize("margin", ["opm", "npm", "gpm"])
+def test_a_vintage_without_pyq_yields_nan_never_the_old_basis(margin):
+    """THE REGRESSION THIS FIX COULD CAUSE, pinned. An archived vintage predating *_pyq must NOT
+    silently fall back to the old formula: two bases in one column makes the number's meaning
+    depend on coverage, which is the exact defect being repaired. NaN is the honest answer —
+    _compute_margin_score ranks with .fillna(50), so it reads as "no information", not as bad news.
+    """
+    import numpy as np
+    from core.data_engine import compute_derived_signals
+    with contextlib.redirect_stdout(_io.StringIO()):
+        out = compute_derived_signals(_nan_frame(**{
+            f"{margin}_latest_q": 10.0,
+            f"{margin}_pyq": np.nan,        # the archived-vintage case
+            f"{margin}_1yb": 3.0,           # the OLD base — must NOT be used
+            f"{margin}_med_5y": 2.0,        # the OLD gpm base — must NOT be used either
+        }))
+    got = pd.to_numeric(out[f"{margin}_acceleration"], errors="coerce")
+    assert got.isna().all(), (
+        f"{margin}_acceleration fell back to a second basis when {margin}_pyq was absent; it read "
+        f"{got.dropna().unique()[:3]} where NaN is required (7.0 would be the retired 1yb form, "
+        f"8.0 the retired med_5y form, 0.0 a fabricated 'flat')."
+    )
+
+
+@pytest.mark.parametrize("margin", ["opm", "npm", "gpm"])
+def test_the_rebased_formula_is_latest_quarter_minus_the_same_quarter_last_year(margin):
+    import numpy as np
+    from core.data_engine import compute_derived_signals
+    with contextlib.redirect_stdout(_io.StringIO()):
+        out = compute_derived_signals(_nan_frame(**{
+            f"{margin}_latest_q": 10.0, f"{margin}_pyq": 6.0,
+            f"{margin}_1yb": 3.0, f"{margin}_med_5y": 2.0,
+        }))
+    got = pd.to_numeric(out[f"{margin}_acceleration"], errors="coerce")
+    assert np.allclose(got.dropna(), 4.0), (
+        f"expected 10.0 − 6.0 = 4.0 percentage points; got {got.dropna().unique()[:3]}"
+    )
+
+
+def test_the_tearsheet_base_label_cannot_drift_from_the_engine(live):
+    """A stale base label beside a corrected number reads as authoritative and is worse than the
+    original defect. The display table names its base column; that column must be the one the
+    engine actually subtracted (the Fisher module/engine drift precedent, commit 7fff308)."""
+    import numpy as np
+    from ui.ui_tearsheet import _ACCEL_MARGIN
+    assert _ACCEL_MARGIN, "the margin trajectory table vanished"
+    for row in _ACCEL_MARGIN:
+        label, accel_col, latest_col, base_col = row[0], row[1], row[2], row[3]
+        for c in (accel_col, latest_col, base_col):
+            assert c in live.columns, f"{label}: {c} is not in the scored frame"
+        expected = pd.to_numeric(live[latest_col], errors="coerce") - \
+            pd.to_numeric(live[base_col], errors="coerce")
+        got = pd.to_numeric(live[accel_col], errors="coerce")
+        both = expected.notna() & got.notna()
+        assert both.sum() > 100, f"{label}: too few comparable rows"
+        assert np.allclose(got[both], expected[both], atol=1e-6), (
+            f"{label}: the tearsheet says the base is {base_col!r}, but {accel_col} was not "
+            f"computed against it. The on-screen label is lying about the number beside it."
+        )
+
+
 # ── 2. Behavioural: dormant until the sheet carries the data, then RED ───────────────────
 
 @pytest.mark.parametrize("margin", ["opm", "npm", "gpm"])
@@ -121,6 +201,12 @@ def test_once_pyq_arrives_the_acceleration_must_be_rebased_onto_it(live, margin)
     )
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "PHASE 2, deliberately not this commit. listed_days ARRIVED on the 2026-09-18 vintage (100% "
+    "coverage), so the stated blocker is already stale — but wiring it moves ~800 stocks' flags "
+    "through rf_dilution -> forensic penalty -> gate_pass -> rank and needs its own RED-first "
+    "session plus a /census. strict=True: the day Phase 2 lands this XPASSes and FAILS, which is "
+    "the signal to delete this marker rather than let a stale deferral rot in place."))
 def test_once_listed_days_arrives_the_dilution_arm_must_consult_it(live):
     """docs/known-issues.md calls the missing listing date the reason the IPO tier cannot be built.
     Once it exists, that justification is stale and the arm has to be revisited."""
@@ -137,6 +223,12 @@ def test_once_listed_days_arrives_the_dilution_arm_must_consult_it(live):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "PHASE 3, deliberately not this commit. returns_since_result ARRIVED (99.0% coverage) but a "
+    "new signal ships only after a distribution census and an orthogonality check against the "
+    "momentum family — display + sort first, scored only if a forward window earns it. "
+    "strict=True: this XPASSes and FAILS the day it reaches a surface, so the marker cannot "
+    "outlive the deferral it documents."))
 def test_once_returns_since_result_arrives_it_must_reach_a_surface(live):
     """A signal nobody can see is orphan #416. PRISM already carries 400+ of those."""
     if not _present(live, "returns_since_result"):
