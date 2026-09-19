@@ -209,3 +209,69 @@ def test_missing_share_data_does_not_trigger_the_arm_either():
         "to guard there, and the mirror column must not assert one"
     )
     assert (out["dilution_flag"] == 0).all(), "no share data must stay benefit-of-doubt"
+
+
+# ── 4. The display must not contradict the engine ────────────────────────────────────────
+
+def test_the_tearsheet_does_not_print_a_dilution_percentage_for_a_prelisting_row(live):
+    """FOUND BY AUDIT, not by the suite. The engine classified Belrise as a pre-listing baseline
+    (Tier 1, unmeasurable) while the tearsheet's _share_change_str went on printing
+    "Dilution 48.6%", because that branch only fired for the >=1.5x corporate-action arm and
+    Belrise is 1.4857x — under it. Engine and display said opposite things about the same row:
+    the Fisher module/engine drift class. Both arms now route through the same branch.
+    """
+    import re
+    import ui.ui_tearsheet as T
+
+    def _render_text(row):
+        """Drive the REAL renderer and read what it printed — a source scan would pass on a
+        branch that exists but is unreachable (the trap this repo has paid for twice)."""
+        out = []
+
+        class _Rec:
+            def markdown(self, *a, **k):
+                if a:
+                    out.append(str(a[0]))
+
+            def __getattr__(self, _n):
+                return lambda *a, **k: None
+
+        real = T.st
+        try:
+            T.st = _Rec()
+            T.render_verdict_scorecard(row)
+        finally:
+            T.st = real
+        return re.sub(r"<[^>]+>", " ", " ".join(out))
+
+    pre = _num(live, "dilution_prelisting_baseline") == 1
+    assert pre.sum() > 0, "no pre-listing rows to render"
+    row = live[pre].iloc[0]
+    txt = _render_text(row)
+    assert "pre-listing baseline" in txt.lower(), (
+        f"a pre-listing row did not say so on the page; it rendered: {txt[:300]!r}"
+    )
+    assert not re.search(r"Dilution\s+\d", txt), (
+        f"the tearsheet still prints a dilution PERCENTAGE for a row the engine declared "
+        f"unmeasurable: {txt[:300]!r}"
+    )
+    # and an ordinary row must still get its percentage — the branch must not swallow everyone
+    ordinary = live[(_num(live, "dilution_prelisting_baseline") == 0)
+                    & (_num(live, "dilution_is_corporate_action") == 0)
+                    & (_num(live, "dilution_pct") > 3.0)]
+    assert len(ordinary), "no ordinary-dilution row to check against"
+    t2 = _render_text(ordinary.iloc[0])
+    assert re.search(r"Dilution\s+\d", t2), (
+        f"an ordinary issuance row lost its dilution percentage: {t2[:300]!r}"
+    )
+
+
+def test_every_prelisting_row_has_the_counts_needed_to_explain_itself(live):
+    """The replacement text shows raw share counts; if they are missing the row would fall back
+    to a bare label, so check the data actually supports the explanation."""
+    pre = _num(live, "dilution_prelisting_baseline") == 1
+    have = _num(live, "equity_shares")[pre].notna() & (_num(live, "equity_shares_1yb")[pre] > 0)
+    assert have.mean() > 0.95, (
+        f"only {100*have.mean():.0f}% of pre-listing rows carry both share counts, so the "
+        f"tearsheet would show a bare label instead of the numbers that justify it"
+    )

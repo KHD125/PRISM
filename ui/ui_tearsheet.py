@@ -2015,6 +2015,22 @@ def render_verdict_scorecard(stock: pd.Series):
         _action`), show the raw counts and say so; only ordinary issuance keeps the percentage.
         Mirrors the engine's own flag — never re-derives the 1.5x threshold here.
         """
+        # EXTENDED 2026-09-19 TO THE SECOND ARM. The EPack case above IS a pre-listing baseline,
+        # but until Phase 2 the only rows reaching this branch were those over the 1.5x corporate-
+        # action line. Belrise sits at 1.4857x — UNDER it — so the engine classified it as a
+        # pre-listing baseline (Tier 1, unmeasurable) while this function went on printing
+        # "Dilution 48.6%". Engine and display then said opposite things about the same row, which
+        # is exactly the drift the Fisher module/engine precedent exists to stop. Both arms now
+        # route here, each named for what it actually is, and neither threshold is re-derived.
+        if _v("dilution_prelisting_baseline", 0) == 1:
+            _a, _b = stock.get("equity_shares_1yb"), stock.get("equity_shares")
+            if pd.notna(_a) and pd.notna(_b) and float(_a) > 0:
+                def _cmpct_pl(n):
+                    n = float(n)
+                    return (f"{n/1e7:.1f}Cr" if n >= 1e7 else
+                            f"{n/1e5:.1f}L"  if n >= 1e5 else f"{n:,.0f}")
+                return f"Shares {_cmpct_pl(_a)} → {_cmpct_pl(_b)} (pre-listing baseline)"
+            return "Pre-listing baseline"
         if _v("dilution_is_corporate_action", 0) == 1:
             _a, _b = stock.get("equity_shares_1yb"), stock.get("equity_shares")
             if pd.notna(_a) and pd.notna(_b) and float(_a) > 0:
