@@ -80,17 +80,24 @@ def test_app_download_sig_uses_the_exact_digest_not_the_lossy_sum():
 
 
 # ── The download IS the Cloud-side snapshot (2026-09-02) ─────────────────────────────────────
-def test_stamp_snapshot_prefixes_the_four_provenance_columns():
+def test_stamp_snapshot_prefixes_the_five_provenance_columns():
     """ONE snapshot format for both destinations (the 📥 download in the browser, tools/snapshot.py
-    on disk): vintage · source · engine · scored-day, in front of the untouched frame. The vintage is
-    the identity — a snapshot named by the click date mislabels the data it holds."""
+    on disk): vintage · source · engine · scored-day · scored-MODE, in front of the untouched frame.
+    The vintage is the identity — a snapshot named by the click date mislabels the data it holds.
+
+    scored_mode joined the format on 2026-09-19, the day the default Analysis Mode moved Hybrid ->
+    Breakout: tools/validate.py backs framework boosts OUT of the stored composite to compare
+    weightings, and that arithmetic needs the weights it was built from. This test grew from four
+    columns to five rather than being replaced — the invariant (a fixed provenance prefix in front
+    of an untouched frame) is the same one."""
     from ui.ui_export import stamp_snapshot
     df = pd.DataFrame({"name": ["A"], "composite_score": [50.0]})
     out = stamp_snapshot(df, "2026-08-28", "sheet")
-    assert list(out.columns[:4]) == ["snapshot_vintage", "snapshot_source", "engine_version", "scored_at"]
+    assert list(out.columns[:5]) == ["snapshot_vintage", "snapshot_source", "engine_version",
+                                     "scored_at", "scored_mode"]
     assert out["snapshot_vintage"].iloc[0] == "2026-08-28"
     assert out["snapshot_source"].iloc[0] == "sheet"
-    assert list(out.columns[4:]) == ["name", "composite_score"], "the frame itself must be untouched"
+    assert list(out.columns[5:]) == ["name", "composite_score"], "the frame itself must be untouched"
     assert list(df.columns) == ["name", "composite_score"], "stamping mutated the caller's frame"
     assert stamp_snapshot(df, None, "local")["snapshot_vintage"].iloc[0] == "unknown", (
         "an unknown vintage must say so — never today's date dressed up as the data's date")

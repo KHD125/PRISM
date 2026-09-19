@@ -92,7 +92,7 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS,
                     BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
-                    MASTER_PROFILES, ANALYSIS_MODES, FORENSIC_MAX_FLAGS,
+                    MASTER_PROFILES, ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE, FORENSIC_MAX_FLAGS,
                     FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS)
 
 
@@ -345,7 +345,7 @@ render_hero_banner(compact=True)
 # Reading the widget keys HERE — before the Config tab renders them — is correct and current:
 # Streamlit commits a changed widget's value to session_state BEFORE the rerun starts. Fresh
 # cfg_* keys on purpose: resurrected sessions carrying the old adv_*/_w_* keys are ignored.
-st.session_state.setdefault("cfg_mode", "Hybrid")
+st.session_state.setdefault("cfg_mode", DEFAULT_ANALYSIS_MODE)   # config owns the default (2026-09-19)
 st.session_state.setdefault("cfg_profile", "Balanced")
 # Snap the profile into the active mode's allowed set (a mode change can orphan the profile).
 # Writing a widget's key before the widget instantiates is legal; the selectbox renders the value.
@@ -2589,15 +2589,24 @@ with tabs[4]:
     with _cfg_c1:
         st.selectbox(
             "Analysis Mode", options=list(ANALYSIS_MODES.keys()),
-            format_func=lambda k: ANALYSIS_MODES[k]["label"], key="cfg_mode",
+            # the default is MARKED, not just pre-selected: a reader who changes it should be able
+            # to see what they moved away from without opening config.py
+            format_func=lambda k: (ANALYSIS_MODES[k]["label"]
+                                   + (" · default" if k == DEFAULT_ANALYSIS_MODE else "")),
+            key="cfg_mode",
             help="Blend of the composite — the one control that re-ranks the universe "
-                 "(Hybrid 70/30 · Fundamental 100/0 · Technical 10/90 · Breakout 33/33/33, the "
-                 "forward candidate: quality, momentum AND breakout in equal thirds).",
+                 "(Breakout 33/33/33 quality·momentum·breakout, the default since 2026-09-19 · "
+                 "Hybrid 70/30 · Fundamental 100/0 · Technical 10/90). December's 6-month window "
+                 "reviews the default; see the note in config.ANALYSIS_MODES.",
         )
         st.caption(ANALYSIS_MODES[analysis_mode]["description"])
     with _cfg_c2:
         st.selectbox(
-            "Scoring Profile", options=_allowed_profiles,
+            # RENAMED 2026-09-19 from "Scoring Profile" — measured: switching it changes exactly
+            # THREE columns (qglp_score, qglp_pass, frameworks_passed) and leaves composite_score,
+            # rank and the top-50 identical across all eight profiles. It never profiled the
+            # scoring; the widget KEY stays cfg_profile so no session state is orphaned.
+            "QGLP Screen Profile", options=_allowed_profiles,
             format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
             key="cfg_profile",
             help="Drives the QGLP screen — its gates, fit count and the tearsheet QGLP card. "

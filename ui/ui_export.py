@@ -10,6 +10,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from config import DEFAULT_ANALYSIS_MODE
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -31,20 +33,32 @@ def engine_version() -> str:
         return "unknown"
 
 
-def stamp_snapshot(df: pd.DataFrame, vintage, source) -> pd.DataFrame:
-    """THE ONE snapshot format — four provenance columns in front of the untouched full frame:
+def stamp_snapshot(df: pd.DataFrame, vintage, source, analysis_mode=None) -> pd.DataFrame:
+    """THE ONE snapshot format — five provenance columns in front of the untouched full frame:
 
         snapshot_vintage  the DATA's own date (the sheet's name / the dated CSV drop), or 'unknown'
         snapshot_source   'sheet' | 'upload' | 'local' — the two sources are NOT the same data
         engine_version    which engine scored it (see engine_version)
         scored_at         the day the scoring ran — distinct from the vintage on purpose
+        scored_mode       the Analysis Mode whose weights produced composite_score (2026-09-19)
 
     Used by the sidebar 📥 download (the Cloud-side snapshot) AND tools/snapshot.py (the local
     one), so the archive in Drive and the archive on disk are the same file. The vintage — not
     today's date — is the identity of a snapshot: the data only changes when the sheet is
     refreshed, so two snapshots of one vintage under one engine are identical and a download
-    named by the day it was clicked mislabels it. Pure — never mutates `df`."""
+    named by the day it was clicked mislabels it. Pure — never mutates `df`.
+
+    scored_mode ADDED 2026-09-19, the day the default moved Hybrid -> Breakout. Without it a
+    snapshot is an orphan: tools/validate.py has to BACK OUT the framework boosts to compare
+    weightings, and that arithmetic needs the weights the composite was actually built from —
+    guessing "Hybrid" would silently mis-reconstruct every snapshot taken after the switch.
+    Read from df.attrs["analysis_mode"] (set by run_full_scoring) unless passed explicitly;
+    falls back to the CURRENT default rather than a literal, so it cannot rot. Snapshots taken
+    BEFORE this column existed carry no scored_mode and validate.py reads them as Hybrid, which
+    is what they were."""
     snap = df.copy()
+    _mode = analysis_mode or df.attrs.get("analysis_mode") or DEFAULT_ANALYSIS_MODE
+    snap.insert(0, "scored_mode", str(_mode))
     snap.insert(0, "scored_at", _date.today().isoformat())
     snap.insert(0, "engine_version", engine_version())
     snap.insert(0, "snapshot_source", str(source))

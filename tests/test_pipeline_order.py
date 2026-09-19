@@ -85,4 +85,8 @@ def test_pipeline_defaults_match_run_full_scoring(monkeypatch):
 
     core.run_scoring_pipeline(pd.DataFrame({"name": ["A"]}))
 
-    assert seen == {"mode": "Hybrid", "profile": "Balanced"}
+    # the INVARIANT is "run_scoring_pipeline's defaults reach run_full_scoring unchanged";
+    # the literal was never the point. Repointed 2026-09-19 when the default moved to
+    # config.DEFAULT_ANALYSIS_MODE so the app and the engine cannot drift apart (§6).
+    from config import DEFAULT_ANALYSIS_MODE
+    assert seen == {"mode": DEFAULT_ANALYSIS_MODE, "profile": "Balanced"}

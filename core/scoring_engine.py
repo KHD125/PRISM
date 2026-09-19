@@ -19,7 +19,7 @@ from config import (
     SECTOR_SIGNALS, GOVERNANCE_BONUS, CONVICTION_TIERS, RSI_ZONES, HIGH_AGE_ZONES,
     MCAP_TIERS, GOVERNANCE_RISK_MULTIPLIERS,
     VALUATION_SIGNALS, PEG_ZONES, PAYBACK_ZONES, MEAN_REVERSION, BAID_SELL_TRIGGERS,
-    MASTER_PROFILES, ANALYSIS_MODES,
+    MASTER_PROFILES, ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE,
     REGIME_ADJUSTMENTS, get_adaptive_weights,
     EPOCH2_REINVESTMENT, EPOCH3_TAXONOMY, EPOCH4_SQGLP, EPOCH5_MODERN, EPOCH35_UNUSUAL_BILLIONAIRES,
     COST_OF_EQUITY,
@@ -3301,7 +3301,7 @@ def detect_market_regime(df: pd.DataFrame) -> str:
 
 def run_full_scoring(
     df: pd.DataFrame,
-    analysis_mode: str = "Hybrid",
+    analysis_mode: str = DEFAULT_ANALYSIS_MODE,
     scoring_profile: str = "Balanced"
 ) -> pd.DataFrame:
     """Execute the complete 4-layer adaptive scoring pipeline.
@@ -3322,7 +3322,10 @@ def run_full_scoring(
     # Do NOT call compute_forensic_signals() or run_forensic_analysis() inside this function —
     # forensic signals are already on df from step 1; calling them again would double-compute.
 
-    mode = ANALYSIS_MODES.get(analysis_mode, ANALYSIS_MODES["Hybrid"])
+    # an unknown mode name falls back to the DEFAULT, not to a hardcoded one — otherwise a typo
+    # silently scores under a mode nobody selected and nothing says so.
+    mode = ANALYSIS_MODES.get(analysis_mode, ANALYSIS_MODES[DEFAULT_ANALYSIS_MODE])
+    df.attrs["analysis_mode"] = analysis_mode if analysis_mode in ANALYSIS_MODES else DEFAULT_ANALYSIS_MODE
 
     # ── Step 0: Detect market regime from the data ──
     regime = detect_market_regime(df)

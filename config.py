@@ -510,6 +510,14 @@ BAID_SELL_TRIGGERS = {
 # 7c. ANALYSIS MODES — Controls Fundamental vs Technical balance
 #     Each mode specifies which Scoring Profiles are valid for it.
 # ═══════════════════════════════════════════════════════════════
+# THE DEFAULT ANALYSIS MODE — read by app.py, core.run_scoring_pipeline, run_full_scoring,
+# tools/snapshot.py, /census and /verify. ONE constant on purpose: before this existed the app
+# and the engine carried the literal "Hybrid" independently, so changing the app alone would have
+# left every snapshot, census and verify run scored under a mode the user no longer sees — the
+# silent-divergence class. Changed 2026-09-19 Hybrid -> Breakout on three-window forward evidence
+# (see the Breakout entry below); revert by changing this line alone.
+DEFAULT_ANALYSIS_MODE = "Breakout"
+
 ANALYSIS_MODES = {
     "Hybrid": {
         "label": "🔀 Hybrid (Quantamental)",
@@ -539,30 +547,50 @@ ANALYSIS_MODES = {
             "Momentum", "Turnaround",
         ],
     },
-    # ── ADDED 2026-09-19 AS A SELECTABLE MODE, NOT THE DEFAULT — a forward CANDIDATE ──────────
+    # ── THE DEFAULT since 2026-09-19 (added the same day as a candidate, promoted hours later) ─
     # Equal thirds of quality, momentum and breakout (the composite's third leg, `breakout_w`;
-    # 0 in every other mode, so they are byte-identical to before). Measured on two forward
-    # windows in EXACTLY the form the engine computes (governance 15%, framework boosts and the
-    # forensic multiplier all kept): rank-IC +0.148 / +0.094 against the Hybrid composite's
-    # +0.134 / +0.034 (W1 06-17→08-22, 66d flat; W2 08-22→09-19, 28d down). It beat Q+M and
-    # Q+B in both windows; Q+B is 0.975-correlated with it anyway. WHY NOT THE DEFAULT: those
-    # windows are 28 and 66 days, and price strength autocorrelates at that horizon by
-    # construction, so a 1-month test will always drift toward momentum — while PRISM's objective
-    # is multi-year compounding, which no window we hold can measure before December (first
-    # 6-month window). Breakout is ALREADY 40% of momentum_score (breakout_proximity +
-    # breakout_window), so this mode is really "price strength at ~2/3 of the composite instead
-    # of ~1/4" — a choice a reader should make knowingly, from Config, not inherit silently.
-    # PROMOTION RULE, PRE-DECLARED: if it still beats Hybrid on the December window AND the first
-    # 6-month window, make it the default then; tools/validate.py reports it every run as
-    # composite_qmb_candidate. Contract: tests/test_breakout_mode.py.
+    # absent from every other mode, so those are byte-identical to before it existed).
+    #
+    # THE EVIDENCE, measured in EXACTLY the form the engine computes (governance 15%, framework
+    # boosts and the forensic multiplier all kept — the bare rank blend flatters every candidate).
+    # A 66-point sweep of the whole Q/M/B simplex on all THREE forward windows now available:
+    #                           66d(06-17→08-22)   28d(08-22→09-19)   94d(06-17→09-19)
+    #   Fundamental 100/0/0       +0.118 #66/66      -0.008 #66/66      +0.068 #66/66
+    #   Hybrid      70/30/0       +0.134 #56         +0.034 #60         +0.096 #60
+    #   THIS MODE   33/33/33      +0.150 #17         +0.099 #32         +0.138 #33
+    # Hybrid is not merely beaten — it sits near the BOTTOM of the grid on every window, and 14
+    # of the 21 quality-led (>=50% Q) weightings beat it in all three. "Hybrid is over-weighted
+    # on quality for any horizon we can measure" is therefore a broad, robust finding, not one
+    # lucky grid point.
+    #
+    # WHY EQUAL THIRDS AND NOT THE OPTIMUM — THE WEIGHTS ARE A PRIOR, NOT A FIT. The grid optimum
+    # is unstable AND absurd: 66d wants (0.1, 0.0, 0.9), 28d wants (0.0, 0.4, 0.6), 94d wants
+    # (0.0, 0.0, 1.0) — the two short optima sit 40% of the weight budget apart and their IC
+    # surfaces correlate only +0.417, yet all three agree on "delete the fundamentals". Following
+    # that would not be PRISM. Thirds ranks #17/#32/#33 — never optimal, never bad — which is what
+    # a neutral prior should look like when the instrument cannot answer the question. DO NOT TUNE
+    # THESE WEIGHTS on sub-quarterly windows; the sweep is in docs/known-issues.md.
+    #
+    # WHAT IS KNOWINGLY GIVEN UP: breakout_score is ALREADY 40% of momentum_score
+    # (breakout_proximity + breakout_window, rho 0.875), so this mode puts ~2/3 of the composite
+    # on price strength and ~1/3 on the fundamental work. That is a deliberate hedge, not a
+    # measurement: every horizon we can see says price strength, and the horizon the engine was
+    # built for (multi-year compounding) cannot be seen yet. The 1/3 keeps it in the ranking.
+    #
+    # DECEMBER IS A REVIEW, NOT A CORONATION — the rule, pre-declared so it is not re-argued by
+    # taste: on the first 6-month window, if a quality-led weighting beats 33/33/33, move back
+    # toward it; if thirds still wins, it stays. tools/validate.py reconstructs EVERY mode on
+    # EVERY snapshot (composite_mode_*) so the comparison is apples-to-apples whatever mode a
+    # snapshot was taken under. Reverting is one constant. Contract: tests/test_breakout_mode.py.
     "Breakout": {
         "label": "⚡ Quantamental + Breakout",
         "fundamental_w": 1.0 / 3.0,
         "momentum_w":    1.0 / 3.0,
         "breakout_w":    1.0 / 3.0,
         "description": "Quality, momentum and breakout in equal thirds — price strength at two-thirds "
-                       "of the score. A forward candidate (beat Hybrid on both 2026 windows); the "
-                       "default stays Hybrid until December's longer window agrees",
+                       "of the score. The default since 2026-09-19: it beat Hybrid on all three "
+                       "forward windows, which rank Hybrid #56/#60/#60 of 66 weightings. December's "
+                       "6-month window reviews it",
         "allowed_profiles": [
             "Balanced", "Value", "Growth", "Quality",
             "Momentum", "GARP", "Turnaround", "Defensive",

@@ -35,7 +35,9 @@ def test_scoring_controls_are_plain_config_widgets():
     initialized via setdefault and read from session_state at the top — no on_change callbacks,
     no canonical/mirror keys (the pattern that produced the prod KeyError)."""
     src = _APP.read_text(encoding="utf-8")
-    assert 'st.session_state.setdefault("cfg_mode", "Hybrid")' in src
+    # the default moved to a CONSTANT on 2026-09-19 (config.DEFAULT_ANALYSIS_MODE) so the app,
+    # the engine, snapshots, /census and /verify cannot drift apart — the literal is gone ON PURPOSE
+    assert 'st.session_state.setdefault("cfg_mode", DEFAULT_ANALYSIS_MODE)' in src
     assert 'st.session_state.setdefault("cfg_profile", "Balanced")' in src
     assert 'key="cfg_mode"' in src and 'key="cfg_profile"' in src
     # plain widgets: neither control may wire a callback

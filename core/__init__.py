@@ -10,7 +10,11 @@ from .scoring_engine import run_full_scoring
 from .verdict_engine import compute_verdict
 
 
-def run_scoring_pipeline(clean_df, analysis_mode: str = "Hybrid", scoring_profile: str = "Balanced"):
+from config import DEFAULT_ANALYSIS_MODE
+
+
+def run_scoring_pipeline(clean_df, analysis_mode: str = DEFAULT_ANALYSIS_MODE,
+                         scoring_profile: str = "Balanced"):
     """Canonical 4-step scoring sequence — the ONE locked order (CLAUDE.md §5), never reorder:
 
         1. compute_forensic_signals  → Piotroski + red flags + Schilit (5 framework gates read these)
