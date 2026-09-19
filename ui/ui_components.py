@@ -698,6 +698,7 @@ _RAW_GLOSSARY = {
     "PEG":           "PE divided by growth — a way to judge if the PE is justified by growth. Around 1 is often considered fair.",
     "PEG Zone":      "A simple band (cheap / fair / stretched) based on the PEG ratio.",
     "Earnings Yield":"Profit per share divided by price — the flip side of PE, shown as a % (like an interest rate the earnings 'pay').",
+    "Dividend Yield":"Dividends paid per share over the last 12 months divided by the share price, as a %. A 0 means the company paid no dividend in that window — a statement, not missing data. Read it beside Earnings Yield: a dividend yield at or above the 10-year G-Sec rate (~7%) is rare and is MOSL Study 16's buy signal.",
     "PE vs 10Y Med": "Today's PE versus the stock's own 10-year average PE — is it expensive or cheap against its own history.",
     "EV/EBITDA Dir": "Enterprise value to EBITDA — a debt-aware valuation multiple ('Dir' = taken directly, not proxied).",
     "Payback Ratio": "MOSL payback — the price you pay (market cap) divided by the company's expected cumulative profit over the next 5 years. Below 1× means under ~5 years of earnings covers the price; lower is a faster payback.",

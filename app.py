@@ -630,7 +630,7 @@ with tabs[1]:
                          "governance_bonus","piotroski_fscore","roce","roce_expansion",
                          "roce_inflection","opm","opm_acceleration","cfo_to_pat"],
         "💰 Valuation": ["name","close_price","fair_value_qglp","valuation_score","expected_excess_return",
-                         "pe","pb_ratio","peg","earnings_yield","fcf_yield","market_cap","buy_zone_label"],
+                         "pe","pb_ratio","peg","earnings_yield","dividend_yield","fcf_yield","market_cap","buy_zone_label"],
         "🔬 Forensic":  ["name","red_flag_count","red_flag_list","piotroski_fscore","forensic_score",
                          "forensic_multiplier","cfo_to_pat","accruals_ratio","debt_to_equity",
                          "promoter_holdings","pledged_percentage"],
@@ -789,6 +789,7 @@ with tabs[1]:
         "rsi_14d":         ("RSI",      "%.0f"),
         "dist_52wh":       ("52WH Δ",  "%.1f%%"),
         "earnings_yield":  ("E.Yield",  "%.1f%%"),
+        "dividend_yield":  ("Div Yield", "%.2f%%"),   # Valuation: vendor TTM yield beside E.Yield; 0.00% = does not pay (2026-09-19)
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),
         "rank":            ("Rank",     "%.0f"),

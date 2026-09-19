@@ -1927,6 +1927,25 @@ def render_financial_insights(stock: pd.Series):
         f"government bond yield (currently {INDIA_GSEC_YIELD:.1f}%, config.INDIA_GSEC_YIELD) — "
         f"below that you are taking equity risk for less than a risk-free return.",
     )
+    # MOSL Study 16's buy signal — dividend yield at/above the G-Sec yield — is RARE (p99 of the
+    # live universe is 7.0%), so the row is ✅ only there and ⚪ everywhere else: not paying a
+    # dividend is not a failure and a 2% yield is not a ❌. No yield column (archived vintage) →
+    # no row; a 0 IS a value ("does not pay", TTM) and prints as 0.00%.
+    _dy_ins = stock.get("dividend_yield")
+    if _dy_ins is not None and pd.notna(_dy_ins):
+        _dy_ins = float(_dy_ins)
+        vl += _row(
+            "Dividend Yield",
+            True if _dy_ins >= INDIA_GSEC_YIELD else None,
+            f"{_dy_ins:.2f}%",
+            (f"Study 16 buy signal: ≥{INDIA_GSEC_YIELD:.0f}% (10Y G-Sec)" if _dy_ins > 0
+             else "Does not pay a dividend (last 12 months)"),
+            f"Dividend yield = dividends per share over the last 12 months ÷ price. MOSL's 16th "
+            f"Wealth Creation study: a yield at or above the 10-year G-Sec ({INDIA_GSEC_YIELD:.1f}%, "
+            f"config.INDIA_GSEC_YIELD) is a rare buy signal — the risk-free rate paid in cash while "
+            f"you hold the equity. Below it is simply no signal, never a failure: growth businesses "
+            f"reinvest instead.",
+        )
     if fcf_y > 0:
         vl += _row(
             "FCF Yield",
@@ -2716,6 +2735,7 @@ def render_raw_signals(stock: pd.Series, query: str = ""):
         _cell("PEG",           g("peg"),             "{:.2f}") +
         _cell("PEG Zone",      stock.get("peg_zone","") or "N/A", "") +
         _cell("Earnings Yield",g("earnings_yield"),  "{:.1f}%") +
+        _cell("Dividend Yield",g("dividend_yield", np.nan), "{:.2f}%") +   # vendor TTM yield; NaN default so an absent column reads N/A, never a fabricated 0.00%
         _cell("PE vs 10Y Med", g("pe_discount"),     "{:.1f}%") +
         _cell("EV/EBITDA Dir", g("ev_ebitda_direction"), "{:.2f}") +
         _cell("Payback Ratio", g("payback_ratio"),   "{:.1f}y") +

@@ -114,27 +114,37 @@ def test_documented_epoch2_fire_rate_is_current(live, note):
 
 
 # -- 2. The evidence-fabrication measurement --------------------------------------------
-def test_documented_share_of_flags_resting_on_absent_dpr_is_current(live, note):
-    """The load-bearing claim: most flagged stocks are condemned on a fillna, not on evidence."""
+def test_documented_share_of_flags_resting_on_no_payout_evidence_is_current(live, note):
+    """The load-bearing claim, REDEFINED 2026-09-19: a flag rests on nothing only when
+    dpr_effective is null -- no vendor DPR, and no yield to say "does not pay" or to estimate
+    from. Before the yield arrived this share was 32.3%; it is now under 1%."""
     # Count-agnostic on purpose: the SHARE is the claim being policed, and hardcoding the stock
     # count coupled this pattern to a number that moves with every data refresh.
-    documented = _num(note, r"of them \(([\d.]+)%\)", "share of flags with no DPR")
+    documented = _num(note, r"no payout evidence at all \(([\d.]+)%\)", "share of flags with no payout evidence")
     flagged = live["capital_misallocation_risk"] == 1
     assert flagged.sum() > 0, "nothing is flagged -- the gate died; the comment needs a rewrite"
-    actual = (flagged & live["dividend_payout_ratio"].isna()).sum() / flagged.sum() * 100
-    _close(actual, documented, "share of capital_misallocation_risk flags with NO DPR data")
+    actual = (flagged & live["dpr_effective"].isna()).sum() / flagged.sum() * 100
+    _close(actual, documented, "share of capital_misallocation_risk flags with NO payout evidence")
+    assert actual < 2.0, f"{actual:.1f}% of misallocation flags rest on no payout evidence (was 32.3%)"
 
 
-def test_the_fillna_is_what_manufactures_those_flags(live):
-    """Mechanism, not just correlation: every no-DPR row must sit at RR exactly 1.0, which is the
-    fillna(0) result. If this stops holding, the comment's explanation is wrong even if its
-    percentages still match."""
-    no_dpr = live["dividend_payout_ratio"].isna()
+def test_no_dpr_rows_now_resolve_by_yield_evidence_not_by_fillna(live):
+    """Mechanism, not just correlation (REWRITTEN 2026-09-19 -- the predecessor pinned that every
+    no-DPR row sat at RR exactly 1.0, the fillna(0) result; that was the DEFECT, and it is what the
+    vendor's yield repaired). Now a no-DPR row resolves three ways: yield 0 -> RR 1.0 as EVIDENCE;
+    yield > 0 with a PE -> RR < 1.0 from the TTM estimate; no yield evidence -> the legacy 1.0,
+    on a residual too small to manufacture a fire rate."""
+    dpr = live["dividend_payout_ratio"]
+    dy = pd.to_numeric(live["dividend_yield"], errors="coerce")
+    pe = pd.to_numeric(live["pe"], errors="coerce")
+    rr = pd.to_numeric(live["reinvestment_rate"], errors="coerce")
+    no_dpr = dpr.isna()
     assert no_dpr.sum() > 0, "DPR is fully populated now -- the whole data-gap note is obsolete"
-    assert (live.loc[no_dpr, "reinvestment_rate"] == 1.0).all(), (
-        "a row with missing DPR no longer resolves to RR==1.0; the fillna(0) path changed and the "
-        "comment's account of HOW the flags are manufactured is now wrong"
-    )
+    assert (rr[no_dpr & (dy == 0)] == 1.0).all(), "an evidenced non-payer must read RR 1.0"
+    assert (rr[no_dpr & (dy > 0) & (pe > 0)] < 1.0).all(), "a paying company still reads RR 1.0 -- the fillna is back"
+    residual = no_dpr & live["dpr_effective"].isna()
+    assert residual.mean() < 0.01, f"{residual.sum()} rows have no payout evidence at all (9 on 2026-09-19)"
+    assert (rr[residual] == 1.0).all(), "the legacy path (no evidence -> fillna(0)) must be unchanged for archived vintages"
 
 
 # -- 3. The structural all-clear that must never come back -------------------------------

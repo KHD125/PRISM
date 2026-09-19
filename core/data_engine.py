@@ -73,6 +73,8 @@ RATIO_COLS = {
     "OPM Latest Quarter":   "opm_latest_q",
     "OPM Preceding Year Quarter": "opm_pyq",
     "OPM 1 Year Back":      "opm_1yb",
+    "OPM 3 Years Back":     "opm_3yb",      # true annual LEVEL — moat_tau ladder point (2026-09-19; lag-decay + own-year NPM verified)
+    "OPM 5 Years Back":     "opm_5yb",      # true annual LEVEL — replaces the 5Y-median stand-in as the ladder's oldest point
     # MARGINS — GROSS (annual gpm dropped — gpm_med_5y covers long-run; gpm_latest_q is freshest single signal)
     "GPM Median 5 Years":   "gpm_med_5y",
     "GPM Latest Quarter":   "gpm_latest_q",
@@ -119,6 +121,7 @@ RATIO_COLS = {
     "Inventory Turnover Ratio":             "inventory_turnover",
     "Inventory Turnover Ratio 1 Year Back": "inventory_turnover_1yb",
     "Dividend Payout Ratio":        "dividend_payout_ratio",
+    "Dividend Yield":               "dividend_yield",   # TTM DPS ÷ price, % (2026-09-19). 100% populated; a 0 is a STATEMENT (does not pay) — see dpr_effective
     # HARD GATES
     "Debt To Equity":               "debt_to_equity",
     "Debt To Equity 1 Year Back":   "debt_to_equity_1yb",
@@ -1735,9 +1738,35 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     nfat = np.where(fa > 0, rev / fa, np.nan)
     df["nfat"] = pd.Series(nfat, index=df.index)  # Net Fixed Asset Turnover — Vijay Malik capital-light signal
     npm_decimal = npm_pct / 100.0
-    # Use actual DPR from CSV; fall back to 0.25 (India median) only if unavailable
-    _dpr_raw = df.get("dividend_payout_ratio", pd.Series(np.nan, index=df.index))
-    _dpr_pct = _dpr_raw.fillna(25.0).clip(0, 100)     # DPR in % (e.g. 25.0 = 25%)
+    # ── PAYOUT EVIDENCE (2026-09-19): ONE effective payout series for every consumer ──
+    # The vendor's Dividend Payout Ratio is null on 27.7% of rows (Coal India among them) and
+    # every consumer read that null through its own .fillna as "pays nothing, retains everything".
+    # The vendor's Dividend Yield (TTM DPS ÷ price, 100% populated) settles it in two voices:
+    #   yield == 0         → payout 0: an EVIDENCED non-payer (RR = 1.0 becomes a statement).
+    #   yield  > 0, PE > 0 → payout ≈ yield × PE: an ESTIMATE on the TTM basis. NOT the fiscal-year
+    #                        basis of DPR (DY×PE lands within ±10% of DPR on only 31.6% of rows where
+    #                        both exist — HUL 64 vs 95, ONGC 21 vs 34), so it lives in its OWN column
+    #                        and the vendor column is never back-filled (two bases never share one
+    #                        column — the Phase-1 margin rule). Admitted because consumers use RR as a
+    #                        THRESHOLD: on the 1,736 overlap rows the two routes agree on the side of
+    #                        RR>0.5 / <0.30 / ≥0.60 for 94 / 96 / 93% (median |ΔRR| 0.009) — pinned by
+    #                        tests/test_dividend_yield_and_opm_ladder.py, which withdraws the estimate
+    #                        the day the vendor changes either basis.
+    #   yield  > 0, no PE  → nothing: a payer whose payout cannot be estimated is not guessed at.
+    #   yield  absent      → NaN; each consumer's legacy fallback applies unchanged (archived vintages
+    #                        carry no yield column and Movers re-scores them with this engine).
+    # The OBSERVATION always wins; the yield speaks only where the vendor's DPR is null.
+    _dpr_obs = df.get("dividend_payout_ratio", pd.Series(np.nan, index=df.index))
+    _dy_pay  = _safe_numeric(df.get("dividend_yield", pd.Series(np.nan, index=df.index)))
+    _pe_pay  = _safe_numeric(df.get("pe", pd.Series(np.nan, index=df.index)))
+    df["dpr_from_yield"] = pd.Series(np.where(
+        _dy_pay == 0.0, 0.0,
+        np.where(_dy_pay.notna() & (_pe_pay > 0.0), (_dy_pay * _pe_pay).clip(0.0, 100.0), np.nan),
+    ), index=df.index)
+    df["dpr_effective"] = _dpr_obs.fillna(df["dpr_from_yield"])
+
+    # Use the effective payout; fall back to 0.25 (India median) only if unavailable
+    _dpr_pct = df["dpr_effective"].fillna(25.0).clip(0, 100)     # DPR in % (e.g. 25.0 = 25%)
     dpr_approx = (_dpr_pct / 100.0).values             # decimal for SSGR formula
 
     # Vijay Malik SSGR = NPM × NFAT × (1 - DPR).
@@ -3296,7 +3325,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # KNOWN DATA GAP (2026-06-12 census): the CSV "Dividend Payout Ratio" column is broken at
     # source (96% empty; the rest negative) → the dpr leg cannot pass → flag fires 0 until the
     # sheet formula is fixed. Logic is correct and self-revives when real DPR data arrives.
-    _dpr_bc    = df.get("dividend_payout_ratio", pd.Series(np.nan, index=df.index))
+    _dpr_bc    = df["dpr_effective"]     # payout evidence incl. the yield route (2026-09-19)
     _eq_shares = df.get("equity_shares",         pd.Series(np.nan, index=df.index))
     df["blue_chip_quality_flag"] = (
         (_dpr_bc.fillna(0)          >= 20) &      # Screen 1/2: consistent dividend payout
@@ -3305,17 +3334,21 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (_eq_shares.fillna(0)        >= 5_000_000) # Screen 5: ≥ 5M shares (absolute count)
     ).astype(int)
 
-    # Synthetic dividend yield estimate (DPR × Earnings Yield)
-    # Used when direct dividend yield column is unavailable in CSV.
+    # Synthetic dividend yield estimate (DPR × Earnings Yield). The DIRECT vendor column
+    # (dividend_yield, since 2026-09-19) is what dividend_yield_ratio reads when present; the
+    # synthetic remains the fallback for vintages that carry no yield column. On yield-route rows
+    # the two coincide by construction (DY×PE/100 × 100/PE = DY).
     df["dividend_yield_synthetic"] = np.where(
         df["earnings_yield"].notna() & _dpr_bc.notna(),
         df["earnings_yield"] * (_dpr_bc.fillna(0) / 100.0),
         np.nan
     )
+    _dy_obs_r = _safe_numeric(df.get("dividend_yield", pd.Series(np.nan, index=df.index)))
     df["dividend_yield_ratio"] = np.where(
-        df["dividend_yield_synthetic"].notna(),
-        df["dividend_yield_synthetic"] / INDIA_GSEC_YIELD,    # vs India G-Sec yield (Study 16 buy signal)
-        np.nan
+        _dy_obs_r.notna(),
+        _dy_obs_r / INDIA_GSEC_YIELD,                          # the observation, vs India G-Sec yield (Study 16 buy signal)
+        np.where(df["dividend_yield_synthetic"].notna(),
+                 df["dividend_yield_synthetic"] / INDIA_GSEC_YIELD, np.nan),
     )
 
     # ── Study 15 (2010): UU Investing — Unknown-Unknowable → Known-Knowable Setup ──
@@ -3496,7 +3529,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # the book premium. Lower GAPR = faster payback via compounding.
     # ROE is percentage (25.0 = 25%). RR computed inline — reinvestment_rate is defined later.
     # clip(0.01, 1.0): guards DPR ≥ 100% edge case (avoids divide-by-zero).
-    _gapr_rr = (1.0 - df["dividend_payout_ratio"].fillna(0) / 100.0).clip(0.01, 1.0)
+    _gapr_rr = (1.0 - df["dpr_effective"].fillna(0) / 100.0).clip(0.01, 1.0)
     df["gapr"] = np.where(
         (df["roe"].fillna(0) > 0) & (df["pb_ratio"].fillna(0) > 0),
         df["pb_ratio"].fillna(0) / ((df["roe"].fillna(0) / 100.0) * _gapr_rr),
@@ -3562,49 +3595,46 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # RR = 1 − (DPR/100). High RR = self-funding compounder; low RR = defensive income asset.
     # DPR fillna(0): no dividend data → full retention (conservative for growth companies).
     # clip(0,1): guards against DPR > 100 (data artefacts in some screeners).
-    # PARTIAL DATA GAP — REMEASURED 2026-09-10 on the 2026-09-09 sheet refresh (universe 2,116 →
-    # 2,717; the user's source fixes keep landing and coverage climbed again). The DPR source
-    # column was first repaired in part on 2026-08-22. The 2026-06-12 census note that stood here
-    # described a universe that no longer exists; every one of its four claims was false by the
-    # time it was replaced, which is why it is quoted below rather than quietly deleted (current
-    # measurements at right):
-    #     "96% empty"                              → DPR is 70.9% populated (62.2% on 2026-09-09)
-    #     "RR ≡ 1.0 universe-wide"                 → RR = 1.0 on 60.6%, 928 distinct values
-    #     capital_misallocation_risk "passes for ALL" → fires 40.9%
-    #     flag_epoch2_compounder "INERT/always-pass"  → fires 16.9%
-    # The danger of the old note was not its arithmetic but its conclusion: it told a reader these
-    # gates were inert and therefore safe to ignore. They are live and they move scores.
+    # PARTIAL DATA GAP — REMEASURED 2026-09-19, the day the vendor's Dividend Yield arrived and
+    # `dpr_effective` (defined beside SSGR, above) became the ONE payout series every consumer reads.
+    # History of this note, kept because each predecessor's numbers went false with nothing failing
+    # until tests/test_reinvestment_rate_data_gap.py started parsing them out of the prose:
+    #     2026-06-12  "96% empty" · "RR ≡ 1.0 universe-wide" · misallocation "passes for ALL" · epoch2 "INERT"
+    #     2026-09-10  DPR 70.9% populated · RR = 1.0 on 60.6% · fires 40.9% · 32.3% of flags fabricated
+    # CURRENT (2,717 rows, 2026-09-18 vintage):
+    #     DPR is 72.3% populated — the VENDOR's column, and Coal India is STILL null in it
+    #     dpr_effective is 99.7% populated — the yield closes the hole: 550 nulls became EVIDENCED
+    #     zeros (yield 0 = does not pay), 194 became TTM estimates (yield × PE), 9 stay null
+    #     RR = 1.0 on 53.1% (was 60.6%) with 1,118 distinct values (was 928)
+    #     capital_misallocation_risk fires 40.7% (1,105). 338 of them carry no vendor DPR — but 273
+    #     are evidenced non-payers and 58 sit on the estimate; only 7 flags rest on
+    #     no payout evidence at all (0.6%). That is the fabricated-flag share: 32.3% → 0.6%.
+    #     flag_epoch2_compounder fires 16.7% — five dividend payers lost it (Ksolves, Accelya …)
+    #     because a payer cannot be certified as "retaining ≥60%" on a fillna (unverifiable is
+    #     not passed); blue_chip_quality_flag gained six, Coal India among them.
     #
-    # WHAT IS STILL TRUE. DPR remains missing on 29.1% of rows, and the fillna(0) above reads every
-    # one of those as "pays no dividend, retains everything" — the maximally incriminating reading
-    # of absent evidence. That is the mirror of the "unverifiable is not passed" rule (CLAUDE.md §5):
-    # here a gate CONDEMNS on evidence it does not have. Measured on capital_misallocation_risk,
-    # which applies a 10% quality_score haircut (scoring_engine ~L641):
-    #     1,110 stocks flagged · 358 of them (32.3%) have NO DPR at all, so their "retains >50%" leg
-    #     is fabricated by the fillna; 752 (67.7%) are flagged on real dividend evidence.
-    # THE DEFECT IS SHRINKING, AND THAT IS THE POINT OF REMEASURING: the fabricated share has fallen
-    # 55.4% → 42.9% → 32.3% as DPR coverage rose 53.5% → 62.2% → 70.9% (remeasured on the 2026-09-18
-    # vintage), so real evidence now carries more than two thirds of these flags. The ranking harm
-    # stays small — flagged names carry a 7.05
-    # median 5Y ROCE against 18.52 unflagged and score 15.0 vs 54.4 on quality, so a 10% haircut on
-    # an already-low score reorders little. It is an honesty defect, not a wrong-answers defect.
-    # Sized here so nobody re-derives it.
+    # WHAT IS STILL TRUE. The 9 rows with no payout evidence (1 null yield, 8 payers with no PE)
+    # still go through the fillna(0) below and read "retains everything" — the legacy path, kept
+    # unchanged so archived vintages (no yield column) re-score in Movers exactly as they always
+    # did. It is a 0.3% residual now, not the 27.7% hole it was. The ranking harm was always small
+    # (flagged names carry a far lower 5Y ROCE than unflagged and score far lower on quality, so the
+    # 10% haircut reorders little); the honesty defect is what closed.
     #
-    # NOT FIXED HERE BY DELIBERATE STANDING DECISION (2026-06-14): guards that neutralise
-    # DPR-degenerate signals are rejected — the source column gets fixed instead. That ruling was
-    # made at ~4% DPR coverage; at 70.9% the remaining repair would retire 358 fabricated
-    # condemnations, revive stagnant_cash_cow_flag (RR<0.30, still 0 — see tools/census.py:51,
-    # where it is triaged as genuine rarity), and restore two one-legged gates to real two-leg tests.
-    # Fire rates above are pinned by tests/test_reinvestment_rate_data_gap.py, which FAILS when the
-    # data moves and this comment goes stale again — the failure that this rewrite exists to prevent.
+    # STANDING DECISION (2026-06-14) HONOURED, NOT OVERTURNED: guards that neutralise DPR-degenerate
+    # signals were rejected in favour of fixing the SOURCE — and the source is what got fixed (the
+    # user added the vendor's yield column to the sheet). No guard was added; a second source column
+    # now feeds the same series. tools/census.py's stagnant_cash_cow triage stands (still 0 fires at
+    # 99.7% payout coverage — genuine rarity, not dead-by-data). Fire rates above are pinned by
+    # tests/test_reinvestment_rate_data_gap.py, which FAILS when the data moves and this comment
+    # goes stale again — the failure that this rewrite exists to prevent.
     df["reinvestment_rate"] = (
-        1.0 - (df["dividend_payout_ratio"].fillna(0) / 100.0)
+        1.0 - (df["dpr_effective"].fillna(0) / 100.0)
     ).clip(0.0, 1.0)
 
     # Mayer 100-Bagger companion: Retention Rate as PERCENTAGE (distinct from reinvestment_rate above).
     # retention_rate = 100 - DPR. DPR fillna(0) → full retention assumed for missing dividend data.
     df["retention_rate"] = (
-        100.0 - df.get("dividend_payout_ratio", pd.Series(0.0, index=df.index)).fillna(0.0)
+        100.0 - df["dpr_effective"].fillna(0.0)
     ).clip(0.0, 100.0)
 
     # Identity B (Agent 8): Fundamental Growth Capacity g = ROE × RR.
@@ -3815,8 +3845,12 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # current holding minus its trailing deltas (temp cols, dropped after the tau is read).
     df["roce_tau"] = _kendall_tau_cols(
         df, ["roce_med_10y", "roce_med_7y", "roce_med_5y", "roce_med_3y", "roce_1yb", "roce"])
+    # moat: FIVE true levels since 2026-09-19 — opm_5yb / opm_3yb replaced the 5Y-MEDIAN that stood
+    # in for the missing oldest point (a median is centred ~2.5y back, not a point in time). 10 pairs,
+    # step 1/10; a row lacking opm_5yb (19%) still clears min_pairs on its other 6 pairs (step 1/6).
+    # Contract: tests/test_moat_tau_quantization.py (WEALTH_TAU_CONF's meaning is a function of this list).
     df["moat_tau"] = _kendall_tau_cols(
-        df, ["opm_med_5y", "opm_1yb", "opm", "opm_latest_q"])
+        df, ["opm_5yb", "opm_3yb", "opm_1yb", "opm", "opm_latest_q"])
     df["revenue_tau"] = _kendall_tau_cols(
         df, ["revenue_5yb", "revenue_4yb", "revenue_3yb", "revenue_2yb", "revenue_1yb", "revenue"])
     df["pat_tau"] = _kendall_tau_cols(

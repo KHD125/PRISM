@@ -52,6 +52,7 @@ _SCANNER_HEADER_TIPS = {
     "pb_ratio":               _GLOSSARY["P/B"],
     "peg":                    _GLOSSARY["PEG"],
     "earnings_yield":         _GLOSSARY["Earnings Yield"],
+    "dividend_yield":         _GLOSSARY["Dividend Yield"],
     "fcf_yield":              _GLOSSARY["FCF Yield"],
     "market_cap":             "Total market value of the company's equity (price × shares), in ₹ crore.",
     "close_price":            "Last closing price (₹), as of the most recent data refresh.",

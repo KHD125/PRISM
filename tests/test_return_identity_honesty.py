@@ -24,7 +24,7 @@ Audit findings (2026-08-22, live universe = 2,117):
    percentile (`valuation_residual_rank`, MOD 2) as "cheaper than X% of peers", and
    the Alpha wording is gone.
 
-3. The "Decade Moat Trajectory (Tau)" tile overclaimed: `moat_tau` is a 4-point
+3. The "Decade Moat Trajectory (Tau)" tile overclaimed: `moat_tau` is a 5-point (4 until 2026-09-19)
    OPERATING-MARGIN ladder spanning ~5 years, not returns-on-capital over a decade
    (that description belongs to `roce_tau`). Contract: the tile and its glossary
    entry say what the column actually measures. The tau column itself is untouched —

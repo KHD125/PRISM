@@ -71,6 +71,8 @@ SURFACED_ORPHANS = [
     ("fast_creator_setup",          "fastest-creator setup: mcap<4kCr + PE<10 + PAT CAGR>=35%"),
     ("cyclical_mirage_flag",        "revenue surge with weak 10Y ROCE - growth not backed by capital returns"),
     ("dilution_vampire_flag",       "rev>=30% but ROE<12% funded by equity dilution - value-eroding growth"),
+    # ── 2026-09-19: the vendor's own yield arrived (100% populated; Coal India 6.43 where DPR is null) ──
+    ("dividend_yield",              "vendor TTM dividend yield - 0.00% is a statement (does not pay), NaN default so an absent column reads N/A"),
     ("pledge_rerate_catalyst",      "promoter de-pledging (>10% -> -30% -> near-clean) - re-rating catalyst"),
 ]
 

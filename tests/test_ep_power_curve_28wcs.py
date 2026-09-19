@@ -388,7 +388,8 @@ def _approaching_frame(**over):
         reserves=[500.0], reserves_1yb=[430.0],
         roe=[10.0], roe_1yb=[6.0],                 # EP −10 vs −25.8 → velocity +15.8
         roce=[12.0], roce_1yb=[9.0], roce_2yb=[8.0],
-        opm_med_5y=[8.0], opm_1yb=[9.0], opm=[10.0], opm_latest_q=[11.0],
+        # the moat_tau ladder is FIVE true levels since 2026-09-19 (opm_5yb → opm_latest_q)
+        opm_5yb=[7.0], opm_3yb=[8.0], opm_1yb=[9.0], opm=[10.0], opm_latest_q=[11.0],
     )
     base.update(over)
     return compute_derived_signals(_frame(**base))
@@ -425,7 +426,7 @@ def test_flat_roce_fails_the_capital_efficiency_confirmation():
 
 
 def test_fading_margins_fail_the_margin_confirmation():
-    df = _approaching_frame(opm_med_5y=[12.0], opm_1yb=[11.0], opm=[10.0], opm_latest_q=[9.0])
+    df = _approaching_frame(opm_5yb=[13.0], opm_3yb=[12.0], opm_1yb=[11.0], opm=[10.0], opm_latest_q=[9.0])
     assert int(df["ep_approaching_flag"].iloc[0]) == 0
 
 
@@ -443,7 +444,7 @@ def test_the_two_stages_are_mutually_exclusive():
         roe=[10.0, 20.0, 8.0, 25.0, 11.0, 30.0],
         roe_1yb=[6.0, 15.0, 10.0, 20.0, 7.0, 22.0],
         roce=[12.0] * 6, roce_1yb=[9.0] * 6, roce_2yb=[8.0] * 6,
-        opm_med_5y=[8.0] * 6, opm_1yb=[9.0] * 6, opm=[10.0] * 6, opm_latest_q=[11.0] * 6,
+        opm_5yb=[7.0] * 6, opm_3yb=[8.0] * 6, opm_1yb=[9.0] * 6, opm=[10.0] * 6, opm_latest_q=[11.0] * 6,
     ))
     assert int(((df["ep_approaching_flag"] == 1) & (df["ep_hockey_stick"] == 1)).sum()) == 0
 
