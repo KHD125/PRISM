@@ -278,3 +278,42 @@ def test_returns_since_result_is_held_pending_evidence_not_rejected_as_redundant
         f"the bar, surface it with the IC in the commit message; if it does not, convert this into "
         f"a real rejection WITH that number. Either way, stop deferring."
     )
+
+
+# ── 3. The rebased column earned a scanner surface — pinned the way ROCE Δ was ──────────
+
+def test_opm_acceleration_sits_beside_opm_in_the_quality_view_in_percentage_points():
+    """ADMITTED 2026-09-19 ON MEASUREMENT, the same bar that placed ROCE Δ 2Y beside ROCE: against
+    every column the Quality view already shows, max |rho| is 0.27 (piotroski) and it is +0.086
+    against opm itself; top-50 head overlap with a Quality sort is 0/50; 93% coverage, 2,012
+    distinct values; SCORED at 0.10 of the margin facet; forward-consistent in both windows
+    (+0.074 / +0.112). It had no sortable surface at all. Three things are pinned together because
+    each has failed before: ADJACENCY (a delta is read beside its level — the verdict-beside-its-
+    number rule), UNITS (a difference of two percentages is pp, never %), and the HEADER TIP
+    resolving from the glossary BY VALUE (a source scan passed a wired column as "no tooltip" on
+    2026-09-15; a glossary key with no by-key reference is a dead entry).
+    """
+    import re
+    src = _io.open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
+    i = src.index('"📊 Quality":')
+    lst = re.search(r"\[(.*?)\]", src[i:], re.S).group(1)
+    cols = re.findall(r'"([a-z0-9_]+)"', lst)
+    assert "opm_acceleration" in cols, "opm_acceleration is not in the 📊 Quality preset"
+    assert cols.index("opm_acceleration") == cols.index("opm") + 1, (
+        f"adjacency broken: the OPM delta must sit immediately after the OPM level, got {cols}"
+    )
+    fmt = re.search(r'"opm_acceleration":\s*\(\s*"([^"]+)",\s*"([^"]+)"\s*\)', src)
+    assert fmt, "no display format for opm_acceleration"
+    assert fmt.group(2).endswith("pp"), (
+        f"units rule: a difference of two margins is percentage POINTS, got format {fmt.group(2)!r}"
+    )
+    assert "Δ" in fmt.group(1), f"the header should read as a delta, got {fmt.group(1)!r}"
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    from ui.ui_components import _RAW_GLOSSARY
+    assert _SCANNER_HEADER_TIPS.get("opm_acceleration") == _RAW_GLOSSARY["OPM Δ YoY-Q"], (
+        "the scanner header tip for opm_acceleration does not resolve to the glossary entry — "
+        "the grid and the Reference tab would drift"
+    )
+    assert "same quarter" in _RAW_GLOSSARY["OPM Δ YoY-Q"].lower(), (
+        "the glossary must state the basis (same quarter one year earlier), or the reader assumes an annual comparison"
+    )

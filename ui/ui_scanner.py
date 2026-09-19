@@ -44,6 +44,7 @@ _SCANNER_HEADER_TIPS = {
     "roce_expansion":         _GLOSSARY["ROCE Δ 10Y"],
     "roce_inflection":        _GLOSSARY["ROCE Δ 2Y"],
     "opm":                    _GLOSSARY["OPM"],
+    "opm_acceleration":       _GLOSSARY["OPM Δ YoY-Q"],
     "cfo_to_pat":             _GLOSSARY["CFO/PAT"],
     "valuation_score":        _GLOSSARY["Valuation Scr"],
     "expected_excess_return": "Mauboussin expected-value excess return (%): the probability-weighted upside-versus-downside payoff over the base case.",

@@ -2315,7 +2315,8 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     _listed_badge = ""
     _ld = stock.get("listed_days")
     if _ld is not None and pd.notna(_ld) and float(_ld) < PRELISTING_BASELINE_DAYS:
-        _listed_badge = _badge(f"🆕 Listed {int(float(_ld))}d", COLORS["text_secondary"])
+        _listed_badge = _badge(f"🆕 Listed {int(float(_ld))}d" + help_chip("Recently Listed"),
+                               COLORS["text_secondary"])
 
     # Cyclicality context — a-priori business type (industry tier) + realized 5Y earnings drawdown.
     # NEUTRAL by design: cyclical ≠ bad, it's a holding-regime hint (timing-overlay vs hold-through-

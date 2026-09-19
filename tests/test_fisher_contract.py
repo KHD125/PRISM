@@ -259,16 +259,25 @@ class TestSubGateThresholds:
         )
 
     def test_pricing_power_threshold_0_opm(self):
+        """REPOINTED 2026-09-19. This asserted the literal `opm_acc_fs.fillna(0) >= 0` — the FORM
+        of the expression, not its guarantee — and so it pinned the sentinel bug in place: fillna(0)
+        turned a MISSING margin into a pass (0 >= 0), and 187 rows were credited pricing power on
+        a margin nobody observed after the 2026-09-18 rebasing. The threshold (>= 0) is the
+        contract; the fillna never was. It now also refuses the sentinel's return. Behaviour is
+        pinned separately in tests/test_fisher_pricing_sentinel.py; this stays a structural check
+        to match the rest of this class."""
         block = _fisher_block(_src())
-        # threshold >= 0 for opm_acceleration
-        assert "opm_acc_fs.fillna(0) >= 0" in block, (
-            "OPM acceleration threshold '>= 0' not found in code block"
+        assert "opm_acc_fs >= 0" in block, "OPM acceleration threshold '>= 0' not found in code block"
+        assert "opm_acc_fs.fillna(0) >= 0" not in block, (
+            "the fillna(0) sentinel is back: a missing OPM acceleration would PASS the pricing gate "
+            "(0 >= 0). §5 — unverifiable is not passed."
         )
 
     def test_pricing_power_threshold_0_npm(self):
         block = _fisher_block(_src())
-        assert "npm_acc_fs.fillna(0) >= 0" in block, (
-            "NPM acceleration threshold '>= 0' not found in code block"
+        assert "npm_acc_fs >= 0" in block, "NPM acceleration threshold '>= 0' not found in code block"
+        assert "npm_acc_fs.fillna(0) >= 0" not in block, (
+            "the fillna(0) sentinel is back on NPM — see test_pricing_power_threshold_0_opm"
         )
 
     def test_dilution_column_referenced(self):

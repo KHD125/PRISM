@@ -643,6 +643,7 @@ _RAW_GLOSSARY = {
     "NPM":           "Net Profit Margin — of every ₹100 of sales, how much is left as final profit after all costs and taxes.",
     "NPM 5Y Med":    "The middle (median) net profit margin over 5 years — shows if margins are stable, not a one-off.",
     "OPM":           "Operating Profit Margin — profit from the core business (before interest and tax) per ₹100 of sales.",
+    "OPM Δ YoY-Q":   "Change in operating margin, in percentage points: the latest quarter minus the same quarter one year earlier. Like-for-like quarters cancel seasonality — a quarter measured against an annual figure folds the festive-season swing into a number read as structural, which is what this column did before 2026-09-18. Positive means margins are expanding right now. Scored (0.10 of the margin facet). Blank when the year-ago quarter is missing; never filled from a stale basis.",
     "Malik Score":   "Sanjay Bakshi / Malik quality checklist — how many of 5 financial-strength tests the company passes.",
     "Malik Pass":    "Whether the company clears the full Malik quality checklist.",
     "Malik Label":   "A one-word verdict (Strong / Average / Weak) summarising the Malik quality checklist result.",
@@ -717,7 +718,8 @@ _RAW_GLOSSARY = {
     "Smart Money":   "An accumulation read that blends recent trading volume, institutional (FII/DII) flow, and price strength. Volume is the heaviest input, so it reflects buying interest broadly — not purely institutional money.",
     "Gov Bonus":     "Governance bonus — a score rewarding clean ownership signals (high promoter skin, no pledging, no dilution).",
     "Mgmt Integrity":"A 0-3 read on management trustworthiness from accounting and ownership behaviour.",
-    "Dilution Flag": "Flags whether the company has been issuing lots of new shares (diluting existing holders).",
+    "Dilution Flag": "Flags whether the company has been issuing lots of new shares (diluting existing holders). Two cases are deliberately NOT treated as dilution: a share count that jumps 1.5x or more in a year (a bonus, split, rights issue or IPO re-basing — the share row shows the raw counts and 'restructuring'), and a company listed within the last ~2 years, whose prior-year share count predates listing so the comparison is not a measurement (shown as 'pre-listing baseline'). Both land on the Watch tier: the count moved, so they are never certified zero-dilution, but they are not hard-rejected on a number that is not dilution.",
+    "Recently Listed": "Listed within roughly the last two years. Shown only for young listings, on purpose: the source's listing-age figure is capped for older companies (over 1,100 stocks read the same maximum), so it cannot be used as a general company age. Two things follow. There is little public track record behind the scores. And the prior-year share count predates listing, so the dilution comparison is not a measurement — the share row reads 'pre-listing baseline' instead of a percentage, and the dilution tier is set to Watch, never Clean and never Hard Reject.",
     # ── Technical & Momentum ──
     "CRS 50D":       "Comparative Relative Strength over ~50 days — how the stock's price is doing versus the market, recently.",
     "CRS 26W":       "Relative strength versus the market over ~26 weeks (about 6 months).",

@@ -2910,13 +2910,20 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     rev_3y_fs    = df.get("rev_gr_3y",            _fs_nan)   # Revenue Growth 3Y CAGR (%)
     rev_yoy_fs   = df.get("rev_gr_yoy",           _fs_nan)   # Revenue Growth YoY (%)
     oplev_fs     = df.get("d05_rev_minus_exp_gr",  _fs_nan)   # Rev − Expense growth delta (%)
-    opm_acc_fs   = df.get("opm_acceleration",      _fs_nan)   # OPM vs 1Y back (margin pts)
-    npm_acc_fs   = df.get("npm_acceleration",      _fs_nan)   # NPM vs 1Y back (margin pts)
+    opm_acc_fs   = df.get("opm_acceleration",      _fs_nan)   # OPM: latest qtr vs SAME qtr last year (pp; rebased 2026-09-18)
+    npm_acc_fs   = df.get("npm_acceleration",      _fs_nan)   # NPM: latest qtr vs SAME qtr last year (pp; rebased 2026-09-18)
     dilut_pct_fs = df.get("dilution_pct",          _fs_nan)   # Share count growth YoY (%)
     # 4 sub-gate boolean masks (each 0/1 → fisher_score 0-4)
     _fs_rev_runway  = (rev_3y_fs.fillna(0) >= 12.0) & (rev_yoy_fs.fillna(0) >= 10.0)  # Points 1 & 2: multi-year + current demand runway
     _fs_op_lev      = oplev_fs.fillna(0) >= 2.0                                         # Points 5 & 6: revenue outpacing overhead (2pp threshold)
-    _fs_pricing     = (opm_acc_fs.fillna(0) >= 0) | (npm_acc_fs.fillna(0) >= 0)         # Point 4: OR logic — either margin not declining
+    # Point 4: OR logic — either margin not declining. NO fillna (2026-09-19): a NaN compares False
+    # and can never contribute a pass. The old `.fillna(0) >= 0` let a MISSING margin PASS the gate,
+    # and the spec's rationale ("npm guards this") is false because both accelerations come from the
+    # same vendor row (*_pyq) and go missing together — 187 rows were credited pricing power on a
+    # margin nobody observed after the 2026-09-18 rebasing (87 before it). §5: unverifiable is not
+    # passed. Both NaN → not certified; one NaN → only the real observation counts, so opm NaN with
+    # npm at −8pp is no longer rescued by the sentinel. Pinned by tests/test_fisher_pricing_sentinel.py.
+    _fs_pricing     = (opm_acc_fs >= 0) | (npm_acc_fs >= 0)
     _fs_anti_dilut  = dilut_pct_fs.fillna(999) <= 1.0                                   # Point 13: ≤1% annual share dilution (999 = missing = excluded)
     fw_fisher_scalability = _fs_rev_runway & _fs_op_lev & _fs_pricing & _fs_anti_dilut
     df["fisher_pass"]  = fw_fisher_scalability.astype(int)
