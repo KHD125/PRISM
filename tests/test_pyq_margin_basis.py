@@ -217,54 +217,64 @@ def test_once_listed_days_arrives_the_dilution_arm_must_consult_it(live):
     )
 
 
-def test_returns_since_result_stays_off_screen_it_is_a_50_day_return_renamed(live):
-    """TOMBSTONE — Phase 3 was REJECTED by its own admission census on 2026-09-19. Pinned OUT so
-    nobody re-proposes it (the dilution_vampire / cyclical_mirage / Value-Creation-Velocity
-    pattern: a rejection is only durable if a test holds it).
+def test_returns_since_result_is_held_pending_evidence_not_rejected_as_redundant(live):
+    """CORRECTED 2026-09-19, the same day it was written. The original version of this test pinned
+    returns_since_result OUT as "crs_50d renamed" on a Spearman of +0.784. THAT REASONING WAS
+    WRONG, and the user caught it with a single counter-example (Elantas Beck: 45.23 vs 32).
 
-    THE ARGUMENT FOR IT WAS WRONG, and measurement is what showed it. The case was "every momentum
-    column here is fixed-calendar and straddles the earnings event arbitrarily, so post-earnings
-    drift is invisible to 724 columns". That reasoning collapses because Indian reporting is
-    SYNCHRONISED: 2,259 of 2,691 stocks (84%) sit at a result age of 30-60 days, so "since result"
-    IS a fixed ~50-day window for almost the whole universe. Measured Spearman, 2026-09-18 vintage:
+    Rank correlation is not set overlap, and a screener consumes the HEAD:
 
-        crs_50d +0.784 · rsi_14d +0.761 · ret_vs_n500_3m +0.745 · rs_score +0.706
-        momentum_score +0.689 · breakout_score +0.640 · dist_52wh -0.640
+        Spearman(returns_since_result, crs_50d)  +0.784
+        Pearson on the raw values                +0.051   (different units entirely:
+                                                  a % return vs a 0-100 strength score)
+        top-25 overlap   1/25  ( 4.0%)
+        top-50 overlap   2/50  ( 4.0%)
 
-    Max |rho| 0.784 against a column already on screen, inside the 0.598-0.806 band this codebase
-    has twice called redundant. It also carries a max of +12,181%, so it would need a degenerate
-    guard before it could even be sorted on.
+    Four percent. Hours earlier this same codebase ADMITTED the Breakout sort at rho +0.88 with a
+    20% head overlap, on the argument that the correlation was misleading and the head is what
+    matters. Rejecting this one at a LOWER overlap was two standards for one test. The
+    synchronisation fact stands (83.3% of stocks report inside one 30-day band, source-verified)
+    but it does NOT imply redundancy, because the two columns still pick almost disjoint heads.
 
-    WHAT WOULD REOPEN IT: reporting dates de-synchronising (check the 30-60d concentration), or a
-    forward window showing it beats crs_50d on rank-IC despite the overlap. The column stays
-    MAPPED — it is free, and the measurement should not have to be re-derived — it just stays off
-    every surface.
+    SO WHY IS IT STILL OFF-SCREEN? Because it is UNPROVEN, which is a different and honest reason.
+    It arrived on the 2026-09-18 vintage, so it exists in exactly ONE snapshot; a forward IC needs
+    the column in the EARLY snapshot of a window, and there is no such window yet. It was
+    therefore absent from the 400-column sweep too. Unmeasured is not the same as worthless.
+
+    This test now guards the DEFERRAL, and tells you the moment the deferral can end.
     """
     if not _present(live, "returns_since_result"):
         pytest.skip("returns_since_result absent from this vintage")
-    import numpy as np
-    r = pd.to_numeric(live["returns_since_result"], errors="coerce")
-    ok = r.notna() & pd.to_numeric(live["crs_50d"], errors="coerce").notna()
-    rho = r[ok].rank().corr(pd.to_numeric(live["crs_50d"], errors="coerce")[ok].rank())
-    assert rho > 0.60, (
-        f"returns_since_result is no longer redundant with crs_50d (rho={rho:+.3f}, was +0.784). "
-        f"The rejection rested on that overlap — re-run the admission census, because this may "
-        f"now deserve a surface."
-    )
-    age = pd.to_numeric(live["result_age_days"], errors="coerce")
-    conc = float(((age >= 30) & (age < 60)).mean())
-    assert conc > 0.60, (
-        f"only {100*conc:.0f}% of the universe now sits at a 30-60 day result age (was 84%). "
-        f"Reporting has de-synchronised, so 'since result' may finally be event-time rather than "
-        f"a fixed window — the rejection's premise is gone, re-measure it."
-    )
+
+    # 1. it must not reach a surface while it is unproven — display implies a claim
     surfaces = ""
     for rel in (("app.py",), ("ui", "ui_scanner.py"), ("ui", "ui_tearsheet.py")):
-        p = os.path.join(os.path.dirname(__file__), "..", *rel)
-        if os.path.exists(p):
-            surfaces += _io.open(p, encoding="utf-8").read()
+        pth = os.path.join(os.path.dirname(__file__), "..", *rel)
+        if os.path.exists(pth):
+            surfaces += _io.open(pth, encoding="utf-8").read()
     assert "returns_since_result" not in surfaces, (
-        "returns_since_result reached a UI surface. It was rejected on 2026-09-19 as crs_50d "
-        "renamed (rho +0.784); if that has changed, delete this tombstone with the new census "
-        "attached rather than shipping past it."
+        "returns_since_result reached a UI surface while still unmeasured. It is NOT rejected — "
+        "the redundancy argument against it was refuted (4% head overlap) — but it has never been "
+        "forward-tested. Measure it first, then ship it with the number attached."
+    )
+
+    # 2. THE TRIPWIRE: the day two snapshots carry it, the evidence is obtainable — go get it.
+    import glob
+    import pandas as _pd
+    snap_dir = os.path.join(os.path.dirname(__file__), "..", "Other Resources", "snapshots")
+    if not os.path.isdir(snap_dir):
+        pytest.skip("snapshots are local-only; nothing to check")
+    carrying = 0
+    for f in sorted(glob.glob(os.path.join(snap_dir, "prism_snapshot_*.csv"))):
+        try:
+            head = _pd.read_csv(f, nrows=1)
+        except Exception:
+            continue
+        if "returns_since_result" in head.columns:
+            carrying += 1
+    assert carrying < 2, (
+        f"{carrying} snapshots now carry returns_since_result, so a forward window finally exists "
+        f"and the reason for holding it back is gone. Run tools/validate.py over it: if it clears "
+        f"the bar, surface it with the IC in the commit message; if it does not, convert this into "
+        f"a real rejection WITH that number. Either way, stop deferring."
     )
