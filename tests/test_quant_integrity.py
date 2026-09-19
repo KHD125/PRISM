@@ -1092,3 +1092,48 @@ def test_phase3_cascading_filter_multipliers():
             f"PHASE 3 FAIL: red_flag_count={int(df['red_flag_count'].iloc[i])} → "
             f"composite_score expected {exp_s:.1f} (80×{exp_m}), got {got_s:.2f}."
         )
+
+
+def test_the_050_floor_is_saturated_but_inert():
+    """MEASURED 2026-09-19, and the finding is DO NOT TUNE — recorded so it is not re-discovered
+    and "fixed" at the cost of ~1,000 stocks moving for nothing.
+
+    THE UGLY PART IS REAL. The ladder holds only four values and the bottom one is a floor: 5+
+    flags all collapse to 0.50, which on the live universe is 1,657 stocks (61%) spanning flag
+    counts 5 through 17 — a company with 5 flags is punished exactly like one with 15. And the cut
+    has drifted: red_flag_count sums 28 independent binaries, so ~5 flags is the ARITHMETIC NORM,
+    not an alarm. "5+ = High Risk" was set against a smaller flag set and never moved as flags
+    were added — structurally the same drift as the moat_tau quantization finding.
+
+    THE FIX WOULD ACCOMPLISH NOTHING, WHICH IS WHY IT IS NOT SHIPPED. Everything at the floor is
+    already below every cut that matters: of the 1,657, ZERO reach a post-penalty composite of 55
+    and the single highest is 45.7. Simulating an extended ladder (5-6 .60 | 7-9 .50 | 10+ .40)
+    moved 976 multipliers and ~1,000 composites by >1pt at rank corr 0.978, and changed the tier
+    populations by: >=85 8->8, >=70 31->31, >=55 149->149, >=40 471->511. No decision boundary
+    that anyone acts on moves, and every number in that ladder would have been invented — the
+    threshold-guessing this engine retired.
+
+    THIS PIN IS THE TRIPWIRE FOR WHEN THAT STOPS BEING TRUE. If a stock at the floor ever reaches
+    55, the saturation is no longer inert — it is then deciding a tier, and the ladder deserves
+    the RED-first session plus /census that was deliberately not spent today.
+    """
+    import contextlib as _c, io as _i
+    from core import fetch_and_clean_data, run_scoring_pipeline
+    with _c.redirect_stdout(_i.StringIO()):
+        live = run_scoring_pipeline(fetch_and_clean_data("local").copy())
+    rf = pd.to_numeric(live["red_flag_count"], errors="coerce").fillna(0)
+    comp = pd.to_numeric(live["composite_score"], errors="coerce")
+    mult = pd.to_numeric(live["forensic_multiplier"], errors="coerce")
+
+    at_floor = mult <= 0.5001
+    assert at_floor.sum() > 200, "the 0.50 floor emptied — re-read this note before trusting it"
+    assert rf[at_floor].max() >= 8, "the floor no longer spans a wide flag range"
+
+    top = comp[at_floor].max()
+    assert top < 55.0, (
+        f"a stock at the 0.50 penalty floor now reaches composite {top:.1f}, crossing the 55 cut. "
+        f"The saturation has stopped being inert: 5 flags and 15 flags are still treated "
+        f"identically, and that now decides a conviction tier. Re-open the ladder question with a "
+        f"RED-first session and a /census — the 2026-09-19 measurement that justified leaving it "
+        f"alone no longer holds."
+    )

@@ -217,23 +217,54 @@ def test_once_listed_days_arrives_the_dilution_arm_must_consult_it(live):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "PHASE 3, deliberately not this commit. returns_since_result ARRIVED (99.0% coverage) but a "
-    "new signal ships only after a distribution census and an orthogonality check against the "
-    "momentum family — display + sort first, scored only if a forward window earns it. "
-    "strict=True: this XPASSes and FAILS the day it reaches a surface, so the marker cannot "
-    "outlive the deferral it documents."))
-def test_once_returns_since_result_arrives_it_must_reach_a_surface(live):
-    """A signal nobody can see is orphan #416. PRISM already carries 400+ of those."""
+def test_returns_since_result_stays_off_screen_it_is_a_50_day_return_renamed(live):
+    """TOMBSTONE — Phase 3 was REJECTED by its own admission census on 2026-09-19. Pinned OUT so
+    nobody re-proposes it (the dilution_vampire / cyclical_mirage / Value-Creation-Velocity
+    pattern: a rejection is only durable if a test holds it).
+
+    THE ARGUMENT FOR IT WAS WRONG, and measurement is what showed it. The case was "every momentum
+    column here is fixed-calendar and straddles the earnings event arbitrarily, so post-earnings
+    drift is invisible to 724 columns". That reasoning collapses because Indian reporting is
+    SYNCHRONISED: 2,259 of 2,691 stocks (84%) sit at a result age of 30-60 days, so "since result"
+    IS a fixed ~50-day window for almost the whole universe. Measured Spearman, 2026-09-18 vintage:
+
+        crs_50d +0.784 · rsi_14d +0.761 · ret_vs_n500_3m +0.745 · rs_score +0.706
+        momentum_score +0.689 · breakout_score +0.640 · dist_52wh -0.640
+
+    Max |rho| 0.784 against a column already on screen, inside the 0.598-0.806 band this codebase
+    has twice called redundant. It also carries a max of +12,181%, so it would need a degenerate
+    guard before it could even be sorted on.
+
+    WHAT WOULD REOPEN IT: reporting dates de-synchronising (check the 30-60d concentration), or a
+    forward window showing it beats crs_50d on rank-IC despite the overlap. The column stays
+    MAPPED — it is free, and the measurement should not have to be re-derived — it just stays off
+    every surface.
+    """
     if not _present(live, "returns_since_result"):
-        pytest.skip("returns_since_result not in the source sheet yet — tripwire dormant")
+        pytest.skip("returns_since_result absent from this vintage")
+    import numpy as np
+    r = pd.to_numeric(live["returns_since_result"], errors="coerce")
+    ok = r.notna() & pd.to_numeric(live["crs_50d"], errors="coerce").notna()
+    rho = r[ok].rank().corr(pd.to_numeric(live["crs_50d"], errors="coerce")[ok].rank())
+    assert rho > 0.60, (
+        f"returns_since_result is no longer redundant with crs_50d (rho={rho:+.3f}, was +0.784). "
+        f"The rejection rested on that overlap — re-run the admission census, because this may "
+        f"now deserve a surface."
+    )
+    age = pd.to_numeric(live["result_age_days"], errors="coerce")
+    conc = float(((age >= 30) & (age < 60)).mean())
+    assert conc > 0.60, (
+        f"only {100*conc:.0f}% of the universe now sits at a 30-60 day result age (was 84%). "
+        f"Reporting has de-synchronised, so 'since result' may finally be event-time rather than "
+        f"a fixed window — the rejection's premise is gone, re-measure it."
+    )
     surfaces = ""
     for rel in (("app.py",), ("ui", "ui_scanner.py"), ("ui", "ui_tearsheet.py")):
         p = os.path.join(os.path.dirname(__file__), "..", *rel)
         if os.path.exists(p):
             surfaces += _io.open(p, encoding="utf-8").read()
-    assert "returns_since_result" in surfaces, (
-        "returns_since_result IS NOW AVAILABLE but reaches no UI surface. Run a fire-rate census "
-        "first, then give it a home (Deep Scanner preset column + header tooltip) — display and "
-        "sort only until a forward window says it deserves to be scored."
+    assert "returns_since_result" not in surfaces, (
+        "returns_since_result reached a UI surface. It was rejected on 2026-09-19 as crs_50d "
+        "renamed (rho +0.784); if that has changed, delete this tombstone with the new census "
+        "attached rather than shipping past it."
     )
