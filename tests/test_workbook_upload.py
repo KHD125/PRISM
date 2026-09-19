@@ -146,11 +146,13 @@ def test_local_falls_back_to_the_newest_prism_workbook(tmp_path, monkeypatch):
 
 
 def test_local_takes_the_newest_vintage_in_either_format(tmp_path, monkeypatch):
-    """NEWEST WINS, ACROSS FORMATS — not a format preference. config.py already rules that "if
-    several vintages coexist, take the newest by modification time"; a "CSVs always win" rule
-    would be a second, conflicting one and would serve STALE data the day an old CSV set
-    outranked a fresh workbook. Proven in BOTH directions, because a rule that only holds one
-    way round is not a rule."""
+    """NEWEST WINS, ACROSS FORMATS — not a format preference. This case uses LEGACY UNDATED CSV
+    names ("Prism - Ratio.csv"), the one situation where the clock is the only evidence, so
+    mtime decides (config.newer_vintage). When both sides carry a date in the name the DATE
+    decides instead — tests/test_vintage_resolution.py, added 2026-09-19 after an older
+    workbook copied in later won by mtime. A "CSVs always win" rule would be a second,
+    conflicting one. Proven in BOTH directions, because a rule that only holds one way round
+    is not a rule."""
     import contextlib
 
     import core.data_engine as de

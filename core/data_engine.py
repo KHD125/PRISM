@@ -17,7 +17,8 @@ from config import (CSV_FILES, MCAP_TIERS,
                     FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES, UTILITY_SECTOR_NAMES,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS,
-                    PRELISTING_BASELINE_DAYS)
+                    PRELISTING_BASELINE_DAYS,
+                    _vintage_sort_key, newer_vintage)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
 
 warnings.filterwarnings('ignore')
@@ -360,17 +361,19 @@ def _resolve_local_workbook():
 
     ONE NAMING RULE FOR BOTH FORMATS: the ingestion pipeline names every drop "PRISM …", so this
     matches the same case-insensitive `startswith("prism")` prefix the dated-CSV resolver in
-    config.py already uses — and breaks ties the same way (newest by mtime, then by name, so
-    resolution is deterministic). Anything else in that folder — a watchlist export, a scored
-    CSV, scratch — is ignored, because parsing a stranger's spreadsheet as the universe would be
-    silent and total."""
+    config.py already uses — and ranks the same way: the DATE IN THE NAME first, mtime and name
+    only as tie-breaks (config.vintage_date). Corrected 2026-09-19: ranking by mtime alone let
+    "PRISM 2026-06-29.xlsx", copied in after "PRISM 2026-09-18 Fri.xlsx", become the universe —
+    2,107 stocks served as 2,717 with nothing failing. Anything else in that folder — a
+    watchlist export, a scored CSV, scratch — is ignored, because parsing a stranger's
+    spreadsheet as the universe would be silent and total."""
     try:
         folder = os.path.dirname(CSV_FILES["ratio"])
         cands = [p for p in glob.glob(os.path.join(folder, "*.xlsx"))
                  if os.path.basename(p).lower().startswith("prism")]
         if not cands:
             return None
-        return sorted(cands, key=lambda p: (os.path.getmtime(p), p), reverse=True)[0]
+        return sorted(cands, key=_vintage_sort_key, reverse=True)[0]
     except Exception:
         return None
 
@@ -564,18 +567,18 @@ def load_all_csvs(data_source: str = "local", uploaded_files: dict = None, sheet
         # (184 suite errors; the deployed app was fine because it runs in sheet mode, which is
         # exactly what made the breakage invisible from production).
         #
-        # NEWEST VINTAGE WINS, ACROSS FORMATS — not "CSV first". config.py's resolver already
-        # rules that "if several vintages coexist, take the newest by modification time"; a
-        # format preference would be a second, conflicting rule, and it would serve STALE data
-        # the day an old CSV set outranks a fresh workbook. One rule, one folder.
+        # NEWEST VINTAGE WINS, ACROSS FORMATS — not "CSV first". Same rule as config.py's
+        # resolver: the DATE IN THE NAME decides when both sides carry one, mtime only when a
+        # legacy undated CSV set is the other side (config.newer_vintage). A format preference
+        # would be a second, conflicting rule, and it would serve STALE data the day an old CSV
+        # set outranks a fresh workbook. One rule, one folder.
         #
         # This DELEGATES to the upload branch rather than re-implementing the parse: one workbook
         # path for all three sources, so the §0 tabs-by-name contract and its wrong-tab guard can
         # never drift between them (the same one-definition rule as _xlsx_engine).
         _wb = _resolve_local_workbook()
         _csv = CSV_FILES["ratio"]
-        if _wb is not None and (not os.path.exists(_csv)
-                                or os.path.getmtime(_wb) > os.path.getmtime(_csv)):
+        if _wb is not None and (not os.path.exists(_csv) or newer_vintage(_wb, _csv)):
             print(f"  📘 newest local vintage is a workbook: {os.path.basename(_wb)}")
             return load_all_csvs("upload", uploaded_files={"workbook": _wb})
         for name, (cols,) in sheet_configs.items():

@@ -12,6 +12,51 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+import datetime as _dt
+import re as _re
+
+_VINTAGE_RE = _re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+
+
+def vintage_date(path):
+    """The DATA date stamped in a drop's filename, or None when the name carries none.
+
+    The ingestion pipeline names every drop after its data session — "PRISM 2026-09-18 Fri.xlsx",
+    "PRISM 2026-08-28 Fri - Ratio.csv", and the bare "PRISM 2026-06-29.xlsx" shape — so the
+    vintage is a fact of the NAME. A file's modification time is a fact of when it was last
+    COPIED, which is not the same thing: on 2026-09-19 an older workbook copied into the folder
+    became "newest" by mtime and every local run silently scored June's universe (2,107 stocks)
+    in place of September's (2,717). The legacy "Prism - Ratio.csv" has no date and returns None;
+    an impossible date such as 2026-13-45 also returns None rather than raising — a resolver must
+    never crash on a stranger's filename. Pinned by tests/test_vintage_resolution.py."""
+    m = _VINTAGE_RE.search(os.path.basename(str(path)))
+    if not m:
+        return None
+    try:
+        return _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def _vintage_sort_key(path):
+    """NEWEST VINTAGE WINS: date in the name first, then mtime, then name — so mtime only decides
+    between two copies of the SAME session (a re-fetch) or between undated legacy names."""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = 0.0
+    return (vintage_date(path) or _dt.date.min, mtime, os.path.basename(str(path)))
+
+
+def newer_vintage(a, b):
+    """True when drop `a` carries newer DATA than drop `b`. When both names are dated the dates
+    decide; otherwise the clock is the only evidence and mtime decides (legacy undated CSVs)."""
+    da, db = vintage_date(a), vintage_date(b)
+    if da is not None and db is not None and da != db:
+        return da > db
+    return os.path.getmtime(a) > os.path.getmtime(b)
+
+
 def _get_actual_path(base, folder_name, file_name):
     # Case-insensitive resolution for Linux (Streamlit Cloud).
     # Supports multi-level folder_name (e.g. "Other Resources/CSV Data") — splits on
@@ -33,14 +78,15 @@ def _get_actual_path(base, folder_name, file_name):
             # ingestion pipeline after their data session — "PRISM 2026-08-28 Fri - Ratio.csv"
             # — where the date/day part changes on every refresh but the "PRISM" prefix and
             # the "- <Tab>.csv" suffix are fixed. Match prefix+suffix case-insensitively and,
-            # if several vintages coexist, take the newest by modification time (ties broken
-            # by name, so resolution stays deterministic). The exact legacy name above still
-            # wins when present.
+            # if several vintages coexist, take the newest DATA — the date in the name — with
+            # mtime and then name only as tie-breaks (corrected 2026-09-19: ranking by mtime
+            # let an older drop copied in later win; see vintage_date above). The exact legacy
+            # name above still wins when present.
             tab_suffix = "- " + file_name.lower().split("- ", 1)[-1]   # "- ratio.csv"
             candidates = sorted(
                 (item for low, item in file_map.items()
                  if low.startswith("prism") and low.endswith(tab_suffix)),
-                key=lambda it: (os.path.getmtime(os.path.join(current, it)), it),
+                key=lambda it: _vintage_sort_key(os.path.join(current, it)),
                 reverse=True,
             )
             actual_file = candidates[0] if candidates else file_name
