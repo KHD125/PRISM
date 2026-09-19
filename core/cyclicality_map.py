@@ -15,6 +15,12 @@ Tier codes: A Deep-Cyclical/Commodity · B Cyclical · C Defensive · D Sensitiv
 · E Financials · F Catch-all. classify()'s default tier is B, so a brand-new industry shows the
 runtime '.fillna("F")' value here but becomes B (or its rule tier) after the next regen.
 
+This map is the UNION of the live universe and the vendor's own market-scan industry list, so
+it deliberately contains industries with ZERO live stocks (2026-09-19: 13 of them, twelve
+lenders/insurers plus Music Licensing). They change nothing today and exist so the FIRST stock
+in a new industry is tiered on arrival rather than one regeneration later. A zero-stock entry is
+not dead code — do not prune it.
+
 Regenerate after a data refresh that introduces a new industry (the tools/verify.py
 unmapped-industry invariant trips and names them): run the generator from repo root, commit.
 """
@@ -65,6 +71,9 @@ INDUSTRY_TIER = {
     'Automobiles - Tractors': 'B',
     'Aviation': 'B',
     'Ayurvedic': 'C',
+    'Banks - PSU': 'E',
+    'Banks - Private': 'E',
+    'Banks - Small Finance': 'E',
     'Bearings': 'B',
     'Bio-fuel': 'A',
     'Building Material USA': 'B',
@@ -109,6 +118,7 @@ INDUSTRY_TIER = {
     'Computer - Hardware': 'B',
     'Computer - Peripherals/Accessories': 'B',
     'Computer Education': 'D',
+    'Conglomerate Backed NBFC': 'E',
     'Construction & Contracting': 'B',
     'Construction - Civil/Turnkey': 'B',
     'Construction - Factories/Offices/Commercial': 'B',
@@ -180,14 +190,22 @@ INDUSTRY_TIER = {
     'Fertilisers': 'B',
     'Fertilizers - Nitrogenous/Phosphatic': 'B',
     'Fertilizers - Phosphatic - Single Super Phosphate': 'B',
+    'Finance & Investments - CV Finance': 'E',
+    'Finance & Investments - Gold Loan': 'E',
+    'Finance & Investments - MSME Lending': 'E',
+    'Finance & Investments - Microfinance': 'E',
     'Finance & Investments - Others': 'E',
+    'Finance - AMC': 'E',
     'Finance - Capital Markets': 'E',
     'Finance - Capital Markets - Brokers': 'E',
     'Finance - Capital Markets - RTA': 'E',
     'Finance - Capital Markets - Wealth Management': 'E',
     'Finance - Holding Company': 'E',
     'Finance - Housing': 'E',
+    'Finance - Insurance': 'E',
+    'Finance - Investment Bankers': 'E',
     'Finance - Investment/Others': 'E',
+    'Finance - Non Life Insurance': 'E',
     'Finance - PSU Lending': 'E',
     'Floriculture/Tissue Culture': 'A',
     'Food & Dairy Products': 'C',
@@ -245,6 +263,7 @@ INDUSTRY_TIER = {
     'Mining/Minerals': 'A',
     'Mining/Minerals - Iron Ore': 'A',
     'Miscellaneous': 'F',
+    'Music Licensing': 'B',
     'NBFC - Holding Companies': 'E',
     'NBFC - Others': 'E',
     'New age - Platform - E-Retail': 'D',
