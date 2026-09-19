@@ -37,11 +37,12 @@ def test_subscore_weight_dicts_sum_to_one(name):
 
 @pytest.mark.parametrize("mode", sorted(C.ANALYSIS_MODES))
 def test_analysis_mode_weights_sum_to_one(mode):
-    """Each analysis mode blends fundamental + momentum into the composite; fundamental_w +
-    momentum_w must total 1.0, else every composite computed under that mode is mis-scaled."""
+    """Each analysis mode blends fundamental + momentum (+ breakout, since 2026-09-19 — the third
+    leg, 0 unless a mode carries it) into the composite; the legs must total 1.0, else every
+    composite computed under that mode is mis-scaled."""
     cfg = C.ANALYSIS_MODES[mode]
-    s = cfg["fundamental_w"] + cfg["momentum_w"]
-    assert abs(s - 1.0) < 1e-9, f"{mode}: fundamental_w + momentum_w = {s}, expected 1.0"
+    s = cfg["fundamental_w"] + cfg["momentum_w"] + cfg.get("breakout_w", 0.0)
+    assert abs(s - 1.0) < 1e-9, f"{mode}: fundamental_w + momentum_w + breakout_w = {s}, expected 1.0"
 
 
 # ── MASTER_PROFILES: complete + QGLP base weights normalized ─────────────────

@@ -1099,13 +1099,18 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
 def compute_composite_score(
     df: pd.DataFrame,
     fundamental_w: float = 0.70,
-    momentum_w: float = 0.30
+    momentum_w: float = 0.30,
+    breakout_w: float = 0.0,
 ) -> pd.DataFrame:
     """Final composite score and conviction tier assignment.
     
     Args:
         fundamental_w: Weight for quality/fundamental score (Analysis Mode)
         momentum_w: Weight for momentum score (Analysis Mode)
+        breakout_w: Weight for breakout_score — the THIRD leg (2026-09-19). 0.0 in every mode
+            but "Breakout", and when it is 0.0 the leg is NOT added at all (not multiplied by
+            zero), so the other modes are byte-identical to before and a synthetic frame with
+            no breakout_score column still scores. Pinned by tests/test_breakout_mode.py.
     """
     df = df.copy()
 
@@ -1158,7 +1163,8 @@ def compute_composite_score(
 
     # Governance weight is fixed regardless of analysis mode — set via COMPOSITE_WEIGHTS["governance"] (currently 15%)
     gov_w = COMPOSITE_WEIGHTS.get("governance", 0.15)
-    # Normalize fundamental + momentum to fill remaining 90%
+    # Normalize fundamental + momentum (+ breakout, when the mode carries it) to fill the
+    # remaining 85% — the three mode weights sum to 1, so the legs together fill `scale`.
     scale = 1.0 - gov_w
     fund_scaled = fundamental_w * scale
     mom_scaled  = momentum_w  * scale
@@ -1168,6 +1174,10 @@ def compute_composite_score(
         df["momentum_score"]  * mom_scaled +
         df["governance_bonus"] * gov_w
     )
+    if breakout_w > 0.0:
+        # breakout_score is _safe_clip'd with per-leg fillna(50) upstream, so it arrives 0-100
+        # and NaN-free like the other two legs; no fill here (semantic truth — nothing to fill).
+        df["composite_score"] = df["composite_score"] + df["breakout_score"] * (breakout_w * scale)
 
     # ── SQGLP 100x Engine Integration (Epoch 4 — 19th & 24th WCS) ──
     # Applied FIRST: most stringent multi-condition signal (+15 pts) earns priority before
@@ -3413,7 +3423,9 @@ def run_full_scoring(
     # ── Layer 4: Composite — blend per Analysis Mode ──
     fundamental_w = mode["fundamental_w"]
     momentum_w    = mode["momentum_w"]
-    df = compute_composite_score(df, fundamental_w=fundamental_w, momentum_w=momentum_w)
+    breakout_w    = mode.get("breakout_w", 0.0)      # only the "Breakout" mode carries a third leg
+    df = compute_composite_score(df, fundamental_w=fundamental_w, momentum_w=momentum_w,
+                                 breakout_w=breakout_w)
 
     # ── Tsunami & Catalyst Detection ──
     df = detect_catalysts_and_tsunami(df)

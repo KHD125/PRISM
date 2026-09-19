@@ -539,6 +539,35 @@ ANALYSIS_MODES = {
             "Momentum", "Turnaround",
         ],
     },
+    # ── ADDED 2026-09-19 AS A SELECTABLE MODE, NOT THE DEFAULT — a forward CANDIDATE ──────────
+    # Equal thirds of quality, momentum and breakout (the composite's third leg, `breakout_w`;
+    # 0 in every other mode, so they are byte-identical to before). Measured on two forward
+    # windows in EXACTLY the form the engine computes (governance 15%, framework boosts and the
+    # forensic multiplier all kept): rank-IC +0.148 / +0.094 against the Hybrid composite's
+    # +0.134 / +0.034 (W1 06-17→08-22, 66d flat; W2 08-22→09-19, 28d down). It beat Q+M and
+    # Q+B in both windows; Q+B is 0.975-correlated with it anyway. WHY NOT THE DEFAULT: those
+    # windows are 28 and 66 days, and price strength autocorrelates at that horizon by
+    # construction, so a 1-month test will always drift toward momentum — while PRISM's objective
+    # is multi-year compounding, which no window we hold can measure before December (first
+    # 6-month window). Breakout is ALREADY 40% of momentum_score (breakout_proximity +
+    # breakout_window), so this mode is really "price strength at ~2/3 of the composite instead
+    # of ~1/4" — a choice a reader should make knowingly, from Config, not inherit silently.
+    # PROMOTION RULE, PRE-DECLARED: if it still beats Hybrid on the December window AND the first
+    # 6-month window, make it the default then; tools/validate.py reports it every run as
+    # composite_qmb_candidate. Contract: tests/test_breakout_mode.py.
+    "Breakout": {
+        "label": "⚡ Quantamental + Breakout",
+        "fundamental_w": 1.0 / 3.0,
+        "momentum_w":    1.0 / 3.0,
+        "breakout_w":    1.0 / 3.0,
+        "description": "Quality, momentum and breakout in equal thirds — price strength at two-thirds "
+                       "of the score. A forward candidate (beat Hybrid on both 2026 windows); the "
+                       "default stays Hybrid until December's longer window agrees",
+        "allowed_profiles": [
+            "Balanced", "Value", "Growth", "Quality",
+            "Momentum", "GARP", "Turnaround", "Defensive",
+        ],
+    },
 }
 
 # ═══════════════════════════════════════════════════════════════

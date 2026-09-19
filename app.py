@@ -2590,8 +2590,9 @@ with tabs[4]:
         st.selectbox(
             "Analysis Mode", options=list(ANALYSIS_MODES.keys()),
             format_func=lambda k: ANALYSIS_MODES[k]["label"], key="cfg_mode",
-            help="Fundamental-vs-momentum blend of the composite — the one control that re-ranks "
-                 "the universe (Hybrid 70/30 · Fundamental 100/0 · Technical 10/90).",
+            help="Blend of the composite — the one control that re-ranks the universe "
+                 "(Hybrid 70/30 · Fundamental 100/0 · Technical 10/90 · Breakout 33/33/33, the "
+                 "forward candidate: quality, momentum AND breakout in equal thirds).",
         )
         st.caption(ANALYSIS_MODES[analysis_mode]["description"])
     with _cfg_c2:
@@ -2648,22 +2649,27 @@ with tabs[4]:
     # governance is fixed and F+M fill (1-gov_w), split by analysis mode (from ANALYSIS_MODES — DRY).
     _gov_w  = COMPOSITE_WEIGHTS.get("governance", 0.15)
     _scale  = 1.0 - _gov_w
-    _mode_icon = {"Hybrid": "🧭", "Fundamental": "📊", "Technical": "📈"}
+    _mode_icon = {"Hybrid": "🧭", "Fundamental": "📊", "Technical": "📈", "Breakout": "⚡"}
     _mode_rows = "".join(
         f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;padding:3px 0;'
         f'border-bottom:1px solid rgba(255,255,255,0.04);">'
         f'<span style="color:{COLORS["text_secondary"]};">{_mode_icon.get(_m, "•")} {_m}</span>'
         f'<span style="color:{COLORS["text_muted"]};">Quality '
         f'<strong style="color:{COLORS["purple"]};">{_v["fundamental_w"]*100:.0f}%</strong> : '
-        f'Momentum <strong style="color:{COLORS["orange"]};">{_v["momentum_w"]*100:.0f}%</strong></span></div>'
+        f'Momentum <strong style="color:{COLORS["orange"]};">{_v["momentum_w"]*100:.0f}%</strong>'
+        # the third leg prints ONLY where a mode carries it — a 0% would read as a leg the other
+        # modes have and set to nothing, when in fact they do not have it at all
+        + (f' : Breakout <strong style="color:{COLORS["green"]};">{_v["breakout_w"]*100:.0f}%</strong>'
+           if _v.get("breakout_w", 0.0) > 0.0 else "")
+        + '</span></div>'
         for _m, _v in ANALYSIS_MODES.items()
     )
     _comp_body = (
         f'<div style="font-size:0.82rem;color:{COLORS["text_primary"]};font-weight:700;margin-bottom:4px;">'
-        f'Composite = Quality × F &nbsp;+&nbsp; Momentum × M &nbsp;+&nbsp; '
+        f'Composite = Quality × F &nbsp;+&nbsp; Momentum × M &nbsp;(+&nbsp;Breakout × B)&nbsp;+&nbsp; '
         f'Governance × <span style="color:{COLORS["gold"]};">{_gov_w*100:.0f}%</span></div>'
         f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin-bottom:8px;">'
-        f'Governance is fixed at {_gov_w*100:.0f}%; F and M split the remaining {_scale*100:.0f}% by analysis mode:</div>'
+        f'Governance is fixed at {_gov_w*100:.0f}%; F, M and B (B in the Breakout mode only) split the remaining {_scale*100:.0f}% by analysis mode:</div>'
         f'{_mode_rows}'
         f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin-top:8px;'
         f'border-top:1px solid {COLORS["border"]};padding-top:8px;">'
