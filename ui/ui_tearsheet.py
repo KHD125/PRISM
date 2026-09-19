@@ -14,7 +14,8 @@ import pandas as pd
 import numpy as np
 import html as _html
 from config import (COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS,
-                    FRAMEWORK_CATEGORIES, MASTER_PROFILES, INDIA_GSEC_YIELD, COST_OF_EQUITY)
+                    FRAMEWORK_CATEGORIES, MASTER_PROFILES, INDIA_GSEC_YIELD, COST_OF_EQUITY,
+                    PRELISTING_BASELINE_DAYS)
 # Single source of truth for the "?" help chip lives in ui_components (which owns the .ts-help CSS).
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
@@ -2297,6 +2298,25 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         if _age is not None and pd.notna(_age):
             _stale_badge = _badge(f"⏳ Stale {int(_age)}d", COLORS["orange"])
 
+    # Recently-listed marker. The engine now treats a share-count delta as UNMEASURABLE when the
+    # prior-year count predates listing (core/data_engine._prelisting_baseline), and the share row
+    # above already prints "(pre-listing baseline)" instead of a dilution percentage — but nothing
+    # on the page said WHY, so the effect was visible and its cause was not. This closes that, and
+    # carries its own weight besides: a business listed 74 days ago has no public track record,
+    # whatever its scores say.
+    #
+    # CONDITIONAL, NEVER A RAW COLUMN, AND THAT IS THE WHOLE DESIGN. listed_days is CENSORED at the
+    # top — 1,167 stocks (43%) sit at exactly 3998 — so rendering it as "company age" would be a
+    # lie for nearly half the universe. It is trustworthy only at the young end (min 10 days, a
+    # clean gradient), which is exactly the end this shows. Fires on 15.9% of the universe.
+    #
+    # The bound is IMPORTED, never retyped: re-deriving a threshold in the UI is the drift that
+    # produced the "Dilution 48.6%" contradiction this very card was fixed for.
+    _listed_badge = ""
+    _ld = stock.get("listed_days")
+    if _ld is not None and pd.notna(_ld) and float(_ld) < PRELISTING_BASELINE_DAYS:
+        _listed_badge = _badge(f"🆕 Listed {int(float(_ld))}d", COLORS["text_secondary"])
+
     # Cyclicality context — a-priori business type (industry tier) + realized 5Y earnings drawdown.
     # NEUTRAL by design: cyclical ≠ bad, it's a holding-regime hint (timing-overlay vs hold-through-
     # cycle). NaN-safe: earn-DD appended only when ≥4 of 6 PAT years exist. No threshold, no coloring
@@ -2343,6 +2363,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         _gov_badge +
         _cov_badge +
         _stale_badge +
+        _listed_badge +
         _cyc_badge
     )
 

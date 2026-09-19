@@ -220,3 +220,33 @@ def test_d48_d49_actionable_states_carry_their_glyphs():
     from ui.ui_reference_data import CONCEPT_REFERENCE
     assert [l for l, _ in CONCEPT_REFERENCE["🎯 Breakout Readiness"]] == ["🎯 IMMINENT", "NEAR", "FAR"]
     assert [l for l, _ in CONCEPT_REFERENCE["⚡ Momentum Quality"]] == ["🔥 OVERHEATED", "⚡ HIGH", "WEAK"]
+
+
+def test_breakout_sort_exists_and_its_column_is_visible():
+    """Breakout ↓ was admitted on FORWARD EVIDENCE (2026-09-19), not taste: a full-column IC sweep
+    over both available windows ranked breakout_score the most consistent predictor in the engine
+    (+0.150 then +0.172, best "weaker window" figure of 400 numeric columns, holding through a
+    regime change), against composite_score at rank 88 (+0.134 -> +0.034).
+
+    It also has to satisfy the SORT-BY-VISIBLE doctrine — you cannot order a table by a column the
+    reader cannot see — so this pins both halves together. The rank correlation with
+    momentum_score is +0.88, which looks redundant and is not: the heads barely intersect
+    (top-25 overlap 5/25), the mirror of the Fair Value trap where Pearson said orthogonal while
+    the selected sets overlapped 86%.
+    """
+    import os
+    src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
+    i = src.index("_DS_SORTS = {")
+    block = src[i:i + 2600]
+    assert "Breakout ↓" in block, "the Breakout sort option vanished from _DS_SORTS"
+    assert '("breakout_score", False)' in block, (
+        "Breakout ↓ must map to breakout_score DESCENDING — higher score = closer to breakout, "
+        "and the measured rank-IC is positive in both windows"
+    )
+    # sort-by-visible: the column must appear in a Deep Scanner preset, or the sort is unreachable
+    j = src.index('"📈 Technical":')
+    view = src[j:j + 500]
+    assert "breakout_score" in view, (
+        "breakout_score is sortable but not shown in the Technical view — the sort-by-visible "
+        "doctrine: a reader cannot order a table by a column that is not on it"
+    )

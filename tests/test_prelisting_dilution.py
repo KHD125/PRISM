@@ -275,3 +275,56 @@ def test_every_prelisting_row_has_the_counts_needed_to_explain_itself(live):
         f"only {100*have.mean():.0f}% of pre-listing rows carry both share counts, so the "
         f"tearsheet would show a bare label instead of the numbers that justify it"
     )
+
+
+def test_a_recently_listed_stock_shows_the_listed_badge(live):
+    """The cause of "(pre-listing baseline)" must be visible, not just its effect. Driven through
+    the REAL renderer, and checked in BOTH directions so the badge cannot fire universally."""
+    import re
+    import ui.ui_tearsheet as T
+
+    def _render_text(row):
+        out = []
+
+        class _Rec:
+            def markdown(self, *a, **k):
+                if a:
+                    out.append(str(a[0]))
+
+            def __getattr__(self, _n):
+                return lambda *a, **k: None
+
+        real = T.st
+        try:
+            T.st = _Rec()
+            T.render_stock_hero(row)          # the badge row lives on the hero, not the scorecard
+        finally:
+            T.st = real
+        return re.sub(r"<[^>]+>", " ", " ".join(out))
+
+    ld = _num(live, "listed_days")
+    young = live[ld < PRELISTING_BASELINE_DAYS]
+    old = live[ld >= PRELISTING_BASELINE_DAYS]
+    assert len(young) > 50 and len(old) > 500, "not enough of both kinds to test"
+    assert "Listed" in _render_text(young.iloc[0]), (
+        "a recently listed stock does not say so on the page, so '(pre-listing baseline)' on the "
+        "share row has no visible cause"
+    )
+    assert "Listed" not in _render_text(old.iloc[0]), (
+        "an established company shows the recently-listed badge — listed_days is CENSORED at 3998 "
+        "for 43% of the universe, so it must never be rendered as a general company-age figure"
+    )
+
+
+def test_the_badge_imports_the_bound_instead_of_retyping_it():
+    """Re-deriving a threshold in the UI is the drift that produced the 'Dilution 48.6%'
+    contradiction this card was fixed for."""
+    src = _io.open(os.path.join(os.path.dirname(__file__), "..", "ui", "ui_tearsheet.py"),
+                   encoding="utf-8").read()
+    assert "PRELISTING_BASELINE_DAYS" in src, "the tearsheet no longer imports the shared bound"
+    i = src.find("_listed_badge = \"\"")
+    assert i > 0, "the recently-listed badge vanished"
+    assert "730" not in src[i:i + 600], (
+        "the pre-listing bound is hardcoded beside the badge instead of imported — one definition, "
+        "or the UI and the engine drift apart again"
+    )

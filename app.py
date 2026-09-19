@@ -653,6 +653,26 @@ with tabs[1]:
         # Ascending puts NEGATIVE ages first = results DUE soon (scheduled, not yet declared —
         # the sheet's days_from_result flipped), then the freshest actual reporters. NaN last.
         "🆕 Results ↑": ("result_age_days", True),
+        # Breakout ↓ (2026-09-19): ADMITTED ON FORWARD EVIDENCE, not taste. A full-column IC sweep
+        # over the two available windows (2026-06-17→08-22, 08-22→09-19) ranked breakout_score the
+        # most CONSISTENT predictor in the engine — +0.150 then +0.172 rank-IC, the best "weaker
+        # window" figure of 400 numeric columns, holding through a regime change (W1 flat, W2 a
+        # −2.0% median tape). composite_score by the same measure ranks 88th (+0.134 → +0.034).
+        #
+        # THE RANK CORRELATION SAYS REDUNDANT AND IS WRONG HERE, which is why it was checked the
+        # other way. Spearman(breakout_score, momentum_score) is +0.88 — but a sort is consumed at
+        # the HEAD, and the heads barely intersect: top-25 overlap 5/25 (20%), top-50 15/50 (30%),
+        # against Score ↓ just 1/25 (4%). This is the ⚖️ Fair Value trap inverted — there Pearson
+        # said "orthogonal" while the selected SETS overlapped 86%; here the correlation says
+        # "duplicate" while the visible head is 80% different. Correlation of columns is not
+        # overlap of the rows a user actually reads.
+        #
+        # A SORT, NOT A WEIGHT: two windows (one only 28 days) is nowhere near enough to move a
+        # score, and the momentum columns are structurally favoured at this horizon because
+        # fundamentals barely change inside a month. Ordering what is already on screen is the
+        # proportionate use of that evidence. breakout_score is already a Technical-view column,
+        # so this satisfies the sort-by-visible doctrine without adding an orphan.
+        "🚀 Breakout ↓": ("breakout_score", False),
     }
 
     # ── Control bar ────────────────────────────────────────────────
