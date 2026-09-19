@@ -378,3 +378,49 @@ def test_the_insights_panel_flags_only_the_rare_above_gsec_yield():
     assert mark == "⚪" and "0.00%" in rest, (mark, rest)
     mark, _ = _one_row(_base_stock(), "Dividend Yield")          # no yield in the row at all
     assert mark is None, "an absent yield must not render a row"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# 6. REJECTED, and pinned OUT so it is not re-proposed
+# ═══════════════════════════════════════════════════════════════════════════════════
+def test_npm_3yb_and_5yb_stay_unmapped_because_npm_is_pat_over_revenue(live):
+    """`NPM 3 Years Back` / `NPM 5 Years Back` were offered by the vendor on 2026-09-19 and
+    REJECTED: NPM is PAT / Revenue exactly, and PRISM already maps pat_3yb / pat_5yb /
+    revenue_3yb / revenue_5yb, so the ladder they would enable is buildable today for free (it
+    IS the independent witness in tests/test_moat_tau_quantization.py). Same class as the Days
+    Inventory (365 / inventory_turnover) and Price To Sales (the derived ps_ratio) rejections.
+
+    TWO-SIDED, because a rejection resting on a derivation must fail if the derivation stops
+    holding: the identity is RE-PROVEN on live data here, so if the vendor ever redefines NPM
+    (minority interest, exceptionals) this test fails and the rejection is back up for review
+    rather than silently outliving its reason. The OPM control is what makes the test mean
+    something -- OPM is NOT derivable this way (0.7% within 1%), which is exactly why
+    OPM 3YB/5YB were ACCEPTED on the same day these were turned down."""
+    from data_engine import RATIO_COLS
+    for header in ("NPM 3 Years Back", "NPM 5 Years Back"):
+        assert header not in RATIO_COLS, (
+            f"{header!r} was mapped. It is PAT/Revenue on columns PRISM already carries -- if it "
+            f"is being added, the derivation below must have stopped holding; check that first."
+        )
+    derived = lambda s: pd.Series(
+        np.where(_num(live, f"revenue{s}") > 0,
+                 _num(live, f"pat{s}") / _num(live, f"revenue{s}") * 100.0, np.nan),
+        index=live.index)
+    for col, suffix in (("npm", ""), ("npm_1yb", "_1yb")):
+        v, d = _num(live, col), derived(suffix)
+        m = v.notna() & d.notna() & (d.abs() > 0.01)
+        assert m.sum() > 1500
+        within = (((v[m] / d[m]) - 1.0).abs() < 0.01).mean()
+        assert within > 0.95, (
+            f"{col} is no longer PAT/Revenue ({within:.1%} within 1%, was 98.9/98.6%). The vendor "
+            f"changed its net-profit basis -- the NPM columns may now be worth mapping."
+        )
+    # the control: OPM is NOT derivable this way, which is why its history WAS worth buying
+    v, d = _num(live, "opm"), derived("")
+    m = v.notna() & d.notna() & (d.abs() > 0.01)
+    assert ((((v[m] / d[m]) - 1.0).abs() < 0.01).mean()) < 0.10, (
+        "OPM now equals PAT/Revenue -- the control is dead and this test proves nothing"
+    )
+    # and the ingredients the rejection depends on must still be mapped
+    for c in ("pat_3yb", "pat_5yb", "revenue_3yb", "revenue_5yb"):
+        assert c in live.columns, f"{c} is gone; the NPM ladder is no longer free to build"
