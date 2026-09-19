@@ -16,7 +16,8 @@ from typing import Dict, Tuple, Optional
 from config import (CSV_FILES, MCAP_TIERS,
                     FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES, UTILITY_SECTOR_NAMES,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
-                    EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS)
+                    EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS,
+                    PRELISTING_BASELINE_DAYS)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
 
 warnings.filterwarnings('ignore')
@@ -1049,6 +1050,52 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Expressed in percent to reuse the already-guarded column rather than re-divide (§5).
     _corp_action = shares_valid & (df["dilution_pct"] >= 50.0)
 
+    # ── PRE-LISTING BASELINE: the YoY share delta is UNDEFINED, not small (2026-09-18) ──────────
+    # docs/known-issues.md named the missing listing date as the reason the IPO case "cannot be
+    # built". `listed_days` arrived on the 2026-09-18 vintage, and it does not add an "IPO tier" —
+    # it identifies a MEASUREMENT that was never valid. equity_shares_1yb for a freshly listed
+    # company is its PRE-LISTING share count, so (now − then)/then compares today's public float
+    # against a private shell. Unified Data-Tech carried 5,010 prior shares: an implied prior book
+    # value of ₹155,289/share against a universe median of ₹112. That is a category error, and the
+    # engine was reading it as predatory issuance and HARD-REJECTING on it.
+    #
+    # MEASURED on the 2026-09-18 vintage — the distortion is exactly where the theory puts it:
+    #     listed   0-90d  median share multiple 7.175 · 90-180d 12.042 · 180-270d 8.062
+    #            270-365d 1.370 · 365-455d 1.370 · 455-545d 1.373 · 545-635d 1.023 · >5y 1.000
+    # and the ≥1.10× share collapses 83.1% → 80.0% → 45.7% across the 455/545/635 boundaries.
+    # WHY THERE: equity_shares_1yb is a prior FISCAL-YEAR figure, not a trailing-365-day snapshot.
+    # This vintage sits 537 days after FY2025 closed (31 Mar 2025), so a company listed any time
+    # inside those 537 days has a pre-listing prior-year count — which is precisely the band the
+    # data flags. The boundary is structural, not curve-fitted.
+    #
+    # 730, NOT 545, AND THAT IS DELIBERATE. 537 is correct for THIS vintage only; the gap between
+    # a vintage and the prior fiscal year end runs ~365-730 days depending on where in the year it
+    # is taken, so 730 is the MAXIMUM age such a figure can have and is the only threshold that
+    # holds on every vintage. The cost of the wider bound is bounded and was measured before
+    # choosing it: the 545-730 band holds 99 stocks at a median multiple of 1.014 and 18.7% at
+    # ≥1.5× against a mature baseline of 10.7%, i.e. already near-normal, and it adds only 16
+    # Tier-3 rescues. tests/test_prelisting_dilution.py re-measures that assumption every run and
+    # FAILS if a future vintage pushes the distortion past the threshold.
+    #
+    # TIER 1, NOT TIER 0 — the corporate-action arm's own precedent, for the same reason: the
+    # share count genuinely DID move, we simply cannot interpret the move, so it must never be
+    # certified zero-dilution. Tier 1 clears rf_dilution (needs ≥2) and gate_no_dilution (needs 3)
+    # but still fails the `dilution_flag == 0` pillars (Fisher P13, Outsider CEO pillar S).
+    # dilution_pct itself is left untouched and still displayed — the number is not hidden, its
+    # INTERPRETATION is guarded, exactly as the ≥1.5× arm does.
+    #
+    # WHAT THIS DOES NOT FIX, stated so the known-issues entry is not prematurely closed: it is
+    # the false-REJECT half only. Vodafone Idea (listed 3998d, 1.5176×) is an established company
+    # riding free on the ≥1.5× SIZE arm and is untouched here; separating a bonus from a QIP for a
+    # mature company still needs the pro-rata shape test, which remains open.
+    #
+    # listed_days IS CENSORED AT THE TOP — 1,167 stocks sit at exactly 3998 — so it is trustworthy
+    # for young companies and must NEVER be used as a proxy for company age or maturity.
+    _prelisting_baseline = shares_valid & (
+        pd.to_numeric(df.get("listed_days", pd.Series(np.nan, index=df.index)), errors="coerce")
+        < PRELISTING_BASELINE_DAYS
+    )
+
     df["dilution_flag"] = np.select(
         [
             ~shares_valid,                          # No data → benefit of doubt
@@ -1056,10 +1103,13 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             df["dilution_pct"] <= 3.0,              # ≤3% → ESOP/minor → Watch tier
             df["dilution_pct"] <= 10.0,             # 3-10% → Meaningful → Caution tier
             _corp_action,                           # ≥50% → bonus/split/rights/IPO → not dilution
+            _prelisting_baseline,                   # prior count predates listing → unmeasurable
         ],
-        [0, 0, 1, 2, 1],
+        [0, 0, 1, 2, 1, 1],
         default=3                                   # 10-50% → Predatory QIP → Hard Reject
     )
+    # Mirrored for the UI so no surface re-derives the rule and drifts from it (Fisher precedent).
+    df["dilution_prelisting_baseline"] = _prelisting_baseline.astype(int)
     # Mirrored for the UI so the tearsheet never re-derives this threshold and drifts from it
     # (the Fisher module/engine precedent, commit 7fff308).
     df["dilution_is_corporate_action"] = _corp_action.astype(int)

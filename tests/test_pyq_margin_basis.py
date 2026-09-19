@@ -201,12 +201,6 @@ def test_once_pyq_arrives_the_acceleration_must_be_rebased_onto_it(live, margin)
     )
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "PHASE 2, deliberately not this commit. listed_days ARRIVED on the 2026-09-18 vintage (100% "
-    "coverage), so the stated blocker is already stale — but wiring it moves ~800 stocks' flags "
-    "through rf_dilution -> forensic penalty -> gate_pass -> rank and needs its own RED-first "
-    "session plus a /census. strict=True: the day Phase 2 lands this XPASSes and FAILS, which is "
-    "the signal to delete this marker rather than let a stale deferral rot in place."))
 def test_once_listed_days_arrives_the_dilution_arm_must_consult_it(live):
     """docs/known-issues.md calls the missing listing date the reason the IPO tier cannot be built.
     Once it exists, that justification is stale and the arm has to be revisited."""

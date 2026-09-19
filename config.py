@@ -394,6 +394,16 @@ FORENSIC_PENALTY_TIERS = [
     {"max_flags": None, "multiplier": 0.50, "label": "High Risk"},
 ]
 
+# Below this listing age the YoY share-count delta compares today's public float against a
+# PRE-LISTING share count, so it measures nothing — see the block comment above
+# `_prelisting_baseline` in core/data_engine.py for the measured evidence. NOT a tuned number:
+# `equity_shares_1yb` is a prior FISCAL-YEAR figure whose age runs ~365-730 days depending on
+# where in the year the vintage is taken, and 730 is the maximum, so it is the only bound that
+# holds on every vintage. The 2026-09-18 vintage puts the observed boundary at ~537 days
+# (FY2025 closed 31 Mar 2025); tests/test_prelisting_dilution.py re-measures that each run and
+# fails if a future vintage pushes the distortion past this constant.
+PRELISTING_BASELINE_DAYS = 730
+
 # ── Asymmetric Governance Risk Shield ──
 # Negative ownership signals predict DISASTERS far better than positive signals predict
 # winners (Yes Bank, DHFL, Zee, Manpasand all showed promoter exit / pledge / dilution

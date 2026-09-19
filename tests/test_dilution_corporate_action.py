@@ -105,11 +105,56 @@ def test_verified_corporate_actions_are_not_flagged_as_dilution(live, name, acti
 
 @pytest.mark.parametrize("name,action", sorted(STAYS_DILUTION.items()))
 def test_real_cash_raises_below_the_threshold_stay_flagged(live, name, action):
+    """THE DIRECTION THIS DEFENDS: the >=1.5x SIZE arm must not exonerate a real cash raise sitting
+    just under the threshold. That is the assertion below on dilution_is_corporate_action, and it
+    is unchanged.
+
+    THE TIER ASSERTION WAS SPLIT OUT 2026-09-18 (Phase 2), deliberately and not to go green. A
+    SECOND, independent arm now exists: when the prior-year share count PREDATES LISTING the delta
+    measures a public float against a private shell, so it is unmeasurable rather than small, and
+    the row lands at Tier 1. Belrise is exactly that case — listed 28 May 2025, 478 days at this
+    vintage, so its FY2025 (31 Mar 2025) baseline is pre-IPO. docs/known-issues.md names Belrise's
+    Tier-3 hard reject (0% gate_pass) as THE DEFECT, in the same breath as Vodafone Idea's free
+    pass, so asserting Tier 3 here was pinning the bug in place.
+
+    Nothing was weakened: the size-arm assertion still runs for every carrier, and Belrise's full
+    post-Phase-2 state is pinned exactly in test_belrise_exits_via_the_prelisting_arm below.
+    A carrier that is an ESTABLISHED company's real cash raise under 1.5x would defend the tier
+    half too, but it must be verified against public record like its predecessors were, not picked
+    off a screen — candidates on this vintage include Coforge (1.3247x) and Biocon (1.3574x).
+    """
     if name not in live.index:
         pytest.skip(f"{name} not in this universe snapshot")
     row = live.loc[name]
     assert row["dilution_is_corporate_action"] == 0, f"{name} ({action}) wrongly exonerated"
-    assert row["dilution_flag"] == 3, f"{name} raised real cash ({action}) and must stay Tier 3"
+    if row.get("dilution_prelisting_baseline", 0) == 1:
+        assert row["dilution_flag"] != 3, (
+            f"{name} has a pre-listing baseline, so its delta is unmeasurable — it must not be "
+            f"hard-rejected on it"
+        )
+    else:
+        assert row["dilution_flag"] == 3, f"{name} raised real cash ({action}) and must stay Tier 3"
+
+
+def test_belrise_exits_via_the_prelisting_arm_not_the_size_arm(live):
+    """Pins the exact post-Phase-2 state, so neither arm can quietly absorb the other."""
+    name = "Belrise Industries Ltd"
+    if name not in live.index:
+        pytest.skip(f"{name} not in this universe snapshot")
+    row = live.loc[name]
+    assert row["dilution_is_corporate_action"] == 0, (
+        "Belrise (1.4857x) was exonerated by the >=1.5x SIZE arm — that threshold's lower edge is "
+        "the thing this file exists to defend"
+    )
+    assert row["dilution_prelisting_baseline"] == 1, (
+        "Belrise stopped being recognised as a pre-listing baseline; it listed 28 May 2025 and its "
+        "prior-year share count is its pre-IPO private count"
+    )
+    assert row["dilution_flag"] == 1, (
+        f"expected Tier 1 (the count moved, the move is uninterpretable) — got "
+        f"{row['dilution_flag']}. Tier 0 would certify zero dilution on absent evidence; Tier 3 is "
+        f"the hard reject docs/known-issues.md calls the defect."
+    )
 
 
 # ── 2. The threshold itself ─────────────────────────────────────────────────────────────
