@@ -259,3 +259,54 @@ def test_movers_filters_after_the_diff_not_before():
         "diff under a filtered header"
     )
     assert "compute_movers(_mv_prev" not in _FRAG.replace("compute_movers(_mv_prev", "", 1) or True
+
+
+# ── 7. three defects found by adversarial review AFTER the feature shipped green ───────
+def test_the_scope_line_never_doubles_up_with_a_tab_s_own_empty_state():
+    """DEFECT 1 + 2, found in review 2026-09-20. Both aggregating tabs already own an empty
+    state, and each is MORE specific than anything _mp_group_scope can say: 📈 Sectors names the
+    min-stocks dial, 🏭 Industry's drill-down names the sector that emptied it. Firing as well
+    stacked two info boxes on one condition — and in the drill-down case the second blamed the
+    SIDEBAR for a narrowing the sector picker caused, which is worse than merely redundant."""
+    body = _FRAG[_FRAG.index("def _mp_group_scope("):]
+    body = body[:body.index("\n\n    # ") if "\n\n    # " in body else len(body)]
+    assert "if n_shown == 0:" in body and "return" in body, (
+        "the scope line no longer bows out at zero — it will stack on top of the tab's own, "
+        "more specific, empty state"
+    )
+    # and the guard must come BEFORE the thin branch, or zero still renders a warning
+    assert body.index("if n_shown == 0:") < body.index("_usable = n_shown - n_thin")
+
+
+@pytest.mark.parametrize("claim", [
+    "No stocks currently pass the strict QGLP gates.",
+    "🌊 No tsunami signals in current conditions — all 7 gates must fire simultaneously.",
+])
+def test_no_empty_state_asserts_a_market_wide_fact_about_a_filtered_cohort(claim):
+    """DEFECT 3, the worst of the three. 'No stocks currently pass the strict QGLP gates' is a
+    statement about the MARKET, and with 🎯 on it is simply FALSE — 413 stocks pass it; none of
+    the user's 876 do. An empty state is the one place a reader has nothing else to go on, so it
+    is the worst place to overstate. Each such sentence must now be the market branch of
+    _mp_empty(), never the only branch."""
+    assert claim in _FRAG, "the market-wide sentence vanished; this pin lost its subject"
+    after = _FRAG[_FRAG.index(claim):]
+    before = _FRAG[:_FRAG.index(claim)]
+    assert before.rstrip().endswith("_mp_empty(") or "_mp_empty(" in before[-200:], (
+        f"this empty state is not routed through _mp_empty(), so with the scope on it asserts "
+        f"something false about the whole market: {claim!r}"
+    )
+
+
+def test_every_lens_empty_state_is_scope_aware():
+    """All four lens tabs (Tsunami · QGLP · MOSL · Wealth) — a reader who filtered to 20 stocks
+    must never be told the MARKET is empty."""
+    assert _FRAG.count("st.info(_mp_empty(") == 4, (
+        f"{_FRAG.count('st.info(_mp_empty(')} of 4 lens empty states are scope-aware"
+    )
+    scoped_branches = re.findall(r"filtered stocks", _FRAG)
+    assert len(scoped_branches) >= 4, "a scoped branch does not name the cohort it searched"
+    # case-insensitive on purpose: one of the four says "untick" mid-sentence, and capitalisation
+    # is not the invariant — naming the way back to the market is.
+    assert len(re.findall(r"untick 🎯", _FRAG, re.I)) >= 4, (
+        "a scoped empty state does not tell the reader how to widen back to the market"
+    )

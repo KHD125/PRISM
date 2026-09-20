@@ -1359,6 +1359,17 @@ def _render_market_pulse():
         return (f"Your filters: {len(_mp_df):,} of {len(df):,} stocks."
                 if _mp_scoped else "Market-wide (ignores sidebar filters).")
 
+    def _mp_empty(market, scoped):
+        """Pick the empty-state sentence that is TRUE of the cohort actually searched.
+
+        Found in review 2026-09-20. "No stocks currently pass the strict QGLP gates" is a
+        statement about the MARKET, and with the 🎯 scope on it is simply false — 413 stocks pass
+        it; none of YOUR 876 do. Same for the Tsunami line. An empty state is the one place a
+        reader has nothing else to go on, so it is the worst place to overstate. Both sentences
+        are written out at each site rather than assembled, because a suffix bolted onto a
+        market-wide claim still reads as a market-wide claim."""
+        return scoped if _mp_scoped else market
+
     # THE TWO AGGREGATING TABS NEED ONE NUMBER THE OTHERS DO NOT. 📈 Sectors and 🏭 Industry do
     # not list stocks, they AVERAGE them, and an average over one stock is that stock wearing a
     # group's name. Measured on the live universe: filtering to BUY★ leaves 15 of 59 sectors
@@ -1378,6 +1389,13 @@ def _render_market_pulse():
         The thin rows are still SHOWN — hiding them would answer a question the reader did not
         ask; the warning is what stops a 1-row table reading like a leaderboard."""
         if not _mp_scoped:
+            return
+        # ZERO IS NOT OURS TO REPORT. Both tabs already own an empty state, and each is MORE
+        # specific than anything this helper could say: 📈 Sectors names the min-stocks dial, and
+        # 🏭 Industry's drill-down names the sector that emptied it. Firing as well would stack
+        # two info boxes on one condition — and in the drill-down case the second would blame the
+        # SIDEBAR for a narrowing the sector picker caused, which is worse than redundant.
+        if n_shown == 0:
             return
         # THE BAR IS USABLE GROUPS, NOT ROWS — found in the browser 2026-09-20. The first
         # version warned on `n_shown < 3`, so filtering to 3 stocks in 3 different industries
@@ -1590,7 +1608,10 @@ def _render_market_pulse():
             unsafe_allow_html=True,
         )
         if len(_mp_ts) == 0:
-            st.info("🌊 No tsunami signals in current conditions — all 7 gates must fire simultaneously.")
+            st.info(_mp_empty(
+                "🌊 No tsunami signals in current conditions — all 7 gates must fire simultaneously.",
+                f"🌊 None of your {len(_mp_df):,} filtered stocks is a Tsunami — all 7 gates must fire "
+                f"simultaneously. Untick 🎯 above to scan the whole market."))
         else:
             _ts_undi = int(_mp_ts["tsunami_undiscovered"].sum()) if "tsunami_undiscovered" in _mp_ts.columns else 0
             _ts_avg  = float(_mp_ts["composite_score"].mean())   if "composite_score"      in _mp_ts.columns else 0
@@ -1667,7 +1688,10 @@ def _render_market_pulse():
             unsafe_allow_html=True,
         )
         if len(_mp_qglp) == 0:
-            st.info("No stocks currently pass the strict QGLP gates.")
+            st.info(_mp_empty(
+                "No stocks currently pass the strict QGLP gates.",
+                f"None of your {len(_mp_df):,} filtered stocks passes the strict QGLP gates. "
+                f"Untick 🎯 above to scan the whole market."))
         else:
             _q_total = len(_mp_qglp)
             _mp_qglp, _q_act = _mp_lens_row(_mp_qglp, "qglp")
@@ -1792,8 +1816,12 @@ def _render_market_pulse():
         _m_total = len(_mosl)
         _mosl, _m_act = _mp_lens_row(_mosl, "mosl")
         if _mosl.empty:
-            st.info("No convergence stock matches — loosen the lens filters (🧹 Clear resets them)."
-                    if _m_act else "No stock clears 2 or more MOSL lenses in this universe.")
+            st.info(_mp_empty(
+                "No convergence stock matches — loosen the lens filters (🧹 Clear resets them)."
+                if _m_act else "No stock clears 2 or more MOSL lenses in this universe.",
+                f"No stock clears 2 or more MOSL lenses among your {len(_mp_df):,} filtered stocks"
+                + (" with these lens filters (🧹 Clear resets them)" if _m_act else "")
+                + ". Untick 🎯 above to scan the whole market."))
         else:
             _n4 = int((_mosl["mosl_n"] >= 4).sum())
             st.markdown(f"""
@@ -1883,7 +1911,10 @@ def _render_market_pulse():
             # extra key so the row's 🧹 Clear resets it along with Sector/Cap/Catalyst.
             _wl, _w_act = _mp_lens_row(_wl, "w", extra_keys=("mp_wealth_tier",), with_tier=False)
             if _wl.empty:
-                st.info("No stock in this tier matches the lens filters — 🧹 Clear resets them.")
+                st.info(_mp_empty(
+                    "No stock in this tier matches the lens filters — 🧹 Clear resets them.",
+                    f"No stock in this tier matches, among your {len(_mp_df):,} filtered stocks — "
+                    f"🧹 Clear resets the lens row, or untick 🎯 above to scan the whole market."))
             _wl = _wl.sort_values(["_wt_ord", "wealth_vel_pct"], ascending=[True, False])
             _wt_cols = [c for c in ["wealth_tier", "name", "_warn_txt", "wealth_ep_pct",
                                     "wealth_vel_pct", "moat_tau", "moat_score", "growth_score",
