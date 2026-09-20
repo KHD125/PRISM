@@ -258,7 +258,20 @@ def test_movers_setup_is_one_compact_row_and_the_payoff_is_above_the_fold():
     assert "_mv_ph = st.empty()" in blk and "_mv_ph.status(" in blk, "the phased status is not in a placeholder"
     assert "_mv_ph.empty()" in blk, "the status row is never cleared after success — a dead row above the fold"
     assert '"elapsed": _mv_elapsed' in blk, "the compare time is not handed to the header"
-    assert '_mp_lens_row(df, "mv", extra_keys=("mp_mv_why",))' in blk, "the reason chips are not registered with the lens 🧹"
+    # REPOINTED 2026-09-20 from the literal `_mp_lens_row(df, "mv", ...)`: the Market Pulse
+    # scope checkbox feeds the lens row `_mp_df` (df, or the sidebar cohort when ticked), so
+    # the old string pinned the FRAME ARGUMENT — which was never this test's subject. The
+    # invariant is that the reason chips ride in extra_keys so the row's 🧹 resets them; a
+    # Clear that visibly clears the row and silently leaves another filter running is the
+    # defect this line exists to prevent (§6 stale-test updating).
+    import re as _re
+    _lens = _re.search(r'_mp_lens_row\(\s*(\w+)\s*,\s*"mv"\s*,\s*extra_keys=\(("[^"]+",?\s*)+\)\)', blk)
+    assert _lens, "the Movers lens row is gone, or no longer registers extra_keys"
+    assert "mp_mv_why" in _lens.group(0), "the reason chips are not registered with the lens 🧹"
+    assert _lens.group(1) in ("df", "_mp_df"), (
+        f"the Movers lens row is fed {_lens.group(1)!r} — it must be the full universe or the "
+        f"scope-aware frame, never a frame pre-filtered some other way"
+    )
     assert "if len(_mv_cur_f) < len(df):" in blk, "restrict must run only when the lens narrowed the frame"
     assert "Click **Compare**" in blk, "sanity: the pre-compare hint still exists"
 

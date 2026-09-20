@@ -1316,9 +1316,15 @@ with tabs[2]:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 4: MARKET PULSE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# FRAGMENT (2026-08-29): Market Pulse is market-wide BY DESIGN — it reads the module-level `df`
-# only (verified: zero `filt` reads, zero .attrs reads, mp_* keys consumed nowhere else, no
-# variable assigned here is referenced after the block). Its own controls (mp_sec_*, mp_ind_*,
+# FRAGMENT (2026-08-29): Market Pulse is market-wide BY DEFAULT — it reads the module-level `df`
+# unless the 🎯 scope checkbox is ticked, which points every lens (never the vitals band) at
+# `filt` instead. CORRECTED 2026-09-20: this comment used to say "verified: zero `filt` reads",
+# which the scope control makes false — the read is deliberate, guarded by `0 < len(filt) <
+# len(df)`, and pinned by tests/test_market_pulse_scope.py. The performance claim below is
+# UNAFFECTED: `filt` is computed in the sidebar during the full run, so the fragment only reads
+# an already-built frame and a scope toggle still costs one scoped rerun, not a full one.
+# (mp_* keys are consumed nowhere else, and no variable assigned here is referenced after the
+# block.) Its own controls (mp_sec_*, mp_ind_*,
 # mp_wealth_tier) therefore need no full-script rerun: measured pre-fragment, one in-tab
 # selectbox change cost 951 ms of which ~97% was re-rendering every OTHER tab. @st.fragment
 # scopes those interactions to this tab. Sidebar changes still rerun the full app (fragments
@@ -1326,19 +1332,107 @@ with tabs[2]:
 @st.fragment
 def _render_market_pulse():
 
+    # ══ SCOPE (2026-09-20) — the ONE control that points every lens at the sidebar cohort ══════
+    # Market Pulse has always been market-wide. This makes that a CHOICE instead of a property,
+    # because "which sectors dominate the list I am actually considering" is a real question the
+    # tab could not answer. Default OFF: breadth is what the tab is for, and an opt-in keeps
+    # every existing caption and number byte-identical until asked.
+    #
+    # READ FROM SESSION_STATE BEFORE ANY WIDGET RENDERS — the cfg_mode/archive-id pattern.
+    # Streamlit commits a widget's new value before the rerun, so the checkbox can sit BELOW the
+    # pulse band (where a reader expects a scope control) while the frames above it already
+    # reflect it. Layout never dictates data flow.
+    #
+    # THE GUARD IS `0 < len(filt) < len(df)`, both ends load-bearing: with no sidebar filter
+    # there is nothing to limit to and the control would be furniture (the 🧹 Clear rule), and
+    # with a filter that matched NOTHING "show only my filtered stocks" is a dead screen — the
+    # sidebar already says so in its own words.
+    _mp_narrowed = 0 < len(filt) < len(df)
+    _mp_scoped   = _mp_narrowed and bool(st.session_state.get("mp_use_sidebar", False))
+    _mp_df       = filt if _mp_scoped else df
+
+    def _mp_scope_cap():
+        """The ONE scope sentence every lens caption ends with — one definition, five surfaces.
+        Four captions used to hardcode "Market-wide (ignores sidebar filters)"; with scoping on
+        that sentence contradicts the checkbox directly above it, which is the caption-drift
+        class this app has shipped twice. Derived, never retyped."""
+        return (f"Your filters: {len(_mp_df):,} of {len(df):,} stocks."
+                if _mp_scoped else "Market-wide (ignores sidebar filters).")
+
+    # THE TWO AGGREGATING TABS NEED ONE NUMBER THE OTHERS DO NOT. 📈 Sectors and 🏭 Industry do
+    # not list stocks, they AVERAGE them, and an average over one stock is that stock wearing a
+    # group's name. Measured on the live universe: filtering to BUY★ leaves 15 of 59 sectors
+    # whose "average" IS a single company (Ceramic Products, 68.2, n=1) — and the 🏭 tab has no
+    # min-stocks dial at all, where 32% of industries sit at <=2 stocks even UNFILTERED, rising
+    # to 78% of survivors under BUY★. So the honesty number is printed rather than assumed:
+    # how many groups are shown, and how many of them rest on too few stocks to be a group.
+    # Only when scoped — an unfiltered tab is unchanged, down to the byte.
+    _MP_THIN_N     = 2      # an average over <=2 stocks is a stock, not a group average
+    _MP_MIN_GROUPS = 3      # fewer surviving groups than this is not a ranking, and says so
+
+    def _mp_group_scope(n_shown, n_thin, unit, hint):
+        """Render the scope line for an AGGREGATING tab. One definition, two surfaces.
+
+        Two states, one line: normally a muted caption naming the cohort and the group count;
+        below _MP_MIN_GROUPS an st.info that says it is not a ranking and names BOTH exits.
+        The thin rows are still SHOWN — hiding them would answer a question the reader did not
+        ask; the warning is what stops a 1-row table reading like a leaderboard."""
+        if not _mp_scoped:
+            return
+        # THE BAR IS USABLE GROUPS, NOT ROWS — found in the browser 2026-09-20. The first
+        # version warned on `n_shown < 3`, so filtering to 3 stocks in 3 different industries
+        # printed the ordinary caption over a table whose every "industry average" was one
+        # company. Row count is not the question; a ranking needs groups that are actually
+        # groups. For 📈 Sectors the min-stocks dial already removes the thin ones (n_thin is
+        # 0 at any dial >2), so this reduces to the old rule there and changes nothing.
+        _usable = n_shown - n_thin
+        if _usable < _MP_MIN_GROUPS:
+            _detail = (f"only **{n_shown}** {unit}" if not n_thin else
+                       f"**{n_shown}** {unit}, **{n_thin}** of them resting on ≤{_MP_THIN_N} stocks")
+            st.info(f"⚠️ Your filters leave **{len(_mp_df):,}** stocks and {_detail} — "
+                    f"too few to rank. {hint}")
+            return
+        _t = (f" · <b>{n_thin}</b> of them rest on ≤{_MP_THIN_N} stocks"
+              if n_thin else "")
+        st.markdown(
+            f"<div class='sec-cap'>🎯 Your filters: <b>{len(_mp_df):,}</b> of {len(df):,} stocks "
+            f"· <b>{n_shown}</b> {unit}{_t}</div>", unsafe_allow_html=True)
+
     # ── Pre-compute section datasets ───────────────────────────────
-    _mp_ts   = (df[df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
-                if "tsunami_signal" in df.columns else df.iloc[:0])
-    _mp_qglp = (df[df["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
-                if "qglp_pass" in df.columns else df.iloc[:0])   # market-wide, like the other 4 sections
+    _mp_ts   = (_mp_df[_mp_df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
+                if "tsunami_signal" in _mp_df.columns else _mp_df.iloc[:0])
+    _mp_qglp = (_mp_df[_mp_df["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
+                if "qglp_pass" in _mp_df.columns else _mp_df.iloc[:0])
 
     # ── Market-state Pulse band (breadth-led market vitals — what the tab's name promises) ──────
+    # NEVER SCOPED, and that is a hard rule rather than an oversight: breadth of a shortlist is
+    # not breadth. "87% of my 20 filtered stocks are above their 200DMA" is a statement about the
+    # shortlist, printed in the place a reader goes for the market. The vitals are always the
+    # market; only the lenses below can be narrowed. Pinned.
     render_pulse_band(df)
 
+    # The scope control itself — materialises ONLY when the sidebar is actually narrowing, so an
+    # unfiltered session sees exactly the screen it saw before this existed. st.checkbox, not
+    # st.toggle: ui_discovery already uses three checkboxes for on/off filters and none of the
+    # latter, and a second widget vocabulary for the same job is the "second dialect" the lens
+    # row's own docstring warns against. The COUNT lives in the label — scope a reader cannot
+    # see is scope they will misread.
+    if _mp_narrowed:
+        st.checkbox(
+            f"🎯 Show only my filtered stocks — {len(filt):,} of {len(df):,}",
+            key="mp_use_sidebar",
+            help="Points every lens below at the stocks your sidebar filters kept, instead of "
+                 "the whole market. The vitals band above always stays market-wide — breadth of "
+                 "a shortlist is not breadth. Each tab's own filter row still applies on top.",
+        )
+
     # ── Shared lens filters (2026-08-30): Sector · Wealth Tier · Market Cap · Catalyst ─────
-    # LOCAL to each lens tab (mp_* keys) — the "Market-wide (ignores sidebar filters)" captions
-    # stay true: these slice the LENS's own cohort, they are not the sidebar cascade. The
-    # fragment scopes every control to this tab, so each rerun costs ~nothing.
+    # LOCAL to each lens tab (mp_* keys) — these slice the LENS's own cohort and are NOT the
+    # sidebar cascade; they apply on top of whatever frame the tab was handed. CORRECTED
+    # 2026-09-20: this used to add that the "Market-wide (ignores sidebar filters)" captions
+    # "stay true", which the 🎯 scope checkbox makes conditional — the captions now derive
+    # that sentence from _mp_scope_cap(). The fragment scopes every control to this tab, so
+    # each rerun costs ~nothing.
     _WT_ORDER = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
     _MP_CAP_ORDER = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
     _MP_CATALYSTS = {   # MUST mirror ui_discovery's _CATALYSTS — pinned by test_market_pulse_tabs
@@ -1568,8 +1662,8 @@ def _render_market_pulse():
     # ══ QGLP ═══════════════════════════════════════════════════════
     with _mp_tabs[1]:
         st.markdown(
-            "<div class='sec-cap'>Raamdeo Agrawal's framework: ROCE>15%, PAT growth>15%, "
-            "Promoter>50%, reasonable valuation. Strict gates. Market-wide (ignores sidebar filters).</div>",
+            f"<div class='sec-cap'>Raamdeo Agrawal's framework: ROCE>15%, PAT growth>15%, "
+            f"Promoter>50%, reasonable valuation. Strict gates. {_mp_scope_cap()}</div>",
             unsafe_allow_html=True,
         )
         if len(_mp_qglp) == 0:
@@ -1661,9 +1755,9 @@ def _render_market_pulse():
         _MOSL_LENSES = ["QGLP", "Economic Moat", "Consistent in Volatile", "EP Hockey Stick",
                         "CAP-GAP Compounder", "SQGLP Century Stock", "100x Candidate",
                         "Blue Chip Quality", "MOSL Wealth Creator", "Bruised Blue Chip 29"]
-        _tok = df.get("frameworks_passed", pd.Series("", index=df.index)).fillna("").astype(str).map(
+        _tok = _mp_df.get("frameworks_passed", pd.Series("", index=_mp_df.index)).fillna("").astype(str).map(
             lambda _s: {t.strip() for t in re.split(r"\s*,\s*", _s) if t.strip()})
-        _mosl = df.copy()
+        _mosl = _mp_df.copy()
         _mosl["mosl_n"] = _tok.map(lambda t: sum(1 for m in _MOSL_LENSES if m in t))
         _mosl["mosl_hits"] = _tok.map(lambda t: " · ".join(m for m in _MOSL_LENSES if m in t))
         # >=2 because ONE lens is not convergence -- the tab's whole claim is that independent
@@ -1738,14 +1832,14 @@ def _render_market_pulse():
         # lives in this tab, so the tier a snapshot captures is byte-identical to the tier shown.
         # Grammar, provenance and the four rules: core/verdict_engine.py + tests/test_wealth_tier.py.
         # _WT_ORDER hoisted above the tabs (shared with the lens-filter row).
-        _wt_counts = df["wealth_tier"].value_counts() if "wealth_tier" in df.columns else {}
+        _wt_counts = _mp_df["wealth_tier"].value_counts() if "wealth_tier" in _mp_df.columns else {}
         st.markdown(
             f"<div class='sec-cap'>The <b>wealth-engine tier</b> — three clocks, nothing else: "
             f"<b>EP%</b> (economic profit ÷ reserves = ROE − cost of equity, so a ₹200 Cr and a "
             f"₹2,000 Cr business compare fairly) · <b>Vel%</b> (this year's change in that excess "
             f"return) · <b>tau</b> (the 5-year margin spine). BUY★ = earning, improving, confirmed; "
             f"WATCH★ = the confirmed turnaround (not earning yet, improving with a spine); AVOID = "
-            f"nothing improving — the LEVEL may be fine. Market-wide (ignores sidebar filters).</div>",
+            f"nothing improving — the LEVEL may be fine. {_mp_scope_cap()}</div>",
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -1779,7 +1873,7 @@ def _render_market_pulse():
                               "Filter to these tiers — pick several (BUY★ + BUY, or the two "
                               "WATCH grades together); a stock in ANY of them qualifies. The "
                               "table always sorts strongest tier first, then by Vel%.", _wt_n)
-            _wl = df.copy()
+            _wl = _mp_df.copy()
             _wl["_wt_ord"] = _wl["wealth_tier"].map({t: i for i, t in enumerate(_WT_ORDER)})
             _wl["_warn_txt"] = np.where(_wl["wealth_warn"].fillna(0) == 1, "⚠", "")
             if _wt_pick:
@@ -1836,7 +1930,7 @@ def _render_market_pulse():
         # filtering stocks by it would be equivalent — but it is applied AFTER aggregation anyway,
         # so it stays correct if that ever stops being true rather than silently part-filtering a
         # sector and skewing its averages.
-        _sec_src = df
+        _sec_src = _mp_df
         # MULTI-SELECT + CASCADE (2026-08-30 Phase 2). Each control takes several values (OR
         # within, AND across) and every option list + count is computed from the frame already
         # narrowed by the controls to its left. THE UNITS DIFFER BY FILTER KIND, which is why this
@@ -1845,7 +1939,7 @@ def _render_market_pulse():
         # ROW filter counts SECTORS, because sectors are the rows it hides. Labelling a sector-row
         # filter with a stock count would put two units side by side, the "100% trap" class.
         _c1, _c2, _c3, _c4, _c5, _c6 = st.columns([2.1, 2.4, 1.8, 1.9, 1.5, 1.0])
-        _scf = df                                  # progressively narrowed cascade frame (STOCKS)
+        _scf = _mp_df                              # progressively narrowed cascade frame (STOCKS)
 
         # 1 -- Market-cap tier (re-aggregating; counts = stocks)
         from config import MCAP_TIERS
@@ -1993,6 +2087,10 @@ def _render_market_pulse():
             _keep = set(df.loc[df["sector_capital_phase"].isin(_phase), "sector"].dropna().unique())
             _sec_stats = _sec_stats[_sec_stats.index.isin(_keep)]
 
+        _mp_group_scope(len(_sec_stats),
+                        int((_sec_stats["stocks"] <= _MP_THIN_N).sum()),
+                        f"sectors with ≥{_min_n} stocks",
+                        "Drop **Min stocks / sector** to 1 to see them all, or widen your sidebar filters.")
         if _sec_stats.empty:
             st.info(f"No sector clears these filters at ≥{_min_n} stocks — widen the selection or "
                     f"lower the minimum.")
@@ -2101,8 +2199,8 @@ def _render_market_pulse():
             _IND_KEEP = [c for c in ["industry", "sector", "name", "composite_score",
                                      "quality_score", "momentum_score", "valuation_score",
                                      "gate_pass", "conviction_tier", "market_category",
-                                     "wealth_tier"] if c in df.columns]
-            _ind_src = df[_IND_KEEP].copy()
+                                     "wealth_tier"] if c in _mp_df.columns]
+            _ind_src = _mp_df[_IND_KEEP].copy()
             _ind_src["industry"] = _ind_src["industry"].astype(str).str.strip()
             _ind_src = _ind_src[~_ind_src["industry"].isin(["", "nan", "None"])]
 
@@ -2298,6 +2396,14 @@ def _render_market_pulse():
                                 f"filters — its stocks live inside industries that mostly sit "
                                 f"elsewhere (the ~ rows of their own homes).")
 
+                # Placed AFTER the sector drill-down, which row-filters _ind_stats above: a count
+                # taken before it would overstate what the table actually shows.
+                _mp_group_scope(len(_ind_stats),
+                                int((_ind_stats["stocks"] <= _MP_THIN_N).sum()),
+                                "industries",
+                                "🏭 Industry has no minimum-stocks dial — widen your sidebar filters "
+                                "or read 📈 Sectors instead, which does.")
+
                 # Signal before context — the same invariant tests/test_market_pulse_columns.py pins
                 # for the other tables. Sector names are the widest strings in the frame
                 # ("Infrastructure Developers & Operators"), so the sector goes last.
@@ -2383,9 +2489,9 @@ def _render_market_pulse():
         # data row and ⭐ What matters began ~900px down a 732px viewport. The how-and-why now
         # lives in the ⓘ tooltip on the result header, not in permanent prose.
         st.markdown(
-            "<div class='sec-cap'>What changed since the previous <b>data vintage</b> — the archived copy "
-            "re-scored by this engine, so a move is the company changing, never PRISM. Market-wide; the "
-            "filters narrow the current side.</div>", unsafe_allow_html=True)
+            f"<div class='sec-cap'>What changed since the previous <b>data vintage</b> — the archived copy "
+            f"re-scored by this engine, so a move is the company changing, never PRISM. "
+            f"{_mp_scope_cap()} Filters narrow the current side.</div>", unsafe_allow_html=True)
 
         # ── 1. Archive id: secrets → session (seed-before-instantiate), then READ FROM SESSION
         # STATE before any widget renders. Streamlit commits a changed widget's value to
@@ -2532,7 +2638,11 @@ def _render_market_pulse():
                         # choose which material movers to show (inside material, before its cap;
                         # a kept stock keeps all its reasons); they are registered with the lens
                         # row's 🧹 via extra_keys so one Clear resets both.
-                        _mv_cur_f, _mv_act = _mp_lens_row(df, "mv", extra_keys=("mp_mv_why",))
+                        # SCOPED FRAME IN, restrict() OUT — the sidebar cohort narrows the lens
+                        # row's input, but the RESULT is still filtered after the diff by
+                        # restrict(). Pre-filtering the frames compute_movers() diffs would turn
+                        # every excluded stock into a fake "dropped" row (guarded in ui_movers).
+                        _mv_cur_f, _mv_act = _mp_lens_row(_mp_df, "mv", extra_keys=("mp_mv_why",))
                         if len(_mv_cur_f) < len(df):
                             _mv_res = restrict(_mv_res, _mv_cur_f[_MV_KEY])
                         _mv_rc = reason_counts(_mv_res)

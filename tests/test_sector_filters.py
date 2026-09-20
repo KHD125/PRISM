@@ -62,6 +62,20 @@ from data_engine import (coerce_numeric_columns, compute_derived_signals, load_a
 _APP = os.path.join(os.path.dirname(__file__), "..", "app.py")
 
 
+def _scf_start(src):
+    """Index of the Sectors cascade-frame assignment, found by a NAME-AGNOSTIC regex.
+
+    Two scans below slice the cascade block starting from that line, and both used its exact text
+    as a landmark. On 2026-09-20 the Market Pulse scope checkbox changed the frame it starts from
+    (the full universe, or the sidebar cohort when ticked) and both tests died on 'substring not
+    found' -- while their actual subjects, the units rule and the cascade ORDER, were untouched.
+    The name of the source frame was never what they pinned, so the landmark stopped naming it.
+    """
+    m = re.search(r"^\s*_scf = \w+", src, re.M)
+    assert m, "the Sectors cascade-frame assignment is gone -- these scans lost their anchor"
+    return m.start()
+
+
 @pytest.fixture(scope="module")
 def src():
     return _io.open(_APP, encoding="utf-8").read()
@@ -373,7 +387,7 @@ def test_the_re_aggregating_counts_are_stocks_and_the_row_filter_counts_sectors(
     SECTORS, so its counts come from DE-DUPLICATED (sector, phase) pairs: counting its stocks
     would put '412' beside an option that hides 9 rows."""
     i = src.index('"mp_sec_phase"')
-    block = src[src.index("_scf = df"):i]      # from the cascade frame, so the counts are inside
+    block = src[_scf_start(src):i]             # from the cascade frame, so the counts are inside
     for col in ["market_category", "cyclicality_tier", "wealth_tier"]:
         assert f'_scf["{col}"].astype(str).value_counts()' in block, (
             f"the {col} facet count is no longer a straight stock count"
@@ -420,7 +434,7 @@ def test_the_cascade_narrows_left_to_right(src):
     could be offered as a live pair when the intersection was empty. Column order, cascade order
     and application order are now the same order.
     """
-    block = src[src.index("_scf = df"):src.index('key="mp_sec_minn"')]
+    block = src[_scf_start(src):src.index('key="mp_sec_minn"')]
     assert block.count("_scf[_scf[") == 3, "the three re-aggregating filters no longer all narrow _scf"
     # GUARDED, not merely present: a mutation run put `if False:` above each narrowing line and an
     # existence check stayed green. Whitespace-collapsed so the pin is indentation-agnostic.
