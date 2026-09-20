@@ -275,3 +275,24 @@ def test_removing_the_control_did_not_remove_the_framework():
         "ten MOSL convergence lenses the 🔭 tab counts"
     )
     assert 'df["qglp_pass"]' in src and 'df["qglp_score"]' in src
+
+
+def test_the_profile_carries_no_key_that_nothing_reads():
+    """The profile dict is small enough that every key should have a consumer.
+
+    `forensic_boost` and `priority_cols` were removed 2026-09-20: nothing outside config.py ever
+    read them. get_adaptive_weights COPIED them into its return and no consumer touched the
+    result, and the only other reference in the repo was a test asserting they must exist — a
+    closed loop keeping a fossil alive. forensic_boost was designed to scale forensic
+    sensitivity per profile (0.7-1.8 across the eight); with one profile left its only value was
+    1.0, the identity, so it could not have done anything even once wired.
+    """
+    keys = set(C.MASTER_PROFILES["Balanced"])
+    consumed = {"label", "icon", "description",          # the Config/Deep-Scanner surfaces
+                "quality_w", "growth_w", "longevity_w", "price_w",   # compute_qglp_score
+                "roce_gate", "growth_gate", "peg_gate"}              # qglp_pass + the radar
+    assert keys == consumed, (
+        "MASTER_PROFILES['Balanced'] keys drifted from the consumed set.\n"
+        "  unread (add a consumer or drop it): %s\n"
+        "  missing (something reads it): %s"
+        % (sorted(keys - consumed), sorted(consumed - keys)))

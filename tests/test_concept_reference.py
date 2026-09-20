@@ -200,3 +200,62 @@ def test_soundness_owns_the_layer_name_in_category_headers():
     assert not offenders, (
         f"category headers still name the layer 'Verdict' (it is Soundness on every surface): {offenders}"
     )
+
+
+# ── Analysis Mode ↔ config parity (added 2026-09-20) ─────────────────────────────
+# WHY THESE EXIST: the corpus carried three Analysis Mode entries and said Hybrid was "The
+# all-round default" — false since 2026-09-19, when DEFAULT_ANALYSIS_MODE became "Breakout",
+# which had no entry at all. So the searchable Reference contradicted the ⚙️ Config tab two
+# tabs away, which prints "· default" on the real one. Nothing could see it: the corpus is
+# hand-written prose and nothing compared it to config.
+#
+# WHY NOT JUST RENDER config's OWN TEXT HERE, which would remove the copy entirely: two
+# reasons, and the second is structural. (1) REGISTER — config's description is a CAPTION
+# carrying measurement provenance ("...which rank Hybrid #56/#60/#60 of 66 weightings.
+# December's 6-month window reviews it"); a glossary entry answers "what is this?", and an IC
+# sweep ranking does not belong in one. The same conclusion the 2026-09-20 empty states
+# reached: text written for one surface does not transplant to another. (2) ui_reference_data
+# is PINNED AS PURE DATA with no imports (test_reference_data_is_pure, below), so it cannot
+# read config even if we wanted it to.
+#
+# So the prose stays hand-written and the FACTS are pinned against config instead: every mode
+# is present, and exactly one entry claims default status — the one that holds it.
+
+_MODE_SECTION = "🎛️ Analysis Mode"
+
+
+def _mode_entries():
+    """The (title, definition) pairs of the Analysis Mode section, as data not source text."""
+    assert _MODE_SECTION in CONCEPT_REFERENCE, (
+        "the %r section is gone from CONCEPT_REFERENCE" % _MODE_SECTION)
+    return list(CONCEPT_REFERENCE[_MODE_SECTION])
+
+
+def test_every_analysis_mode_has_a_reference_entry():
+    """A mode a reader can SELECT must be a mode they can LOOK UP.
+
+    The join key is config's own `label`, which the corpus titles already match exactly — so a
+    renamed or added mode fails here instead of silently going undocumented (⚡ Breakout did,
+    for a day, while being the default).
+    """
+    from config import ANALYSIS_MODES
+    titles = {t for t, _ in _mode_entries()}
+    missing = sorted(m["label"] for m in ANALYSIS_MODES.values() if m["label"] not in titles)
+    assert not missing, (
+        "these Analysis Modes are selectable but absent from the Reference: %s" % missing)
+
+
+def test_exactly_one_mode_entry_claims_default_and_it_is_the_real_default():
+    """The claim must track config, in BOTH directions.
+
+    Two-sided on purpose: the failure this pins was not a missing word, it was the word sitting
+    on the WRONG mode. Asserting only "the default mode says default" would still pass with
+    Hybrid's stale "The all-round default." left in place beside it.
+    """
+    from config import ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE
+    want = ANALYSIS_MODES[DEFAULT_ANALYSIS_MODE]["label"]
+    claim = [t for t, d in _mode_entries() if "default" in d.lower()]
+    assert claim == [want], (
+        "exactly one Analysis Mode entry may claim default status and it must be %r "
+        "(config.DEFAULT_ANALYSIS_MODE = %r); entries claiming it: %s"
+        % (want, DEFAULT_ANALYSIS_MODE, claim))

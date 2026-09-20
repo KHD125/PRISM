@@ -404,9 +404,10 @@ CONCEPT_REFERENCE = {
     ],
     # ── Analysis Mode selector — config.ANALYSIS_MODES (label + description). ──
     "🎛️ Analysis Mode": [
-        ("🔀 Hybrid (Quantamental)", "Analysis Mode — scores on BOTH fundamentals and technicals: a great business that institutions are also buying now. The all-round default."),
+        ("🔀 Hybrid (Quantamental)", "Analysis Mode — scores on BOTH fundamentals and technicals: a great business that institutions are also buying now. Weights quality 70% to momentum 30%."),
         ("📚 Fundamental Only", "Analysis Mode — pure business quality, setting price action aside. For long-term, buy-and-hold Coffee Can investors."),
         ("📈 Technical Only", "Analysis Mode — pure price action and institutional money flow (O'Neil rules), with fundamentals set aside."),
+        ("⚡ Quantamental + Breakout", "Analysis Mode — quality, momentum and breakout in equal thirds, which puts price strength at roughly two thirds of the composite (breakout is already part of momentum). The default: it out-predicted the Hybrid blend on every forward window measured so far, and the first six-month window in December reviews that."),
     ],
     # ── The QGLP screen — config.MASTER_PROFILES, now a CONSTANT not a selector. ──
     # The eight-profile "Scoring Profile" control was removed 2026-09-20: it re-ranked nothing

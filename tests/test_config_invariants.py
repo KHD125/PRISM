@@ -46,8 +46,11 @@ def test_analysis_mode_weights_sum_to_one(mode):
 
 
 # ── MASTER_PROFILES: complete + QGLP base weights normalized ─────────────────
+# forensic_boost / priority_cols left this list 2026-09-20 with the keys themselves: nothing
+# outside config.py ever read them, and this assertion was the only thing requiring them to
+# exist. The remaining seven are all genuinely subscripted by get_adaptive_weights.
 _PROFILE_KEYS = ["quality_w", "growth_w", "longevity_w", "price_w",
-                 "roce_gate", "growth_gate", "peg_gate", "forensic_boost", "priority_cols"]
+                 "roce_gate", "growth_gate", "peg_gate"]
 
 
 @pytest.mark.parametrize("profile", sorted(C.MASTER_PROFILES))

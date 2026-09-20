@@ -606,17 +606,18 @@ ANALYSIS_MODES = {
 # thresholds from here. Both reach it via `.get(name, MASTER_PROFILES["Balanced"])`, so a
 # stale caller degrades to the book instead of raising. Pins: tests/test_qglp_profile_fixed.py.
 #
-# `forensic_boost` and `priority_cols` are PRE-EXISTING DEAD KEYS — zero read sites anywhere
-# outside this file; get_adaptive_weights copies them into its return and nothing consumes
-# them. Left in place deliberately (§3: not this change's mess), logged in known-issues.
+# `forensic_boost` and `priority_cols` were DROPPED 2026-09-20. Nothing outside this file ever
+# read them: get_adaptive_weights copied them into its return and no consumer touched the
+# result, and the only other reference in the repo was a test asserting they must exist — a
+# closed loop keeping a fossil alive. forensic_boost was designed to scale forensic
+# sensitivity per profile (0.7-1.8 across the eight); with one profile left its only value was
+# 1.0, the identity, so it could not have done anything even once wired.
 MASTER_PROFILES = {
     "Balanced": {
         "label": "Balanced (QGLP)",    "icon": "⚖️",
         "description": "Raamdeo Agrawal's QGLP — balanced Quality, Growth, Longevity, Price",
         "quality_w": 0.35, "growth_w": 0.35, "longevity_w": 0.15, "price_w": 0.15,
         "roce_gate": 15.0, "growth_gate": 15.0, "peg_gate": 1.5,
-        "forensic_boost": 1.0,
-        "priority_cols": ["quality_score", "growth_score", "roce", "pat_gr_5y", "peg"],
     },
 }
 
@@ -718,9 +719,7 @@ def get_adaptive_weights(profile_name: str, regime: str = "SIDEWAYS") -> dict:
         "roce_gate":     final_roce_gate,
         "growth_gate":   final_growth_gate,
         "peg_gate":      final_peg_gate,
-        "forensic_boost": profile["forensic_boost"],
         "momentum_boost": adj["momentum_boost"],
-        "priority_cols":  profile["priority_cols"],
         "regime":         regime,
         "profile_name":   profile_name,
         "regime_label":   adj["label"],
