@@ -508,7 +508,7 @@ BAID_SELL_TRIGGERS = {
 
 # ═══════════════════════════════════════════════════════════════
 # 7c. ANALYSIS MODES — Controls Fundamental vs Technical balance
-#     Each mode specifies which Scoring Profiles are valid for it.
+#     Blend only — the QGLP screen is fixed and no longer varies by mode (2026-09-20).
 # ═══════════════════════════════════════════════════════════════
 # THE DEFAULT ANALYSIS MODE — read by app.py, core.run_scoring_pipeline, run_full_scoring,
 # tools/snapshot.py, /census and /verify. ONE constant on purpose: before this existed the app
@@ -524,28 +524,18 @@ ANALYSIS_MODES = {
         "fundamental_w": 0.70,
         "momentum_w": 0.30,
         "description": "Best of both — great business + institutions are buying it now",
-        "allowed_profiles": [
-            "Balanced", "Value", "Growth", "Quality",
-            "Momentum", "GARP", "Turnaround", "Defensive",
-        ],
     },
     "Fundamental": {
         "label": "📚 Fundamental Only",
         "fundamental_w": 1.00,
         "momentum_w": 0.00,
         "description": "Pure business quality — for long-term buy-and-hold Coffee Can investors",
-        "allowed_profiles": [
-            "Balanced", "Value", "Growth", "Quality", "GARP", "Defensive",
-        ],
     },
     "Technical": {
         "label": "📈 Technical Only",
         "fundamental_w": 0.10,
         "momentum_w": 0.90,
         "description": "Pure price action — follow institutional money flow with O'Neil rules",
-        "allowed_profiles": [
-            "Momentum", "Turnaround",
-        ],
     },
     # ── THE DEFAULT since 2026-09-19 (added the same day as a candidate, promoted hours later) ─
     # Equal thirds of quality, momentum and breakout (the composite's third leg, `breakout_w`;
@@ -591,20 +581,35 @@ ANALYSIS_MODES = {
                        "of the score. The default since 2026-09-19: it beat Hybrid on all three "
                        "forward windows, which rank Hybrid #56/#60/#60 of 66 weightings. December's "
                        "6-month window reviews it",
-        "allowed_profiles": [
-            "Balanced", "Value", "Growth", "Quality",
-            "Momentum", "GARP", "Turnaround", "Defensive",
-        ],
     },
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 7d. MASTER PROFILES — The Policy Engine (Config Factory Pattern)
-# Each profile carries its own QGLP weights, gate thresholds,
-# forensic sensitivity, and UI priority columns.
+# 7d. THE QGLP PROFILE — Agrawal's own weights and gates, FIXED
 # ═══════════════════════════════════════════════════════════════
+# SEVEN PROFILES AND THEIR SELECTOR REMOVED 2026-09-20. The control re-ranked NOTHING:
+# composite_score, rank, conviction_tier and the top-50 were byte-identical across all eight
+# on the live 2,717-stock universe. What it DID move was qglp_pass (307 under Quality ->
+# 1,274 under Turnaround, 4.1x) and frameworks_passed (up to 861 rows) — which made QGLP the
+# only one of 38 frameworks whose verdict was a user preference rather than a fact about the
+# company, and quietly moved the MOSL tab that counts QGLP as one of its ten lenses.
+#
+# THE DEFECT THAT DECIDED IT: the profile changed WITHOUT BEING TOUCHED. Each ANALYSIS_MODES
+# entry carried a list of permitted profiles and app.py snapped the profile into it on every
+# mode change, one-way. "Technical Only" permitted only [Momentum, Turnaround], so the round
+# trip Breakout -> Technical Only -> Breakout left the QGLP screen on Momentum and it STUCK
+# (passers 413 -> 631, MOSL convergence 709 -> 789, 218 stocks moved) while composite, rank
+# and every header tile stayed identical — nothing moved on screen, and nothing warned.
+#
+# KEPT AS A DICT rather than inlined, for two live readers: get_adaptive_weights layers the
+# regime deltas on top of these numbers, and ui_tearsheet's QGLP radar resolves its
+# thresholds from here. Both reach it via `.get(name, MASTER_PROFILES["Balanced"])`, so a
+# stale caller degrades to the book instead of raising. Pins: tests/test_qglp_profile_fixed.py.
+#
+# `forensic_boost` and `priority_cols` are PRE-EXISTING DEAD KEYS — zero read sites anywhere
+# outside this file; get_adaptive_weights copies them into its return and nothing consumes
+# them. Left in place deliberately (§3: not this change's mess), logged in known-issues.
 MASTER_PROFILES = {
-    # ── FUNDAMENTAL-DOMINANT PROFILES ──
     "Balanced": {
         "label": "Balanced (QGLP)",    "icon": "⚖️",
         "description": "Raamdeo Agrawal's QGLP — balanced Quality, Growth, Longevity, Price",
@@ -613,71 +618,15 @@ MASTER_PROFILES = {
         "forensic_boost": 1.0,
         "priority_cols": ["quality_score", "growth_score", "roce", "pat_gr_5y", "peg"],
     },
-    "Value": {
-        "label": "Value (Marks / Vijay Kedia)",    "icon": "💰",
-        "description": "Beaten-down great businesses — high margin of safety, mean reversion",
-        "quality_w": 0.40, "growth_w": 0.20, "longevity_w": 0.20, "price_w": 0.20,
-        "roce_gate": 12.0, "growth_gate": 8.0, "peg_gate": 2.0,
-        "forensic_boost": 1.2,
-        "priority_cols": ["pe_discount", "ev_ebitda", "dist_52wh", "peg", "valuation_score"],
-    },
-    "Growth": {
-        "label": "Growth (Philip Fisher)",    "icon": "🚀",
-        "description": "Earnings acceleration — tolerates higher PE for 20%+ sustained growth",
-        "quality_w": 0.20, "growth_w": 0.50, "longevity_w": 0.15, "price_w": 0.15,
-        "roce_gate": 15.0, "growth_gate": 20.0, "peg_gate": 2.5,
-        "forensic_boost": 0.8,
-        "priority_cols": ["pat_gr_5y", "rev_gr_5y", "eps_gr_5y", "pat_gr_yoy", "growth_score"],
-    },
-    "Quality": {
-        "label": "Quality (Coffee Can / Buffett)",    "icon": "🛡️",
-        "description": "Pure moat — ROCE 10Y consistency, free cashflow, zero debt. Ignores noise",
-        "quality_w": 0.55, "growth_w": 0.20, "longevity_w": 0.20, "price_w": 0.05,
-        "roce_gate": 20.0, "growth_gate": 10.0, "peg_gate": 3.0,
-        "forensic_boost": 1.5,
-        "priority_cols": ["roce_med_10y", "cfo_to_pat", "npm_med_5y", "debt_to_equity", "moat_score"],
-    },
-    "GARP": {
-        "label": "GARP (Peter Lynch)",    "icon": "🎯",
-        "description": "PEG < 1.0 mandated — Growth at a Reasonable Price. Lynch's golden rule",
-        "quality_w": 0.30, "growth_w": 0.35, "longevity_w": 0.15, "price_w": 0.20,
-        "roce_gate": 15.0, "growth_gate": 15.0, "peg_gate": 1.0,
-        "forensic_boost": 1.0,
-        "priority_cols": ["peg", "pat_gr_5y", "pe", "valuation_score", "growth_score"],
-    },
-    "Defensive": {
-        "label": "Defensive / Cash Cow",    "icon": "🏰",
-        "description": "Free cash flow fortress, zero debt, capital protection mode",
-        "quality_w": 0.50, "growth_w": 0.10, "longevity_w": 0.35, "price_w": 0.05,
-        "roce_gate": 12.0, "growth_gate": 5.0, "peg_gate": 4.0,
-        "forensic_boost": 1.8,
-        "priority_cols": ["free_cash_flow", "debt_to_equity", "cfo_to_pat", "current_ratio", "moat_score"],
-    },
-    # ── MOMENTUM-DOMINANT PROFILES ──
-    "Momentum": {
-        "label": "Momentum (O'Neil CAN-SLIM)",    "icon": "⚡",
-        "description": "Price + Earnings momentum — buy what FII/DII are accumulating RIGHT NOW",
-        "quality_w": 0.25, "growth_w": 0.35, "longevity_w": 0.15, "price_w": 0.25,  # weights sum: 1.00
-        "roce_gate": 12.0, "growth_gate": 15.0, "peg_gate": 3.0,
-        "forensic_boost": 0.7,
-        "priority_cols": ["crs_50d", "ret_vs_n500_3m", "momentum_score", "rsi_14d", "dist_52wh"],
-    },
-    "Turnaround": {
-        "label": "Turnaround / Special Situation",    "icon": "🔄",
-        "description": "QoQ acceleration + promoter buying + volume surge. High risk, high reward",
-        "quality_w": 0.20, "growth_w": 0.45, "longevity_w": 0.15, "price_w": 0.20,  # weights sum: 1.00
-        "roce_gate": 8.0, "growth_gate": 0.0, "peg_gate": 5.0,
-        "forensic_boost": 1.3,
-        "priority_cols": ["pat_gr_yoy", "change_promoter_lq", "crs_50d", "volume", "pat_lq"],
-    },
 }
 
 # ═══════════════════════════════════════════════════════════════
 # 7e. REGIME-ADAPTIVE WEIGHT ADJUSTMENTS
 # When the market regime is auto-detected, these adjustments are
-# applied ON TOP of the selected Scoring Profile's base weights.
+# applied ON TOP of the fixed QGLP profile's base weights.
 # Positive = boost that factor, Negative = suppress that factor.
-# Gates tighten in greed, loosen in fear.
+# Gate moves are per-gate, not uniform: BEAR tightens ROCE but RELAXES growth and PEG
+# (see each delta's comment). Pinned direction-by-direction in test_qglp_profile_fixed.py.
 # ═══════════════════════════════════════════════════════════════
 REGIME_ADJUSTMENTS = {
     "BULL": {
@@ -729,7 +678,12 @@ def get_adaptive_weights(profile_name: str, regime: str = "SIDEWAYS") -> dict:
     Returns a dict with final QGLP weights, gate thresholds, and momentum boost,
     all adjusted for the current market regime.
     """
-    profile = MASTER_PROFILES.get(profile_name, MASTER_PROFILES["Balanced"])
+    # Resolve the NAME first, not just the dict: the return echoes profile_name into the scoring
+    # banner, so falling back to Balanced's numbers while still reporting the caller's string
+    # would print "Profile: Turnaround" over Balanced's gates — the engine-says-one-thing class.
+    # Unknown names became reachable on 2026-09-20 when the other seven profiles were removed.
+    profile_name = profile_name if profile_name in MASTER_PROFILES else "Balanced"
+    profile = MASTER_PROFILES[profile_name]
     adj = REGIME_ADJUSTMENTS.get(regime, REGIME_ADJUSTMENTS["SIDEWAYS"])
 
     # 1. Apply regime deltas to base profile weights

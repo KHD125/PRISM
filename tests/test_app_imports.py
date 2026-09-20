@@ -64,8 +64,11 @@ def test_scoring_state_read_before_tabs_render():
     2026-08-24; its tombstone lives in test_mandate_sync.py.)"""
     src = _APP.read_text(encoding="utf-8")
     tabs_at = src.index("st.tabs(")
+    # cfg_profile left this list on 2026-09-20: the QGLP screen became a constant, so there is
+    # no second widget whose value could lag a rerun. `scoring_profile = "Balanced"` is asserted
+    # to sit above the tabs too, because the radar and the Config readout below still read it.
     for read in ['analysis_mode   = st.session_state["cfg_mode"]',
-                 'scoring_profile = st.session_state["cfg_profile"]']:
+                 'scoring_profile = "Balanced"']:
         assert read in src, f"missing top-of-script state read: {read!r}"
         assert src.index(read) < tabs_at, (
             f"{read!r} must execute BEFORE st.tabs() — scoring runs above the tabs, so reading "

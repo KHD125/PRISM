@@ -3727,13 +3727,12 @@ def render_qglp_radar(stock: pd.Series, profile_name: str = "Balanced"):
         f'Raamdeo Agrawal QGLP Compliance Profile</div>'
         f'<div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">'
         f'Status: <strong style="color:{hdr_color};">{_esc(status_msg)}</strong>'
-        f' &nbsp;·&nbsp; Profile: <strong style="color:{hdr_color};">{_esc(profile_name)}</strong>'
         f'</div></div>'
         f'<div style="text-align:right;">'
         f'<div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">'
         f'{big}<span style="font-size:0.85rem;color:#8b949e;font-weight:400;">&thinsp;/ 100</span></div>'
         f'<div style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;'
-        f'letter-spacing:0.5px;margin-top:2px;">Profile-Weighted QGLP Score</div>'
+        f'letter-spacing:0.5px;margin-top:2px;">Weighted QGLP Score</div>'
         f'</div></div></div>',
         unsafe_allow_html=True)
 
@@ -3791,7 +3790,7 @@ def render_qglp_radar(stock: pd.Series, profile_name: str = "Balanced"):
     )
     st.markdown(
         f"<div style='font-size:0.62rem;font-weight:800;color:#8b949e;text-transform:uppercase;"
-        f"letter-spacing:0.8px;margin:4px 0 6px 0;'>Hard Gates · profile: {_esc(profile_name)}</div>"
+        f"letter-spacing:0.8px;margin:4px 0 6px 0;'>Hard Gates</div>"
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;'>{gates}</div>",
         unsafe_allow_html=True)
 

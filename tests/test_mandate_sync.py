@@ -4,9 +4,13 @@ The six-mandate Command Center was REMOVED as a measured false promise: the thre
 mandates (QGLP Balanced / Lynch GARP / Deep Value) produced BIT-IDENTICAL composite_score,
 rank, conviction_tier, gate_pass and quality_score — the profile feeds ONLY the QGLP screen
 (qglp_score / qglp_pass), never the composite — while the Q/G/L/P weights strip implied
-engine re-weighting that never happened. What remains: two plain selectboxes in ⚙️ Config
-with widget-owned keys (cfg_mode / cfg_profile) and NO callbacks — the canonical/mirror
-machinery they replace caused the 2026-08-24 production KeyError crash.
+engine re-weighting that never happened. What remains: ONE plain selectbox in ⚙️ Config
+with a widget-owned key (cfg_mode) and NO callbacks — the canonical/mirror machinery it
+replaces caused the 2026-08-24 production KeyError crash.
+
+The profile selectbox beside it was REMOVED 2026-09-20, carrying the same measurement one step
+further: it re-ranked nothing AND rewrote itself on a mode change. Its pin below inverted into a
+tombstone rather than dying (§6). Full account: tests/test_qglp_profile_fixed.py.
 
 These tests pin the NEW architecture (this file previously pinned the mandate↔override sync;
 updated per §6: stale tests follow the architecture, they don't die).
@@ -31,29 +35,39 @@ def test_command_center_stays_removed():
 
 
 def test_scoring_controls_are_plain_config_widgets():
-    """The two live knobs must be plain widget-owned selectboxes (key=cfg_mode / cfg_profile),
-    initialized via setdefault and read from session_state at the top — no on_change callbacks,
-    no canonical/mirror keys (the pattern that produced the prod KeyError)."""
+    """The ONE live knob must be a plain widget-owned selectbox (key=cfg_mode), initialized via
+    setdefault and read from session_state at the top — no on_change callback, no canonical/mirror
+    key (the pattern that produced the prod KeyError)."""
     src = _APP.read_text(encoding="utf-8")
     # the default moved to a CONSTANT on 2026-09-19 (config.DEFAULT_ANALYSIS_MODE) so the app,
     # the engine, snapshots, /census and /verify cannot drift apart — the literal is gone ON PURPOSE
     assert 'st.session_state.setdefault("cfg_mode", DEFAULT_ANALYSIS_MODE)' in src
-    assert 'st.session_state.setdefault("cfg_profile", "Balanced")' in src
-    assert 'key="cfg_mode"' in src and 'key="cfg_profile"' in src
-    # plain widgets: neither control may wire a callback
+    assert 'key="cfg_mode"' in src
+    # plain widget: the control may not wire a callback
     for m in re.finditer(r'key="cfg_(?:mode|profile)"[^)]*', src):
         assert "on_change" not in m.group(0), "cfg_* selectboxes must stay callback-free"
 
 
-def test_profile_snaps_into_the_active_modes_allowed_set():
-    """A mode change can orphan the profile (e.g. Technical allows only Momentum/Turnaround).
-    The top-of-script guard must snap cfg_profile into ANALYSIS_MODES[mode]['allowed_profiles']
-    BEFORE anything reads it — and the Config selectbox must offer exactly that allowed list."""
+def test_the_profile_snap_stays_removed():
+    """TOMBSTONE (2026-09-20), inverted from the pin that used to REQUIRE this block.
+
+    It used to read: a mode change can orphan the profile, so snap cfg_profile into
+    ANALYSIS_MODES[mode]['allowed_profiles'] before anything reads it. That guard WAS the defect.
+    "Technical Only" permitted only [Momentum, Turnaround], the snap was one-way, and the round
+    trip Breakout -> Technical Only -> Breakout left the QGLP screen on Momentum permanently:
+    qglp_pass 413 -> 631, the MOSL convergence table 709 -> 789, 218 stocks' lens count moved —
+    while composite_score, rank and every header tile stayed identical, so nothing on screen
+    contradicted it and no test could see it.
+
+    The profile is now a constant. Reintroducing any of these lines reopens the path."""
     src = _APP.read_text(encoding="utf-8")
-    assert '_allowed_profiles = ANALYSIS_MODES[st.session_state["cfg_mode"]]["allowed_profiles"]' in src
-    assert 'if st.session_state["cfg_profile"] not in _allowed_profiles:' in src
-    assert 'st.session_state["cfg_profile"] = _allowed_profiles[0]' in src
-    assert "options=_allowed_profiles" in src, "profile selectbox must offer the mode's allowed set"
+    for gone in ['_allowed_profiles',
+                 'st.session_state["cfg_profile"]',
+                 'options=_allowed_profiles']:
+        assert gone not in src, (
+            f"{gone!r} is back in app.py — that is the silent-rewrite path. The QGLP screen is "
+            "a constant (config.MASTER_PROFILES); see tests/test_qglp_profile_fixed.py."
+        )
 
 
 def test_marks_gauge_stays_removed():

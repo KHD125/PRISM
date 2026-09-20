@@ -92,7 +92,7 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS,
                     BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
-                    MASTER_PROFILES, ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE, FORENSIC_MAX_FLAGS,
+                    ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE, FORENSIC_MAX_FLAGS,
                     FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS)
 
 
@@ -301,7 +301,8 @@ with st.sidebar:
                 st.warning(f"Missing sheets: {', '.join(_missing)}. Upload all 6 to proceed.")
 
     # ══ Sidebar Data Source Ends Here ══
-    # (Analysis Mode and Scoring Profile moved to Main Command Center)
+    # (Analysis Mode lives in the ⚙️ Config tab; the Command Center it once named was
+    #  removed 2026-08-24, and the Scoring Profile beside it 2026-09-20.)
 
 if not data_ready:
     st.info("👋 Welcome! Please select a data source from the sidebar (Google Sheets or Upload CSV) to begin scanning.")
@@ -333,34 +334,37 @@ if st.session_state.pop("_cache_cleared", False):
 render_hero_banner(compact=True)
 
 # ═══════════════════════════════════════════════════════════════
-# SCORING CONTROLS — two plain widgets, living in the ⚙️ Config tab
+# SCORING CONTROL — one plain widget, living in the ⚙️ Config tab
 # ═══════════════════════════════════════════════════════════════
 # The old Command Center (six mandate buttons + weights strip + Advanced Override) was REMOVED
 # 2026-08-24 after measurement proved it a false promise: three of six mandates were ranking-
 # identical (the profile feeds ONLY the QGLP screen — qglp_score/qglp_pass — never the
 # composite), and the prominent Q/G/L/P weights strip implied engine re-weighting that never
-# happened. The two REAL knobs remain as plain selectboxes in ⚙️ Config (widget-owned keys, no
+# happened. The ONE REAL knob remains as a plain selectbox in ⚙️ Config (widget-owned key, no
 # callbacks, no canonical/mirror dance — the machinery that caused the prod KeyError crash).
+# The second knob — "QGLP Screen Profile" — was REMOVED 2026-09-20 on the same measurement,
+# carried one step further: it re-ranked nothing AND rewrote itself on a mode change. The full
+# account is in config.MASTER_PROFILES; the pins are tests/test_qglp_profile_fixed.py.
 #
 # Reading the widget keys HERE — before the Config tab renders them — is correct and current:
 # Streamlit commits a changed widget's value to session_state BEFORE the rerun starts. Fresh
 # cfg_* keys on purpose: resurrected sessions carrying the old adv_*/_w_* keys are ignored.
 st.session_state.setdefault("cfg_mode", DEFAULT_ANALYSIS_MODE)   # config owns the default (2026-09-19)
-st.session_state.setdefault("cfg_profile", "Balanced")
-# Snap the profile into the active mode's allowed set (a mode change can orphan the profile).
-# Writing a widget's key before the widget instantiates is legal; the selectbox renders the value.
-_allowed_profiles = ANALYSIS_MODES[st.session_state["cfg_mode"]]["allowed_profiles"]
-if st.session_state["cfg_profile"] not in _allowed_profiles:
-    st.session_state["cfg_profile"] = _allowed_profiles[0]
 
 analysis_mode   = st.session_state["cfg_mode"]
-scoring_profile = st.session_state["cfg_profile"]
-profile_cfg = MASTER_PROFILES[scoring_profile]
+# The QGLP screen is a CONSTANT, not a control (2026-09-20). What stood here was a snap of
+# cfg_profile into the active mode's permitted set — and because "Technical Only" permitted
+# neither Balanced nor anything the other modes defaulted to, the round trip
+# Breakout -> Technical Only -> Breakout left the screen on Momentum and it STUCK: QGLP passers
+# 413 -> 631 and 218 stocks' MOSL lens count moved, with composite, rank and every header tile
+# unchanged, so nothing on screen contradicted it. Named rather than inlined so the radar, the
+# Config readout and get_adaptive_weights all resolve one thing.
+scoring_profile = "Balanced"
 
 # ── Scoring ────────────────────────────────────────────────────
 _score_key = f"{file_sig}::{analysis_mode}::{scoring_profile}"
 if st.session_state.get("_score_key") != _score_key or "_scored_df" not in st.session_state:
-    with st.spinner(f"🧭 Scoring — {analysis_mode} / {scoring_profile}..."):
+    with st.spinner(f"🧭 Scoring — {analysis_mode}..."):
         try:
             _df_scored = get_scored_data(clean_df, analysis_mode, scoring_profile)
             st.session_state["_scored_df"] = _df_scored
@@ -679,7 +683,7 @@ with tabs[1]:
     st.markdown(
         f'<div style="font-size:0.7rem;font-weight:700;color:{COLORS["text_muted"]};'
         f'text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">'
-        f'🔍 Deep Scanner &nbsp;·&nbsp; {profile_cfg.get("icon","⚖️")} {scoring_profile}</div>',
+        f'🔍 Deep Scanner</div>',
         unsafe_allow_html=True,
     )
     _ds_c1, _ds_c2, _ds_c3 = st.columns([1.5, 5.5, 2])
@@ -889,9 +893,9 @@ with tabs[1]:
         # ⚪✅❌, weinstein_stage, buy_zone_label) render in Excel instead of mojibaking on a BOM-less file.
         from ui.ui_export import _to_csv_bytes
         st.download_button(
-            f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {analysis_mode} / {scoring_profile}",
+            f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {analysis_mode}",
             data=_to_csv_bytes(ds_df[_export_cols]),
-            file_name=f"scan_{_safe_mode}_{scoring_profile.lower()}.csv",
+            file_name=f"scan_{_safe_mode}.csv",
             mime="text/csv",
             use_container_width=True,
         )
@@ -2638,7 +2642,7 @@ def _render_market_pulse():
                             _mv_clean = _load_vintage_clean(_mv_pick)
                             _t1 = time.perf_counter()
                             _mv_st.write(f"① Downloaded + derived: {len(_mv_clean):,} stocks · {_t1 - _t0:.0f}s")
-                            _mv_st.update(label=f"② Scoring with engine {_mv_engine()} ({analysis_mode}/{scoring_profile})…")
+                            _mv_st.update(label=f"② Scoring with engine {_mv_engine()} ({analysis_mode})…")
                             _mv_prev_df, _mv_prev_regime = _score_vintage(
                                 _mv_pick, _mv_engine(), analysis_mode, scoring_profile, _mv_clean)
                             _t2 = time.perf_counter()
@@ -2688,7 +2692,7 @@ def _render_market_pulse():
                             "engine": _mv_engine(), "prev_engine": _mv_engine(),
                             "prev_regime": _mv_prev_regime,
                             "cur_regime": str(df.attrs.get("detected_market_regime", "SIDEWAYS")),
-                            "mode": analysis_mode, "profile": scoring_profile,
+                            "mode": analysis_mode,
                             "reasons": _mv_why, "elapsed": _mv_elapsed,
                         })
                         # CLICK A MOVER, READ ITS TEAR-SHEET — the same handoff Tsunami and QGLP
@@ -2713,20 +2717,23 @@ with tabs[3]:
 # an Analysis-Mode change would rerun only the fragment — the frame would never recompute and
 # every tab would show STALE RANKINGS under a control that claims to re-rank. A state-of-the-art
 # audit proposed fragmenting this tab as a speedup on 2026-08-29; rejected for exactly this
-# reason (pinned by test_market_pulse_tabs). cfg_profile drives the QGLP screen the same way.
+# reason (pinned by test_market_pulse_tabs).
 with tabs[4]:
     st.markdown(f"<div class='sec-head'>⚙️ System Configuration — The Engine Rulebook</div>", unsafe_allow_html=True)
     st.markdown(
-        f"<div class='sec-cap'>The two live scoring controls, then a read-only view of the "
+        f"<div class='sec-cap'>The live scoring control, then a read-only view of the "
         f"deterministic weights and hard gates every stock is measured against. To change the "
         f"constants, edit <code>config.py</code> — the single source of truth.</div>",
         unsafe_allow_html=True,
     )
 
-    # ── Live scoring controls (moved from the front-page Command Center, 2026-08-24) ──
-    # Plain widget-owned keys — the top of the script reads them next rerun. Honest labels:
-    # only Analysis Mode re-ranks; the profile drives the QGLP screen, never the composite.
-    _cfg_c1, _cfg_c2 = st.columns(2)
+    # ── The live scoring control (moved from the front-page Command Center, 2026-08-24) ──
+    # ONE control since 2026-09-20. A "QGLP Screen Profile" selectbox sat beside this one and was
+    # removed: across all eight profiles it left composite_score, rank and the top-50 identical
+    # while swinging qglp_pass 4x, and a mode change could rewrite it silently. The half of it
+    # that was ever informative — the gate thresholds — is printed as a FACT directly below.
+    # Kept at half width: a lone full-width selectbox reads as a form rather than a dial.
+    _cfg_c1, _ = st.columns(2)
     with _cfg_c1:
         st.selectbox(
             "Analysis Mode", options=list(ANALYSIS_MODES.keys()),
@@ -2740,25 +2747,16 @@ with tabs[4]:
                  "Hybrid 70/30 · Fundamental 100/0 · Technical 10/90). December's 6-month window "
                  "reviews the default; see the note in config.ANALYSIS_MODES.",
         )
-        st.caption(ANALYSIS_MODES[analysis_mode]["description"])
-    with _cfg_c2:
-        st.selectbox(
-            # RENAMED 2026-09-19 from "Scoring Profile" — measured: switching it changes exactly
-            # THREE columns (qglp_score, qglp_pass, frameworks_passed) and leaves composite_score,
-            # rank and the top-50 identical across all eight profiles. It never profiled the
-            # scoring; the widget KEY stays cfg_profile so no session state is orphaned.
-            "QGLP Screen Profile", options=_allowed_profiles,
-            format_func=lambda k: f"{MASTER_PROFILES[k]['icon']} {MASTER_PROFILES[k]['label']}",
-            key="cfg_profile",
-            help="Drives the QGLP screen — its gates, fit count and the tearsheet QGLP card. "
-                 "It does NOT re-rank the composite (measured 2026-08-24).",
-        )
-        st.caption(MASTER_PROFILES[scoring_profile]["description"])
+    # The description renders OUTSIDE the column, at full width. Browser-checked 2026-09-20: with
+    # the profile selectbox gone the right column is empty, and a caption left inside wrapped to
+    # FOUR lines against that dead space. At full width it reads in two. The selectbox itself stays
+    # half width — a full-width dropdown reads as a form field rather than a dial.
+    st.caption(ANALYSIS_MODES[analysis_mode]["description"])
     _fit_cfg = int(((df["gate_pass"] == 1)
                     & (df.get("qglp_pass", pd.Series(0, index=df.index)) == 1)).sum())
     st.markdown(
         f'<div style="font-size:0.72rem;color:{COLORS["text_muted"]};margin:2px 0 14px 2px;">'
-        f'🎯 QGLP screen ({scoring_profile}) — ROCE≥{adaptive_w.get("roce_gate", 15):.0f}% · '
+        f'🎯 QGLP screen — ROCE≥{adaptive_w.get("roce_gate", 15):.0f}% · '
         f'Growth≥{adaptive_w.get("growth_gate", 15):.0f}% · PEG≤{adaptive_w.get("peg_gate", 1.5):.1f} '
         f'&nbsp;→&nbsp;<span style="color:{COLORS["gold"]};font-weight:700;">{_fit_cfg} fit</span> '
         f'(of {gate_passed} gate-passed)</div>',

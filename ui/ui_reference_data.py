@@ -408,16 +408,13 @@ CONCEPT_REFERENCE = {
         ("📚 Fundamental Only", "Analysis Mode — pure business quality, setting price action aside. For long-term, buy-and-hold Coffee Can investors."),
         ("📈 Technical Only", "Analysis Mode — pure price action and institutional money flow (O'Neil rules), with fundamentals set aside."),
     ],
-    # ── Scoring Profile selector — config.MASTER_PROFILES (label + description). ──
-    "🎚️ Scoring Profile": [
-        ("Balanced (QGLP)", "Scoring Profile — Raamdeo Agrawal's QGLP: a balanced weighting of Quality, Growth, Longevity and Price. The all-weather default."),
-        ("Value (Marks / Kedia)", "Scoring Profile — beaten-down great businesses bought at a high margin of safety, betting on mean reversion (Howard Marks / Vijay Kedia)."),
-        ("Growth (Fisher)", "Scoring Profile — rewards earnings acceleration and tolerates a higher P/E for 20%+ sustained growth (Philip Fisher)."),
-        ("Quality (Coffee Can / Buffett)", "Scoring Profile — pure moat: a decade of consistent ROCE, strong free cash flow and minimal debt, ignoring market noise (Coffee Can / Buffett)."),
-        ("GARP (Lynch)", "Scoring Profile — Growth at a Reasonable Price, with a mandatory PEG below 1.0 (Peter Lynch's golden rule)."),
-        ("Defensive / Cash Cow", "Scoring Profile — capital-protection mode: a free-cash-flow fortress with zero debt."),
-        ("Momentum (O'Neil CAN-SLIM)", "Scoring Profile — price and earnings momentum: buy what FII/DII are accumulating right now (O'Neil CAN-SLIM)."),
-        ("Turnaround / Special Situation", "Scoring Profile — quarter-on-quarter earnings acceleration plus promoter buying and a volume surge. High risk, high reward."),
+    # ── The QGLP screen — config.MASTER_PROFILES, now a CONSTANT not a selector. ──
+    # The eight-profile "Scoring Profile" control was removed 2026-09-20: it re-ranked nothing
+    # (composite, rank and the top-50 were identical across all eight) while swinging qglp_pass
+    # 4x, and a mode change could rewrite it silently. Seven entries went with it; a reference
+    # that still described them would send a reader looking for a control that is not there.
+    "🎚️ QGLP Screen": [
+        ("Balanced (QGLP)", "The fixed QGLP screen — Raamdeo Agrawal's framework as the 25th Wealth Creation Study states it: a balanced weighting of Quality, Growth, Longevity and Price, gated at ROCE ≥ 15%, PAT 5Y CAGR ≥ 15% and PEG ≤ 1.5. It is a FACT about the framework, not a setting: there is no profile selector, and the same gates apply to every stock on every surface (the 🏛️ QGLP tab, the tearsheet QGLP card and radar, and the QGLP lens in the 🔭 MOSL convergence count). The market regime is the one thing that moves them — a detected BEAR tape raises the ROCE gate to 20%."),
     ],
     # ── tier_label — config.CONVICTION_TIERS via apply_forensic_penalty (post-penalty score bands:
     # ≥85 / ≥70 / ≥55 / ≥40 / rest). Added 2026-08-28: the app's most visible labels were absent

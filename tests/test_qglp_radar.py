@@ -87,10 +87,32 @@ def test_sqglp_letter_strip_shows_all_five_letters():
     assert html.count("✅") >= 3 and html.count("❌") >= 2     # S,Q,G pass · L,P fail
 
 
-def test_profile_name_is_disclosed():
-    """Gates move with the scoring profile — the card must say which one it's judging by."""
+def test_the_card_discloses_the_standard_it_judged_by_not_a_profile_name():
+    """UPDATED 2026-09-20 (§6). This test used to read: "Gates move with the scoring profile — the
+    card must say which one it's judging by", and asserted "Balanced" appeared in the HTML.
+
+    That premise died with the selector. Gates no longer move with a profile — only with the market
+    regime — so printing "Profile: Balanced (QGLP)" named a control the reader cannot see or change,
+    and "Profile-Weighted QGLP Score" implied a weighting they could pick. Both are gone.
+
+    The DISCLOSURE invariant survives and gets stronger: the profile name was only ever a proxy for
+    "which thresholds judged this stock", so the card must show the thresholds themselves. It does,
+    on each gate card ("vs >= 15"), which is also what keeps the label honest when a BEAR regime
+    lifts the ROCE gate to 20 — a name could not have told you that.
+    """
+    from config import MASTER_PROFILES
     html = _render(_stock(), profile="Balanced")
-    assert "Balanced" in html
+    g = MASTER_PROFILES["Balanced"]
+    for gate in ("roce_gate", "growth_gate"):
+        assert f"{g[gate]:.0f}" in html, f"the card must disclose its {gate} ({g[gate]})"
+    assert f"{g['peg_gate']:.1f}" in html, "the card must disclose its PEG gate"
+    # and it must NOT advertise a profile the reader has no way to change
+    for gone in ("Profile:", "Profile-Weighted", "profile:"):
+        assert gone not in html, (
+            f"the radar prints {gone!r} — the QGLP screen is a constant since 2026-09-20, so naming "
+            f"it points the reader at a control that does not exist "
+            f"(see tests/test_qglp_profile_fixed.py)"
+        )
 
 
 def test_missing_subscores_render_blanks_not_fabricated_values():

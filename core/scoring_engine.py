@@ -1541,7 +1541,12 @@ def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════
 
 def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
-    """Motilal Oswal QGLP Framework — weights driven by selected Scoring Profile."""
+    """Motilal Oswal QGLP Framework — Agrawal's fixed weights, regime-adjusted.
+
+    `profile` is the dict get_adaptive_weights returns (MASTER_PROFILES["Balanced"] with the
+    regime deltas applied), or None for the book numbers. It was a USER SELECTION over eight
+    profiles until 2026-09-20; see config.MASTER_PROFILES for why that was removed.
+    """
     df = df.copy()
     if profile is None:
         profile = MASTER_PROFILES["Balanced"]

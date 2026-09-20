@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 
 from core.scoring_engine import detect_market_regime
-from config import MASTER_PROFILES, get_adaptive_weights
+from config import MASTER_PROFILES, REGIME_ADJUSTMENTS, get_adaptive_weights
 
 
 def _frac(p, n=100):
@@ -108,13 +108,37 @@ def test_200d_all_nan_abstains():
 
 # ── weight factory invariants (previously unguarded) ─────────────────────────
 
-@pytest.mark.parametrize("profile", sorted(MASTER_PROFILES.keys()))
+# THE PROFILE AXIS COLLAPSED 2026-09-20 (§6 stale-test updating, not deletion). These two cases
+# were parametrized over profile x regime = 8 x 3; seven of the eight profiles were removed with
+# the selector that chose between them, so the surviving axis is the REGIME. What replaces the
+# lost breadth is depth on that axis: the GATE cascade below was never asserted anywhere —
+# get_adaptive_weights layers roce/growth/peg deltas and clamps them, and nothing recomputed the
+# arithmetic independently, so a broken cascade showed up only as a silent shift in qglp_pass.
 @pytest.mark.parametrize("regime", ["BULL", "SIDEWAYS", "BEAR"])
-def test_adaptive_weights_sum_to_one_and_nonnegative(profile, regime):
-    w = get_adaptive_weights(profile, regime)
+def test_adaptive_weights_sum_to_one_and_nonnegative(regime):
+    w = get_adaptive_weights("Balanced", regime)
     four = [w["quality_w"], w["growth_w"], w["longevity_w"], w["price_w"]]
-    assert abs(sum(four) - 1.0) < 1e-9, f"{profile}/{regime} weights sum to {sum(four)}"
-    assert min(four) >= 0.0, f"{profile}/{regime} has a negative weight: {four}"
+    assert abs(sum(four) - 1.0) < 1e-9, f"{regime} weights sum to {sum(four)}"
+    assert min(four) >= 0.0, f"{regime} has a negative weight: {four}"
+
+
+@pytest.mark.parametrize("gate,floor", [("roce_gate", 5.0), ("growth_gate", 0.0), ("peg_gate", 0.5)])
+@pytest.mark.parametrize("regime", ["BULL", "SIDEWAYS", "BEAR"])
+def test_the_gate_cascade_is_book_plus_delta_clamped(regime, gate, floor):
+    """Recompute the cascade from its two sources and demand the factory agree.
+
+    This is the leg qglp_pass actually hangs on (325 SIDEWAYS / 309 BULL / 249 BEAR, measured
+    2026-08-30). Asserting only "the number is sane" would pass on a dropped delta; recomputing
+    it independently from MASTER_PROFILES + REGIME_ADJUSTMENTS will not.
+    """
+    base = MASTER_PROFILES["Balanced"][gate]
+    delta = REGIME_ADJUSTMENTS[regime][f"{gate}_delta"]
+    expected = max(floor, base + delta)
+    got = get_adaptive_weights("Balanced", regime)[gate]
+    assert got == pytest.approx(expected), (
+        f"{regime}/{gate}: factory says {got}, book {base} + delta {delta} clamped at {floor} "
+        f"says {expected} — the regime cascade has drifted from its own inputs"
+    )
 
 
 def test_unknown_regime_falls_back_to_sideways():

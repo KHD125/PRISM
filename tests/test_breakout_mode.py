@@ -75,10 +75,10 @@ def test_breakout_mode_is_equal_thirds_and_well_formed():
     assert ("default" in _d) == (C.DEFAULT_ANALYSIS_MODE == "Breakout"), (
         "the caption must claim default status exactly when the mode actually holds it"
     )
-    assert set(m["allowed_profiles"]) <= set(C.MASTER_PROFILES), "unknown profile in allowed_profiles"
-    assert set(m["allowed_profiles"]) == set(C.ANALYSIS_MODES["Hybrid"]["allowed_profiles"]), (
-        "the candidate should offer the same profiles as the mode it is a candidate to replace"
-    )
+    # The two allowed_profiles assertions that stood here went with the key on 2026-09-20 —
+    # no mode carries a profile list any more, because the QGLP screen is a constant. That the
+    # key is gone EVERYWHERE is pinned once, in test_qglp_profile_fixed.py, rather than per mode.
+    assert "allowed_profiles" not in m, "the Breakout mode must not reintroduce a profile list"
 
 
 def test_only_the_breakout_mode_carries_a_third_leg():

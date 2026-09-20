@@ -510,7 +510,8 @@ def _churn_bars(churn: dict, restricted: bool = False) -> str:
 def render_movers(res: dict, meta: dict):
     """The Movers page below the picker. `meta` carries what only the caller knows:
     prev_vintage, cur_vintage (ISO), prev_label, cur_label (FY quarter), engine, prev_regime,
-    cur_regime, mode, profile.
+    cur_regime, mode. ("profile" left this list 2026-09-20 with the selector — the QGLP screen is
+    a constant, so printing it named a control the reader cannot see.)
 
     RETURNS the stock name clicked in ⭐ What matters, or None — the module never writes
     session_state (app.py owns it and stages the tear-sheet), which is what keeps this file
@@ -522,8 +523,8 @@ def render_movers(res: dict, meta: dict):
     # ~280 words sat above the first data row. The ⓘ carries it for whoever wants it.
     tip = ("Both sides were scored by the same engine, moments apart, so every move below is the "
            "company changing, never PRISM changing."
-           + (" The regime changed between the vintages: with the adaptive profile every composite "
-              "shifts with it, so read rank and label moves first." if regime_changed else ""))
+           + (" The regime changed between the vintages: the regime-adaptive weights shift every "
+              "composite with it, so read rank and label moves first." if regime_changed else ""))
     elapsed = meta.get("elapsed")
     muted, strong = COLORS["text_muted"], COLORS["text_primary"]
 
@@ -540,7 +541,7 @@ def render_movers(res: dict, meta: dict):
         + cell("vintages", f"{meta['prev_vintage']} → {meta['cur_vintage']}")
         + cell("comparable", f"{res['n_both']:,}") + cell("new", c["new"]) + cell("dropped", c["dropped"])
         + cell("engine", f"{meta.get('engine', 'unknown')}{'' if same_engine else ' ⚠ differs'}")
-        + cell("mode", f"{meta.get('mode', '')}/{meta.get('profile', '')}")
+        + cell("mode", f"{meta.get('mode', '')}")
         + cell("regime", f"{meta.get('prev_regime', '?')} → {meta.get('cur_regime', '?')}"
                          + (" ⚠ regime changed" if regime_changed else ""),
                COLORS["gold"] if regime_changed else None)
