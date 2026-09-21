@@ -765,3 +765,117 @@ def test_cash_machine_filter_labels_match_the_engine():
     for lbl in ["💰 Cash Machine", "✅ Solid", "📄 Paper Profits"]:
         assert lbl in _DISC, f"cash-machine label missing from ui_discovery: {lbl!r}"
         assert lbl in _DENG, f"cash-machine label drifted in data_engine (emitter): {lbl!r}"
+
+
+# ── THE LABEL ROUND-TRIP (2026-09-21) ──────────────────────────────────────────────────────
+# THE USER FOUND THIS AND THE ORDER MATTERED: pick Sector = Steel FIRST, then add Market
+# Category = Small Cap + Mid Cap, and the Deep Scanner read "No stocks match your filters" with
+# the funnel blaming Sector — while 60 Steel small/mid-caps sat in the frame. Picking the market
+# caps FIRST worked fine.
+#
+# MEASURED AT THE BOUNDARY with a temporary probe in the live browser (AppTest cannot see this
+# class at all — it assigns session_state directly and never exercises the widget registry, and
+# it returned the correct 60 for BOTH orders):
+#
+#     STORED_BEFORE_WIDGET = 'Steel  ·  68'      <- already corrupt before the widget rendered
+#     opts_tail            = [..., 'Steel  ·  68']
+#     steel_rows_in_frame  = 39   ->   rows_after_sector = 0
+#
+# Nothing in the app writes sb_sector except the widget itself, so Streamlit round-tripped the
+# selectbox's FORMATTED LABEL back into session_state when the cascade changed that label between
+# reruns (Steel · 68 -> Steel · 29 -> Steel · 39). keep_selected then APPENDED the corrupt string
+# as a legitimate option — so the widget never raised — and the filter compared a label against raw
+# sector values and matched nothing. The safety net that exists to prevent silent WIDENING was
+# quietly preserving a silent ZEROING.
+#
+# The multiselects were immune (sel_mcap stayed ['Small Cap', 'Mid Cap']); this is a selectbox-only
+# failure, which is why only Sector and Industry carry the recovery.
+
+def test_canonical_pick_returns_a_real_value_untouched():
+    from ui.ui_discovery import canonical_pick
+    dom = {"All", "Steel", "Trading"}
+    assert canonical_pick("Steel", dom) == "Steel"
+    assert canonical_pick("All", dom) == "All"
+
+
+def test_canonical_pick_recovers_a_formatted_label():
+    """The exact corruption measured in the browser."""
+    from ui.ui_discovery import canonical_pick
+    dom = {"All", "Steel"}
+    assert canonical_pick("Steel  ·  68", dom) == "Steel", (
+        "the round-tripped label must resolve back to the raw sector value"
+    )
+
+
+def test_canonical_pick_keeps_a_value_the_cascade_narrowed_out():
+    """THE REGRESSION THIS MUST NOT CAUSE. keep_selected exists because pruning a stored pick
+    switches the filter OFF and shows MORE stocks (measured 2026-09-02). So recovery validates
+    against the FULL domain, never the narrowed cascade frame: a real sector with zero rows under
+    the current filters stays selected, reads `· 0`, applies, and names itself as culprit."""
+    from ui.ui_discovery import canonical_pick
+    full_domain = {"All", "Steel", "Air Transport Service"}
+    assert canonical_pick("Air Transport Service", full_domain) == "Air Transport Service"
+
+
+def test_a_real_value_containing_the_separator_is_never_split():
+    """FOUND BY A MISSED MUTATION. Dropping the `if stored in domain: return stored` early-return
+    is INERT for every ordinary name — "Air Transport Service" has no separator, so splitting it
+    returns itself — so nothing failed. The guard only shows its teeth on a legitimate value that
+    happens to contain the separator, which is exactly the case that would be silently mangled.
+    """
+    from ui.ui_discovery import canonical_pick, _PICK_SEP
+    odd = f"Iron{_PICK_SEP}Steel"          # a real domain value that looks like a label
+    assert canonical_pick(odd, {"All", odd}) == odd, (
+        "a value present in the domain must be returned untouched — splitting it first would "
+        "mangle any name containing the separator"
+    )
+
+
+def test_canonical_pick_falls_back_when_the_value_is_unrecoverable():
+    from ui.ui_discovery import canonical_pick
+    assert canonical_pick("Nonexistent Sector", {"All", "Steel"}) == "All"
+    assert canonical_pick(None, {"All", "Steel"}) == "All"
+
+
+def test_the_formatter_and_the_recoverer_share_one_separator():
+    """A silent drift here re-opens the bug: change the format_func's separator alone and the
+    recoverer stops splitting on it, so the label sails through as a value again."""
+    from ui.ui_discovery import _PICK_SEP, _fmt_pick, canonical_pick
+    label = _fmt_pick("Steel", 68)
+    assert _PICK_SEP in label
+    assert canonical_pick(label, {"All", "Steel"}) == "Steel", (
+        "the recoverer cannot split what the formatter produced — they have drifted apart"
+    )
+
+
+def test_both_cascade_selectboxes_recover_their_stored_value():
+    """Structural, because the failure is invisible to AppTest. Sector and Industry are the only
+    selectboxes in the cascade and both showed the same corruption shape."""
+    src = _DISC
+    for key in ("sb_sector", "sb_industry"):
+        i = src.index(f'st.session_state.setdefault("{key}"')
+        seg = src[i:i + 700]
+        assert "canonical_pick(" in seg, (
+            f"{key} does not recover its stored value — a round-tripped label would be appended by "
+            f"keep_selected as a legitimate option and silently match zero rows"
+        )
+
+
+def test_the_recovery_validates_against_the_full_frame_not_the_cascade_frame():
+    """If recovery checked `_cf` (already narrowed), a legitimately narrowed-out pick would reset
+    to All — the silent WIDENING keep_selected was built to stop. It must read the unfiltered df."""
+    src = _DISC
+    for key in ("sb_sector", "sb_industry"):
+        col = "sector" if key == "sb_sector" else "industry"
+        i = src.index(f'st.session_state.setdefault("{key}"')
+        # Wide enough to span the recovery block, its provenance comment and the options line
+        # below it — a window that stops short would pass on the recovery alone and never check
+        # that the OPTIONS still come from the narrowed frame, which is the other half of the rule.
+        seg = src[i:i + 1400]
+        assert f'df["{col}"]' in seg, (
+            f"{key}'s recovery domain is not built from the FULL df — validating against the "
+            f"narrowed cascade frame would silently widen the filter"
+        )
+        assert f'_cf["{col}"].dropna().unique().tolist()' in seg, (
+            f"{key} must still build its OPTIONS from the narrowed cascade frame"
+        )

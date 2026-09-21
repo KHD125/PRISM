@@ -129,6 +129,45 @@ def _ordered_present(frame: pd.DataFrame, col: str, order) -> list:
     return opts
 
 
+_PICK_SEP = "  ·  "
+
+
+def _fmt_pick(value, count) -> str:
+    """The ONE label form for a cascade selectbox option: "<value>  ·  <live count>".
+
+    Shared with canonical_pick below so the two cannot drift — change the separator here and the
+    recoverer follows, which is the whole point of it being a constant rather than an f-string
+    repeated at each call site.
+    """
+    return f"{value}{_PICK_SEP}{count}"
+
+
+def canonical_pick(stored, domain, fallback="All"):
+    """Recover a selectbox value that came back as its FORMATTED LABEL.
+
+    MEASURED IN THE BROWSER 2026-09-21, from a user report. Picking Sector = Steel and THEN adding
+    Market Category = Small Cap + Mid Cap returned zero stocks with the funnel blaming Sector,
+    while 39 Steel small/mid-caps sat in the frame. A probe at the boundary showed
+    st.session_state["sb_sector"] held 'Steel  ·  68' — the label Streamlit round-tripped back when
+    the cascade changed it between reruns (68 -> 29 -> 39). Nothing in this module writes that key
+    except the widget. keep_selected then appended the corrupt string as a legitimate option, so
+    the widget never raised, and `frame["sector"] == "Steel  ·  68"` matched nothing: the guard
+    built to stop silent WIDENING was preserving a silent ZEROING.
+
+    THE DOMAIN MUST BE THE FULL, UNFILTERED SET — never the narrowed cascade frame. A real sector
+    the cascade has narrowed out has to SURVIVE (it reads `· 0`, applies, and names itself as the
+    culprit); validating against the narrowed frame would reset it to "All" and re-introduce the
+    2026-09-02 widening bug this codebase already paid for once.
+
+    Order matters: a legitimate value is returned untouched, so a sector whose real name somehow
+    contained the separator is never mangled. Only an unrecognised string is split.
+    """
+    if stored in domain:
+        return stored
+    head = str(stored).split(_PICK_SEP)[0]
+    return head if head in domain else fallback
+
+
 def keep_selected(options, stored) -> list:
     """Live option list + every stored pick the cascade has narrowed OUT of it, appended last.
 
@@ -298,12 +337,20 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # to snap back to "All" — the selectbox form of the silent widening. It now stays in
             # the list (reading `· 0`), the filter applies, and the culprit names it.
             st.session_state.setdefault("sb_sector", "All")
+            # RECOVER THE ROUND-TRIPPED LABEL (2026-09-21) before the value is read for anything.
+            # Streamlit can write this selectbox's DISPLAY string back into session_state when the
+            # cascade changes the label between reruns; keep_selected would then append the corrupt
+            # string as a valid option and the filter would match zero rows while the sector sat
+            # right there. Domain = the FULL df, so a legitimately narrowed-out pick still survives.
+            st.session_state["sb_sector"] = canonical_pick(
+                st.session_state["sb_sector"],
+                {"All", *df["sector"].dropna().astype(str)})
             _sector_opts = keep_selected(["All"] + sorted(_cf["sector"].dropna().unique().tolist()),
                                          st.session_state["sb_sector"])
             _sec_vc = _cf["sector"].value_counts().to_dict()
             sel_sector = st.selectbox(
                 "Sector", _sector_opts, key="sb_sector",
-                format_func=lambda v: "All" if v == "All" else f"{v}  ·  {_sec_vc.get(v, 0)}",
+                format_func=lambda v: "All" if v == "All" else _fmt_pick(v, _sec_vc.get(v, 0)),
                 help="Filter to one sector. 'All' = every sector; also narrows the Industry list below.",
             )
             if sel_sector != "All":
@@ -316,12 +363,17 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # silent snap to "All". One rule everywhere beats a special case here: 136 of 355
             # industries span more than one sector, so Industry is a facet, not a strict child.
             st.session_state.setdefault("sb_industry", "All")
+            # Same recovery as Sector above — these two are the cascade's only selectboxes, and the
+            # multiselects were measured immune (sel_mcap stayed clean through the same repro).
+            st.session_state["sb_industry"] = canonical_pick(
+                st.session_state["sb_industry"],
+                {"All", *df["industry"].dropna().astype(str)})
             _industry_opts = keep_selected(["All"] + sorted(_cf["industry"].dropna().unique().tolist()),
                                            st.session_state["sb_industry"])
             _ind_vc = _cf["industry"].value_counts().to_dict()
             sel_industry = st.selectbox(
                 "Industry", _industry_opts, key="sb_industry",
-                format_func=lambda v: "All" if v == "All" else f"{v}  ·  {_ind_vc.get(v, 0)}",
+                format_func=lambda v: "All" if v == "All" else _fmt_pick(v, _ind_vc.get(v, 0)),
                 help="Granular industry within the selected sector. Narrows with Sector above.",
             )
             if sel_industry != "All":
