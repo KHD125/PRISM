@@ -235,7 +235,13 @@ def test_the_thin_state_names_both_exits_and_does_not_hide_the_rows():
 def test_the_industry_line_is_placed_after_its_drill_down():
     """The sector drill-down row-filters _ind_stats; a count taken before it overstates the
     table. Placement is the contract here, so it is checked by ORDER."""
-    drill = _FRAG.index("_ind_stats = _ind_stats[_dom_sec.reindex(_ind_stats.index).isin(_ind_sec)]")
+    # ANCHORED NAME-AGNOSTICALLY (2026-09-21). This indexed the drill's exact expression
+    # (`_ind_stats[_dom_sec.reindex(...).isin(_ind_sec)]`) and broke when the drill changed from
+    # matching the one displayed sector to matching every sector an industry ties for — a change
+    # this test has no opinion about. Its subject is PLACEMENT, so it anchors on the guard that
+    # IS the drill-down, whatever the expression inside it looks like. Same repointing the three
+    # 2026-09-20 landmarks needed, for the same reason.
+    drill = _FRAG.index("if _ind_sec:")
     line = _FRAG.index('_mp_group_scope(len(_ind_stats),')
     table = _FRAG.index("_ind_order = [c for c in [")
     assert drill < line < table, "the Industry scope line is not between the drill-down and the table"

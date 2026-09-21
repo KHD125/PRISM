@@ -2239,20 +2239,47 @@ def _render_market_pulse():
             _ind_src["industry"] = _ind_src["industry"].astype(str).str.strip()
             _ind_src = _ind_src[~_ind_src["industry"].isin(["", "nan", "None"])]
 
-            def _ind_dominant(frame):
-                """industry -> its DOMINANT sector (+ that sector's stock count `n`).
+            def _ind_sector_pairs(frame):
+                """industry x sector stock counts, ranked (count desc, then sector ASC).
 
-                ONE definition, two call sites — the drill-down's option list/counts below and the
-                table's own `_dom_sec`/`_dom_share` further down. Industry is NOT nested inside
-                sector (136 of 355 span more than one), so "the" sector of an industry is a modal
-                choice, and an unsorted mode is non-deterministic across processes
-                (PYTHONHASHSEED). The explicit (count desc, sector asc) tie-break is the whole
-                reason this is a function rather than two copies that could drift apart.
+                THE one source the three views below derive from, so they cannot drift apart.
+                The explicit sort is the determinism mandate: an unsorted mode reorders between
+                processes (PYTHONHASHSEED) and the displayed parent sector would flicker.
                 """
-                pair = (frame.groupby(["industry", "sector"]).size().rename("n")
+                return (frame.groupby(["industry", "sector"]).size().rename("n")
                         .reset_index()
                         .sort_values(["industry", "n", "sector"], ascending=[True, False, True]))
-                return pair.drop_duplicates("industry").set_index("industry")
+
+            def _ind_dominant(frame):
+                """industry -> its ONE dominant sector (+ that sector's stock count `n`).
+
+                DISPLAY AND THE PEER BASELINE ONLY. Industry is NOT nested inside sector (136 of
+                355 span more than one), so "the" sector of an industry is a modal choice. This
+                stays single-valued on purpose: `_dom_sec` drives the leave-one-out Δ vs Sector
+                arithmetic below, and "which sector's peers?" has no defined answer for a 50/50
+                industry — one row must contribute to exactly one baseline. Where that choice is
+                weak the label says so, with its share.
+                """
+                return _ind_sector_pairs(frame).drop_duplicates("industry").set_index("industry")
+
+            def _ind_homes(frame):
+                """industry -> EVERY sector TIED for its maximum. What the drill-down matches on.
+
+                ADDED 2026-09-21 after the user picked Steel and "Mining/Minerals - Iron Ore" did
+                not appear: its 6 stocks are exactly 3 Mining & Mineral products / 3 Steel, and
+                the alphabetical tie-break filed it under Mining because "M" precedes "S". Half
+                that industry is Steel and it was unreachable from Steel. 24 of 371 industries are
+                exact ties, so 24 rows were filed by SPELLING — deterministic, but carrying no
+                information about the business.
+
+                THRESHOLD-FREE BY CONSTRUCTION. The rejected alternative was "any sector holding
+                >= 40%", which is the invented-threshold anti-pattern §5 exists to stop. "Tied for
+                the maximum" needs no number: a tie earns every home, a clear winner keeps exactly
+                one, and "merely touches the sector" never qualifies (Trading is 62% Trading and
+                4% Chemicals — it must not surface under Chemicals).
+                """
+                pair = _ind_sector_pairs(frame)
+                return pair[pair["n"] == pair.groupby("industry")["n"].transform("max")]
 
             # MULTI-SELECT + CASCADE (2026-08-30 Phase 2) — same two-kinds/two-units grammar as
             # Sectors: the RE-AGGREGATING filters (market-cap, wealth) count STOCKS, the ROW filter
@@ -2294,18 +2321,24 @@ def _render_market_pulse():
             # applied AFTER aggregation (matches on the DOMINANT sector), so every number —
             # averages, Δ, 💹 share — is exactly what the unfiltered table shows. Sectors hold a
             # median of 3 industries (max 38), so this turns 355 rows into a focused split.
-            # The counts are INDUSTRIES-BY-DOMINANT-SECTOR, computed off `_icf` — the frame the
-            # table itself will aggregate — so the number beside an option is exactly the number of
-            # rows it leaves. Counting industries that merely TOUCH the sector would overstate it.
-            _ind_sec_n = (_ind_dominant(_icf)["sector"].value_counts().to_dict()
+            # The counts are INDUSTRIES-BY-HOME, computed off `_icf` — the frame the table itself
+            # will aggregate — so the number beside an option is exactly the number of rows it
+            # leaves. IT MUST READ THE SAME MAP THE FILTER DOES (`_ind_homes`, not `_ind_dominant`):
+            # if the counts kept the single-home map while the filter multi-homed, every tied
+            # industry would make the option under-report by one and nothing would fail loudly —
+            # the table would just show more rows than the label promised. Pinned behaviourally.
+            # A tied industry counts under each sector it ties in, so the column sums above the
+            # industry total; each INDIVIDUAL option still states exactly what it yields.
+            _ind_sec_n = (_ind_homes(_icf).groupby("sector")["industry"].nunique().to_dict()
                           if not _icf.empty else {})
             _ind_sec_opts = sorted(_ind_sec_n)         # sorted() — determinism mandate
             _ind_sec = _mp_ms(_i3, "Sector (drill-down)", _ind_sec_opts, "mp_ind_sec",
-                              "Hides rows: shows only industries whose MAJORITY of stocks sit in "
-                              "these sectors (the table's own 'dominant sector'). Applied after "
-                              "aggregation — no average, Δ or 💹 share changes. Counts are "
-                              "INDUSTRIES, not stocks. Industries that only partly touch a sector "
-                              "(the ~ rows) stay under their dominant home.", _ind_sec_n)
+                              "Hides rows: shows only industries whose LARGEST SHARE of stocks "
+                              "sits in these sectors. An industry that TIES for its top sector is "
+                              "reachable from every sector it ties in — a 50/50 industry has no "
+                              "single home. Applied after aggregation — no average, Δ or 💹 share "
+                              "changes. Counts are INDUSTRIES, not stocks; a '~' row names the "
+                              "share actually sitting in the sector beside it.", _ind_sec_n)
 
             with _i4:
                 # Default-aware conditional Clear (same grammar as Sectors + the lens rows).
@@ -2405,9 +2438,16 @@ def _render_market_pulse():
                     _ind_stats["delta_vs_sector"] = np.where(
                         _peer_cnt > 0,
                         _ind_stats["avg_composite"] - _peer_sum / _peer_cnt, np.nan)
-                # "~" flags an industry whose stocks are NOT mostly in the sector named beside it.
+                # "~" flags an industry whose stocks are NOT mostly in the sector named beside it,
+                # AND NAMES THE SHARE (2026-09-21): the bare tilde said "loosely" without saying how
+                # loosely, so a 50% row and a 79% row read identically — and a row the drill-down
+                # reached from a TIED sector had nothing on screen explaining why it sits under a
+                # different name. np.where evaluates both branches, so the concat is NaN-safe by
+                # construction: a NaN share fails `< 0.8` and takes the plain branch anyway.
+                _ind_dom_pct = _dom_share.mul(100).round(0).fillna(0).astype(int).astype(str)
                 _ind_stats["dom_sector"] = np.where(_dom_share < 0.8,
-                                                    "~ " + _dom_sec.astype(str),
+                                                    "~ " + _dom_sec.astype(str)
+                                                    + " · " + _ind_dom_pct + "%",
                                                     _dom_sec.astype(str))
 
                 if _ind_cap or _ind_wt:
@@ -2422,14 +2462,19 @@ def _render_market_pulse():
                 _ind_stats = _ind_stats.sort_values(["delta_vs_sector", "avg_composite"],
                                                     ascending=[False, False], na_position="last")
 
-                # SECTOR DRILL-DOWN — row filter, applied AFTER every number is computed: matches
-                # the dominant sector, so no average, Δ or 💹 share moves (pinned).
+                # SECTOR DRILL-DOWN — row filter, applied AFTER every number is computed, so no
+                # average, Δ or 💹 share moves (pinned). Matches on HOMES (every sector tied for the
+                # industry's maximum), not on the single display sector: a 3-3 industry belongs to
+                # both and must be reachable from both.
                 if _ind_sec:
-                    _ind_stats = _ind_stats[_dom_sec.reindex(_ind_stats.index).isin(_ind_sec)]
+                    _ind_home_map = _ind_homes(_ind_src)
+                    _ind_reach = set(_ind_home_map.loc[_ind_home_map["sector"].isin(_ind_sec),
+                                                       "industry"])
+                    _ind_stats = _ind_stats[_ind_stats.index.isin(_ind_reach)]
                     if _ind_stats.empty:
-                        st.info(f"No industry has {', '.join(_ind_sec)} as its dominant sector under these "
-                                f"filters — its stocks live inside industries that mostly sit "
-                                f"elsewhere (the ~ rows of their own homes).")
+                        st.info(f"No industry is at home in {', '.join(_ind_sec)} under these "
+                                f"filters — their stocks sit inside industries whose largest "
+                                f"share lives elsewhere (the ~ rows of those sectors).")
 
                 # Placed AFTER the sector drill-down, which row-filters _ind_stats above: a count
                 # taken before it would overstate what the table actually shows.
@@ -2478,8 +2523,11 @@ def _render_market_pulse():
                         "avg_valuation":  st.column_config.ProgressColumn("Valuation", min_value=0, max_value=100, format="%.0f"),
                         "dom_sector":     st.column_config.TextColumn("Sector (dominant)", width="medium",
                                             help="Industry is NOT nested inside sector — 136 of 355 span more than one. "
-                                                 "This is where the MAJORITY of the industry's stocks sit; a leading '~' "
-                                                 "means under 80% of them do, so read the Δ for that row loosely."),
+                                                 "This is the sector holding the LARGEST SHARE of the industry's stocks; a "
+                                                 "leading '~' means under 80% sit there and the figure beside it is that "
+                                                 "share, so read the Δ for that row loosely. An industry can TIE for two "
+                                                 "sectors — the drill-down then reaches it from either, while this column "
+                                                 "keeps one name because the Δ baseline needs exactly one peer group."),
                     },
                     use_container_width=True,
                     height=min(700, 80 + len(_ind_stats) * 35),

@@ -554,17 +554,34 @@ def test_industry_tier_share_discriminates(live):
 def test_drill_down_is_applied_after_aggregation_and_sort(block):
     """Row-filter semantics: the drill must touch no average, Δ or 💹 share — so it must sit
     AFTER the aggregation, the delta, the share and the sort."""
-    i = block.index('_dom_sec.reindex(_ind_stats.index).isin(_ind_sec)')
+    i = block.index('_ind_stats = _ind_stats[_ind_stats.index.isin(_ind_reach)]')
     assert block.index("_ind_stats = _ind_src.groupby") < i
     assert block.index('_ind_stats["delta_vs_sector"]') < i
     assert block.index('_ind_stats["pct_tier"]') < i
     assert block.index("_ind_stats.sort_values") < i
 
 
-def test_drill_down_matches_the_dominant_sector(block):
-    """The drill matches _dom_sec — the same dominant-sector series the table displays — so a
-    ~ row appears under its dominant home, never under a minority sector."""
-    assert '_dom_sec.reindex(_ind_stats.index).isin(_ind_sec)' in block
+def test_drill_down_matches_every_home_not_only_the_displayed_sector(block):
+    """UPDATED 2026-09-21 (§6). This pinned `_dom_sec...isin(_ind_sec)` — matching the ONE sector
+    the table displays — and its docstring claimed a row "appears under its dominant home, never
+    under a minority sector".
+
+    The second half still holds and is pinned below. The first half was the defect: an industry
+    split EXACTLY 3-3 has no single dominant home, and the alphabetical tie-break handed
+    "Mining/Minerals - Iron Ore" to Mining & Mineral products, making it unreachable from Steel
+    while half its stocks are Steel. The drill now matches `_ind_homes` — every sector tied for
+    the maximum — so a tie is reachable from each, and a MINORITY sector still never matches.
+    """
+    assert "_ind_stats = _ind_stats[_ind_stats.index.isin(_ind_reach)]" in block, (
+        "the drill-down no longer filters on the home map"
+    )
+    assert "_ind_home_map = _ind_homes(_ind_src)" in block, (
+        "the drill-down's home map is not built from the frame the table aggregates"
+    )
+    assert "_dom_sec.reindex(_ind_stats.index).isin(_ind_sec)" not in block, (
+        "the drill reverted to the single displayed sector — a tied industry becomes unreachable "
+        "from half of its own stocks' sector again"
+    )
 
 
 def test_dom_share_is_index_aligned_for_the_drill(block):
@@ -597,7 +614,11 @@ def test_the_drill_down_counts_industries_not_stocks(block, ms_help):
     A stock count there would promise 412 rows and deliver 9."""
     i = block.index("_ind_sec_n =")
     seg = block[i:i + 200]
-    assert "_ind_dominant(" in seg, "the drill-down count no longer counts dominant-sector rows"
+    assert "_ind_homes(" in seg, (
+        "the drill-down count no longer reads the HOME map — and it must be the same map the "
+        "filter uses, or a tied industry makes its option under-report with nothing failing"
+    )
+    assert "nunique()" in seg, "counting rows, not distinct industries, double-counts a tie"
     assert '_icf["sector"].astype(str).value_counts()' not in block, (
         "the drill-down count reverted to a straight stock count — wrong unit"
     )
@@ -621,18 +642,28 @@ def test_the_two_units_really_are_far_apart(live):
     )
 
 
-def test_the_dominant_sector_is_computed_once(block):
-    """The drill-down's counts and the table's own `_dom_sec` must be the SAME modal choice with
-    the SAME (count desc, sector asc) tie-break — two inline copies would drift the moment one is
-    edited, and the symptom would be an option promising rows the table does not show."""
-    assert block.count("def _ind_dominant(") == 1, "the shared dominant-sector helper is gone"
-    assert block.count("_ind_dominant(") == 3, (
-        "expected one definition and exactly two call sites (drill-down counts + the table)"
+def test_the_sector_map_is_computed_once_and_derived_three_ways(block):
+    """UPDATED 2026-09-21 (§6). Was: one `_ind_dominant` helper, two call sites. The split into
+    display (`_ind_dominant`) and reachability (`_ind_homes`) keeps the ORIGINAL subject — no two
+    inline copies that can drift — by deriving BOTH from one `_ind_sector_pairs` table. If they
+    ever came from separate groupbys, an option could promise rows the table does not show.
+    """
+    for fn in ("_ind_sector_pairs", "_ind_dominant", "_ind_homes"):
+        assert block.count(f"def {fn}(") == 1, f"{fn} is missing or duplicated"
+    assert block.count("_ind_sector_pairs(") == 3, (
+        "expected ONE pair table feeding exactly the two derived views — if a view builds its own "
+        "groupby the two can disagree"
     )
-    i = block.index("def _ind_dominant(")
+    i = block.index("def _ind_sector_pairs(")
     body = block[i:block.index("_i1, _i2, _i3, _i4", i)]
-    assert 'ascending=[True, False, True]' in body, "the deterministic tie-break left the helper"
-    assert 'drop_duplicates("industry")' in body, "the helper stopped picking one sector per industry"
+    assert "ascending=[True, False, True]" in body, "the deterministic tie-break left the helper"
+    assert 'drop_duplicates("industry")' in body, (
+        "the single-home reduction is gone — display and the Δ baseline need exactly one sector"
+    )
+    assert 'transform("max")' in body, (
+        "the home map no longer selects every sector TIED for the maximum — that tie-free rule is "
+        "what replaced an invented share threshold"
+    )
 
 
 def test_the_industry_cascade_narrows_left_to_right(block):
@@ -650,4 +681,168 @@ def test_the_industry_cascade_narrows_left_to_right(block):
     assert seg.index('_icf[_icf["market_category"]') < seg.index('_icf["wealth_tier"].astype(str)'), (
         "wealth facets are counted before the market-cap narrowing — the cascade order broke"
     )
-    assert "_ind_dominant(_icf)" in block, "the drill-down counts read an un-narrowed frame"
+    assert "_ind_homes(_icf)" in block, "the drill-down counts read an un-narrowed frame"
+
+
+# ── 6. TIED HOMES — an industry with no single dominant sector (2026-09-21) ────────────────
+# THE USER FOUND THIS BY USING THE TAB: they picked Steel in the drill-down and
+# "Mining/Minerals - Iron Ore" did not appear. Its 6 stocks split EXACTLY 3 Mining & Mineral
+# products / 3 Steel, and the (count desc, sector ASC) tie-break handed it to Mining because
+# "M" precedes "S". Half that industry is Steel and it was unreachable from Steel.
+#
+# 24 of 371 industries are exact ties, so 24 rows were filed by SPELLING — a deterministic key
+# carrying no information. Worse, both help texts promised "the MAJORITY of stocks", which is
+# false for the 41 industries whose dominant share is <= 50%.
+#
+# THE FIX IS THRESHOLD-FREE ON PURPOSE. An earlier draft of mine proposed "appear under any
+# sector holding >= 40%" and that was the invented-threshold anti-pattern CLAUDE.md §5 exists to
+# stop. "Every sector TIED FOR THE MAXIMUM" needs no number: a tie gets every home it earned, a
+# clear winner keeps exactly one, and nothing has to be calibrated.
+#
+# DISPLAY AND THE PEER BASELINE STAY SINGLE-HOMED. _dom_sec also drives the leave-one-out
+# Δ vs Sector arithmetic, and "which sector's peers?" has no defined answer for a 50/50 industry.
+# Multi-homing the FILTER is cheap; multi-homing a computed number is not. The `~ <share>%` label
+# is what makes the pair legible: a row reached from Steel but measured against Mining peers says
+# so on its face.
+
+
+def _extract_fn(block, name):
+    """Lift a nested helper out of the tab source and make it CALLABLE.
+
+    The Industry helpers live inside a `with` block, so they cannot be imported. Scanning their
+    source for a substring is the trap this suite has paid for repeatedly (`if False and ...`
+    satisfies any presence scan). Executing the real text runs the real code.
+    """
+    import textwrap
+    lines = block.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().startswith(f"def {name}("):
+            indent = len(line) - len(line.lstrip())
+            body = [line]
+            for nxt in lines[i + 1:]:
+                if nxt.strip() and (len(nxt) - len(nxt.lstrip())) <= indent:
+                    break
+                body.append(nxt)
+            ns = {"pd": pd, "np": np}
+            # _ind_homes/_ind_dominant both call _ind_sector_pairs — pull the dependency in first
+            # or the extracted function raises NameError at call time (it did, on the first run).
+            if name != "_ind_sector_pairs":
+                ns["_ind_sector_pairs"] = _extract_fn(block, "_ind_sector_pairs")
+            exec(compile(textwrap.dedent("\n".join(body)), f"<{name}>", "exec"), ns)
+            return ns[name]
+    raise AssertionError(
+        f"{name}() is not defined in the Industry block — the drill-down cannot multi-home a "
+        f"tied industry without it"
+    )
+
+
+def _homes(df):
+    """INDEPENDENT re-implementation (spec, not a copy): industry -> every sector tied for max."""
+    d = df[["industry", "sector", "name"]].copy()
+    d["industry"] = d["industry"].astype(str).str.strip()
+    pair = d.groupby(["industry", "sector"]).size().rename("n").reset_index()
+    return pair[pair["n"] == pair.groupby("industry")["n"].transform("max")]
+
+
+def test_exact_ties_exist_so_this_section_is_not_vacuous(live):
+    """If industry ever becomes a clean child of sector these pins stop meaning anything."""
+    h = _homes(live)
+    tied = h.groupby("industry").size()
+    assert (tied > 1).sum() >= 5, (
+        f"only {(tied > 1).sum()} industries tie for their top sector — re-measure before keeping "
+        f"the multi-home rule"
+    )
+
+
+def test_the_real_helper_multi_homes_a_tie_and_leaves_a_clear_winner_alone(block):
+    """BEHAVIOURAL, on the shipped code: a tie gets every home, a plurality gets exactly one."""
+    homes = _extract_fn(block, "_ind_homes")
+    frame = pd.DataFrame({
+        "name":     [f"s{i}" for i in range(8)],
+        # TieCo: 2 Alpha / 2 Zeta  ->  BOTH (and note Alpha would win an alphabetical tie-break)
+        # ClearCo: 3 Alpha / 1 Zeta ->  Alpha only
+        "industry": ["TieCo"] * 4 + ["ClearCo"] * 4,
+        "sector":   ["Alpha", "Alpha", "Zeta", "Zeta", "Alpha", "Alpha", "Alpha", "Zeta"],
+    })
+    out = homes(frame)
+    got = {i: sorted(g["sector"]) for i, g in out.groupby("industry")}
+    assert got["TieCo"] == ["Alpha", "Zeta"], (
+        f"a 2-2 tie must be reachable from BOTH sectors, got {got.get('TieCo')}"
+    )
+    assert got["ClearCo"] == ["Alpha"], (
+        f"a 3-1 plurality must keep ONE home, got {got.get('ClearCo')} — this is the guard against "
+        f"the rule degenerating into 'any sector it touches at all'"
+    )
+
+
+def test_a_tied_industry_is_reachable_from_every_sector_it_ties_in(live, block):
+    """The user's case, generalised over live data — the app's helper must agree with the spec."""
+    homes = _extract_fn(block, "_ind_homes")
+    d = live.copy()
+    d["industry"] = d["industry"].astype(str).str.strip()
+    app = {i: set(g["sector"]) for i, g in homes(d).groupby("industry")}
+    ref = {i: set(g["sector"]) for i, g in _homes(d).groupby("industry")}
+    assert app == ref, "the tab's home map disagrees with an independent re-implementation"
+    multi = {i: s for i, s in app.items() if len(s) > 1}
+    assert multi, "no multi-homed industry on live data"
+    for ind, secs in list(multi.items())[:50]:
+        counts = d[d["industry"] == ind]["sector"].value_counts()
+        assert len({counts[s] for s in secs}) == 1, (
+            f"{ind} is multi-homed across {secs} whose counts differ — only an exact tie may "
+            f"produce more than one home"
+        )
+
+
+def test_the_drill_down_count_equals_the_rows_the_pick_yields(live, block):
+    """LOCKSTEP — the file's own promise: 'the number beside an option is exactly the number of
+    rows it leaves'. Multi-homing breaks that the moment the counts and the filter disagree, and
+    an off-by-one there is invisible (the table just shows a different number of rows)."""
+    homes = _extract_fn(block, "_ind_homes")
+    d = live.copy()
+    d["industry"] = d["industry"].astype(str).str.strip()
+    h = homes(d)
+    counts = h.groupby("sector")["industry"].nunique().to_dict()
+    for sec, n in sorted(counts.items())[:25]:
+        yielded = h[h["sector"] == sec]["industry"].nunique()
+        assert yielded == n, f"{sec}: option says {n} industries, the pick yields {yielded}"
+
+
+def test_no_help_text_claims_a_majority_it_cannot_deliver(ms_help, block):
+    """41 of 371 industries have a dominant share <= 50%, so 'MAJORITY' was simply false there.
+
+    Two-sided: the word must be gone AND the accurate one present, or a future edit could drop
+    both and leave the control undescribed.
+    """
+    drill = ms_help.get("mp_ind_sec", "")
+    assert drill, "the sector drill-down has no help text"
+    assert "majority" not in drill.lower(), (
+        f"the drill-down still promises a MAJORITY: {drill!r}"
+    )
+    assert "largest share" in drill.lower(), "the drill-down must say what it actually matches on"
+    col = block[block.index('"dom_sector"'):] if '"dom_sector"' in block else ""
+    assert "MAJORITY of the industry" not in col, (
+        "the Sector (dominant) column help still claims the majority sits there — false for the "
+        "41 industries at or below a 50% dominant share"
+    )
+
+
+def test_an_ambiguous_row_prints_its_share_not_just_a_tilde(block):
+    """The '~' said 'loosely'; a number says HOW loosely. Without it a row reached from Steel but
+    labelled 'Mining & Mineral products' has nothing on screen explaining the pair."""
+    i = block.index('_ind_stats["dom_sector"]')
+    seg = block[i:i + 600]
+    assert "_dom_share" in seg, (
+        "the dominant-sector label is built without reference to the share — an industry at 50% "
+        "and one at 79% render identically"
+    )
+    assert "%" in seg, "the ambiguous label carries no percentage"
+
+
+def test_display_and_the_peer_baseline_stay_single_homed(block):
+    """Multi-homing the FILTER must not leak into the computed Δ. 'Which sector's peers?' has no
+    answer for a 50/50 industry, so _dom_sec stays one value per row and keeps driving it."""
+    assert "drop_duplicates" in block, "the single-home reduction for display/baseline is gone"
+    assert "_peer_sum = _dom_sec.map(" in block, (
+        "the leave-one-out baseline no longer reads the single dominant sector — if it now reads "
+        "the multi-home map, one industry contributes to several sector baselines"
+    )
