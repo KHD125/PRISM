@@ -191,8 +191,17 @@ def test_emoji_decision_strings_survive_the_round_trip(live):
 
 # -- 4. One derivation of the row, not three --------------------------------------------
 def _all_data_export_block(src):
+    """The All-Data export button plus its surrounding comments.
+
+    RE-ANCHORED 2026-09-21: this used to slice to the paren after `use_container_width`, which
+    stopped existing when the 25 deprecated call sites were migrated to `width="stretch"`. The
+    argument name was never what this helper is ABOUT — its one consumer asserts on the button's
+    `help=` text — so it now anchors on the button and that help, which are the semantic landmarks.
+    Same name-agnostic repointing the 2026-09-20 landmarks needed, for the same reason.
+    """
     i = src.index("_stock_export")
-    return src[i - 400:src.index(")", src.index("use_container_width", i)) + 600]
+    j = src.index("help=", src.index("st.download_button", i))
+    return src[i - 400:j + 800]
 
 
 def test_export_reuses_stock_rather_than_re_deriving_the_row(app_src):

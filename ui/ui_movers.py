@@ -448,7 +448,7 @@ def _table(df: pd.DataFrame, limit: int = 40, select: bool = False, cap_px: int 
             cfg[c] = st.column_config.TextColumn(
                 label, width="large" if c == "why" else ("medium" if c == "name" else "small"))
     head = df[show].head(limit).reset_index(drop=True)
-    kw = dict(column_config=cfg, use_container_width=True, hide_index=True,
+    kw = dict(column_config=cfg, width="stretch", hide_index=True,
               height=min(cap_px, 60 + len(head) * 35))
     if not select:
         st.dataframe(head, **kw)

@@ -166,3 +166,62 @@ def test_installed_versions_match_the_pins():
         "this environment does not match what Cloud deploys, so the suite is certifying a "
         "different engine than production runs:\n  " + "\n  ".join(drift)
         + "\n\nfix: pip install -r requirements.txt")
+
+
+# ── The deprecated width argument (migrated 2026-09-21) ────────────────────────────────
+_UI_FILES = ["app.py", "ui/ui_discovery.py", "ui/ui_movers.py", "ui/ui_tearsheet.py",
+             "ui/ui_scanner.py", "ui/ui_components.py", "ui/ui_export.py",
+             "ui/ui_reference_data.py"]
+
+
+def test_no_deprecated_use_container_width_remains():
+    """`use_container_width` was removed from Streamlit's API after 2025-12-31.
+
+    WHY THIS WAS DONE WHILE PINNED, rather than waiting for the upgrade that forces it: CLAUDE.md
+    recorded these 25 call sites as something a streamlit bump would DRAG along. That turned out to
+    be the wrong way round — the pinned 1.54.0 ALREADY accepts the replacement `width=` on every
+    widget we use it on (verified by running each one), so both APIs were live simultaneously and
+    the migration could be done calmly, on a version where a mistake shows up immediately. Waiting
+    would have meant migrating under pressure, mid-upgrade, debugging two things at once.
+
+    All 25 sites were `=True` (measured: 0 `=False`, 0 non-literal), so every one maps to
+    `width="stretch"`. The `width="content"` form is deliberately NOT used anywhere — Streamlit's
+    own issue tracker reports it unsupported on some components, and we never needed it.
+    """
+    import io as _io
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parent.parent
+    offenders = {}
+    for rel in _UI_FILES:
+        p = root / rel
+        if not p.exists():
+            continue
+        src = _io.open(p, encoding="utf-8").read()
+        # CODE ONLY: a comment or docstring may legitimately NAME the retired argument (this test's
+        # own docstring does, and so does the migration note in CLAUDE.md) — the prose-match trap
+        # this suite has paid for repeatedly. Strip comments before counting.
+        code = "\n".join(l.split("#", 1)[0] for l in src.splitlines())
+        n = code.count("use_container_width")
+        if n:
+            offenders[rel] = n
+    assert not offenders, (
+        "deprecated `use_container_width` is back in %s — Streamlit removed it after 2025-12-31; "
+        "use width='stretch' (True) / width='content' (False)" % offenders
+    )
+
+
+def test_the_replacement_argument_is_actually_used():
+    """Teeth: the test above also passes if somebody deletes the argument entirely and silently
+    changes every button's layout. Assert the REPLACEMENT is present in the same volume."""
+    import io as _io
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parent.parent
+    total = 0
+    for rel in _UI_FILES:
+        p = root / rel
+        if p.exists():
+            total += _io.open(p, encoding="utf-8").read().count('width="stretch"')
+    assert total >= 20, (
+        "only %d `width=\"stretch\"` call sites remain; 25 were migrated on 2026-09-21, so a large "
+        "drop means the layout argument was dropped rather than replaced" % total
+    )

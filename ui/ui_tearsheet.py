@@ -244,7 +244,7 @@ def render_moat_growth_matrix(df: pd.DataFrame, highlight_stock: str = None):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=COLORS["border"],
                      zeroline=True, zerolinewidth=2, zerolinecolor=COLORS["border"],
                      range=[-25, 105])
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # WHERE DOES *THIS* STOCK SIT — the question a single-stock tearsheet is actually asking.
     # The scatter spends all its resolution on the other ~2,037 dots, and the quadrant label is

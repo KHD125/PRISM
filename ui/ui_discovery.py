@@ -256,7 +256,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # in real time as filters narrow the universe.
         _funnel = st.empty()
         _chips_ph = st.empty()   # applied-filter chips; filled at END (post-prune, like _funnel)
-        st.button("🧹 Clear all filters", key="sb_clear", use_container_width=True,
+        st.button("🧹 Clear all filters", key="sb_clear", width="stretch",
                   on_click=clear_all_filters)
 
         def _active_n(*keys):
@@ -984,7 +984,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             st.caption(f"🎯 {len(_chips)} active · click to remove")
             for _ck, _clabel in _chips:
                 st.button(f"✕  {_clabel}", key=f"chip_{_ck}", on_click=_remove_one_filter,
-                          args=(_ck,), use_container_width=True)
+                          args=(_ck,), width="stretch")
 
     # Fill the live results funnel (placeholder created at the TOP of the sidebar filter panel).
     # `filt` == `_cf` now, so the count reflects the WHOLE cascade — every group, Refine included.

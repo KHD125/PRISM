@@ -204,15 +204,15 @@ with st.sidebar:
     st.markdown("### 📂 Data Source")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("📊 Google Sheets", type="primary" if st.session_state.data_source == "sheet" else "secondary", use_container_width=True):
+        if st.button("📊 Google Sheets", type="primary" if st.session_state.data_source == "sheet" else "secondary", width="stretch"):
             st.session_state.data_source = "sheet"
             st.rerun()
     with col2:
-        if st.button("📁 Upload CSV", type="primary" if st.session_state.data_source == "upload" else "secondary", use_container_width=True):
+        if st.button("📁 Upload CSV", type="primary" if st.session_state.data_source == "upload" else "secondary", width="stretch"):
             st.session_state.data_source = "upload"
             st.rerun()
 
-    if st.button("🔄 Clear Cache & Reload", use_container_width=True):
+    if st.button("🔄 Clear Cache & Reload", width="stretch"):
         # Full refresh: clear the Tier-1 data cache AND the Tier-2 scored-df session cache,
         # so a re-score runs from scratch (picks up engine code changes, not stale labels).
         st.cache_data.clear()
@@ -474,7 +474,7 @@ with _scored_dl_ph.container():
         data=scored_universe_csv(_dl_sig, filt, _vintage, st.session_state.data_source),
         file_name=f"prism_scored_{_fname_date}_{len(filt)}stocks.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
         help="Downloads the CURRENTLY FILTERED stocks (every column) as Excel-safe CSV — reflects your "
              "sidebar filters (no filter = the full universe). For a curated column set, use the Deep "
              "Scanner's export.",
@@ -576,7 +576,7 @@ with tabs[0]:
         )
         _, _ec, _ = st.columns([3, 2, 3])
         with _ec:
-            st.button("🧹 Clear all filters", key="disc_clear", use_container_width=True,
+            st.button("🧹 Clear all filters", key="disc_clear", width="stretch",
                       on_click=clear_all_filters)
     else:
         st.markdown(
@@ -605,7 +605,7 @@ with tabs[0]:
                 if st.button(
                     "🔬 Open Analysis →",
                     key=f"disc_ts_{_di}",
-                    use_container_width=True,
+                    width="stretch",
                     type="secondary",
                     help=f"View full tearsheet for {_drow.get('name', '')}",
                 ):
@@ -846,7 +846,7 @@ with tabs[1]:
         )
         _, _ec, _ = st.columns([3, 2, 3])
         with _ec:
-            st.button("🧹 Clear all filters", key="ds_clear", use_container_width=True,
+            st.button("🧹 Clear all filters", key="ds_clear", width="stretch",
                       on_click=clear_all_filters)
     elif ds_df.empty:
         # Filters DO match stocks; the search box killed them → clear the search, not the filters.
@@ -856,7 +856,7 @@ with tabs[1]:
         _sel = st.dataframe(
             _display_df,
             column_config=_CC,
-            use_container_width=True,
+            width="stretch",
             height=580,
             hide_index=True,
             on_select="rerun",
@@ -897,7 +897,7 @@ with tabs[1]:
             data=_to_csv_bytes(ds_df[_export_cols]),
             file_name=f"scan_{_safe_mode}.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
 
 
@@ -1096,7 +1096,7 @@ with tabs[2]:
 
             with _ov1:
                 fig = render_radar_chart(stock, f"{selected} — Quality Radar")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
             with _ov2:
                 # Quality facets — the radar's LEGEND (the polygon shows shape; these are the exact
@@ -1305,7 +1305,7 @@ with tabs[2]:
                 data=_to_csv_bytes(_stock_export),
                 file_name=f"{re.sub(r'[^A-Za-z0-9._-]+', '_', selected).lower()}_signals.csv",
                 mime="text/csv",
-                use_container_width=True,
+                width="stretch",
                 # Both sibling data exports state their column count in the label; this one said only
                 # "(all columns)". The help names the one thing measurement showed a user WILL hit:
                 # the CSV is keyed by ENGINE column name, and NONE of the 154 display labels the grid
@@ -1584,7 +1584,7 @@ def _render_market_pulse():
         with slots[-1]:
             st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
             if _n_active:
-                st.button("🧹 Clear", key=f"mp_{prefix}_clear", use_container_width=True,
+                st.button("🧹 Clear", key=f"mp_{prefix}_clear", width="stretch",
                           on_click=_mp_clear_lens, args=(_defaults,))
         return _cf, _n_active
 
@@ -1661,7 +1661,7 @@ def _render_market_pulse():
                     "smart_money_flow": st.column_config.TextColumn("Smart Money"),
                     "buy_zone_label":  st.column_config.TextColumn("Buy Zone"),
                 },
-                use_container_width=True,
+                width="stretch",
                 height=min(480, 80 + len(_mp_ts) * 35 + 40),
                 hide_index=True,
                 on_select="rerun",
@@ -1747,7 +1747,7 @@ def _render_market_pulse():
                         "market_cap":     st.column_config.NumberColumn("MCap ₹Cr",    format="%.0f"),
                         "rank":           st.column_config.NumberColumn("Rank",         format="%.0f"),
                     },
-                    use_container_width=True,
+                    width="stretch",
                     height=min(500, 80 + len(_mp_qglp) * 35 + 40),
                     hide_index=True,
                     on_select="rerun",
@@ -1853,7 +1853,7 @@ def _render_market_pulse():
                     "composite_score":  st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f", width="small"),
                     "mosl_hits":        st.column_config.TextColumn("Lenses cleared", width="large"),
                 },
-                use_container_width=True,
+                width="stretch",
                 height=min(500, 80 + len(_mosl) * 35 + 40),
                 hide_index=True,
             )
@@ -1939,7 +1939,7 @@ def _render_market_pulse():
                     "verdict_direction": st.column_config.TextColumn("Soundness", width="small", help="The soundness gate (level + forensics + valuation) beside the wealth tier (pure change). They answer DIFFERENT questions and disagreeing openly is the point: the engine's rare SOUND names include stocks this lens reads as decaying, and its FLAWED pile hides confirmed turnarounds."),
                     "reserves":          st.column_config.NumberColumn("Reserves ₹Cr", format="%.0f", width="small", help="Reserves — the equity base behind EP% and Vel% (the same base economic profit is computed on). A tiny base can make the percentages explode — check this before believing an extreme EP%."),
                 },
-                use_container_width=True,
+                width="stretch",
                 height=min(520, 80 + len(_wl) * 35 + 40),
                 hide_index=True,
             )
@@ -2050,7 +2050,7 @@ def _render_market_pulse():
                              "mp_sec_phase": [], "mp_sec_minn": 5}
             st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
             if any(st.session_state.get(k, d) != d for k, d in _SEC_DEFAULTS.items()):
-                st.button("🧹 Clear", key="mp_sec_clear", use_container_width=True,
+                st.button("🧹 Clear", key="mp_sec_clear", width="stretch",
                           on_click=_mp_clear_lens, args=(_SEC_DEFAULTS,))
 
         _sec_cap_ph.markdown(
@@ -2165,7 +2165,7 @@ def _render_market_pulse():
                     "avg_valuation": st.column_config.ProgressColumn("Valuation",min_value=0, max_value=100, format="%.0f"),
                     "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
                 },
-                use_container_width=True,
+                width="stretch",
                 height=min(700, 80 + len(_sec_stats) * 35),
                 hide_index=True,
             )
@@ -2345,7 +2345,7 @@ def _render_market_pulse():
                 _IND_DEFAULTS = {"mp_ind_cap": [], "mp_ind_wealth": [], "mp_ind_sec": []}
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                 if any(st.session_state.get(k, d) != d for k, d in _IND_DEFAULTS.items()):
-                    st.button("🧹 Clear", key="mp_ind_clear", use_container_width=True,
+                    st.button("🧹 Clear", key="mp_ind_clear", width="stretch",
                               on_click=_mp_clear_lens, args=(_IND_DEFAULTS,))
 
             if _ind_cap:
@@ -2529,7 +2529,7 @@ def _render_market_pulse():
                                                  "sectors — the drill-down then reaches it from either, while this column "
                                                  "keeps one name because the Δ baseline needs exactly one peer group."),
                     },
-                    use_container_width=True,
+                    width="stretch",
                     height=min(700, 80 + len(_ind_stats) * 35),
                     hide_index=True,
                 )
@@ -3169,7 +3169,7 @@ def _render_reference():
         data=build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY, frameworks=_fw_md,
                                       studies=WCS_STUDIES),
         file_name="prism_reference.md", mime="text/markdown",
-        use_container_width=True,
+        width="stretch",
     )
     # ── TWO-MODE LAYOUT (2026-08-29): BROWSE vs SEARCH ─────────────────────────────────────
     # The tab had become five stacked corpora (~70KB of text) — the app's worst scroll. BROWSE
