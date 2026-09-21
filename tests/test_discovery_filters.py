@@ -879,3 +879,223 @@ def test_the_recovery_validates_against_the_full_frame_not_the_cascade_frame():
         assert f'_cf["{col}"].dropna().unique().tolist()' in seg, (
             f"{key} must still build its OPTIONS from the narrowed cascade frame"
         )
+
+
+# ── HARDENING THE WHOLE CLASS (2026-09-21) ─────────────────────────────────────────────────
+# The 2026-09-21 label round-trip was fixed on the TWO selectboxes because a probe showed the
+# multiselects clean in ONE run. That is one observation, not a proof: the bug needed a specific
+# ORDER to appear, so another order could corrupt a different widget. Measured, 19 of the 28
+# cascade widgets carry a count-bearing label — the exact shape that failed — and only 2 were
+# defended.
+#
+# The answer is NOT more reachability tests: 31 of those already exist, they all stayed green
+# while the bug was live, and they test the LOGIC, which was never wrong. Instead:
+#   1. recover at ONE choke point for every count-bearing widget, so it does not matter which
+#      widget Streamlit corrupts or in what order;
+#   2. pin the separator invariant that makes the recovery provably unambiguous;
+#   3. INJECT the corruption in AppTest — it cannot PRODUCE this bug (no widget registry) but it
+#      can REPRODUCE it, which is the regression test the first fix lacked;
+#   4. check the sidebar against an independent pandas intersection (an oracle, not a restatement).
+
+
+def _ROUNDTRIP_FRAME():
+    """A frame where several filters compose non-trivially, so an oracle over it means something."""
+    import pandas as _pd
+    return _pd.DataFrame({
+        "name":             list("abcdefgh"),
+        "sector":           ["Steel", "Steel", "Steel", "Trading",
+                             "Trading", "Chemicals", "Chemicals", "Steel"],
+        "industry":         ["Tubes", "Wires", "Tubes", "Retail",
+                             "Retail", "Dyes", "Dyes", "Wires"],
+        "market_category":  ["Small Cap", "Mid Cap", "Large Cap", "Small Cap",
+                             "Mid Cap", "Small Cap", "Large Cap", "Mid Cap"],
+        "conviction_tier":  [1, 2, 3, 4, 5, 1, 2, 3],
+        "piotroski_fscore": [5, 6, 7, 8, 5, 6, 7, 8],
+        "red_flag_count":   [0, 1, 2, 3, 0, 1, 2, 3],
+        "quality_score":    [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0],
+        "composite_score":  [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0],
+    })
+
+
+def _roundtrip_app():
+    """Mini-app: drives the REAL sidebar and reports what the caller gets.
+
+    The frame arrives through session_state because AppTest.from_function runs the callable in an
+    ISOLATED namespace — module-level helpers are invisible to it (NameError on the first run).
+    Passing the spec keeps ONE definition of the fixture instead of a second inline copy that
+    could drift away from the oracle's pandas side.
+    """
+    import pandas as _pd
+    import streamlit as _st
+    from ui.ui_discovery import render_discovery_sidebar
+    filt = render_discovery_sidebar(_pd.DataFrame(_st.session_state["_FRAME_SPEC"]))
+    _st.text("N=%d" % len(filt))
+    _st.text("SECTORS=%s" % sorted(set(filt["sector"])))
+    _st.text("CAPS=%s" % sorted(set(filt["market_category"])))
+
+
+def _run_app(state, frame=None):
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_roundtrip_app)
+    at.session_state["_FRAME_SPEC"] = {c: list(v) for c, v
+                                       in (_ROUNDTRIP_FRAME() if frame is None else frame).items()}
+    for k, v in state.items():
+        at.session_state[k] = v
+    at.run(timeout=30)          # explicit: the 3s default overran here on 2026-08-31
+    assert not at.exception, "sidebar raised: %s" % at.exception
+    return {t.value.split("=", 1)[0]: t.value.split("=", 1)[1] for t in at.text}
+
+
+# ── 1. the separator invariant that makes recovery unambiguous ──────────────────────────
+
+def test_no_filterable_value_contains_the_label_separator():
+    """RECOVERY SPLITS ON `_PICK_SEP`, so it is only provably correct while no real value contains
+    it. Measured 2026-09-21 across all 21 filterable columns on live data: 0 violations, and the
+    middot does not appear in any value at all. Pinned rather than assumed — the day a vendor ships
+    a sector named with a middot, this fails instead of a filter silently matching the wrong rows."""
+    import contextlib as _c, io as _i
+    from ui.ui_discovery import _PICK_SEP
+    import re as _re
+    cols = sorted(set(_re.findall(r'count_col="(\w+)"', _DISC))) + ["sector", "industry"]
+    with _c.redirect_stdout(_i.StringIO()):
+        from core import fetch_and_clean_data, run_scoring_pipeline
+        live = run_scoring_pipeline(fetch_and_clean_data("local"))
+    present = [c for c in sorted(set(cols)) if c in live.columns]
+    assert len(present) >= 15, "expected the full filterable column set, found %d" % len(present)
+    bad = {c: [v for v in live[c].dropna().astype(str).unique() if _PICK_SEP in v]
+           for c in present}
+    bad = {c: v for c, v in bad.items() if v}
+    assert not bad, (
+        "these filterable values contain the option-label separator, so canonical_pick could "
+        "split a REAL value: %s" % bad
+    )
+
+
+# ── 2. the list form, for multiselects ──────────────────────────────────────────────────
+
+def test_canonical_picks_recovers_every_label_in_a_list():
+    from ui.ui_discovery import canonical_picks, _fmt_pick
+    dom = {"Small Cap", "Mid Cap"}
+    got = canonical_picks([_fmt_pick("Small Cap", 1048), _fmt_pick("Mid Cap", 427)], dom)
+    assert got == ["Small Cap", "Mid Cap"], got
+
+
+def test_canonical_picks_drops_what_it_cannot_recover_without_emptying_the_rest():
+    """A multiselect has no 'All' sentinel, so an unrecoverable entry is DROPPED, not turned into
+    a fallback — and it must not take its valid siblings with it."""
+    from ui.ui_discovery import canonical_picks
+    assert canonical_picks(["Small Cap", "Nonsense"], {"Small Cap"}) == ["Small Cap"]
+    assert canonical_picks([], {"Small Cap"}) == []
+
+
+def test_canonical_picks_preserves_order_and_deduplicates():
+    from ui.ui_discovery import canonical_picks, _fmt_pick
+    dom = {"A", "B"}
+    assert canonical_picks(["B", "A", _fmt_pick("B", 9)], dom) == ["B", "A"], (
+        "recovery must not reorder a selection, and a label whose raw value is already selected "
+        "must not be added twice"
+    )
+
+
+def test_every_count_bearing_widget_recovers_its_stored_value():
+    """ONE CHOKE POINT. 19 of 28 cascade widgets carry a count-bearing label; defending only the
+    two that were observed to fail would leave 17 relying on a single lucky observation."""
+    i = _DISC.index("def _ms_cascade(")
+    body = _DISC[i:_DISC.index("_cf = df ", i)]
+    assert "canonical_picks(" in body, (
+        "_ms_cascade does not recover its stored selection — every count_col multiselect is "
+        "exposed to the same label round-trip that hit the Sector selectbox"
+    )
+    assert "count_col" in body.split("canonical_picks(")[0][-400:], (
+        "recovery must be tied to the count-bearing case (count_col is what makes the label "
+        "volatile, and it also names the column the domain comes from)"
+    )
+
+
+# ── 3. INJECTION: AppTest cannot cause this bug, but it can reproduce it ─────────────────
+
+def test_a_round_tripped_selectbox_label_still_filters_correctly():
+    """THE REGRESSION TEST THE FIRST FIX LACKED. Streamlit writes the DISPLAY string back into
+    session_state; AppTest never does that on its own, so inject it directly. Before the fix this
+    returns 0 with the funnel blaming Sector."""
+    out = _run_app({"sb_sector": "Steel  \u00b7  99"})
+    assert out["N"] == "4", "a round-tripped sector label matched %s rows, expected all 4 Steel" % out["N"]
+    assert out["SECTORS"] == "['Steel']", out["SECTORS"]
+
+
+def test_a_round_tripped_multiselect_label_still_filters_correctly():
+    """The half that was never proven — only observed clean once, in one order."""
+    out = _run_app({"sb_mcap": ["Small Cap  \u00b7  42"]})
+    assert out["N"] == "3", "a round-tripped cap label matched %s rows, expected 3 Small Caps" % out["N"]
+    assert out["CAPS"] == "['Small Cap']", out["CAPS"]
+
+
+def test_the_users_exact_repro_survives_both_labels_being_round_tripped():
+    """Sector = Steel + Market Category = [Small, Mid], both stored as labels. The live shape of
+    the 2026-09-21 report, which read 'No stocks match your filters' over 60 real rows."""
+    out = _run_app({"sb_sector": "Steel  \u00b7  99",
+                    "sb_mcap": ["Small Cap  \u00b7  42", "Mid Cap  \u00b7  7"]})
+    assert out["N"] == "3", (
+        "the user's exact repro returned %s rows; the frame holds 3 Steel small/mid-caps" % out["N"]
+    )
+    assert out["SECTORS"] == "['Steel']", out["SECTORS"]
+
+
+def test_the_unknown_sentinel_survives_the_recovery():
+    """FOUND BY A MISSED MUTATION (U3). `❔ Unknown` is a legitimate pick that appears in NO
+    column — it claims the honest holes (NaN/blank) that _label_mask unions in. So a domain built
+    from column values ALONE silently drops it, the filter switches off, and the result gets BIGGER
+    rather than smaller: the silent-widening class keep_selected exists to prevent.
+
+    Unit-testing canonical_picks would not catch it — the defect is in how _ms_cascade BUILDS the
+    domain, so this drives the real widget with a frame that has an honest hole in it.
+    """
+    from ui.ui_discovery import _UNKNOWN
+    f = _ROUNDTRIP_FRAME()
+    f.loc[0, "market_category"] = None                     # exactly one honest hole
+    out = _run_app({"sb_mcap": [_UNKNOWN]}, frame=f)
+    assert out["N"] == "1", (
+        "selecting ❔ Unknown matched %s rows, expected the 1 blank — a dropped sentinel would "
+        "show the whole frame instead" % out["N"]
+    )
+
+
+# ── 4. ORACLE: the sidebar against an independent intersection ───────────────────────────
+
+def test_the_sidebar_equals_an_independent_pandas_intersection():
+    """AN ORACLE, NOT A RESTATEMENT. The sidebar's whole contract is
+    `filt == df[mask_a & mask_b & ...]`, so the honest check is to compute that separately and
+    demand agreement. Catches any filter that silently matches nothing or too much, whatever the
+    cause — a dead guard, an inverted mask, or a corrupted stored value."""
+    frame = _ROUNDTRIP_FRAME()
+    cases = [
+        ({}, lambda d: d),
+        ({"sb_sector": "Steel"}, lambda d: d[d["sector"] == "Steel"]),
+        ({"sb_mcap": ["Small Cap"]}, lambda d: d[d["market_category"].isin(["Small Cap"])]),
+        ({"sb_mcap": ["Small Cap", "Mid Cap"]},
+         lambda d: d[d["market_category"].isin(["Small Cap", "Mid Cap"])]),
+        ({"sb_sector": "Steel", "sb_mcap": ["Small Cap", "Mid Cap"]},
+         lambda d: d[(d["sector"] == "Steel") & d["market_category"].isin(["Small Cap", "Mid Cap"])]),
+        ({"sb_sector": "Chemicals", "sb_mcap": ["Large Cap"]},
+         lambda d: d[(d["sector"] == "Chemicals") & d["market_category"].isin(["Large Cap"])]),
+        ({"sb_sector": "Steel", "sb_industry": "Wires"},
+         lambda d: d[(d["sector"] == "Steel") & (d["industry"] == "Wires")]),
+    ]
+    for state, oracle in cases:
+        want = len(oracle(frame))
+        got = int(_run_app(state)["N"])
+        assert got == want, (
+            "sidebar and pandas disagree for %r: sidebar %d, intersection %d" % (state, got, want)
+        )
+
+
+def test_the_oracle_is_not_vacuous():
+    """Teeth: the cases above must actually discriminate, or the oracle passes on anything."""
+    frame = _ROUNDTRIP_FRAME()
+    counts = {
+        len(frame),
+        len(frame[frame["sector"] == "Steel"]),
+        len(frame[frame["market_category"].isin(["Small Cap"])]),
+        len(frame[(frame["sector"] == "Steel") & (frame["industry"] == "Wires")]),
+    }
+    assert len(counts) >= 4, "the oracle cases collapse to %s — they cannot discriminate" % counts

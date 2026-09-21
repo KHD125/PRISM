@@ -168,6 +168,28 @@ def canonical_pick(stored, domain, fallback="All"):
     return head if head in domain else fallback
 
 
+def canonical_picks(stored, domain) -> list:
+    """List form of canonical_pick, for the cascade's multiselects.
+
+    An unrecoverable entry is DROPPED rather than replaced: a multiselect has no "All" sentinel,
+    and empty already means "no filter", so substituting a fallback would invent a selection the
+    user never made. Order is preserved (the chip row reads in pick order) and duplicates are
+    collapsed, so a label whose raw value is already selected cannot appear twice.
+
+    SCOPE, set by measurement rather than symmetry: 19 of the 28 cascade widgets carry a
+    count-bearing label, which is the shape that round-trips. The 2026-09-21 fix defended only the
+    two selectboxes, on the strength of ONE probe run showing the multiselects clean — one
+    observation, in one order, of a bug that only appears in SOME orders. This closes the class
+    instead of re-litigating which widget is safe.
+    """
+    out = []
+    for v in (stored or []):
+        r = canonical_pick(v, domain, fallback=None)
+        if r is not None and r not in out:
+            out.append(r)
+    return out
+
+
 def keep_selected(options, stored) -> list:
     """Live option list + every stored pick the cascade has narrowed OUT of it, appended last.
 
@@ -288,6 +310,16 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             # stored pick — a value the cascade narrowed out is appended to the options so the
             # widget cannot raise and the filter still applies (reads 0, names itself as culprit).
             stored = list(st.session_state.get(key, default))
+            # RECOVER A ROUND-TRIPPED LABEL (2026-09-21) before the selection is seeded, offered or
+            # applied. count_col is exactly the at-risk marker AND the domain source: it is what
+            # makes the option label carry a live count, and a count moves as the cascade narrows,
+            # which is what lets Streamlit write the DISPLAY string back into session_state.
+            # The domain is the FULL df, never `_cf` — a value the cascade has narrowed out must
+            # SURVIVE (it reads `· 0`, applies, and names itself as culprit); validating against the
+            # narrowed frame would silently drop it and widen the result, the 2026-09-02 bug.
+            # _UNKNOWN is a legitimate pick that appears in no column, so it joins the domain.
+            if count_col is not None and count_col in df.columns:
+                stored = canonical_picks(stored, {_UNKNOWN, *df[count_col].dropna().unique()})
             st.session_state[key] = stored
             options = keep_selected(options, stored)
             if format_func is None and count_col is not None and count_col in _cf.columns:
