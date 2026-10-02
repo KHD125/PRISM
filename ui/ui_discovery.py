@@ -176,17 +176,61 @@ def canonical_picks(stored, domain) -> list:
     user never made. Order is preserved (the chip row reads in pick order) and duplicates are
     collapsed, so a label whose raw value is already selected cannot appear twice.
 
-    SCOPE, set by measurement rather than symmetry: 19 of the 28 cascade widgets carry a
-    count-bearing label, which is the shape that round-trips. The 2026-09-21 fix defended only the
-    two selectboxes, on the strength of ONE probe run showing the multiselects clean — one
-    observation, in one order, of a bug that only appears in SOME orders. This closes the class
-    instead of re-litigating which widget is safe.
+    SCOPE — CORRECTED 2026-09-22. This covers the 19 widgets whose live count arrives via
+    `count_col`, and this docstring originally claimed that closed the class. It did not: 8 more
+    widgets carry their count through an explicit `format_func`, were never covered, and four of
+    them crashed the app in production. Those are recovered by `recover_labels`; a structural test
+    now requires every format_func cascade widget to pass its recovery domain.
     """
     out = []
     for v in (stored or []):
         r = canonical_pick(v, domain, fallback=None)
         if r is not None and r not in out:
             out.append(r)
+    return out
+
+
+# A cascade label's ONLY volatile part is its live count, in one of the two house shapes:
+# "<value>  ·  <n>" (_fmt_pick / the count_col widgets) or "<name> (<n>)" (the flag OR-groups).
+_COUNT_TAIL = re.compile(r"(?:\s*\(\d+\)|" + re.escape(_PICK_SEP) + r"\d+)$")
+
+
+def _label_stem(label) -> str:
+    """A display label minus its trailing live count — the part that is stable across reruns.
+    Anchored and applied once, so a value like "💪 Strong (≥7)" keeps its own brackets."""
+    return _COUNT_TAIL.sub("", str(label), count=1)
+
+
+def recover_labels(stored, domain, format_func) -> list:
+    """Map every stored entry back to a legitimate VALUE, for widgets whose live count arrives
+    through an explicit `format_func` rather than `count_col`.
+
+    PRODUCTION CRASH, 2026-09-22. canonical_picks covered the 19 count_col widgets and its
+    docstring claimed that closed the class; it did not. Eight widgets carry their count through
+    format_func instead — 🔥 Catalyst, 🚨 Sell Alerts, 🚀 Candidate Flags, 🎭 Framework Family, the
+    three framework set-algebra pickers and Piotroski Strength — and none was covered. When Streamlit
+    wrote a display label back into session_state, keep_selected offered it as an option and the
+    four hard-lookup format_funcs (`_cat_name[c]` …) raised KeyError inside
+    render_discovery_sidebar, taking the WHOLE APP down. The other four silently zeroed, and
+    Exclude silently widened.
+
+    The reverse map is built FROM format_func itself, so the recoverer cannot drift from the label
+    it reverses (the same reason _fmt_pick and canonical_pick share _PICK_SEP). The domain must be
+    the FULL set of legitimate values, never the narrowed live options: a value the cascade
+    narrowed out has to survive, read 0, apply and name itself as culprit.
+
+    RECOVER, DO NOT DROP, wherever a match exists — dropping a pick switches its filter OFF and
+    WIDENS the result, the 2026-09-02 bug keep_selected exists to prevent. Only a genuinely
+    unrecoverable entry is dropped (it cannot be applied either: there is no column to filter by).
+    Order preserved, duplicates collapsed."""
+    dom = list(domain)
+    legit = set(dom)
+    by_stem = {_label_stem(format_func(v)): v for v in dom}
+    out = []
+    for s in (stored or []):
+        v = s if s in legit else by_stem.get(_label_stem(s))
+        if v is not None and v not in out:
+            out.append(v)
     return out
 
 
@@ -295,7 +339,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # drift between options and results).
         # Defensive: stored multiselect selections are pruned to the current valid options
         # before each widget renders, preventing Streamlit's "value not in options" crash.
-        def _ms_cascade(label, options, key, default, help=None, format_func=None, count_col=None):
+        def _ms_cascade(label, options, key, default, help=None, format_func=None, count_col=None,
+                        domain=None):
             """Cascade-safe multiselect. Fully manages session_state (no `default=` arg, which
             avoids Streamlit's default-plus-session-state warning). A stored pick the cascade has
             narrowed out is KEPT in the option list with its honest count of 0 (keep_selected) —
@@ -305,21 +350,27 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             can vary per run (e.g. a live count) — never bake volatile text into the values.
             count_col: when given (and no explicit format_func), each option is auto-annotated with
             its LIVE count in the cascade frame `_cf` at THIS point — so the number reflects every
-            filter above it (the 'smart faceted' feel). Counts live in the display only."""
+            filter above it (the 'smart faceted' feel). Counts live in the display only.
+            domain: REQUIRED with an explicit format_func — the FULL set of legitimate values, used
+            to recover a round-tripped display label (recover_labels). Pinned structurally."""
             # Seed by assignment BEFORE instantiating (the Steel resurrection fix), and keep every
             # stored pick — a value the cascade narrowed out is appended to the options so the
             # widget cannot raise and the filter still applies (reads 0, names itself as culprit).
             stored = list(st.session_state.get(key, default))
-            # RECOVER A ROUND-TRIPPED LABEL (2026-09-21) before the selection is seeded, offered or
-            # applied. count_col is exactly the at-risk marker AND the domain source: it is what
-            # makes the option label carry a live count, and a count moves as the cascade narrows,
-            # which is what lets Streamlit write the DISPLAY string back into session_state.
-            # The domain is the FULL df, never `_cf` — a value the cascade has narrowed out must
-            # SURVIVE (it reads `· 0`, applies, and names itself as culprit); validating against the
-            # narrowed frame would silently drop it and widen the result, the 2026-09-02 bug.
+            # RECOVER A ROUND-TRIPPED LABEL before the selection is seeded, offered or applied.
+            # The at-risk marker is a LIVE COUNT IN THE LABEL — a count moves as the cascade
+            # narrows, which is what lets Streamlit write the DISPLAY string back into
+            # session_state. It arrives two ways, and the 2026-09-21 fix covered only the first
+            # (count_col) while claiming the whole class; the second (an explicit format_func)
+            # crashed the app in production on 2026-09-22. Both branches below are required.
+            # The domain is ALWAYS the full set, never `_cf` — a value the cascade has narrowed out
+            # must SURVIVE (it reads 0, applies, and names itself as culprit); validating against
+            # the narrowed frame would silently drop it and widen the result, the 2026-09-02 bug.
             # _UNKNOWN is a legitimate pick that appears in no column, so it joins the domain.
             if count_col is not None and count_col in df.columns:
                 stored = canonical_picks(stored, {_UNKNOWN, *df[count_col].dropna().unique()})
+            elif format_func is not None and domain is not None:
+                stored = recover_labels(stored, domain, format_func)
             st.session_state[key] = stored
             options = keep_selected(options, stored)
             if format_func is None and count_col is not None and count_col in _cf.columns:
@@ -513,12 +564,13 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             _pf = _cf["piotroski_fscore"]
             _pio_tier = np.where(_pf >= 7, "💪 Strong (≥7)",
                                  np.where(_pf >= 4, "➖ Moderate (4–6)", "⚠️ Weak (≤3)"))
-            _pio_opts = [t for t in ["💪 Strong (≥7)", "➖ Moderate (4–6)", "⚠️ Weak (≤3)"]
-                         if t in set(_pio_tier)]
+            _PIO_TIERS = ["💪 Strong (≥7)", "➖ Moderate (4–6)", "⚠️ Weak (≤3)"]
+            _pio_opts = [t for t in _PIO_TIERS if t in set(_pio_tier)]
             _pio_vc = pd.Series(_pio_tier).value_counts().to_dict()   # derived array → explicit count
             sel_pio = _ms_cascade("Piotroski Strength", _pio_opts, "sb_piotier", default=[],
                                   help="Financial-strength tier (Piotroski F-Score). Empty = all.",
-                                  format_func=lambda v: f"{v}  ·  {_pio_vc.get(v, 0)}")
+                                  format_func=lambda v: f"{v}  ·  {_pio_vc.get(v, 0)}",
+                                  domain=_PIO_TIERS)
             if sel_pio:
                 _cf = _narrow(_cf, pd.Series(_pio_tier, index=_cf.index).isin(sel_pio), "Piotroski")
 
@@ -626,6 +678,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                      "family. The number in brackets is how many of that family's frameworks are still "
                      "available. Empty = all stocks.",
                 format_func=lambda l: f"{_fam_meta[l][0]} {l} ({_fam_avail_n.get(l, 0)})",
+                domain=list(_fam_meta),
             )
             if sel_fam:
                 _fam_cap = max((_fam_avail_n.get(l, 1) for l in sel_fam), default=1)
@@ -652,6 +705,10 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                     unsafe_allow_html=True,
                 )
 
+            # Recovery domain for the three pickers below: every framework in the FULL frame, never
+            # `_cf` — a framework the cascade narrowed out must survive recovery (recover_labels).
+            _fw_domain = _extract_frameworks(df)
+
             # 5a. EXCLUDE Framework — NOT logic (applied first, narrows universe)
             _all_fw_excl = _extract_frameworks(_cf)
             _fwc_excl = _fw_counts(_cf)
@@ -659,6 +716,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 "🚫 Exclude Framework", _all_fw_excl, "sb_fw_exclude", default=[],
                 help="Remove stocks passing ANY of these frameworks. Applied first.",
                 format_func=lambda v, _c=_fwc_excl: f"{v}  ·  {_c.get(v, 0)}",
+                domain=_fw_domain,
             )
             if sel_fw_exclude:
                 _excl_mask = _fw_match_mask(_cf, sel_fw_exclude, logic="or")
@@ -679,6 +737,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 "✅ Include Framework", _all_fw_incl, "sb_fw_include", default=[],
                 help="Show stocks passing ANY of these. Empty = all remaining stocks.",
                 format_func=lambda v, _c=_fwc_incl: f"{v}  ·  {_c.get(v, 0)}",
+                domain=_fw_domain,
             )
             if sel_fw_include:
                 _incl_mask = _fw_match_mask(_cf, sel_fw_include, logic="or")
@@ -699,6 +758,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 "🔗 Combination Framework", _all_fw_comb, "sb_fw_combine", default=[],
                 help="Stock must pass ALL of these simultaneously. AND logic.",
                 format_func=lambda v, _c=_fwc_comb: f"{v}  ·  {_c.get(v, 0)}",
+                domain=_fw_domain,
             )
             if sel_fw_combine:
                 _comb_mask = _fw_match_mask(_cf, sel_fw_combine, logic="and")
@@ -838,6 +898,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 help="Show stocks where ANY selected catalyst (a fast-moving change) is firing. OR logic. "
                      "Empty = all stocks. Count = stocks with that catalyst in the current filtered set.",
                 format_func=lambda c: f"{_cat_name[c]} ({int(_cf[c].sum())})",
+                # only columns that EXIST: recovery renders every domain value through format_func
+                domain=[c for c in _CATALYSTS.values() if c in df.columns],
             )
             if sel_catalyst:
                 _cat_mask = pd.Series(False, index=_cf.index)
@@ -866,6 +928,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 "🚨 Sell Alerts", _sa_opts, "sb_sellalert", default=[],
                 help="Show stocks where ANY selected Baid sell trigger is active. OR logic. Empty = all.",
                 format_func=lambda c: f"{_sa_name[c]} ({int(_cf[c].sum())})",
+                domain=[c for c in _SELL_ALERTS.values() if c in df.columns],
             )
             if sel_alert:
                 _sa_mask = pd.Series(False, index=_cf.index)
@@ -928,7 +991,8 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 help="Show stocks firing ANY selected multibagger-candidate flag (OR). e.g. 100x "
                      "Candidate (MOSL screen), Category Winner (best-in-industry), Compound Growth. "
                      "Empty = all. Count = stocks with that flag in the current filtered set.",
-                format_func=lambda c: f"{_mb_name[c]} ({int(_cf[c].fillna(0).sum())})")
+                format_func=lambda c: f"{_mb_name[c]} ({int(_cf[c].fillna(0).sum())})",
+                domain=[c for c in _MULTIBAGGER.values() if c in df.columns])
             if sel_mb:
                 _mb_mask = pd.Series(False, index=_cf.index)
                 for _c in sel_mb:

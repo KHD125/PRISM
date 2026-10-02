@@ -1060,6 +1060,130 @@ def test_the_unknown_sentinel_survives_the_recovery():
     )
 
 
+# ── 3b. THE format_func WIDGETS — the half the 2026-09-21 fix missed (a PRODUCTION CRASH) ──
+# Reported from Streamlit Cloud 2026-09-22: `KeyError` at ui_discovery `_cat_name[c]`, inside the
+# 🔥 Catalyst format_func, which takes down render_discovery_sidebar and with it THE WHOLE APP.
+#
+# The 2026-09-21 commit was titled "close the label round-trip for the whole cascade, not two
+# widgets", and it did not: recovery was keyed on `count_col`, but EIGHT widgets carry their live
+# count through an explicit `format_func` instead, so none of them was ever covered. For four of
+# them (catalyst, sell alert, candidate flags, framework family) the format_func does a HARD dict
+# lookup, so a round-tripped display label is not a silent zero — it is a crash. The other four
+# (`.get`-based) silently zero or, for Exclude, silently WIDEN. Reproduced by injection before any
+# fix was written: all four hard-lookup widgets raised; all four .get widgets returned wrong rows.
+#
+# The assertion is deliberately the STRONG one: a round-tripped label must filter EXACTLY like the
+# value it came from. "Does not crash" alone would pass a fix that drops the pick — which switches
+# the filter off and widens the result, the 2026-09-02 bug keep_selected exists to prevent.
+
+def _fam_label(family, count):
+    """The framework-family label in its real shape, with config's own emoji."""
+    emoji = next(e for (e, lbl, _c, _f) in FRAMEWORK_CATEGORIES if lbl == family)
+    return f"{emoji} {family} ({count})"
+
+
+# (widget key, the legitimate stored value, the DISPLAY label Streamlit can write back — built in
+# the widget's real label shape with a deliberately STALE count, since the count is what moves)
+_FORMAT_FUNC_CASES = [
+    ("sb_catalyst",   ["cat_capacity"],             ["🔥 Capacity Explosion (99)"]),
+    ("sb_sellalert",  ["sell_alert_cash_collapse"], ["🚨 Cash Collapse (99)"]),
+    ("sb_mbsetup",    ["mosl_100x_candidate"],      ["🐘 100x Candidate (99)"]),
+    ("sb_fwfam",      ["Fisher"],                   [_fam_label("Fisher", 99)]),
+    ("sb_fw_include", ["QGLP"],                     ["QGLP  ·  99"]),
+    ("sb_fw_exclude", ["Diamond"],                  ["Diamond  ·  99"]),
+    ("sb_fw_combine", ["Diamond", "QGLP"],          ["Diamond  ·  99", "QGLP  ·  99"]),
+    ("sb_piotier",    ["💪 Strong (≥7)"],            ["💪 Strong (≥7)  ·  99"]),
+]
+
+
+@pytest.mark.parametrize("key,good,label", _FORMAT_FUNC_CASES, ids=[c[0] for c in _FORMAT_FUNC_CASES])
+def test_a_round_tripped_format_func_label_filters_exactly_like_its_value(key, good, label):
+    from streamlit.testing.v1 import AppTest
+
+    def kept(stored):
+        at = AppTest.from_function(_all_filters_app)
+        at.session_state[key] = stored
+        at.run(timeout=30)
+        assert not at.exception, (
+            f"{key} CRASHED the whole sidebar on a round-tripped label {stored!r} — the production "
+            f"KeyError of 2026-09-22: {at.exception}"
+        )
+        return next(t.value for t in at.text if t.value.startswith("KEPT="))
+
+    want = kept(good)
+    # vacuity guard: the valid pick must actually narrow, or 'same rows' proves nothing
+    assert want != "KEPT=['A', 'B', 'C']", f"{key}: the control pick does not narrow the frame"
+    got = kept(label)
+    assert got == want, (
+        f"{key}: a round-tripped label {label!r} kept {got.split('=', 1)[1]} but the value it came "
+        f"from keeps {want.split('=', 1)[1]} — the pick was dropped or mis-recovered, so the filter "
+        f"silently changed meaning"
+    )
+
+
+def test_recover_labels_is_order_preserving_deduplicating_and_drops_only_the_unrecoverable():
+    """The pure function, pinned on its four properties. Both label shapes must reverse; a
+    legitimate value must pass untouched (including one whose own text ends in brackets); a label
+    whose value is already selected must not duplicate it; and an entry that maps to nothing is
+    dropped WITHOUT taking its valid siblings with it."""
+    from ui.ui_discovery import recover_labels, _fmt_pick
+    names = {"cat_a": "🔥 Alpha", "cat_b": "🔥 Beta"}
+    paren = lambda c: f"{names[c]} ({7})"                       # the flag OR-group shape
+    assert recover_labels(["🔥 Beta (99)", "🔥 Alpha (1)"], list(names), paren) == ["cat_b", "cat_a"]
+    assert recover_labels(["cat_a", "🔥 Alpha (3)"], list(names), paren) == ["cat_a"]   # no dup
+    assert recover_labels(["garbage (1)", "cat_b"], list(names), paren) == ["cat_b"]    # siblings kept
+    assert recover_labels([], list(names), paren) == []
+    tiers = ["💪 Strong (≥7)", "⚠️ Weak (≤3)"]
+    dot = lambda v: _fmt_pick(v, 5)                              # the _fmt_pick shape
+    assert recover_labels([_fmt_pick("⚠️ Weak (≤3)", 99)], tiers, dot) == ["⚠️ Weak (≤3)"]
+    assert recover_labels(["💪 Strong (≥7)"], tiers, dot) == ["💪 Strong (≥7)"]          # untouched
+
+
+@pytest.mark.parametrize("key,label", [
+    ("sb_catalyst",   ["🔥 Capacity Explosion (99)"]),
+    ("sb_fw_include", ["QGLP  ·  99"]),
+], ids=["sb_catalyst", "sb_fw_include"])
+def test_a_round_tripped_label_survives_being_narrowed_out_upstream(key, label):
+    """THE FULL-FRAME RULE, for format_func widgets. Wealth Tier = AVOID (upstream) keeps only row
+    B, which has neither cat_capacity nor QGLP — so both values are narrowed OUT of the live
+    options by the time their widget renders. The honest answer is 0 rows with the filter still
+    applied. A recovery domain built from the narrowed frame (`_cf`) cannot recognise the label,
+    drops the pick, switches the filter off and returns row B: the 2026-09-02 widening bug.
+    The single-filter cases above cannot see this — nothing upstream narrows there."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_all_filters_app)
+    at.session_state["sb_wealthtier"] = ["AVOID"]
+    at.session_state[key] = label
+    at.run(timeout=30)
+    assert not at.exception, f"{key} raised: {at.exception}"
+    kept = next(t.value for t in at.text if t.value.startswith("KEPT="))
+    assert kept == "KEPT=[]", (
+        f"{key}: a round-tripped label narrowed out upstream kept {kept.split('=', 1)[1]}; the "
+        f"filter must still apply and read 0 — a dropped pick widens the result instead"
+    )
+
+
+def test_every_format_func_widget_passes_its_recovery_domain():
+    """THE STRUCTURAL HALF, so the next widget cannot repeat the gap. Recovery for a format_func
+    widget needs the FULL set of legitimate values (the same full-frame rule as count_col — a value
+    the cascade narrowed out must survive), and only the call site knows it. AST, not text: a
+    keyword inside a comment or an `if False:` branch must not satisfy this."""
+    import ast
+    calls, bad = 0, []
+    for node in ast.walk(ast.parse(_DISC)):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_ms_cascade":
+            kws = {k.arg for k in node.keywords}
+            if "format_func" in kws:
+                calls += 1
+                if "domain" not in kws and "count_col" not in kws:
+                    bad.append(node.lineno)
+    assert calls >= 7, f"teeth: expected >= 7 format_func cascade widgets, found {calls}"
+    assert not bad, (
+        f"_ms_cascade widgets at lines {bad} carry a live count via format_func but pass no "
+        f"recovery `domain=` — a round-tripped label will crash or silently re-filter them"
+    )
+
+
 # ── 4. ORACLE: the sidebar against an independent intersection ───────────────────────────
 
 def test_the_sidebar_equals_an_independent_pandas_intersection():
