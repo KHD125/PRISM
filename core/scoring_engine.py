@@ -1483,7 +1483,9 @@ def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── 2. Catalyst Matrix (The 'God Screen' Upgrade) ──
 
-    # CAPACITY EXPLOSION: CWIP going live + FA growing >15% CAGR (D19 > 0 AND D20 > 15%)
+    # CAPACITY EXPLOSION: fixed assets grew YoY + FA growing >15% CAGR (D19 > 0 AND D20 > 15%).
+    # D19 is NAMED cwip_conversion but is fixed_assets − fixed_assets_1yb (data_engine D19): CWIP
+    # itself is not read. The CWIP-based signal is cat_cwip_inflection (data_engine QA2).
     df["cat_capacity"] = (
         (df.get("d19_cwip_conversion", pd.Series(0, index=df.index)) > 0) &
         (df.get("d20_fa_cagr_3y", pd.Series(0, index=df.index)) > 15)

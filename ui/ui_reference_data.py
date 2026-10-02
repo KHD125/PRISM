@@ -247,7 +247,7 @@ CONCEPT_REFERENCE = {
     ],
     # ── Catalysts — ui/ui_discovery.py _CATALYSTS (fast-moving change triggers)
     "🔥 Catalysts": [
-        ("🔥 Capacity Explosion", "A capacity-expansion catalyst — fixed assets/CWIP converting to a step-up in productive capacity."),
+        ("🔥 Capacity Explosion", "A capacity-expansion catalyst — the fixed-asset block grew this year AND has compounded faster than 15% a year over 3 years. It reads fixed assets only, not CWIP, so it confirms capacity already on the books rather than capacity still under construction."),
         ("🔥 OpLev Inflection", "An operating-leverage inflection — profit growth pulling decisively ahead of revenue growth."),
         ("🔥 Deleveraging", "A deleveraging catalyst — debt being repaid materially, easing the balance sheet and interest drag."),
         ("🔥 Lynch Dream", "A Lynch GARP setup — fast growth available at a reasonable PEG; the classic Peter Lynch profile."),
