@@ -72,3 +72,6 @@ RS-Stages/
 Screenshot/
 _scratch_*.py
 stockscans_sync/
+# Kite Algo is a separate private project with its own git repo (khd343/Kite-Algo) and its own
+# .env secrets. It lives inside this folder but must never enter this PUBLIC repo.
+Kite Algo/
