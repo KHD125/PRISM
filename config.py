@@ -286,7 +286,7 @@ UTILITY_SECTOR_NAMES = frozenset([
 QUALITY_WEIGHTS = {
     "moat":          0.176,  # ROCE trajectory, ROE — SQGLP Quality
     "growth":        0.176,  # Revenue/PAT/EPS CAGR — SQGLP Growth
-    "improvement":   0.20,   # profit growth 2y + margin change — is the business getting BETTER?
+    "improvement":   0.20,   # last-year profit growth + revenue growth + margin change — getting BETTER?
     "cash":          0.16,   # CFO/PAT, FCF yield, self-funding — Coffee Can
     "margin":        0.104,  # NPM, OPM, GPM medians + acceleration — Fisher
     "balance_sheet": 0.104,  # Net debt, reserves growth, CWIP — Baid/Marks

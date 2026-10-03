@@ -526,24 +526,29 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
 
 
 def _compute_improvement_score(df: pd.DataFrame) -> pd.Series:
-    """Improvement facet (0-100): is the business getting BETTER? Added 2026-10-03.
+    """Improvement facet (0-100): is the business getting BETTER over the LAST YEAR? Added 2026-10-03.
 
-    Mean of two whole-market percentile ranks:
-      * profit growth over 2 years — (pat / pat_2yb) ** 0.5 - 1, ONLY where both years are profitable.
-        A loss year has no growth RATE, so it is no evidence (not a reward, not a penalty).
-      * margin change — opm - opm_1yb, both full-year figures (like-for-like).
-    A stock with neither input scores a neutral 50. All four inputs are P&L columns that roll together
-    and exist in every snapshot, so archived vintages re-score correctly. ROCE change is deliberately
-    absent: the vendor's balance sheet lags the P&L by a fiscal year. Evidence + exclusions:
-    tests/test_improvement_facet.py."""
+    Equal-weight mean of three whole-market percentile ranks, all full-year vs the year before:
+      * profit growth  — pat / pat_1yb - 1, ONLY where both years are profitable. A loss year has no
+        growth RATE, so it is no evidence (not a reward, not a penalty).
+      * revenue growth — revenue / revenue_1yb - 1, ONLY where both years have sales.
+      * margin change  — opm - opm_1yb (percentage points).
+    A leg with no evidence is skipped; a stock with no evidence at all scores a neutral 50. All six
+    inputs are P&L columns that roll to a new fiscal year together and exist in every snapshot, so
+    archived vintages re-score correctly. LAST-YEAR, not 2-year, on measurement: recency beat span for
+    every measure tested. NPM / EBITDA / GPM / ROCE are deliberately absent (redundant, untestable, or
+    on a mismatched year). Evidence + exclusions: tests/test_improvement_facet.py."""
     _nan = pd.Series(np.nan, index=df.index, dtype=float)
-    pat, pat_2yb = df.get("pat", _nan), df.get("pat_2yb", _nan)
-    both_profitable = (pat > 0) & (pat_2yb > 0)
-    profit_growth = pd.Series(
-        np.where(both_profitable, np.sqrt(pat.where(both_profitable) / pat_2yb.where(both_profitable)) - 1.0, np.nan),
-        index=df.index)
+
+    def _growth(now_col, prev_col):
+        now, prev = df.get(now_col, _nan), df.get(prev_col, _nan)
+        ok = (now > 0) & (prev > 0)
+        return pd.Series(np.where(ok, now.where(ok) / prev.where(ok) - 1.0, np.nan), index=df.index)
+
+    profit_growth = _growth("pat", "pat_1yb")
+    revenue_growth = _growth("revenue", "revenue_1yb")
     margin_change = df.get("opm", _nan) - df.get("opm_1yb", _nan)
-    ranks = pd.concat([_pct_rank(profit_growth), _pct_rank(margin_change)], axis=1)
+    ranks = pd.concat([_pct_rank(profit_growth), _pct_rank(revenue_growth), _pct_rank(margin_change)], axis=1)
     return _safe_clip(ranks.mean(axis=1, skipna=True).fillna(50.0))
 
 
