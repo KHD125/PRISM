@@ -301,8 +301,13 @@ def test_tier_share_is_exact_match_never_contains(src, live):
     over the selected tier set since the control went multi-select, which is still exact-match
     per value and still not a substring test. Live: the two matchers genuinely disagree, so the
     pin has teeth."""
+    # ANCHORED STRUCTURALLY (2026-10-03). The window was a fixed 2,500 characters from the first
+    # mention of the tier, and it broke when the 🚀 Improvement column added lines ABOVE the share
+    # computation — a change this test has no opinion about. Its subject is the computation, so the
+    # window now runs from the tier's definition to the END of that computation, however much code
+    # sits between them.
     i = src.index("_sec_share_tier")
-    seg = src[i:i + 2500]
+    seg = src[i:src.index(".reindex(_sec_stats.index)", src.index('_sec_stats["pct_tier"]', i))]
     assert "s.isin(_sec_share_tiers)" in seg, "the share is no longer an exact-membership match"
     assert ".str.contains" not in seg, "a contains-match crept into the tier share"
     star = live.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "BUY★").mean())

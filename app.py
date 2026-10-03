@@ -1421,6 +1421,17 @@ def _render_market_pulse():
             f"<div class='sec-cap'>🎯 Your filters: <b>{len(_mp_df):,}</b> of {len(df):,} stocks "
             f"· <b>{n_shown}</b> {unit}{_t}</div>", unsafe_allow_html=True)
 
+    # 🚀 ONE TOOLTIP, TWO TABLES (2026-10-03) — the Improvement column on 📈 Sectors and 🏭 Industry.
+    # The definition IS the glossary entry, the text the Deep Scanner's Improvement header and the
+    # Reference tab already show, so a redesign of the facet reaches every surface at once. Only
+    # how to read a GROUP is written here. Pinned in tests/test_market_pulse_improvement.py.
+    _MP_IMPROVEMENT_HELP = (
+        "The average Improvement Score of the row's stocks. "
+        + _RAW_GLOSSARY["Improvement Score"]
+        + " A group above 50 is improving more than the market's typical company. It describes "
+          "the businesses, not the price and not every stock in the group: read it beside "
+          "Momentum and against Count.")
+
     # ── Pre-compute section datasets ───────────────────────────────
     _mp_ts   = (_mp_df[_mp_df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
                 if "tsunami_signal" in _mp_df.columns else _mp_df.iloc[:0])
@@ -2056,7 +2067,7 @@ def _render_market_pulse():
 
         _sec_cap_ph.markdown(
             f"<div class='sec-cap'>Every sector with <strong>≥{_min_n} stocks</strong> — "
-            f"Quality / Momentum / Valuation / Score averaged across <strong>all</strong> its stocks "
+            f"Quality / Improvement / Momentum / Valuation / Score averaged across <strong>all</strong> its stocks "
             f"(sample-robust, not just the gate-passers). <strong>% Qualify</strong> = the share "
             f"clearing the hard gates (the sector's quality breadth). Ranked by % Qualify "
             f"(most-investable first). Capital-cycle phase is named below: 🔥 hot (over-investing — "
@@ -2095,10 +2106,16 @@ def _render_market_pulse():
         # comparing a 3-stock sector to a 50-stock one). % Qualify = gate-pass rate, the sample-size-
         # immune breadth signal. The >=5-stock floor reuses the engine's own sector_capital_phase guard
         # ("median unstable below 5"). No top-N cap — every reliable sector is shown, sorted by Score.
+        # 🚀 avg_improvement (2026-10-03): are the group's businesses getting BETTER over the last
+        # year? The strongest group-level signal measured — 3Y rank-IC +0.44 for sectors and +0.32
+        # for industries, still +0.40 / +0.28 after the group's prior price run — but MIXED on
+        # PRISM's two short windows (66d ~0, 28d +0.27 / +0.23), so it is a column, never the sort.
+        # Averaged in THIS call so every filter above, and the 🎯 scope, reach it.
         _sec_stats = _sec_src.groupby("sector").agg(
             stocks=("name", "count"),
             pct_qualify=("gate_pass", lambda s: 100.0 * s.mean()),
             avg_quality=("quality_score",    "mean"),
+            avg_improvement=("improvement_score", "mean"),
             avg_momentum=("momentum_score",  "mean"),
             avg_valuation=("valuation_score","mean"),
             avg_composite=("composite_score","mean"),
@@ -2134,8 +2151,10 @@ def _render_market_pulse():
             # Score (avg_composite) sat second-to-last and rendered as a bar plus a single
             # truncated digit. The three figures a reader scans first — how many, what share
             # qualifies, and how they score — now lead; the component averages follow.
+            # Improvement sits BESIDE Momentum: its tooltip tells the reader to read the pair together.
             _sec_order = [c for c in ["stocks", "pct_qualify", "avg_composite", "pct_tier",
-                                      "avg_quality", "avg_momentum", "avg_valuation"]
+                                      "avg_quality", "avg_improvement", "avg_momentum",
+                                      "avg_valuation"]
                           if c in _sec_stats.columns]
             st.dataframe(
                 _sec_stats[_sec_order].reset_index(),
@@ -2162,6 +2181,8 @@ def _render_market_pulse():
                                             f"and dilute the share. Universe BUY★ base rate ≈ 12%. Price-blind and "
                                             f"forensics-blind, like the tier itself; read against Count."),
                     "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
+                    "avg_improvement": st.column_config.ProgressColumn("Improvement", min_value=0, max_value=100, format="%.0f",
+                                       help=_MP_IMPROVEMENT_HELP),
                     "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
                     "avg_valuation": st.column_config.ProgressColumn("Valuation",min_value=0, max_value=100, format="%.0f"),
                     "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
@@ -2232,10 +2253,12 @@ def _render_market_pulse():
             # Capital phase is deliberately absent: sector_capital_phase is a SECTOR attribute with
             # no industry-level analogue, so carrying it over would attach a sector's phase to an
             # industry that only partly lives in it.
+            # A PROJECTION: a column averaged below must be listed here or the tab dies with a
+            # KeyError — improvement_score was missed on 2026-10-03 and the browser caught it.
             _IND_KEEP = [c for c in ["industry", "sector", "name", "composite_score",
-                                     "quality_score", "momentum_score", "valuation_score",
-                                     "gate_pass", "conviction_tier", "market_category",
-                                     "wealth_tier"] if c in _mp_df.columns]
+                                     "quality_score", "improvement_score", "momentum_score",
+                                     "valuation_score", "gate_pass", "conviction_tier",
+                                     "market_category", "wealth_tier"] if c in _mp_df.columns]
             _ind_src = _mp_df[_IND_KEEP].copy()
             _ind_src["industry"] = _ind_src["industry"].astype(str).str.strip()
             _ind_src = _ind_src[~_ind_src["industry"].isin(["", "nan", "None"])]
@@ -2384,6 +2407,7 @@ def _render_market_pulse():
                 pct_qualify=("gate_pass", lambda s: 100.0 * s.mean()),
                 avg_composite=("composite_score", "mean"),
                 avg_quality=("quality_score", "mean"),
+                avg_improvement=("improvement_score", "mean"),   # 🚀 see the Sectors note
                 avg_momentum=("momentum_score", "mean"),
                 avg_valuation=("valuation_score", "mean"),
             )
@@ -2490,7 +2514,7 @@ def _render_market_pulse():
                 # ("Infrastructure Developers & Operators"), so the sector goes last.
                 _ind_order = [c for c in ["stocks", "pct_qualify", "avg_composite",
                                           "delta_vs_sector", "pct_tier", "avg_quality",
-                                          "avg_momentum", "avg_valuation",
+                                          "avg_improvement", "avg_momentum", "avg_valuation",
                                           "dom_sector"]
                               if c in _ind_stats.columns]
                 st.dataframe(
@@ -2520,6 +2544,8 @@ def _render_market_pulse():
                                                  f"Read against Count — even more so here than on Sectors (median industry "
                                                  f"holds 3 stocks)."),
                         "avg_quality":    st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
+                        "avg_improvement": st.column_config.ProgressColumn("Improvement", min_value=0, max_value=100, format="%.0f",
+                                            help=_MP_IMPROVEMENT_HELP),
                         "avg_momentum":   st.column_config.ProgressColumn("Momentum",  min_value=0, max_value=100, format="%.0f"),
                         "avg_valuation":  st.column_config.ProgressColumn("Valuation", min_value=0, max_value=100, format="%.0f"),
                         "dom_sector":     st.column_config.TextColumn("Sector (dominant)", width="medium",

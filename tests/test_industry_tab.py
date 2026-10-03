@@ -515,8 +515,12 @@ def test_tier_share_base_is_captured_before_the_wealth_filter(block):
 def test_tier_share_is_exact_match_never_contains(block):
     """Exact MEMBERSHIP since the control went multi-select (2026-08-30): still one exact match per
     selected tier, still never a substring test — "BUY" is a prefix of "BUY★"."""
+    # ANCHORED STRUCTURALLY (2026-10-03): a fixed 2,600-character window broke when the 🚀
+    # Improvement column added a line above the share computation. The window now ends where the
+    # computation does — same subject, no dependence on what sits between. See the Sectors twin in
+    # tests/test_sector_filters.py.
     i = block.index("_ind_share_tier")
-    seg = block[i:i + 2600]
+    seg = block[i:block.index(".reindex(_ind_stats.index)", block.index('_ind_stats["pct_tier"]', i))]
     assert "s.isin(_ind_share_tiers)" in seg, "the share is no longer an exact-membership match"
     assert ".str.contains" not in seg, "a contains-match crept into the tier share"
 
