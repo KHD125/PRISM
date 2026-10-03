@@ -93,8 +93,8 @@ def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
     _eq_1yb  = df.get("equity_shares_1yb",   _nan)
     _opm     = df.get("opm",                 _nan)
     _opm_1yb = df.get("opm_1yb",             _nan)
-    _roce    = df.get("roce",                _nan)
-    _roce_1yb= df.get("roce_1yb",            _nan)
+    _at      = df.get("asset_turnover",      _nan)
+    _at_1yb  = df.get("asset_turnover_1yb",  _nan)
 
     # F1: ROA positive
     df["f_roa_positive"] = np.where(_roa.notna(), (_roa > 0).astype(int), 0)
@@ -164,9 +164,15 @@ def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
         _opm.notna() & _opm_1yb.notna(), (_opm > _opm_1yb).astype(int), 0
     )
 
-    # F9: Asset turnover improving — ROCE direction used as proxy
+    # F9: Asset turnover improving — the vendor's turnover vs its own 1-year-back twin (2026-10-03).
+    # Was `roce > roce_1yb` as a "proxy" under a label reading "revenue/assets up"; the real pair is
+    # mapped at 92% coverage. Verified: asset_turnover = revenue / total_assets for the PREVIOUS fiscal
+    # year (the vendor rolls the P&L before the balance sheet), and _1yb is the year before on the
+    # same construction — a like-for-like pair covering the same two years as F3. Do NOT recompute
+    # revenue / total_assets here: that divides this year's revenue by last year's assets.
+    # Pinned by tests/test_piotroski_f9_basis.py.
     df["f_efficiency_improving"] = np.where(
-        _roce.notna() & _roce_1yb.notna(), (_roce > _roce_1yb).astype(int), 0
+        _at.notna() & _at_1yb.notna(), (_at > _at_1yb).astype(int), 0
     )
 
     # Sum exactly the 9 authentic Piotroski components — hard-coded list of actual column names
