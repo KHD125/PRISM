@@ -525,9 +525,31 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
     return _safe_clip(score)
 
 
+def _compute_improvement_score(df: pd.DataFrame) -> pd.Series:
+    """Improvement facet (0-100): is the business getting BETTER? Added 2026-10-03.
+
+    Mean of two whole-market percentile ranks:
+      * profit growth over 2 years — (pat / pat_2yb) ** 0.5 - 1, ONLY where both years are profitable.
+        A loss year has no growth RATE, so it is no evidence (not a reward, not a penalty).
+      * margin change — opm - opm_1yb, both full-year figures (like-for-like).
+    A stock with neither input scores a neutral 50. All four inputs are P&L columns that roll together
+    and exist in every snapshot, so archived vintages re-score correctly. ROCE change is deliberately
+    absent: the vendor's balance sheet lags the P&L by a fiscal year. Evidence + exclusions:
+    tests/test_improvement_facet.py."""
+    _nan = pd.Series(np.nan, index=df.index, dtype=float)
+    pat, pat_2yb = df.get("pat", _nan), df.get("pat_2yb", _nan)
+    both_profitable = (pat > 0) & (pat_2yb > 0)
+    profit_growth = pd.Series(
+        np.where(both_profitable, np.sqrt(pat.where(both_profitable) / pat_2yb.where(both_profitable)) - 1.0, np.nan),
+        index=df.index)
+    margin_change = df.get("opm", _nan) - df.get("opm_1yb", _nan)
+    ranks = pd.concat([_pct_rank(profit_growth), _pct_rank(margin_change)], axis=1)
+    return _safe_clip(ranks.mean(axis=1, skipna=True).fillna(50.0))
+
+
 def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     """Compute the composite quality score (Layer 2).
-    Integrates 6 sub-scores: Moat + Growth + Cash + Margin + Balance Sheet + Valuation.
+    Integrates 7 sub-scores: Moat + Growth + Improvement + Cash + Margin + Balance Sheet + Valuation.
     Applies Marks' Mean Reversion Risk penalty for cyclical peak margins.
     Detects Baid's Sell Triggers for existing holding alerts."""
     df = df.copy()
@@ -545,6 +567,7 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     df["growth_signals_available"] = (
         df.reindex(columns=[*GROWTH_SIGNAL_WEIGHTS, *GROWTH_Q_COLS]).notna().sum(axis=1).astype(int)
     )
+    df["improvement_score"] = _compute_improvement_score(df)
     df["cash_score"] = _compute_cash_score(df)
     df["margin_score"] = _compute_margin_score(df)
     df["balance_sheet_score"] = _compute_balance_sheet_score(df)
@@ -566,6 +589,7 @@ def compute_quality_score(df: pd.DataFrame) -> pd.DataFrame:
     df["quality_score"] = (
         df["moat_score"] * QUALITY_WEIGHTS["moat"] +
         df["growth_score"] * QUALITY_WEIGHTS["growth"] +
+        df["improvement_score"] * QUALITY_WEIGHTS["improvement"] +
         df["cash_score"] * QUALITY_WEIGHTS["cash"] +
         df["margin_score"] * QUALITY_WEIGHTS["margin"] +
         df["balance_sheet_score"] * QUALITY_WEIGHTS["balance_sheet"] +

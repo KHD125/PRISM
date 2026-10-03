@@ -630,7 +630,7 @@ with tabs[1]:
     _DS_VIEWS = {
         "🏆 Core":      ["rank","name","verdict_direction","wealth_tier","sector","market_category","composite_score",
                          "data_coverage_pct","conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
-        "📊 Quality":   ["name","quality_score","moat_score","growth_score","cash_score",
+        "📊 Quality":   ["name","quality_score","moat_score","growth_score","improvement_score","cash_score",
                          "governance_bonus","piotroski_fscore","roce","roce_expansion",
                          "roce_inflection","opm","opm_acceleration","cfo_to_pat"],
         "💰 Valuation": ["name","close_price","fair_value_qglp","valuation_score","expected_excess_return",
@@ -763,7 +763,7 @@ with tabs[1]:
     _CC: dict = {}
     for _sc, _sl in {
         "composite_score": "Score", "quality_score": "Quality",
-        "moat_score": "Moat", "growth_score": "Growth",
+        "moat_score": "Moat", "growth_score": "Growth", "improvement_score": "Improvement",
         "cash_score": "Cash", "momentum_score": "Momentum",
         "forensic_score": "Forensic", "governance_bonus": "Governance",
         "breakout_score": "Breakout", "valuation_score": "Valuation",
@@ -1120,6 +1120,7 @@ with tabs[2]:
                 _facets = (
                     _qfrow("🛡️ Moat",   "moat_score")          +
                     _qfrow("📈 Growth", "growth_score")        +
+                    _qfrow("🚀 Improvement", "improvement_score") +
                     _qfrow("💰 Cash",   "cash_score")          +
                     _qfrow("📊 Margin", "margin_score")        +
                     _qfrow("⚖️ Balance","balance_sheet_score")
@@ -2835,9 +2836,10 @@ with tabs[4]:
             f'letter-spacing:1.2px;margin-bottom:10px;">{icon} &nbsp;{title}</div>{body_html}</div>'
         )
 
-    _q_src = {"moat": "SQGLP", "growth": "SQGLP", "cash": "Coffee Can",
+    _q_src = {"moat": "SQGLP", "growth": "SQGLP", "improvement": "3Y winners study", "cash": "Coffee Can",
               "margin": "Fisher", "balance_sheet": "Baid", "valuation": "Marks+Baid"}
-    _q_clr = {"moat": COLORS["purple"], "growth": COLORS["green"], "cash": COLORS["blue"],
+    _q_clr = {"moat": COLORS["purple"], "growth": COLORS["green"], "improvement": COLORS["green"],
+              "cash": COLORS["blue"],
               "margin": COLORS["orange"], "balance_sheet": COLORS["gold"], "valuation": COLORS["cyan"]}
 
     # ── Composite Score Formula — the master blend the sub-weights below feed into ──
@@ -2882,7 +2884,7 @@ with tabs[4]:
             _cfg_wbar(k.replace("_", " ").title(), v, _q_clr.get(k, COLORS["blue"]), _q_src.get(k, ""))
             for k, v in QUALITY_WEIGHTS.items()
         )
-        st.markdown(_cfg_card("Quality Sub-Weights · 6 Layers", "🏭", _qbody, COLORS["purple"]),
+        st.markdown(_cfg_card(f"Quality Sub-Weights · {len(QUALITY_WEIGHTS)} Layers", "🏭", _qbody, COLORS["purple"]),
                     unsafe_allow_html=True)
     with cc2:
         _mbody = "".join(

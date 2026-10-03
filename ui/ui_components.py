@@ -793,6 +793,7 @@ _RAW_GLOSSARY = {
     # distinct from the 6 verdict axes above, which are the verdict's display lenses).
     "Moat Score":        "PRISM's 0-100 sub-score for the durability of the competitive advantage (returns on capital + IBAS moat). A building block of the composite.",
     "Growth Score":      "PRISM's 0-100 sub-score for the strength and durability of earnings and revenue growth. A building block of the composite.",
+    "Improvement Score": "PRISM's 0-100 sub-score for whether the business is getting BETTER right now: profit growth over the last 2 years (both years profitable) and the change in operating margin over the last year, each ranked against the whole market. 20% of the quality score. Added because a study of the next three years' winners found recent improvement predicted returns where margin and valuation LEVELS did not. A loss year gives no growth figure, and a stock with neither input scores a neutral 50.",
     "Cash Score":        "PRISM's 0-100 sub-score for how strongly the business turns profit into real cash (CFO/PAT, free cash flow). A building block of the composite.",
     "Momentum Score":    "PRISM's 0-100 sub-score for price strength and trend (relative strength, breakout proximity, volume). A building block of the composite.",
     "Governance Score":  "PRISM's governance bonus — points for clean ownership (high promoter skin-in-the-game, no pledging, no dilution). Added to the composite, not multiplied.",
@@ -1015,10 +1016,11 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
 
 def render_radar_chart(row: pd.Series, title: str = "Quality Radar") -> go.Figure:
     """Create a radar chart for a stock's quality sub-scores."""
-    categories = ['Moat', 'Growth', 'Cash Quality', 'Margins', 'Balance Sheet']
+    categories = ['Moat', 'Growth', 'Improvement', 'Cash Quality', 'Margins', 'Balance Sheet']
     values = [
         row.get("moat_score", 0),
         row.get("growth_score", 0),
+        row.get("improvement_score", 0),
         row.get("cash_score", 0),
         row.get("margin_score", 0),
         row.get("balance_sheet_score", 0),

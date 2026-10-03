@@ -279,13 +279,18 @@ UTILITY_SECTOR_NAMES = frozenset([
 # ═══════════════════════════════════════════════════════════════
 # 4. QUALITY SCORE WEIGHTS (Layer 2) — 0 to 100
 # ═══════════════════════════════════════════════════════════════
+# IMPROVEMENT joined 2026-10-03 at 0.20; the six level facets were each scaled by 0.8 (moat 0.22 ->
+# 0.176 ...), so levels stay in. Evidence and the deliberate exclusions (ROCE change: the vendor's
+# balance sheet lags its P&L by a fiscal year) are in tests/test_improvement_facet.py. 0.20 is a
+# prior, not a fit.
 QUALITY_WEIGHTS = {
-    "moat":          0.22,   # ROCE trajectory, ROE — SQGLP Quality
-    "growth":        0.22,   # Revenue/PAT/EPS CAGR — SQGLP Growth
-    "cash":          0.20,   # CFO/PAT, FCF yield, self-funding — Coffee Can
-    "margin":        0.13,   # NPM, OPM, GPM medians + acceleration — Fisher
-    "balance_sheet": 0.13,   # Net debt, reserves growth, CWIP — Baid/Marks
-    "valuation":     0.10,   # PE discount, PEG, FCF yield — Marks/Baid Entry Price
+    "moat":          0.176,  # ROCE trajectory, ROE — SQGLP Quality
+    "growth":        0.176,  # Revenue/PAT/EPS CAGR — SQGLP Growth
+    "improvement":   0.20,   # profit growth 2y + margin change — is the business getting BETTER?
+    "cash":          0.16,   # CFO/PAT, FCF yield, self-funding — Coffee Can
+    "margin":        0.104,  # NPM, OPM, GPM medians + acceleration — Fisher
+    "balance_sheet": 0.104,  # Net debt, reserves growth, CWIP — Baid/Marks
+    "valuation":     0.08,   # PE discount, PEG, FCF yield — Marks/Baid Entry Price
 }
 
 # NOTE (2026-06-19): the moat / growth / cash / margin / balance_sheet COMPONENT weights are NOT

@@ -35,9 +35,10 @@ _SCANNER_HEADER_TIPS = {
     # where a column has no tearsheet-cell glossary entry. Coverage is pinned by
     # tests/test_tooltip_coverage.py::test_every_scanner_preset_column_has_header_tip.
     "smart_money_flow":       _GLOSSARY["Smart Money"],
-    "quality_score":          "Overall fundamental quality sub-score (0-100): moat + growth + cash + governance, before the forensic penalty.",
+    "quality_score":          "Overall fundamental quality sub-score (0-100): moat, growth, improvement, cash, margins, balance sheet and valuation, before the forensic penalty.",
     "moat_score":             _GLOSSARY["Moat Score"],
     "growth_score":           _GLOSSARY["Growth Score"],
+    "improvement_score":      _GLOSSARY["Improvement Score"],
     "governance_bonus":       _GLOSSARY["Governance Score"],
     "piotroski_fscore":       _GLOSSARY["Piotroski"],
     "roce":                   _GLOSSARY["ROCE Current"],
