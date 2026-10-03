@@ -242,6 +242,18 @@ def test_returns_since_result_is_held_pending_evidence_not_rejected_as_redundant
     therefore absent from the 400-column sweep too. Unmeasured is not the same as worthless.
 
     This test now guards the DEFERRAL, and tells you the moment the deferral can end.
+
+    TRIPWIRE SHARPENED 2026-10-03 — it counted SNAPSHOTS, while its own message is about a forward
+    WINDOW. The 2026-10-03 snapshot (vintage 2026-10-02) was the second to carry the column and
+    fired it, but 2026-09-19 -> 2026-10-03 is 14 days, under tools/validate.py's 25-day minimum
+    (_MIN_HORIZON_DAYS), so by the harness's own rule no window existed yet. It now counts what it
+    means: an early snapshot carrying the column, plus a later one >= 25 days after it.
+    FIRST READING, recorded so it is not re-derived (14 days, n=2,664, below the noise floor, one
+    observation): rank-IC +0.045, against breakout +0.089 / rs_score +0.088 / momentum +0.080; its
+    edge BEYOND crs_50d (rank-residual) +0.005. It fails the admission bar (|IC| >= 0.10, same sign
+    in two windows) and leans toward "adds nothing beyond what is shown" — but one sub-minimum
+    window cannot reject it either. The first real window opens with any snapshot dated on or after
+    2026-10-14 (25 days after 2026-09-19).
     """
     if not _present(live, "returns_since_result"):
         pytest.skip("returns_since_result absent from this vintage")
@@ -264,19 +276,23 @@ def test_returns_since_result_is_held_pending_evidence_not_rejected_as_redundant
     snap_dir = os.path.join(os.path.dirname(__file__), "..", "Other Resources", "snapshots")
     if not os.path.isdir(snap_dir):
         pytest.skip("snapshots are local-only; nothing to check")
-    carrying = 0
+    import datetime as _dt
+    MIN_HORIZON_DAYS = 25            # mirrors tools/validate.py _MIN_HORIZON_DAYS (tools/ is local-only)
+    dates = []                       # every snapshot date, and which ones carry the column
     for f in sorted(glob.glob(os.path.join(snap_dir, "prism_snapshot_*.csv"))):
         try:
+            d = _dt.date.fromisoformat(os.path.basename(f)[len("prism_snapshot_"):-len(".csv")])
             head = _pd.read_csv(f, nrows=1)
         except Exception:
             continue
-        if "returns_since_result" in head.columns:
-            carrying += 1
-    assert carrying < 2, (
-        f"{carrying} snapshots now carry returns_since_result, so a forward window finally exists "
-        f"and the reason for holding it back is gone. Run tools/validate.py over it: if it clears "
-        f"the bar, surface it with the IC in the commit message; if it does not, convert this into "
-        f"a real rejection WITH that number. Either way, stop deferring."
+        dates.append((d, "returns_since_result" in head.columns))
+    windows = [(a, b) for a, carries in dates if carries
+               for b, _ in dates if (b - a).days >= MIN_HORIZON_DAYS]
+    assert not windows, (
+        f"A forward window now exists for returns_since_result ({windows[0][0]} -> {windows[0][1]}, "
+        f"{len(windows)} in all), so the reason for holding it back is gone. Run tools/validate.py "
+        f"over it: if it clears the bar, surface it with the IC in the commit message; if it does "
+        f"not, convert this into a real rejection WITH that number. Either way, stop deferring."
     )
 
 
