@@ -91,7 +91,7 @@ def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
     _cr_1yb  = df.get("current_ratio_1yb",   _nan)
     _eq      = df.get("equity_shares",       _nan)
     _eq_1yb  = df.get("equity_shares_1yb",   _nan)
-    _opm_q   = df.get("opm_latest_q",        _nan)
+    _opm     = df.get("opm",                 _nan)
     _opm_1yb = df.get("opm_1yb",             _nan)
     _roce    = df.get("roce",                _nan)
     _roce_1yb= df.get("roce_1yb",            _nan)
@@ -153,9 +153,15 @@ def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
         1,
     )
 
-    # F8: Gross margin improving — OPM latest quarter vs 1 year back
+    # F8: Margin improving — FULL-YEAR operating margin vs the full year before (2026-10-03).
+    # Was `opm_latest_q > opm_1yb`: a QUARTER against an ANNUAL base, the basis mismatch removed
+    # from the *_acceleration columns on 2026-09-18. Annual vs annual matches F3/F5/F6/F9 and
+    # Piotroski's own F8, and works on archived vintages (opm_pyq exists only from 2026-09-18, and
+    # Movers re-scores old copies with this engine). Book deviation: Piotroski's F8 is GROSS margin;
+    # no annual gross-margin column exists, so OPM — the nearest annual margin — stands in.
+    # Pinned by tests/test_piotroski_f8_basis.py.
     df["f_margin_improving"] = np.where(
-        _opm_q.notna() & _opm_1yb.notna(), (_opm_q > _opm_1yb).astype(int), 0
+        _opm.notna() & _opm_1yb.notna(), (_opm > _opm_1yb).astype(int), 0
     )
 
     # F9: Asset turnover improving — ROCE direction used as proxy

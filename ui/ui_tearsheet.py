@@ -1409,8 +1409,10 @@ _PIOTROSKI_9 = [
     ("f_leverage_declining",   "Leverage declining",       "debt/assets down",
      "Long-term debt falling as a share of assets. Rising leverage during a recovery is the "
      "opposite of the deleveraging Piotroski looks for."),
-    ("f_margin_improving",     "Margin improving",         "gross margin up",
-     "Operating margin above last year's — pricing power or cost discipline, not volume alone."),
+    ("f_margin_improving",     "Margin improving",         "op. margin up (full year)",
+     "Full-year operating margin above the previous full year's — pricing power or cost discipline, "
+     "not volume alone. Piotroski uses gross margin; no annual gross-margin figure exists in the "
+     "data, so operating margin stands in."),
     ("f_efficiency_improving", "Asset turnover improving", "revenue/assets up",
      "Revenue per rupee of assets rising — the balance sheet is working harder."),
     ("f_liquidity_improving",  "Liquidity improving",      "current ratio up",
