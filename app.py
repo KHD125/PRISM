@@ -84,7 +84,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_reference, render_concepts, render_flags, render_frameworks,
                 render_wcs_studies, build_reference_markdown)
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters, keep_selected
-from ui.ui_scanner import _SCANNER_HEADER_TIPS
+from ui.ui_scanner import _SCANNER_HEADER_TIPS, ds_view_columns
 from ui.ui_components import _RAW_GLOSSARY
 from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERSHIP_NOTE, SOURCE_COLUMNS,
                                VIEW_MEASURES, VIEWS, group_measures)
@@ -626,29 +626,74 @@ with tabs[0]:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 2: DEEP SCANNER
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Deep Scanner column widths, px (2026-10-05). EVERY column a view can show has one, so a view's width
+# is arithmetic the tests can check instead of whatever Streamlit's auto-size picks — auto-sized text
+# columns grew to their longest cell (Which Flags reached ~500px). Long text truncates; the full text
+# is a click away. Kept OUTSIDE the tab block on purpose: the label-map scans there read dict keys
+# as header labels, and a width table must not count as a label.
+_DS_W = {
+    "rank": 55, "name": 180,
+    # 🏆 Core
+    "verdict_direction": 90, "wealth_tier": 75, "sector": 125, "market_category": 85,
+    "composite_score": 105, "data_coverage_pct": 75, "conviction_tier": 50, "gate_pass": 60,
+    "moat_growth_quad": 125,
+    # 📊 Quality — its parts read as numbers beside the Quality bar
+    "quality_score": 105, "moat_score": 60, "growth_score": 65, "improvement_score": 95,
+    "cash_score": 55, "roce": 60, "roce_expansion": 95,
+    "roce_inflection": 90, "opm": 55, "opm_acceleration": 105,
+    # 💰 Valuation
+    "close_price": 80, "fair_value_qglp": 70, "valuation_score": 105, "expected_excess_return": 70,
+    "pe": 60, "pb_ratio": 55, "peg": 60, "dividend_yield": 80, "fcf_yield": 70, "buy_zone_label": 120,
+    "market_cap": 90,   # in no view: shown while the MCap sort is active
+    # 🔬 Forensic
+    "red_flag_count": 75, "red_flag_list": 190, "piotroski_fscore": 70, "forensic_multiplier": 90,
+    "cfo_to_pat": 75, "accruals_ratio": 80, "debt_to_equity": 55, "promoter_holdings": 80,
+    "pledged_percentage": 75,
+    # 📈 Technical
+    "dist_to_vstop": 70, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
+    "breakout_score": 105, "d48_breakout_readiness": 100, "crs_52w": 70, "weinstein_stage": 150,
+    # 👥 Ownership
+    "governance_bonus": 90, "change_promoter_1y": 110, "fii_holdings": 55, "change_fii_lq": 80,
+    "dii_holdings": 55, "change_dii_lq": 80, "smart_money_flow": 165,
+    # shown only while its sort is active
+    "result_when": 95,
+}
+
 with tabs[1]:
 
     # ── Column view presets ────────────────────────────────────────
+    # 📌 Rebuilt 2026-10-05 after measuring them at a 1536px laptop width: every view LEADS with
+    # Rank · Stock (pinned below), so a sideways scroll never loses the row and Rank — the Score
+    # order exactly — shows where a stock stands in every view. Every column has a set width (_DS_W)
+    # and every view fits the screen with the sidebar open. Taken out as measured repeats: Forensic
+    # Score (an exact copy of the red-flag count, -1.00), Piotroski and CFO/PAT from Quality (both
+    # live in Forensic), the 52-week-high distance (-0.95 with Breakout), VSTOP (identical to
+    # Stop Δ > 0 on 100% of stocks) and E.Yield (P/E inverted). Moved, as the user approved to fit
+    # the screen: Smart Money and Governance (a composite leg built from ownership signals) to
+    # 👥 Ownership, Price to Valuation only; MCap (size, not value) shows while sorted by and stays
+    # in the export; Tsunami (3 of 2,717 stocks) keeps its own Market Pulse tab.
+    # tests/test_deep_scanner_views.py
     _DS_VIEWS = {
         "🏆 Core":      ["rank","name","verdict_direction","wealth_tier","sector","market_category","composite_score",
-                         "data_coverage_pct","conviction_tier","gate_pass","moat_growth_quad","smart_money_flow"],
-        "📊 Quality":   ["name","quality_score","moat_score","growth_score","improvement_score","cash_score",
-                         "governance_bonus","piotroski_fscore","roce","roce_expansion",
-                         "roce_inflection","opm","opm_acceleration","cfo_to_pat"],
-        "💰 Valuation": ["name","close_price","fair_value_qglp","valuation_score","expected_excess_return",
-                         "pe","pb_ratio","peg","earnings_yield","dividend_yield","fcf_yield","market_cap","buy_zone_label"],
-        "🔬 Forensic":  ["name","red_flag_count","red_flag_list","piotroski_fscore","forensic_score",
+                         "data_coverage_pct","conviction_tier","gate_pass","moat_growth_quad"],
+        "📊 Quality":   ["rank","name","quality_score","moat_score","growth_score","improvement_score","cash_score",
+                         "roce","roce_expansion",
+                         "roce_inflection","opm","opm_acceleration"],
+        "💰 Valuation": ["rank","name","close_price","fair_value_qglp","valuation_score","expected_excess_return",
+                         "pe","pb_ratio","peg","dividend_yield","fcf_yield","buy_zone_label"],
+        "🔬 Forensic":  ["rank","name","red_flag_count","red_flag_list","piotroski_fscore",
                          "forensic_multiplier","cfo_to_pat","accruals_ratio","debt_to_equity",
                          "promoter_holdings","pledged_percentage"],
         # Technical view: each categorical VERDICT sits directly AFTER the number it interprets
         # (2026-08-30 surfacing — d49 reads momentum/RSI, d48 reads breakout_score's distance
         # inputs), so the table teaches itself: 82 and 🎯 IMMINENT land in the same glance.
-        "📈 Technical": ["name","close_price","dist_to_vstop","momentum_score","d49_momentum_quality",
-                         "rsi_14d","dist_52wh","breakout_score","d48_breakout_readiness",
-                         "crs_52w","weinstein_stage","smart_money_flow","tsunami_signal","vstop_green"],
+        "📈 Technical": ["rank","name","dist_to_vstop","momentum_score","d49_momentum_quality",
+                         "rsi_14d","breakout_score","d48_breakout_readiness",
+                         "crs_52w","weinstein_stage"],
         # 👥 Ownership (2026-10-05): each stake sits directly BEFORE its change, so level and move read
         # in one glance. Promoters rarely move in a quarter (68% flat), so theirs is the 1-year change.
-        "👥 Ownership": ["name","promoter_holdings","change_promoter_1y","pledged_percentage",
+        # Governance leads it: the composite's governance leg is built from these ownership signals.
+        "👥 Ownership": ["rank","name","governance_bonus","promoter_holdings","change_promoter_1y","pledged_percentage",
                          "fii_holdings","change_fii_lq","dii_holdings","change_dii_lq","smart_money_flow"],
     }
     _DS_SORTS = {
@@ -699,7 +744,8 @@ with tabs[1]:
             key="ds_search", label_visibility="collapsed",
         )
     with _ds_c2:
-        ds_view = st.pills(
+        # A segmented control, not pills: the widget for 'pick one view' — pills read as tags.
+        ds_view = st.segmented_control(
             "Column View", list(_DS_VIEWS.keys()),
             default="🏆 Core", key="ds_view",
         )
@@ -749,12 +795,9 @@ with tabs[1]:
     """, unsafe_allow_html=True)
 
     # ── Column selection ───────────────────────────────────────────
-    _view_cols = [c for c in _DS_VIEWS.get(ds_view, []) if c in ds_df.columns]
-    if not _view_cols:
-        _view_cols = [c for c in ["rank", "name", "composite_score"] if c in ds_df.columns]
     # Sort-by-visible doctrine (2026-08-30): the 🆕 Results sort orders by a column no view
-    # carries, so when it is active, materialize the age as a READABLE text column beside the
-    # name — "📅 due 4d" (scheduled, not yet declared) vs "8d ago" (reported) — an ordering the
+    # carries, so when it is active, materialize the age as a READABLE text column —
+    # "📅 due 4d" (scheduled, not yet declared) vs "8d ago" (reported) — an ordering the
     # table cannot explain is the same rank-jumble that got Discovery's sort pills removed.
     if ds_sort_label == "🆕 Results ↑" and "result_age_days" in ds_df.columns:
         _ra = pd.to_numeric(ds_df["result_age_days"], errors="coerce")
@@ -763,28 +806,48 @@ with tabs[1]:
             [_ra < 0, _ra == 0, _ra > 0],
             ["📅 due " + _days + "d", "today", _days + "d ago"],
             default=""))
-        _view_cols.insert(_view_cols.index("name") + 1 if "name" in _view_cols else 0,
-                          "result_when")
+    # …and made GENERAL 2026-10-05: whatever the table is sorted by is on screen. A view that lacks
+    # the sorted column gets it right after Stock (Rank stands for Score, result_when for Results);
+    # a view that carries it keeps its curated order. Measured before: in 5 of 6 views the rows were
+    # ordered by a Score no column showed.
+    _view_cols = ds_view_columns(_DS_VIEWS.get(ds_view, _DS_VIEWS["🏆 Core"]), _sort_col, ds_df.columns)
     _display_df = ds_df[_view_cols].reset_index(drop=True)
 
     # ── Column config ──────────────────────────────────────────────
     _CC: dict = {}
+    # 📌 THE SPINE (2026-10-05): Rank · Stock lead every view and stay PINNED, so a sideways scroll
+    # never loses which stock a row is or where it ranks. Configured ONLY here — a later label map
+    # would overwrite the pin (tests/test_deep_scanner_views.py).
+    _DS_SPINE = {"rank": "Rank", "name": "Stock"}
+    for _sp, _sl in _DS_SPINE.items():
+        if _sp in _display_df.columns:
+            _CC[_sp] = (st.column_config.NumberColumn(_sl, help=_SCANNER_HEADER_TIPS.get(_sp), format="%.0f",
+                                                      width=_DS_W.get(_sp), pinned=True)
+                        if _sp == "rank" else
+                        st.column_config.TextColumn(_sl, help=_SCANNER_HEADER_TIPS.get(_sp),
+                                                    width=_DS_W.get(_sp), pinned=True))
+    # Every column takes its width from _DS_W (above the tab block): Streamlit's defaults — ~150px a
+    # score bar, text sized to its longest cell — pushed the views off a 1536px laptop screen.
+    # Score BARS for the headline scores only — Quality's parts and Governance read as numbers
+    # (_num_fmt), which is part of what lets every view fit a laptop screen (2026-10-05).
     for _sc, _sl in {
-        "composite_score": "Score", "quality_score": "Quality",
-        "moat_score": "Moat", "growth_score": "Growth", "improvement_score": "Improvement",
-        "cash_score": "Cash", "momentum_score": "Momentum",
-        "forensic_score": "Forensic", "governance_bonus": "Governance",
+        "composite_score": "Score", "quality_score": "Quality", "momentum_score": "Momentum",
         "breakout_score": "Breakout", "valuation_score": "Valuation",
     }.items():
         if _sc in _display_df.columns:
             _CC[_sc] = st.column_config.ProgressColumn(
-                _sl, help=_SCANNER_HEADER_TIPS.get(_sc), min_value=0, max_value=100, format="%.0f")
-    for _bc in ("gate_pass", "tsunami_signal", "vstop_green"):
+                _sl, help=_SCANNER_HEADER_TIPS.get(_sc), min_value=0, max_value=100, format="%.0f",
+                width=_DS_W.get(_sc))
+    for _bc, _lbl in {"gate_pass": "✅ Gate"}.items():
         if _bc in _display_df.columns:
-            _lbl = {"gate_pass": "✅ Gate", "tsunami_signal": "🌊", "vstop_green": "VSTOP"}[_bc]
-            _CC[_bc] = st.column_config.CheckboxColumn(_lbl, help=_SCANNER_HEADER_TIPS.get(_bc))
+            _CC[_bc] = st.column_config.CheckboxColumn(_lbl, help=_SCANNER_HEADER_TIPS.get(_bc), width=_DS_W.get(_bc))
     _num_fmt = {
         "conviction_tier": ("Tier",     "T%.0f"),
+        "moat_score":      ("Moat",     "%.0f"),   # Quality's parts, as numbers beside its bar (2026-10-05)
+        "growth_score":    ("Growth",   "%.0f"),
+        "improvement_score": ("Improvement", "%.0f"),
+        "cash_score":      ("Cash",     "%.0f"),
+        "governance_bonus": ("Governance", "%.0f"),   # 👥 Ownership: a composite leg built from ownership signals
         "piotroski_fscore":("F-Score",  "%.0f/9"),
         "peg":             ("PEG",      "%.2f×"),
         "pe":              ("P/E",      "%.1f×"),
@@ -804,12 +867,9 @@ with tabs[1]:
         "dii_holdings":    ("DII",      "%.1f%%"),
         "change_dii_lq":   ("DII Δ qtr", "%+.2fpp"),
         "rsi_14d":         ("RSI",      "%.0f"),
-        "dist_52wh":       ("52WH Δ",  "%.1f%%"),
-        "earnings_yield":  ("E.Yield",  "%.1f%%"),
         "dividend_yield":  ("Div Yield", "%.2f%%"),   # Valuation: vendor TTM yield beside E.Yield; 0.00% = does not pay (2026-09-19)
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),
-        "rank":            ("Rank",     "%.0f"),
         "red_flag_count":  ("🚩 Flags","%.0f"),
         "accruals_ratio":  ("Accruals", "%.2f"),
         "crs_52w":         ("RS 52W",   "%.0f"),
@@ -822,10 +882,11 @@ with tabs[1]:
     }
     for _nc, (_nl, _nf) in _num_fmt.items():
         if _nc in _display_df.columns:
-            _CC[_nc] = st.column_config.NumberColumn(_nl, help=_SCANNER_HEADER_TIPS.get(_nc), format=_nf)
+            _CC[_nc] = st.column_config.NumberColumn(_nl, help=_SCANNER_HEADER_TIPS.get(_nc), format=_nf,
+                                                     width=_DS_W.get(_nc))
     # String decision-signal + identity columns get clean headers (else they show raw snake_case).
     for _tc, _tl in {
-        "name": "Stock", "sector": "Sector", "market_category": "Market Cap",
+        "sector": "Sector", "market_category": "Market Cap",
         "verdict_direction": "Soundness", "wealth_tier": "Wealth", "weinstein_stage": "Trend",
         "moat_growth_quad": "Moat·Growth", "smart_money_flow": "Smart Money",
         "buy_zone_label": "Buy Zone",
@@ -835,13 +896,13 @@ with tabs[1]:
         "d49_momentum_quality": "Mom. Quality",
     }.items():
         if _tc in _display_df.columns:
-            _CC[_tc] = st.column_config.TextColumn(_tl, help=_SCANNER_HEADER_TIPS.get(_tc))
+            _CC[_tc] = st.column_config.TextColumn(_tl, help=_SCANNER_HEADER_TIPS.get(_tc), width=_DS_W.get(_tc))
     # Safety net: a future _DS_VIEWS column with a tip but no typed config above still gets its
     # hover tooltip (raw header). NOTE: Streamlit issue #10841 — header tooltips don't render in
     # the dataframe's FULL-SCREEN mode; they work in the normal embedded view.
     for _col in _display_df.columns:
         if _col not in _CC and _SCANNER_HEADER_TIPS.get(_col):
-            _CC[_col] = st.column_config.Column(help=_SCANNER_HEADER_TIPS[_col])
+            _CC[_col] = st.column_config.Column(help=_SCANNER_HEADER_TIPS[_col], width=_DS_W.get(_col))
 
     # ── Render table — or a smart, cause-specific empty-state ──────
     if filt.empty:
@@ -898,7 +959,10 @@ with tabs[1]:
         # cols) instead of the ~500 raw internal columns (rf_/cat_/vqs_/proxies). Rows are the
         # searched/sorted ds_df; the column set is auto-derived from _DS_VIEWS so it never drifts,
         # and it's ~10x smaller to serialize on every rerun. ──
-        _export_cols = [c for c in dict.fromkeys(_c for _v in _DS_VIEWS.values() for _c in _v)
+        # …plus every SORT column (2026-10-05): MCap left the views as size, not value, and the file
+        # should carry whatever the table can be ordered by.
+        _export_cols = [c for c in dict.fromkeys([*(_c for _v in _DS_VIEWS.values() for _c in _v),
+                                                  *(_s for _s, _ in _DS_SORTS.values())])
                         if c in ds_df.columns]
         _safe_mode = analysis_mode.replace(" ", "_").lower()
         # Encode via the shared _to_csv_bytes (UTF-8-with-BOM) — the SAME Excel-safe path the sidebar
@@ -1464,7 +1528,7 @@ def _render_market_pulse():
         """The columns a view shows: the tab's own Core list, or Count + the tab's ranking column,
         the view's measures, and any trailing context column. Switching views changes the COLUMNS,
         never the ranking — the ranking column is in every view so the order always reads. A
-        cleared pill (None) falls back to Core. Only columns the table actually carries."""
+        cleared selection (None) falls back to Core. Only columns the table actually carries."""
         cols = [*lead, *VIEW_MEASURES[view], *tail] if view in VIEW_MEASURES else core
         return [c for c in cols if c in stats.columns]
 
@@ -2198,7 +2262,7 @@ def _render_market_pulse():
                           if c in _sec_stats.columns]
             # 🔭 One view at a time — the Deep Scanner's own. A DISPLAY choice, not a filter: the 🧹
             # Clear above never resets it, and it never re-ranks (the sort is fixed above).
-            _sec_view = st.pills("Column View", list(VIEWS), default="🏆 Core", key="mp_sec_view")
+            _sec_view = st.segmented_control("Column View", list(VIEWS), default="🏆 Core", key="mp_sec_view")
             if _sec_view == OWNERSHIP:
                 st.caption(OWNERSHIP_GROUP_NOTE)
             _sec_show = _mp_view_columns(_sec_view, _sec_order, ["stocks", "pct_qualify"], [], _sec_stats)
@@ -2571,7 +2635,7 @@ def _render_market_pulse():
                               if c in _ind_stats.columns]
                 # 🔭 The same views as 📈 Sectors. Every view keeps Count and Δ vs Sector — the
                 # ranking — up front, and the sector last.
-                _ind_view = st.pills("Column View", list(VIEWS), default="🏆 Core", key="mp_ind_view")
+                _ind_view = st.segmented_control("Column View", list(VIEWS), default="🏆 Core", key="mp_ind_view")
                 if _ind_view == OWNERSHIP:
                     st.caption(OWNERSHIP_GROUP_NOTE)
                 _ind_show = _mp_view_columns(_ind_view, _ind_order, ["stocks", "delta_vs_sector"],

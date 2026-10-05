@@ -11,7 +11,7 @@ single-source tooltip map the Deep Scanner wires into its column_config `help=`.
 from ui.ui_components import _RAW_GLOSSARY as _GLOSSARY
 
 _SCANNER_HEADER_TIPS = {
-    "rank":             "The stock's overall rank in the current screen (1 = highest conviction).",
+    "rank":             "Overall PRISM rank by Score across the whole universe (1 = highest). It stays the same whatever the table is sorted or filtered by.",
     "result_when":      "How current this stock's financials are — '8d ago' = last results reported 8 days back; '📅 due 4d' = a result is SCHEDULED in 4 days and not yet declared, so every number here is still the previous quarter's. Appears when sorting by 🆕 Results.",
     "d48_breakout_readiness": "How close price is to breaking out — 🎯 IMMINENT: within 10% of the 52-week high AND 5% of the 13-week high; NEAR: within 20% of the 52-week high; FAR: more than 20% below. The categorical read of the Breakout score beside it.",
     "d49_momentum_quality": "Whether the momentum is healthy or exhausted — ⚡ HIGH: RSI in the 50–70 zone with a confirmed trend (ADX > 20); 🔥 OVERHEATED: RSI above 70, strong but stretched, chase risk elevated; WEAK: neither. Reads the Momentum and RSI columns beside it.",
@@ -77,3 +77,25 @@ _SCANNER_HEADER_TIPS = {
     "gate_pass":              "Whether the stock clears ALL the engine's hard quality gates (e.g. ROCE, growth, positive-PAT floors).",
     "tsunami_signal":         "A rare confluence flag — a quality breakout meeting institutional accumulation; fires for only a handful of stocks by design.",
 }
+
+
+# ── Deep Scanner column rule (2026-10-05) ──────────────────────────────────────────────────────
+# The column that makes each sort READABLE on screen. composite_score's order IS rank (the engine
+# re-derives rank from the post-penalty score — pinned by test_rank_tracks_post_penalty_composite)
+# and rank leads every view, so the Score sort adds nothing; the 🆕 Results sort orders by a raw day
+# count the app shows as readable text (result_when).
+_SORT_WITNESS = {"composite_score": "rank", "result_age_days": "result_when"}
+
+
+def ds_view_columns(view, sort_col, available):
+    """The columns the Deep Scanner shows for a view: the view's own list (it leads with Rank · Stock)
+    plus whatever the table is sorted by, placed right after Stock when the view does not already
+    carry it — so the order on screen can always be read. A view that carries it is left exactly as
+    curated. Only columns in `available` are returned; an absent column is never invented."""
+    cols = [c for c in view if c in available]
+    shown = _SORT_WITNESS.get(sort_col, sort_col)
+    if shown not in available:
+        shown = sort_col
+    if shown in available and shown not in cols:
+        cols.insert(cols.index("name") + 1 if "name" in cols else 0, shown)
+    return cols

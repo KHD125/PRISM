@@ -347,12 +347,14 @@ def test_the_view_is_a_display_choice_not_a_filter(table):
     """Same as the Deep Scanner's Column View: 🧹 Clear resets FILTERS. Resetting the view as well
     would make the Clear button appear the moment someone picks a view, as if a filter were set."""
     t = TABLES[table]
-    pills = [n for n in ast.walk(TREE) if isinstance(n, ast.Call) and _in_block(n, table)
-             and ast.unparse(n.func) == "st.pills"]
-    assert len(pills) == 1, f"{table}: expected one view switcher, found {len(pills)}"
-    kw = {k.arg: k.value for k in pills[0].keywords}
+    # A segmented control since 2026-10-05 (tests/test_deep_scanner_views.py): the widget for
+    # 'pick one view' — pills read as tags or filters.
+    switch = [n for n in ast.walk(TREE) if isinstance(n, ast.Call) and _in_block(n, table)
+              and ast.unparse(n.func) == "st.segmented_control"]
+    assert len(switch) == 1, f"{table}: expected one view switcher, found {len(switch)}"
+    kw = {k.arg: k.value for k in switch[0].keywords}
     assert ast.unparse(kw["key"]) == repr(t["view_key"]) and ast.unparse(kw["default"]) == repr(CORE)
-    assert ast.unparse(pills[0].args[1]) == "list(VIEWS)", f"{table}: the switcher must offer the shared VIEWS"
+    assert ast.unparse(switch[0].args[1]) == "list(VIEWS)", f"{table}: the switcher must offer the shared VIEWS"
     d = _assigned_in(table, t["defaults"]).value
     assert t["view_key"] not in {k.value for k in d.keys}, f"{table}: 🧹 Clear would reset the view"
 
@@ -512,7 +514,8 @@ def _ds_dict(name):
 
 def test_the_deep_scanner_shows_each_stake_beside_its_change():
     v = [e.value for e in _ds_dict("_DS_VIEWS")[OWNERSHIP].elts]
-    assert v[0] == "name" and "pledged_percentage" in v and "smart_money_flow" in v
+    # Rank · Stock lead every Deep Scanner view since 2026-10-05 (tests/test_deep_scanner_views.py).
+    assert v[:2] == ["rank", "name"] and "pledged_percentage" in v and "smart_money_flow" in v
     for level, move in [("promoter_holdings", "change_promoter_1y"), ("fii_holdings", "change_fii_lq"),
                         ("dii_holdings", "change_dii_lq")]:
         assert v.index(move) == v.index(level) + 1, f"{move} must sit directly after {level}"

@@ -62,8 +62,8 @@ def test_export_encodes_through_bom_helper():
 
 
 def _ds_view_union(tree):
-    """The deduped union of every _DS_VIEWS preset column — exactly the export's column set
-    (`dict.fromkeys(... for _v in _DS_VIEWS.values() ...)` in app.py), AST-parsed (no execution)."""
+    """The deduped union of every _DS_VIEWS preset column plus every _DS_SORTS column — exactly the
+    export's column set (the sort columns joined 2026-10-05, when MCap left the views), AST-parsed."""
     union: list = []
     for node in ast.walk(tree):
         if (isinstance(node, ast.Assign)
@@ -73,6 +73,14 @@ def _ds_view_union(tree):
                 for elt in getattr(preset, "elts", []):
                     if isinstance(elt, ast.Constant) and elt.value not in union:
                         union.append(elt.value)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "_DS_SORTS" for t in node.targets)
+                and isinstance(node.value, ast.Dict)):
+            for sort in node.value.values:
+                col = sort.elts[0].value
+                if col not in union:
+                    union.append(col)
     return union
 
 
@@ -176,7 +184,14 @@ def test_results_sort_materializes_a_readable_column():
     assert "result_when" in block, "the readable result_when column is no longer materialized"
     for piece in ('"📅 due "', '"today"', '"d ago"'):
         assert piece in block, f"result_when lost its {piece} state — a negative age would read as reported"
-    assert '_view_cols.insert' in block, "result_when is computed but never inserted into the view"
+    # Placed beside the name by the SHARED rule since 2026-10-05 (ui_scanner.ds_view_columns maps
+    # the Results sort to result_when) — it was an inline _view_cols.insert. Behavioural now: the
+    # rule must put it right after Stock, and the app must build its columns AFTER materializing it.
+    from ui.ui_scanner import ds_view_columns
+    cols = ds_view_columns(["rank", "name", "quality_score"], "result_age_days",
+                           {"rank", "name", "quality_score", "result_age_days", "result_when"})
+    assert cols[:3] == ["rank", "name", "result_when"], "result_when is computed but never placed beside the name"
+    assert "ds_view_columns(" in src[i:], "the columns are built before result_when exists, so it can never show"
     # And it must render with a clean header + a tooltip that explains the due-vs-ago distinction.
     assert '"result_when": "🆕 Results"' in src
     from ui.ui_scanner import _SCANNER_HEADER_TIPS

@@ -303,10 +303,13 @@ def _app_dict(name: str):
     raise AssertionError(f"{name} not found as a dict literal in app.py")
 
 
-def test_dividend_yield_sits_directly_after_earnings_yield_in_the_valuation_view():
+def test_dividend_yield_sits_beside_the_fcf_yield_in_the_valuation_view():
+    """Repointed 2026-10-05: E.Yield left the view as an exact inverse of P/E (rank correlation
+    -1.00) when every view was fitted to a laptop screen, so the yields a reader compares in one
+    glance are now the two cash yields (tests/test_deep_scanner_views.py)."""
     cols = _app_dict("_DS_VIEWS")["💰 Valuation"]
     assert "dividend_yield" in cols, "the yield is not in the 💰 Valuation preset"
-    assert cols.index("dividend_yield") == cols.index("earnings_yield") + 1, (
+    assert cols.index("fcf_yield") == cols.index("dividend_yield") + 1, (
         "the two yields must be adjacent — a reader compares them in one glance"
     )
 
