@@ -338,8 +338,14 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # High accruals mean reported earnings are not backed by cash. Coefficient in Beneish = 4.679 (largest).
     # Use AVERAGE total assets (current + 1YB)/2 — Gemini G-audit fix: point-in-time denominator can be
     # artificially inflated by late-year acquisitions, masking accrual manipulation.
-    _ta_1yb = df.get("total_assets_1yb", pd.Series(np.nan, index=df.index)).fillna(df["total_assets"].fillna(0))
-    avg_ta = (df["total_assets"].fillna(0) + _ta_1yb) / 2.0
+    # KI-8 (2026-10-05): the years that EXIST, in full: both -> their average; one -> that one; none -> not
+    # judged. A blank this year used to average last year's with 0, halving the denominator and doubling
+    # the ratio (12 stocks carried this flag only because of it). A recorded 0 is a missing figure (no
+    # listed company has zero assets), not a measurement. tests/test_accruals_denominator.py
+    _ta_now = df["total_assets"].where(df["total_assets"] > 0)
+    _ta_1yb = df.get("total_assets_1yb", pd.Series(np.nan, index=df.index))
+    _ta_1yb = _ta_1yb.where(_ta_1yb > 0)
+    avg_ta = ((_ta_now + _ta_1yb) / 2.0).fillna(_ta_now).fillna(_ta_1yb)
     # PAT of the CASH-FLOW year (data_engine cash_flow_year_lag) — never this year's profit against
     # last year's cash, which made every growing company look accrual-heavy.
     _pat_cfy = df.get("pat_cf_year", df["pat"])

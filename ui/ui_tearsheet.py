@@ -886,12 +886,13 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         # engine (forensic_engine rf_high_accruals): (PAT − OCF) / avg_total_assets > 0.05, with the
         # PAT of the CASH-FLOW year — the same figure the flag was computed from.
         _pat_a = stock.get("pat_cf_year", stock.get("pat")); _ocf_a = stock.get("operating_cash_flow")
-        _ta = stock.get("total_assets"); _ta1 = stock.get("total_assets_1yb")
-        if pd.isna(_pat_a) or pd.isna(_ocf_a) or pd.isna(_ta):
+        # The engine's own denominator (KI-8): the years that exist and are above 0, averaged only when
+        # both do, so a stock whose assets this year are blank shows the number its flag was judged on.
+        _yrs = [float(v) for v in (stock.get("total_assets"), stock.get("total_assets_1yb"))
+                if pd.notna(v) and float(v) > 0]
+        if pd.isna(_pat_a) or pd.isna(_ocf_a) or not _yrs:
             return ""
-        _avg_ta = (float(_ta) + (float(_ta1) if pd.notna(_ta1) else float(_ta))) / 2.0
-        if _avg_ta <= 0:
-            return ""
+        _avg_ta = sum(_yrs) / len(_yrs)
         _acc = (float(_pat_a) - float(_ocf_a)) / _avg_ta * 100.0
         _yr_a = (" (last year's PAT — the latest cash flow is a year older)"
                  if stock.get("cf_year_lag") == 1 else "")

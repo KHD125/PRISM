@@ -148,7 +148,7 @@ MEASURES = {
              "and cash taken from the same year. Counted among stocks with profit, cash flow and assets "
              "on record.",
         # The engine's own guard (forensic_engine, rf_high_accruals): profit and cash flow of one year,
-        # and assets this year OR last (it falls back to last year's) — without them it records 0.
+        # and assets above 0 this year OR last (it uses whichever exists, in full) — else it records 0.
         value=lambda f: _share(f["rf_high_accruals"] == 1,
                                f["pat_cf_year"].notna() & f["operating_cash_flow"].notna()
                                & ((f["total_assets"] > 0) | (f["total_assets_1yb"] > 0)))),
