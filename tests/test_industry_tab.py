@@ -480,11 +480,12 @@ def test_widget_keys_are_unique_to_this_tab(src, block):
     # forms are collected — the pin is about the key SET, not the calling convention.
     keys = (re.findall(r'key="(\w+)"', block)
             + re.findall(r'_mp_ms\([^,]+,[^,]+,[^,]+,\s*"(\w+)"', block))
-    assert sorted(keys) == ["mp_ind_cap", "mp_ind_clear", "mp_ind_sec", "mp_ind_wealth"], (
+    assert sorted(keys) == ["mp_ind_cap", "mp_ind_clear", "mp_ind_sec", "mp_ind_view", "mp_ind_wealth"], (
         f"expected the two RE-AGGREGATING filters (market-cap, wealth tier), the sector "
-        f"DRILL-DOWN row filter (added 2026-08-28, examined), and the 🧹 Clear (added "
-        f"2026-08-30, examined — default-aware reset), found {keys}. The min-stocks dial "
-        f"stays retired; any other widget arrived unexamined."
+        f"DRILL-DOWN row filter (added 2026-08-28, examined), the 🧹 Clear (added "
+        f"2026-08-30, examined — default-aware reset), and the 🔭 Column View switcher (added "
+        f"2026-10-05, examined — a display choice, never a filter; tests/test_market_pulse_views.py), "
+        f"found {keys}. The min-stocks dial stays retired; any other widget arrived unexamined."
     )
     for k in keys:
         assert k.startswith("mp_ind_"), f"key {k!r} is not namespaced to the Industry tab"

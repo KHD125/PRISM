@@ -457,7 +457,10 @@ def test_sectors_and_industry_clear_are_default_aware_and_complete():
                    | set(re.findall(r'_mp_ms\([^,]+,[^,]+,[^,]+,\s*"(mp_(?:sec|ind)_[a-z_]+)"', src)))
     assert len(widget_keys) >= 8, f"the completeness scan found only {widget_keys} — it has lost its teeth"
     declared = set(re.findall(r'"(mp_(?:sec|ind)_[a-z_]+)":', sec_map + ind_map))
-    missing = sorted(widget_keys - declared - {"mp_sec_clear", "mp_ind_clear"})
+    # Exempt: the Clear buttons themselves, and the 🔭 Column View switchers (2026-10-05) — a
+    # DISPLAY choice, not a filter. Resetting the view on Clear would make the Clear button appear
+    # the moment someone picks a view; tests/test_market_pulse_views.py pins that Clear never does.
+    missing = sorted(widget_keys - declared - {"mp_sec_clear", "mp_ind_clear", "mp_sec_view", "mp_ind_view"})
     assert not missing, f"controls with NO declared reset default: {missing}"
     # both buttons are conditional + wired to the default-aware reset
     for anchor in ("_SEC_DEFAULTS.items())", "_IND_DEFAULTS.items())"):

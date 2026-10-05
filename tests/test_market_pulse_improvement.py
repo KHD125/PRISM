@@ -124,7 +124,10 @@ def _source(table):
     first = min((n for n in ast.walk(TREE) if isinstance(n, ast.Assign) and _in_block(n, table)
                  and any(isinstance(t, ast.Name) and t.id == src_name for t in n.targets)),
                 key=lambda n: n.lineno)
-    ns = {"_mp_df": _frame()}
+    # SOURCE_COLUMNS is IMPORTED into app.py (the 🔭 view measures' inputs, 2026-10-05), so it is
+    # supplied from its module rather than looked up as an assignment.
+    from ui.ui_group_views import SOURCE_COLUMNS
+    ns = {"_mp_df": _frame(), "SOURCE_COLUMNS": SOURCE_COLUMNS}
     for name in sorted({x.id for x in ast.walk(first.value) if isinstance(x, ast.Name)} - {"_mp_df"}):
         ns[name] = _run(_assigned(name).value, ns)
     return _run(first.value, ns)
@@ -140,10 +143,14 @@ def _assigned(name):
 def _column_config(table):
     """key -> value node of the column_config dict passed to the table's st.dataframe call."""
     _, _, order, stats = TABLES[table]
-    want = f"{stats}[{order}].reset_index()"
+    # The table displays the SELECTED VIEW's list since 2026-10-05 (`{stats}[_sec_show]` /
+    # `[_ind_show]`), not `{order}` — matched on the frame, whichever list subscripts it.
+    want = f"{stats}[...].reset_index()"
     for n in ast.walk(TREE):
         if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                and n.func.attr == "dataframe" and n.args and ast.unparse(n.args[0]) == want):
+                and n.func.attr == "dataframe" and n.args
+                and ast.unparse(n.args[0]).startswith(f"{stats}[")
+                and ast.unparse(n.args[0]).endswith("].reset_index()")):
             cfg = next(k.value for k in n.keywords if k.arg == "column_config")
             return {k.value: v for k, v in zip(cfg.keys, cfg.values) if isinstance(k, ast.Constant)}
     raise AssertionError(f"no st.dataframe({want}, ...) call — the {table} table moved")
@@ -250,7 +257,11 @@ def test_the_sectors_caption_names_every_averaged_column():
     text = "".join(v.value for v in caps[0].args[0].values
                    if isinstance(v, ast.Constant) and isinstance(v.value, str))
     cfg = _column_config("sectors")
-    shown = [c for c in _displayed("sectors") if c.startswith("avg_")]
+    # Since 2026-10-05 the table shows one VIEW at a time, so "every averaged column" means every
+    # avg_* that ANY view can put on screen: Core's own plus the ones the other views carry.
+    from ui.ui_group_views import VIEW_MEASURES
+    shown = [c for c in dict.fromkeys(_displayed("sectors") + [m for v in VIEW_MEASURES.values() for m in v])
+             if c.startswith("avg_")]
     assert len(shown) >= 4, f"the averaged columns vanished: {shown}"
     for c in shown:
         label = cfg[c].args[0].value

@@ -477,7 +477,9 @@ def test_the_sector_column_is_not_shown_under_its_raw_name(src):
     (test_market_pulse_tabs::test_no_dataframe_header_is_a_raw_column_name) cannot catch it: that
     scan reads st.column_config pairs, so a column with NO pair is invisible to it. Caught in the
     browser instead, and pinned here where the table lives."""
-    i = src.index("_sec_stats[_sec_order].reset_index()")
+    # Repointed 2026-10-05: the table now displays the selected view's list (_sec_show); the
+    # subject — the sector column carries a config — is unchanged.
+    i = src.index("_sec_stats[_sec_show].reset_index()")
     block = src[i:src.index("hide_index=True", i)]
     assert '"sector":' in block, "the sector column has no column_config — it renders raw"
     assert 'st.column_config.TextColumn("Sector"' in block, (

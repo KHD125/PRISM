@@ -86,6 +86,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters, keep_selected
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
+from ui.ui_group_views import MEASURES, SOURCE_COLUMNS, VIEW_MEASURES, VIEWS, group_measures
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
@@ -1432,6 +1433,29 @@ def _render_market_pulse():
           "the businesses, not the price and not every stock in the group: read it beside "
           "Momentum and against Count.")
 
+    # 🔭 COLUMN VIEWS (2026-10-05) — 📈 Sectors and 🏭 Industry show one view at a time, the Deep
+    # Scanner's five. What each measure is and how a group is summarised lives in ONE place,
+    # ui/ui_group_views.py; these two only lay it out, once, for both tables.
+    # Pinned in tests/test_market_pulse_views.py.
+    # ONE bar width for every 0-100 bar in both tables. Streamlit's default (~150px a bar) pushed the
+    # 7th column off a 1536px laptop screen; at 105px every view of both tables fits (browser-measured).
+    _MP_BAR_W = 105
+    _MP_VIEW_CFG = {
+        k: (st.column_config.ProgressColumn(m["header"], min_value=0, max_value=100,
+                                            format=m["fmt"], help=m["help"], width=_MP_BAR_W)
+            if m["bar"] else
+            st.column_config.NumberColumn(m["header"], format=m["fmt"], help=m["help"], width=m["width"]))
+        for k, m in MEASURES.items()
+    }
+
+    def _mp_view_columns(view, core, lead, tail, stats):
+        """The columns a view shows: the tab's own Core list, or Count + the tab's ranking column,
+        the view's measures, and any trailing context column. Switching views changes the COLUMNS,
+        never the ranking — the ranking column is in every view so the order always reads. A
+        cleared pill (None) falls back to Core. Only columns the table actually carries."""
+        cols = [*lead, *VIEW_MEASURES[view], *tail] if view in VIEW_MEASURES else core
+        return [c for c in cols if c in stats.columns]
+
     # ── Pre-compute section datasets ───────────────────────────────
     _mp_ts   = (_mp_df[_mp_df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
                 if "tsunami_signal" in _mp_df.columns else _mp_df.iloc[:0])
@@ -2072,7 +2096,9 @@ def _render_market_pulse():
             f"clearing the hard gates (the sector's quality breadth). Ranked by % Qualify "
             f"(most-investable first). Capital-cycle phase is named below: 🔥 hot (over-investing — "
             f"caution) · ❄️ starved (under-invested — opportunity). A sector average can hide up to "
-            f"<strong>50 points</strong> of industry dispersion — see 🏭 Industry for the split.</div>",
+            f"<strong>50 points</strong> of industry dispersion — see 🏭 Industry for the split. "
+            f"Switch the <strong>Column View</strong> to see the sectors from five sides — raw ratios "
+            f"as medians, yes/no measures as shares of the sector's stocks.</div>",
             unsafe_allow_html=True,
         )
 
@@ -2120,6 +2146,8 @@ def _render_market_pulse():
             avg_valuation=("valuation_score","mean"),
             avg_composite=("composite_score","mean"),
         )
+        # 🔭 The view measures (ui/ui_group_views.py), from the SAME filtered stocks as every column above.
+        _sec_stats = _sec_stats.join(group_measures(_sec_src, "sector"))
         # 👑 T1 REMOVED 2026-08-28 (user call, sparsity-backed): nonzero in 7 of 81 sectors (9%)
         # and 7 of 355 industries (2%) — the same 7 names live in Discovery's tier filter.
         # 💹 tier share — over _sec_share_base (the pre-wealth-filter roster; see above). Exact
@@ -2151,41 +2179,46 @@ def _render_market_pulse():
             # Score (avg_composite) sat second-to-last and rendered as a bar plus a single
             # truncated digit. The three figures a reader scans first — how many, what share
             # qualifies, and how they score — now lead; the component averages follow.
+            # 🏆 Core is the overview; Quality and Valuation moved to their own views (2026-10-05).
             # Improvement sits BESIDE Momentum: its tooltip tells the reader to read the pair together.
             _sec_order = [c for c in ["stocks", "pct_qualify", "avg_composite", "pct_tier",
-                                      "avg_quality", "avg_improvement", "avg_momentum",
-                                      "avg_valuation"]
+                                      "avg_improvement", "avg_momentum"]
                           if c in _sec_stats.columns]
+            # 🔭 One view at a time — the Deep Scanner's five. A DISPLAY choice, not a filter: the 🧹
+            # Clear above never resets it, and it never re-ranks (the sort is fixed above).
+            _sec_view = st.pills("Column View", list(VIEWS), default="🏆 Core", key="mp_sec_view")
+            _sec_show = _mp_view_columns(_sec_view, _sec_order, ["stocks", "pct_qualify"], [], _sec_stats)
             st.dataframe(
-                _sec_stats[_sec_order].reset_index(),
+                _sec_stats[_sec_show].reset_index(),
                 column_config={
                     # reset_index() materializes the groupby key as a COLUMN, and a column with no
                     # config entry renders under its raw snake_case name -- this table showed
                     # "sector" on screen. The 2026-08-30 header-vocabulary pass missed it because
                     # its scan only inspects columns that HAVE a column_config entry, so a column
                     # with none was invisible to it. Found in the browser 2026-08-31.
-                    "sector":        st.column_config.TextColumn("Sector", width="medium"),
-                    "stocks":        st.column_config.NumberColumn("Count", format="%.0f"),
-                    "pct_qualify":   st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%",
+                    "sector":        st.column_config.TextColumn("Sector", width=180, pinned=True),
+                    "stocks":        st.column_config.NumberColumn("Count", format="%.0f", pinned=True),
+                    "pct_qualify":   st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%", width=_MP_BAR_W,
                                        help="Share of the sector's stocks that clear all hard gates — its quality breadth. "
                                             "SCALE-FREE, not statistically robust: a percentage stops big sectors "
                                             "dominating, but small ones then reach extremes easily. Measured "
                                             "2026-08-27: 8 of the top 10 sectors hold fewer than 12 stocks (median 9 "
                                             "vs 19 universe-wide), and at n=7 a single stock moves this 14 points. "
                                             "Read it alongside Count."),
-                    "pct_tier":      st.column_config.ProgressColumn(f"💹 {_sec_share_tier} %", min_value=0, max_value=100, format="%.0f%%",
+                    "pct_tier":      st.column_config.ProgressColumn(f"💹 {_sec_share_tier} %", min_value=0, max_value=100, format="%.0f%%", width=_MP_BAR_W,
                                        help=f"Share of the sector's FULL roster in the {_sec_share_tier} wealth tier. The tier "
                                             f"follows the Wealth-tier filter (All → BUY★, the top of the ladder); the "
                                             f"denominator deliberately IGNORES that filter — computed after it, this column "
                                             f"would read 100% everywhere. Unverifiable (N/A) stocks stay in the denominator "
                                             f"and dilute the share. Universe BUY★ base rate ≈ 12%. Price-blind and "
                                             f"forensics-blind, like the tier itself; read against Count."),
-                    "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f"),
-                    "avg_improvement": st.column_config.ProgressColumn("Improvement", min_value=0, max_value=100, format="%.0f",
+                    "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
+                    "avg_improvement": st.column_config.ProgressColumn("Improvement", min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W,
                                        help=_MP_IMPROVEMENT_HELP),
-                    "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f"),
-                    "avg_valuation": st.column_config.ProgressColumn("Valuation",min_value=0, max_value=100, format="%.0f"),
-                    "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f"),
+                    "avg_momentum":  st.column_config.ProgressColumn("Momentum", min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
+                    "avg_valuation": st.column_config.ProgressColumn("Valuation",min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
+                    "avg_composite": st.column_config.ProgressColumn("Score",    min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
+                    **_MP_VIEW_CFG,
                 },
                 width="stretch",
                 height=min(700, 80 + len(_sec_stats) * 35),
@@ -2255,10 +2288,13 @@ def _render_market_pulse():
             # industry that only partly lives in it.
             # A PROJECTION: a column averaged below must be listed here or the tab dies with a
             # KeyError — improvement_score was missed on 2026-10-03 and the browser caught it.
-            _IND_KEEP = [c for c in ["industry", "sector", "name", "composite_score",
-                                     "quality_score", "improvement_score", "momentum_score",
-                                     "valuation_score", "gate_pass", "conviction_tier",
-                                     "market_category", "wealth_tier"] if c in _mp_df.columns]
+            # …and every input the 🔭 view measures read (ui_group_views.SOURCE_COLUMNS), de-duplicated.
+            _IND_KEEP = [c for c in dict.fromkeys([
+                             "industry", "sector", "name", "composite_score",
+                             "quality_score", "improvement_score", "momentum_score",
+                             "valuation_score", "gate_pass", "conviction_tier",
+                             "market_category", "wealth_tier", *SOURCE_COLUMNS])
+                         if c in _mp_df.columns]
             _ind_src = _mp_df[_IND_KEEP].copy()
             _ind_src["industry"] = _ind_src["industry"].astype(str).str.strip()
             _ind_src = _ind_src[~_ind_src["industry"].isin(["", "nan", "None"])]
@@ -2411,6 +2447,8 @@ def _render_market_pulse():
                 avg_momentum=("momentum_score", "mean"),
                 avg_valuation=("valuation_score", "mean"),
             )
+            # 🔭 The view measures, from the SAME filtered stocks (see the Sectors note).
+            _ind_stats = _ind_stats.join(group_measures(_ind_src, "industry"))
             # 💹 tier share — over _ind_share_base (pre-wealth-filter roster; see above). Exact
             # equality, never contains: "BUY" ⊂ "BUY★".
             if "wealth_tier" in _ind_share_base.columns and not _ind_stats.empty:
@@ -2513,22 +2551,27 @@ def _render_market_pulse():
                 # for the other tables. Sector names are the widest strings in the frame
                 # ("Infrastructure Developers & Operators"), so the sector goes last.
                 _ind_order = [c for c in ["stocks", "pct_qualify", "avg_composite",
-                                          "delta_vs_sector", "pct_tier", "avg_quality",
-                                          "avg_improvement", "avg_momentum", "avg_valuation",
+                                          "delta_vs_sector", "pct_tier",
+                                          "avg_improvement", "avg_momentum",
                                           "dom_sector"]
                               if c in _ind_stats.columns]
+                # 🔭 The same five views as 📈 Sectors. Every view keeps Count and Δ vs Sector — the
+                # ranking — up front, and the sector last.
+                _ind_view = st.pills("Column View", list(VIEWS), default="🏆 Core", key="mp_ind_view")
+                _ind_show = _mp_view_columns(_ind_view, _ind_order, ["stocks", "delta_vs_sector"],
+                                             ["dom_sector"], _ind_stats)
                 st.dataframe(
-                    _ind_stats[_ind_order].reset_index(),
+                    _ind_stats[_ind_show].reset_index(),
                     column_config={
-                        "industry":       st.column_config.TextColumn("Industry", width="medium"),
-                        "stocks":         st.column_config.NumberColumn("Count", format="%.0f",
+                        "industry":       st.column_config.TextColumn("Industry", width=180, pinned=True),
+                        "stocks":         st.column_config.NumberColumn("Count", format="%.0f", pinned=True,
                                             help="Read every percentage on this row against this number first."),
-                        "pct_qualify":    st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%",
+                        "pct_qualify":    st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%", width=_MP_BAR_W,
                                             help="Share of the industry's stocks clearing all hard gates. SCALE-FREE, "
                                                  "not statistically robust — and much less robust here than on the "
                                                  "Sectors tab: the median industry holds 3 stocks against 19 for "
                                                  "sectors. This is a column, not the sort key, for exactly that reason."),
-                        "avg_composite":  st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
+                        "avg_composite":  st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
                         "delta_vs_sector": st.column_config.NumberColumn("Δ vs Sector", format="%+.1f", width="small",
                                             help="Average score minus the average of its sector PEERS — the OTHER stocks "
                                                  "in the sector this industry mostly sits in; its own stocks are excluded "
@@ -2536,25 +2579,26 @@ def _render_market_pulse():
                                                  "toward zero by its own weight). Both terms are computed over the SAME "
                                                  "filtered stocks. BLANK means incomparable, not zero: that sector holds "
                                                  "no other industry, so no peers exist."),
-                        "pct_tier":       st.column_config.ProgressColumn(f"💹 {_ind_share_tier} %", min_value=0, max_value=100, format="%.0f%%",
+                        "pct_tier":       st.column_config.ProgressColumn(f"💹 {_ind_share_tier} %", min_value=0, max_value=100, format="%.0f%%", width=_MP_BAR_W,
                                             help=f"Share of the industry's FULL roster in the {_ind_share_tier} wealth tier. "
                                                  f"Follows the Wealth-tier filter (All → BUY★); the denominator deliberately "
                                                  f"IGNORES that filter — computed after it, the column would read 100% "
                                                  f"everywhere. N/A stocks dilute the share. Universe BUY★ base rate ≈ 12%. "
                                                  f"Read against Count — even more so here than on Sectors (median industry "
                                                  f"holds 3 stocks)."),
-                        "avg_quality":    st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f"),
-                        "avg_improvement": st.column_config.ProgressColumn("Improvement", min_value=0, max_value=100, format="%.0f",
+                        "avg_quality":    st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
+                        "avg_improvement": st.column_config.ProgressColumn("Improvement", min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W,
                                             help=_MP_IMPROVEMENT_HELP),
-                        "avg_momentum":   st.column_config.ProgressColumn("Momentum",  min_value=0, max_value=100, format="%.0f"),
-                        "avg_valuation":  st.column_config.ProgressColumn("Valuation", min_value=0, max_value=100, format="%.0f"),
-                        "dom_sector":     st.column_config.TextColumn("Sector (dominant)", width="medium",
+                        "avg_momentum":   st.column_config.ProgressColumn("Momentum",  min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
+                        "avg_valuation":  st.column_config.ProgressColumn("Valuation", min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
+                        "dom_sector":     st.column_config.TextColumn("Sector (dominant)", width=160,
                                             help="Industry is NOT nested inside sector — 136 of 355 span more than one. "
                                                  "This is the sector holding the LARGEST SHARE of the industry's stocks; a "
                                                  "leading '~' means under 80% sit there and the figure beside it is that "
                                                  "share, so read the Δ for that row loosely. An industry can TIE for two "
                                                  "sectors — the drill-down then reaches it from either, while this column "
                                                  "keeps one name because the Δ baseline needs exactly one peer group."),
+                        **_MP_VIEW_CFG,
                     },
                     width="stretch",
                     height=min(700, 80 + len(_ind_stats) * 35),
