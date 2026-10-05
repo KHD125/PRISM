@@ -414,7 +414,7 @@ GOVERNANCE_BONUS = {
     "fii_accumulating":        15,   # FII buying this Q
     "dii_accumulating":        10,   # DII buying this Q
     "inst_convergence":        15,   # FII + DII both buying same Q — intentional triple-stack (FII+DII+convergence=40pts): convergence of smart money is qualitatively stronger than either alone
-    "insider_trading_present": 15,   # directors buying
+    "insider_trading_present": 15,   # insiders net-buying (data_engine.insider_net_buyer)
     "pledge_falling_1y":       10,   # pledge reduced over 1 year
     "undiscovered_alpha":      15,   # low FII + Tier C mcap
     # Promoter holding alignment — Mayer 100-Bagger: present in 10/10 Indian 100-baggers.

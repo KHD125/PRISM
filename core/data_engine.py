@@ -732,6 +732,19 @@ def coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def insider_net_buyer(insider_trading) -> pd.Series:
+    """1 where insiders were NET BUYERS, else 0 — the one definition (engine, D44, tools/validate.py).
+
+    The vendor's "Insider Trading" is a SIGNED NUMBER, the net value of recent insider trades: + is net
+    bought (its sign agrees with the promoter-holding change on 67-80% of rows across four vintages).
+    The engine once searched it for the TEXT "Bought", so the governance bonus and D44 never fired for
+    anyone (found and fixed 2026-10-05). Buyers only, as designed: purchases are the informative side —
+    insider purchase portfolios earned positive abnormal returns in Indian PIT disclosures (2007-2015).
+    A blank is no reported trade, and text is not a number: neither counts as buying (a vendor switch
+    back to text fails tests/test_insider_buying.py instead of going quietly dead again)."""
+    return (pd.to_numeric(insider_trading, errors="coerce") > 0).astype(int)
+
+
 def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     """Compute all 36+ derived signals. Pure vectorized Pandas."""
     print("\n🧮 Computing derived signals...")
@@ -1545,6 +1558,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         0
     )
     df["promoter_buying"] = (_ch_prom_lq > 0).astype(int)
+    df["insider_net_buyer"] = insider_net_buyer(df.get("insider_trading", _sh_nan))
     df["inst_convergence"] = (
         (_ch_fii_lq > 0) & (_ch_dii_lq > 0)
     ).astype(int)
@@ -2685,11 +2699,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── D41: Pledge Trajectory (positive = pledge rising = danger) ──
     df["d41_pledge_trajectory"] = df["pledged_percentage"].fillna(0) - df["pledged_1yb"].fillna(0)
 
-    # ── D44: Smart Money Composite (D38 + D39 + 2 if insider bought) ──
-    insider_bought = (
-        df["insider_trading"].notna() &
-        df["insider_trading"].fillna("").astype(str).str.contains("Bought", case=False, na=False)
-    ).astype(float) * 2
+    # ── D44: Smart Money Composite (D38 + D39 + 2 if insiders net-bought) ──
+    # insider_net_buyer is the one definition (shareholding block above). This leg read the TEXT
+    # "Bought" from a numeric column and never fired, until 2026-10-05.
+    insider_bought = df["insider_net_buyer"].astype(float) * 2
     df["d44_smart_money_comp"] = df["d38_smart_money"] + df["d39_inst_tide"] + insider_bought
 
     # ── D45: Trend Structure Score (0–5) — Minervini Trend Template ──

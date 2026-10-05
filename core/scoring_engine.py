@@ -1050,10 +1050,11 @@ def compute_governance_bonus(df: pd.DataFrame) -> pd.DataFrame:
     if "inst_convergence" in df.columns:
         bonus += df["inst_convergence"].fillna(0) * GOVERNANCE_BONUS["inst_convergence"]
 
-    # Insider trading — reward buying directors only, not sellers
-    if "insider_trading" in df.columns:
-        _insider_bought = df["insider_trading"].fillna("").astype(str).str.contains("Bought", case=False)
-        bonus += _insider_bought.astype(float) * GOVERNANCE_BONUS["insider_trading_present"]
+    # Insider trading — reward net BUYING only, not selling. insider_net_buyer is the one definition
+    # (data_engine). This read the TEXT "Bought" from what is a signed number and never fired for
+    # anyone, until 2026-10-05; December's 6-month window decides whether it stays (rule 10).
+    if "insider_net_buyer" in df.columns:
+        bonus += df["insider_net_buyer"].fillna(0) * GOVERNANCE_BONUS["insider_trading_present"]
 
     # Pledge falling over 1 year
     if "pledge_falling_1y" in df.columns:
