@@ -1575,6 +1575,7 @@ def _render_market_pulse():
         "🔥 Deleveraging":         "cat_deleveraging",
         "🔥 Lynch Dream":          "cat_lynch_dream",
         "🔥 Inst Discovery":       "cat_inst_discovery",
+        "🔥 Strong Quarter":       "cat_strong_quarter",
     }
 
     def _mp_clear_lens(defaults):
@@ -2173,6 +2174,8 @@ def _render_market_pulse():
             f"(most-investable first). Capital-cycle phase is named below: 🔥 hot (over-investing — "
             f"caution) · ❄️ starved (under-invested — opportunity). A sector average can hide up to "
             f"<strong>50 points</strong> of industry dispersion — see 🏭 Industry for the split. "
+            f"<strong>Strong qtr</strong> is the share of its companies whose latest quarter beat the same "
+            f"quarter last year on revenue, profit and margin. "
             f"Switch the <strong>Column View</strong> to see the sectors from another side — raw ratios "
             f"as medians, yes/no measures as shares of the sector's stocks.</div>",
             unsafe_allow_html=True,
@@ -2257,8 +2260,12 @@ def _render_market_pulse():
             # qualifies, and how they score — now lead; the component averages follow.
             # 🏆 Core is the overview; Quality and Valuation moved to their own views (2026-10-05).
             # Improvement sits BESIDE Momentum: its tooltip tells the reader to read the pair together.
+            # 🔥 Strong qtr (2026-10-05) — the share of the sector's companies with a strong latest
+            # quarter. It sits BEFORE Improvement so Improvement stays beside Momentum. SECTORS ONLY:
+            # it passed the pre-declared bar here (+0.15 to +0.31 beyond Momentum) and FAILED it for
+            # industries (-0.02 / +0.03 in Jan-Mar) — December re-tests (tests/test_strong_quarter.py).
             _sec_order = [c for c in ["stocks", "pct_qualify", "avg_composite", "pct_tier",
-                                      "avg_improvement", "avg_momentum"]
+                                      "grp_strong_quarter", "avg_improvement", "avg_momentum"]
                           if c in _sec_stats.columns]
             # 🔭 One view at a time — the Deep Scanner's own. A DISPLAY choice, not a filter: the 🧹
             # Clear above never resets it, and it never re-ranks (the sort is fixed above).

@@ -2248,6 +2248,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         ("cat_inst_discovery",  COLORS["purple"], "🔥 Inst Discovery"),
         ("cat_deleveraging",    COLORS["gold"],   "🔥 Deleveraging"),
         ("cat_lynch_dream",     COLORS["green"],  "🔥 Lynch Dream"),
+        ("cat_strong_quarter",  COLORS["orange"], "🔥 Strong Quarter"),
     ]
     for col, clr, lbl in _CAT_PILLS:
         if int(_g(stock, col, 0)) == 1:

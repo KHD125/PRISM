@@ -890,6 +890,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 "🔥 Deleveraging":         "cat_deleveraging",
                 "🔥 Lynch Dream":          "cat_lynch_dream",
                 "🔥 Inst Discovery":       "cat_inst_discovery",
+                "🔥 Strong Quarter":       "cat_strong_quarter",
             }
             _cat_name = {v: k for k, v in _CATALYSTS.items()}
             _cat_opts = [c for c in _CATALYSTS.values() if c in _cf.columns and int(_cf[c].sum()) > 0]

@@ -847,6 +847,8 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
         pills += '<span class="pill pill-purple">🔥 Inst Discovery</span>'
     if row.get("cat_deleveraging", 0) == 1:
         pills += '<span class="pill pill-gold">🔥 Deleveraging Cycle</span>'
+    if row.get("cat_strong_quarter", 0) == 1:
+        pills += '<span class="pill pill-green">🔥 Strong Quarter</span>'
         
     # Frameworks — compact CATEGORY-COUNT chips (the 5 §7 groups) instead of a flat pill list.
     # Reveals the stock's conviction CHARACTER at a glance (quality-moat vs momentum vs value play),

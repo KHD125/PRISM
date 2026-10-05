@@ -252,6 +252,7 @@ CONCEPT_REFERENCE = {
         ("🔥 Deleveraging", "A deleveraging catalyst — debt being repaid materially, easing the balance sheet and interest drag."),
         ("🔥 Lynch Dream", "A Lynch GARP setup — fast growth available at a reasonable PEG; the classic Peter Lynch profile."),
         ("🔥 Inst Discovery", "Early institutional discovery — accumulation signs while the stock is still under-owned."),
+        ("🔥 Strong Quarter", "A results-season catalyst — the latest reported quarter beat the same quarter last year on all three counts: revenue up more than 15%, profit up more than 20%, and EBITDA margin wider. Growth is only measured off a positive base, so a company that made a loss, or had no revenue, a year ago cannot be judged and is never flagged. It moves through each results season. Shown, not scored."),
     ],
     # ── Sell Alerts — ui/ui_discovery.py _SELL_ALERTS (Baid sell triggers)
     "🚨 Sell Alerts": [

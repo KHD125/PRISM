@@ -415,7 +415,11 @@ def test_every_source_column_exists_in_the_live_frame(live):
     assert not missing, f"measures read columns the engine no longer produces: {missing}"
 
 
-_JUDGED = sorted(k for k, m in MEASURES.items() if m["stat"] == "share" and m.get("needs"))
+# Shares that mirror an engine 0/1 FLAG behind a needs-mask (above_sma200, rf_high_accruals). The Strong
+# qtr share (2026-10-05) is not one: its value IS the engine's own 1 / 0 / NaN definition, so there is no
+# flag column to mirror, and tests/test_strong_quarter.py pins its judgeable share instead.
+_JUDGED = sorted(k for k, m in MEASURES.items() if m["stat"] == "share" and m.get("needs")
+                 and k != "grp_strong_quarter")
 
 
 @pytest.mark.parametrize("key", _JUDGED)

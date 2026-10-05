@@ -1478,6 +1478,37 @@ def compute_composite_score(
 # TSUNAMI SIGNAL & CATALYST MATRIX DETECTION
 # ═══════════════════════════════════════════════════════════════
 
+def strong_quarter(df: pd.DataFrame) -> pd.Series:
+    """1.0 strong / 0.0 not / NaN cannot be judged — the latest reported quarter against the SAME
+    quarter last year, read from the vendor's quarterly LEVELS: revenue up more than 15%, profit up more
+    than 20%, and EBITDA margin wider. ONE definition (2026-10-05): the 🔥 Strong Quarter catalyst reads
+    it with cannot-be-judged as not strong; 📈 Sectors' "Strong qtr" share and tools/validate.py read it
+    as is.
+
+    Growth is only measured off a POSITIVE base (§5): a company that lost money a year ago, or had no
+    revenue, cannot be judged — NaN, never strong (12.8% of stocks on the 2026-10-03 vintage; 4.9% more
+    lack a figure). The vendor's own growth % (rev_gr_yoy / pat_gr_yoy) matches these levels on 97% but
+    is computed even off a loss, which is why the levels are read instead.
+
+    WHY THESE NUMBERS. It is the results-season screen Ishmohit Arora (SOIC) is reported to use; no
+    primary source for the exact 15% / 20% was found, so they stand on PRISM's measurement, not on an
+    attribution. Four snapshots, two independent results seasons: flagged stocks beat the median by
+    +2.4 to +4.7pp, +2.0 to +3.6pp with momentum held fixed; it fires on 23%. DISPLAY-ONLY until
+    December (docs/december-2026-plan.md rule 12) — pinned in tests/test_strong_quarter.py."""
+    n = lambda c: (pd.to_numeric(df[c], errors="coerce") if c in df.columns
+                   else pd.Series(np.nan, index=df.index))
+    rev, rev_ly = n("rev_lq"), n("rev_pyq")
+    pat, pat_ly = n("pat_lq"), n("pat_pyq")
+    ebitda, ebitda_ly = n("ebitda_lq"), n("ebitda_pyq")
+    judgeable = (rev_ly > 0) & (pat_ly > 0) & (rev > 0) & pat.notna() & ebitda.notna() & ebitda_ly.notna()
+    rev_x = np.where(rev_ly > 0, rev / rev_ly, np.nan)
+    pat_x = np.where(pat_ly > 0, pat / pat_ly, np.nan)
+    margin = np.where(rev > 0, ebitda / rev, np.nan)
+    margin_ly = np.where(rev_ly > 0, ebitda_ly / rev_ly, np.nan)
+    strong = (rev_x > 1.15) & (pat_x > 1.20) & (margin > margin_ly)
+    return pd.Series(strong.astype(float), index=df.index).where(judgeable)
+
+
 def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
     """Detect the highest-conviction setups and explicit catalyst triggers."""
     df = df.copy()
@@ -1553,10 +1584,15 @@ def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
         (df.get("d35_roce_trend", pd.Series(0, index=df.index)) > 0)
     ).astype(int)
 
-    # Count total active catalysts (now 5 types)
+    # STRONG QUARTER (2026-10-05): the results-season catalyst — strong_quarter() above is the one
+    # definition; a stock that cannot be judged (a loss or no revenue a year ago) is not strong.
+    # DISPLAY-ONLY: nothing scores it (pinned in tests/test_strong_quarter.py; December rule 12).
+    df["cat_strong_quarter"] = strong_quarter(df).fillna(0).astype(int)
+
+    # Count total active catalysts (now 6 types) — read only by the console line below, never scored
     df["catalyst_count"] = (
         df["cat_capacity"] + df["cat_oplev"] + df["cat_inst_discovery"] +
-        df["cat_deleveraging"] + df["cat_lynch_dream"]
+        df["cat_deleveraging"] + df["cat_lynch_dream"] + df["cat_strong_quarter"]
     )
 
     count = df["tsunami_signal"].sum()

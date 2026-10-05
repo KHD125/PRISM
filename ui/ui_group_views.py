@@ -38,11 +38,17 @@ with more pledging returned less (−0.09 to −0.15) and less institutionally o
 to −0.32, mostly surviving a size control); FII net was positive, but about a third of it is Momentum.
 Pledge is a SHARE here (any pledge), not the median, which is 0 almost everywhere. Insider trading
 (10% coverage) is left out.
+
+🔥 STRONG QTR (2026-10-05) is on 📈 Sectors Core only. Sector earnings breadth ranked sector returns at
++0.27 to +0.39 and added +0.15 to +0.31 BEYOND Momentum in two independent results seasons — it passed
+the pre-declared bar (>= +0.05 in both). Industry breadth FAILED it (-0.02 / +0.03 in Jan-Mar): small
+groups are too noisy, so the Industry table does not show it until December re-tests.
 """
 import numpy as np
 import pandas as pd
 
 from config import FORENSIC_MAX_FLAGS, FORENSIC_PENALTY_TIERS
+from core.scoring_engine import strong_quarter
 
 OWNERSHIP = "👥 Ownership"
 VIEWS = ("🏆 Core", "📊 Quality", "💰 Valuation", "🔬 Forensic", "📈 Technical", OWNERSHIP)
@@ -195,6 +201,17 @@ MEASURES = {
              "mutual funds, insurers) raised their stake minus % where they cut it, among companies "
              "with a reading (−100 to +100). It counts companies, not rupees.",
         value=lambda f: _net(f["change_dii_lq"])),
+    # 📈 Sectors Core only (2026-10-05) — earnings-season breadth; strong_quarter is the engine's own
+    # definition (1 / 0 / NaN), so the mean IS the share among companies that can be judged.
+    "grp_strong_quarter": dict(
+        source="rev_lq", needs=("rev_pyq", "pat_lq", "pat_pyq", "ebitda_lq", "ebitda_pyq"),
+        stat="share", header="Strong qtr", fmt="%.0f%%", bar=True,
+        help="Share of the sector's companies whose latest reported quarter was strong against the "
+             "same quarter last year: revenue up more than 15%, profit up more than 20%, EBITDA margin "
+             "wider. Counted among companies that can be judged (profitable, with revenue, a year ago). "
+             "Ishmohit Arora (SOIC) reads a sector where most players are reporting strong earnings "
+             "growth as one starting to do well. It moves through each results season.",
+        value=lambda f: strong_quarter(f)),
 }
 
 # Each view's columns after the tab's Count and ranking column. The avg_* entries are each table's
