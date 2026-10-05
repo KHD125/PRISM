@@ -732,6 +732,7 @@ _RAW_GLOSSARY = {
     "Dist 52WH":     "How far below its 52-week high the price is. Near the high (small number) shows strength.",
     "VSTOP Green":   "Whether the price is above its volatility-stop trend line (a simple 'trend is up' check).",
     "Breakout Scr":  "A score for how close the stock is to breaking out of a price base to new highs.",
+    "Off ATH":       "How far the price is below its all-time high, in % (0% = at the all-time high). At the high, no earlier buyer is sitting on a loss and waiting to sell at breakeven. A stock can make a 52-week high and still sit far below an older peak, which is why this reads beside Breakout. For a recent listing it is the high since listing. It is also one of the inputs of the Breakout score.",
     "Momentum Scr":  "The engine's overall price-momentum score (0-100), blending relative strength, trend quality, breakout proximity, volume confirmation and sector leadership.",
     "Weinstein Stage":"Stan Weinstein's stage of the price cycle — Stage 2 (advancing) is the buy zone, Stage 4 (declining) is avoid.",
     # ── Forensic Summary ──

@@ -71,6 +71,7 @@ _SCANNER_HEADER_TIPS = {
     "rsi_14d":                _GLOSSARY["RSI 14D"],
     "dist_52wh":              _GLOSSARY["Dist 52WH"],
     "crs_52w":                _GLOSSARY["CRS 52W"],
+    "dist_ath":               _GLOSSARY["Off ATH"],
     "weinstein_stage":        _GLOSSARY["Weinstein Stage"],
     "breakout_score":         _GLOSSARY["Breakout Scr"],
     "vstop_green":            _GLOSSARY["VSTOP Green"],

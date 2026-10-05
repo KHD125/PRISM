@@ -43,6 +43,11 @@ Pledge is a SHARE here (any pledge), not the median, which is 0 almost everywher
 +0.27 to +0.39 and added +0.15 to +0.31 BEYOND Momentum in two independent results seasons — it passed
 the pre-declared bar (>= +0.05 in both). Industry breadth FAILED it (-0.02 / +0.03 in Jan-Mar): small
 groups are too noisy, so the Industry table does not show it until December re-tests.
+
+📈 NEAR 52W HIGH (2026-10-05) is on 📈 Sectors' Technical view only. The share of a sector's stocks within
+5% of their 52-week high added +0.11 to +0.31 BEYOND Momentum in all four windows, and kept an edge
+beyond Strong qtr and beyond Below 52w high. Industry breadth failed one window (-0.01), so the
+Industry table skips it until December re-tests.
 """
 import numpy as np
 import pandas as pd
@@ -163,6 +168,14 @@ MEASURES = {
         value=lambda f: _share(f["weinstein_stage"].astype(str).str.contains("Stage 2", regex=False),
                                f["weinstein_stage"].notna()
                                & ~f["weinstein_stage"].astype(str).str.contains("Unknown", regex=False))),
+    # 📈 Sectors only (2026-10-05, from ValuePickr's 52-week / all-time-high thread: look for the sectors
+    # where stocks are making new highs) — app.py's Industry table skips it.
+    "grp_near_high": dict(
+        source="dist_52wh", stat="share", header="Near 52w high", fmt="%.0f%%", bar=True,
+        help="Share of the sector's stocks trading within 5% of their 52-week high — how much of the "
+             "sector is leading. Read it beside Below 52w high, which shows where the typical stock "
+             "sits: the two disagree when a few leaders run while the rest lag.",
+        value=lambda f: _share(f["dist_52wh"] <= 5, f["dist_52wh"].notna())),
     "grp_from_52w_high": dict(
         source="dist_52wh", stat="median", header="Below 52w high", fmt="%.0f%%", bar=False, width=120,
         help="How far below its 52-week high the group's middle stock trades. Small = the group is "
@@ -220,7 +233,7 @@ VIEW_MEASURES = {
     "📊 Quality":   ("avg_quality", "avg_improvement", "grp_roce_rising", "grp_piotroski_strong", "grp_opm"),
     "💰 Valuation": ("avg_valuation", "grp_pe", "grp_ev_ebitda", "grp_fcf_yield", "grp_pe_vs_history"),
     "🔬 Forensic":  ("grp_red_flags", "grp_few_flags", "grp_schilit_pass", "grp_high_accruals"),
-    "📈 Technical": ("grp_above_200dma", "grp_stage2", "grp_from_52w_high"),
+    "📈 Technical": ("grp_above_200dma", "grp_stage2", "grp_near_high", "grp_from_52w_high"),
     OWNERSHIP:      ("grp_promoter", "grp_pledged", "grp_institutions", "grp_fii_net", "grp_dii_net"),
 }
 

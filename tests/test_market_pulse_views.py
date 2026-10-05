@@ -288,7 +288,42 @@ def test_every_view_leads_with_count_and_the_ranking_column(table, view):
     if view == CORE:
         assert cols == core, f"{table}: Core must be the tab's own column list"
     else:
-        assert cols[len(t["lead"]):len(cols) - len(t["tail"])] == list(VIEW_MEASURES[view])
+        # A table may skip a measure that earned its place on the other table only — read from the
+        # app's own skip= argument and pinned in test_near_52w_high_is_on_sectors_only.
+        want = [m for m in VIEW_MEASURES[view] if m not in _skip(table)]
+        assert cols[len(t["lead"]):len(cols) - len(t["tail"])] == want
+
+
+def _skip(table):
+    """The measures a table declares it skips: the skip= argument of its own _mp_view_columns call."""
+    call = _assigned_in(table, TABLES[table]["show"]).value
+    kw = [k for k in call.keywords if k.arg == "skip"]
+    return set(ast.literal_eval(kw[0].value)) if kw else set()
+
+
+def test_near_52w_high_is_on_sectors_only():
+    """📈 Near 52w high (2026-10-05) passed the pre-declared bar for sectors (+0.11 to +0.31 beyond
+    Momentum in all four windows) and failed it for industries in one window (-0.01). So Sectors'
+    Technical view shows it and Industry's skips it — and Industry skips nothing else."""
+    tech = "📈 Technical"
+    assert "grp_near_high" in VIEW_MEASURES[tech]
+    sec, _ = _shown("sectors", tech)
+    ind, _ = _shown("industry", tech)
+    assert "grp_near_high" in sec, "Sectors' Technical view must show Near 52w high"
+    assert "grp_near_high" not in ind, "industry breadth failed the bar — December re-tests it first"
+    assert _skip("industry") == {"grp_near_high"} and _skip("sectors") == set(), (
+        "only the Industry table skips, and only this measure")
+    assert sec.index("grp_near_high") == sec.index("grp_from_52w_high") - 1, (
+        "Near 52w high reads beside Below 52w high: the share near the highs, then the typical distance")
+
+
+def test_near_52w_high_counts_the_share_within_5pct_among_stocks_with_a_high():
+    """Within 5% counts (5.0 is in, 5.01 is out), and a stock with no 52-week high is left out, never
+    counted as not near: an unknown is not a no."""
+    f = pd.DataFrame({"sector": ["A"] * 5 + ["B"], "dist_52wh": [0.0, 5.0, 5.01, 30.0, np.nan, np.nan]})
+    g = group_measures(f, "sector")
+    assert g.loc["A", "grp_near_high"] == 50.0, "2 of the 4 stocks with a 52-week high are within 5%"
+    assert pd.isna(g.loc["B", "grp_near_high"]), "a group with no reading has no share, not 0%"
 
 
 @pytest.mark.parametrize("table", sorted(TABLES))

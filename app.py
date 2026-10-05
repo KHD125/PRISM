@@ -650,8 +650,8 @@ _DS_W = {
     "cfo_to_pat": 75, "accruals_ratio": 80, "debt_to_equity": 55, "promoter_holdings": 80,
     "pledged_percentage": 75,
     # 📈 Technical
-    "dist_to_vstop": 70, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
-    "breakout_score": 105, "d48_breakout_readiness": 100, "crs_52w": 70, "weinstein_stage": 150,
+    "dist_to_vstop": 60, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
+    "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65, "crs_52w": 60, "weinstein_stage": 150,
     # 👥 Ownership
     "governance_bonus": 90, "change_promoter_1y": 110, "fii_holdings": 55, "change_fii_lq": 80,
     "dii_holdings": 55, "change_dii_lq": 80, "smart_money_flow": 165,
@@ -687,8 +687,13 @@ with tabs[1]:
         # Technical view: each categorical VERDICT sits directly AFTER the number it interprets
         # (2026-08-30 surfacing — d49 reads momentum/RSI, d48 reads breakout_score's distance
         # inputs), so the table teaches itself: 82 and 🎯 IMMINENT land in the same glance.
+        # Off ATH (2026-10-05, from ValuePickr's 52-week / all-time-high thread) follows the breakout
+        # pair: a stock can make a 52-week high and still sit far below an older peak. It already
+        # feeds the Breakout score (config BREAKOUT_SIGNALS["ath_distance"]); on its own it added
+        # +0.04 to +0.05 beyond Breakout and Momentum in all four test windows, so its WEIGHT is
+        # December's question (docs/december-2026-plan.md rule 15; tests/test_ath_and_new_highs.py).
         "📈 Technical": ["rank","name","dist_to_vstop","momentum_score","d49_momentum_quality",
-                         "rsi_14d","breakout_score","d48_breakout_readiness",
+                         "rsi_14d","breakout_score","d48_breakout_readiness","dist_ath",
                          "crs_52w","weinstein_stage"],
         # 👥 Ownership (2026-10-05): each stake sits directly BEFORE its change, so level and move read
         # in one glance. Promoters rarely move in a quarter (68% flat), so theirs is the 1-year change.
@@ -877,6 +882,7 @@ with tabs[1]:
         "close_price":     ("Price ₹",  "%.2f"),     # Valuation+Technical: the number every ₹ column is measured against
         "fair_value_qglp": ("Fair ₹",   "%.0f"),     # Valuation: QGLP fair PE × EPS (blank = loss-maker, undefined)
         "dist_to_vstop":   ("Stop Δ",   "%.1f%%"),   # Technical: % above(+)/below(−) the Volatility Stop
+        "dist_ath":        ("Off ATH",  "%.1f%%"),   # Technical: % below the all-time high (0 = at it)
         "data_coverage_pct":      ("Evidence",   "%.0f%%"),   # Core: score-confidence % (high score on thin data = trap)
         "forensic_multiplier":    ("Forensic ×", "%.2f"),     # Forensic: the penalty cutting composite (1.00 clean → 0.50 high-risk)
     }
@@ -1524,13 +1530,14 @@ def _render_market_pulse():
         for k, m in MEASURES.items()
     }
 
-    def _mp_view_columns(view, core, lead, tail, stats):
+    def _mp_view_columns(view, core, lead, tail, stats, skip=()):
         """The columns a view shows: the tab's own Core list, or Count + the tab's ranking column,
         the view's measures, and any trailing context column. Switching views changes the COLUMNS,
         never the ranking — the ranking column is in every view so the order always reads. A
-        cleared selection (None) falls back to Core. Only columns the table actually carries."""
+        cleared selection (None) falls back to Core. Only columns the table actually carries, minus
+        any the table skips: a measure that earned its place on one table only."""
         cols = [*lead, *VIEW_MEASURES[view], *tail] if view in VIEW_MEASURES else core
-        return [c for c in cols if c in stats.columns]
+        return [c for c in cols if c in stats.columns and c not in skip]
 
     # ── Pre-compute section datasets ───────────────────────────────
     _mp_ts   = (_mp_df[_mp_df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
@@ -2645,8 +2652,11 @@ def _render_market_pulse():
                 _ind_view = st.segmented_control("Column View", list(VIEWS), default="🏆 Core", key="mp_ind_view")
                 if _ind_view == OWNERSHIP:
                     st.caption(OWNERSHIP_GROUP_NOTE)
+                # 📈 Near 52w high is SECTORS ONLY (2026-10-05): industry breadth failed the pre-declared
+                # bar in one window (-0.01 beyond Momentum, 06-17 start) — December re-tests it
+                # (docs/december-2026-plan.md rule 16; tests/test_market_pulse_views.py).
                 _ind_show = _mp_view_columns(_ind_view, _ind_order, ["stocks", "delta_vs_sector"],
-                                             ["dom_sector"], _ind_stats)
+                                             ["dom_sector"], _ind_stats, skip=("grp_near_high",))
                 st.dataframe(
                     _ind_stats[_ind_show].reset_index(),
                     column_config={
