@@ -838,7 +838,8 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     tc = TIER_COLORS.get(tier, TIER_COLORS[5])
 
     pills = ""
-    # Catalysts
+    # Catalysts — one pill per engine catalyst, named as the sidebar filter names it
+    # (pinned by tests/test_catalyst_surfaces.py)
     if row.get("cat_capacity", 0) == 1:
         pills += '<span class="pill pill-blue">🔥 Capacity Explosion</span>'
     if row.get("cat_oplev", 0) == 1:
@@ -846,7 +847,9 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     if row.get("cat_inst_discovery", 0) == 1:
         pills += '<span class="pill pill-purple">🔥 Inst Discovery</span>'
     if row.get("cat_deleveraging", 0) == 1:
-        pills += '<span class="pill pill-gold">🔥 Deleveraging Cycle</span>'
+        pills += '<span class="pill pill-gold">🔥 Deleveraging</span>'
+    if row.get("cat_lynch_dream", 0) == 1:
+        pills += '<span class="pill pill-green">🔥 Lynch Dream</span>'
     if row.get("cat_strong_quarter", 0) == 1:
         pills += '<span class="pill pill-green">🔥 Strong Quarter</span>'
         
