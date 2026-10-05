@@ -713,6 +713,7 @@ _RAW_GLOSSARY = {
     "FII %":         "Stake held by Foreign Institutional Investors.",
     "DII %":         "Stake held by Domestic Institutional Investors (Indian mutual funds, insurers).",
     "Promoter Chg":  "Change in promoter holding in the latest quarter. Buying is a positive sign; selling can be a warning.",
+    "Promoter 1Y Δ": "Change in promoter holding over the last year, in percentage points. Promoters rarely move in a single quarter, so a year shows the direction: steady buying is a positive sign; steady selling can be a warning.",
     "Promoter 3Y Δ": "Change in promoter holding over 3 years — the longer-term ownership trend.",
     "FII Chg":       "Change in foreign-institution holding in the latest quarter.",
     "DII Chg":       "Change in domestic-institution holding in the latest quarter.",

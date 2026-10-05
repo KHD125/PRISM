@@ -9,6 +9,10 @@ HOW A GROUP IS SUMMARISED
   mean    PRISM's own 0-100 scores — an average of percentile scores is well behaved.
   median  raw multiples and distances (P/E, EV/EBITDA, FCF yield, distance from the 52-week high):
           one P/E of 900 drags an average anywhere; the middle stock is the honest summary.
+  net     ownership changes (the FII / DII stake, latest filed quarter): the % of the group's companies
+          where the stake rose minus the % where it fell, among companies with a reading (−100 to
+          +100). An average or median of the changes themselves is flat — most companies do not move
+          in a quarter (FII 31% / DII 36% flat) — so who moved, and which way, is what reads.
   share   yes/no conditions (above the 200-day average, few red flags): the % of the group's stocks
           for which it holds, counted ONLY among stocks that have the data — an unknown is not a "no".
           The engine records some unknowns as 0 — a stock with no 200-day average yet is "not above"
@@ -26,13 +30,32 @@ penalty floor (0.90 with the average red-flag count), RS score (0.96 with Moment
 Nifty 500 (0.85 with % above the 200-day average, which overlaps less with the rest of the view),
 and dividend yield / pledge (median 0 almost everywhere). Momentum lives in Core, so 📈 Technical carries breadth (% above the 200-day average,
 0.89 with Momentum) instead of repeating it.
+
+👥 OWNERSHIP (2026-10-05), measured on the four saved snapshots: inside the view no pair passes 0.50
+(median promoter vs median FII+DII), and against everything else on screen the closest is FII net vs
+average Momentum at 0.52. DISPLAY ONLY — the forward evidence is weak: across four windows, sectors
+with more pledging returned less (−0.09 to −0.15) and less institutionally owned sectors more (−0.10
+to −0.32, mostly surviving a size control); FII net was positive, but about a third of it is Momentum.
+Pledge is a SHARE here (any pledge), not the median, which is 0 almost everywhere. Insider trading
+(10% coverage) is left out.
 """
 import numpy as np
 import pandas as pd
 
 from config import FORENSIC_MAX_FLAGS, FORENSIC_PENALTY_TIERS
 
-VIEWS = ("🏆 Core", "📊 Quality", "💰 Valuation", "🔬 Forensic", "📈 Technical")
+OWNERSHIP = "👥 Ownership"
+VIEWS = ("🏆 Core", "📊 Quality", "💰 Valuation", "🔬 Forensic", "📈 Technical", OWNERSHIP)
+
+# Shown beside the 👥 Ownership view wherever it appears. Shareholding is filed quarterly, so the
+# view must never read as this week's trading. The tables extend the shared sentence, never fork it.
+OWNERSHIP_NOTE = (
+    "👥 Shareholding is filed quarterly, about three weeks after each quarter ends, so these figures "
+    "stand at each company's latest filed quarter — not this week's trading. FII = foreign "
+    "institutions · DII = domestic institutions (mutual funds, insurers).")
+OWNERSHIP_GROUP_NOTE = OWNERSHIP_NOTE + (
+    " **Net** = % of the group's companies where the stake rose minus % where it fell (−100 to +100): "
+    "it counts companies, not rupees.")
 
 # "Few red flags" is the forensic penalty's own line: the most flags that still cost only ×0.90.
 _FEW_FLAGS = next(t["max_flags"] for t in FORENSIC_PENALTY_TIERS if t["multiplier"] == 0.90)
@@ -42,6 +65,12 @@ def _share(cond, known):
     """1.0 / 0.0 where the condition can be judged, NaN where it cannot (so a mean is a share of
     the stocks WITH data)."""
     return cond.astype(float).where(known)
+
+
+def _net(change):
+    """+1 where the stake rose, −1 where it fell, 0 where it held, NaN with no reading — so a mean is
+    the % raised minus the % cut among companies WITH a reading."""
+    return np.sign(change)
 
 
 # key -> source column, statistic, header, number format, bar (0-100 progress bar), tooltip, value;
@@ -133,6 +162,39 @@ MEASURES = {
         help="How far below its 52-week high the group's middle stock trades. Small = the group is "
              "close to its highs.",
         value=lambda f: f["dist_52wh"]),
+    # 👥 Ownership — as of each company's latest filed quarter (OWNERSHIP_NOTE)
+    "grp_promoter": dict(
+        source="promoter_holdings", stat="median", header="Median promoter", fmt="%.0f%%", bar=False,
+        width=130,
+        help="Promoter holding of the group's middle company — how much of it the founders / "
+             "controlling owners hold.",
+        value=lambda f: f["promoter_holdings"]),
+    "grp_pledged": dict(
+        source="pledged_percentage", stat="share", header="Pledged", fmt="%.0f%%", bar=True,
+        help="Share of the group's companies whose promoters have pledged any of their shares as loan "
+             "collateral — a pledge can force a sale when the price falls. Counted among companies "
+             "with pledge data.",
+        value=lambda f: _share(f["pledged_percentage"] > 0, f["pledged_percentage"].notna())),
+    "grp_institutions": dict(
+        source="fii_holdings", needs=("dii_holdings",), stat="median", header="Median FII+DII",
+        fmt="%.1f%%", bar=False, width=125,
+        help="Combined stake of foreign (FII) and domestic (DII) institutions in the group's middle "
+             "company. Low = little institutional ownership; high = widely held. Counted among "
+             "companies with both figures.",
+        value=lambda f: f["fii_holdings"] + f["dii_holdings"]),
+    "grp_fii_net": dict(
+        source="change_fii_lq", stat="net", header="FII net qtr", fmt="%+.0f", bar=False, width=105,
+        help="Latest filed quarter: % of the group's companies where foreign institutions (FIIs) "
+             "raised their stake minus % where they cut it, among companies with a reading (−100 to "
+             "+100). +30 = FIIs added to 30 more companies in every 100 than they trimmed. It counts "
+             "companies, not rupees.",
+        value=lambda f: _net(f["change_fii_lq"])),
+    "grp_dii_net": dict(
+        source="change_dii_lq", stat="net", header="DII net qtr", fmt="%+.0f", bar=False, width=105,
+        help="Latest filed quarter: % of the group's companies where domestic institutions (DIIs — "
+             "mutual funds, insurers) raised their stake minus % where they cut it, among companies "
+             "with a reading (−100 to +100). It counts companies, not rupees.",
+        value=lambda f: _net(f["change_dii_lq"])),
 }
 
 # Each view's columns after the tab's Count and ranking column. The avg_* entries are each table's
@@ -142,6 +204,7 @@ VIEW_MEASURES = {
     "💰 Valuation": ("avg_valuation", "grp_pe", "grp_ev_ebitda", "grp_fcf_yield", "grp_pe_vs_history"),
     "🔬 Forensic":  ("grp_red_flags", "grp_few_flags", "grp_schilit_pass", "grp_high_accruals"),
     "📈 Technical": ("grp_above_200dma", "grp_stage2", "grp_from_52w_high"),
+    OWNERSHIP:      ("grp_promoter", "grp_pledged", "grp_institutions", "grp_fii_net", "grp_dii_net"),
 }
 
 def _inputs(m):
@@ -166,7 +229,8 @@ def group_measures(frame: pd.DataFrame, key: str) -> pd.DataFrame:
     """One row per group (index = the `key` values), one column per MEASURES entry.
 
     Vectorised: each measure's per-stock value is built once, then ONE groupby takes the means
-    (scores and shares) and one the medians. Shares come back as percentages (0-100). A measure
+    (scores, shares and net breadth) and one the medians. Shares come back as percentages (0-100),
+    net breadth as -100 to +100. A measure
     whose inputs are absent is left out rather than invented. The input is never modified.
     """
     present = {k: m for k, m in MEASURES.items() if all(c in frame.columns for c in _inputs(m))}
@@ -174,9 +238,9 @@ def group_measures(frame: pd.DataFrame, key: str) -> pd.DataFrame:
     for k, m in present.items():
         vals[k] = _per_stock(frame, m)
     vals[key] = frame[key].values
-    means = [k for k, m in present.items() if m["stat"] in ("mean", "share")]
+    means = [k for k, m in present.items() if m["stat"] in ("mean", "share", "net")]
     medians = [k for k, m in present.items() if m["stat"] == "median"]
     out = pd.concat([vals.groupby(key)[means].mean(), vals.groupby(key)[medians].median()], axis=1)
-    shares = [k for k, m in present.items() if m["stat"] == "share"]
-    out[shares] = out[shares] * 100.0
+    pct = [k for k, m in present.items() if m["stat"] in ("share", "net")]
+    out[pct] = out[pct] * 100.0
     return out[[k for k in MEASURES if k in out.columns]]

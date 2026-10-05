@@ -290,7 +290,7 @@ def test_discovery_filter_has_help_text(label):
 
 
 # ── Deep Scanner: every column a view-preset surfaces must explain itself on hover ──
-# The 5 column-view presets (app.py `_DS_VIEWS`) are what a user deliberately switches between, so
+# The column-view presets (app.py `_DS_VIEWS`) are what a user deliberately switches between, so
 # every column they expose should carry an AgGrid headerTooltip. This pins the scanner tip map to the
 # preset definition — a future preset column can't ship as a bare machine-name header.
 _DS_IDENTITY_COLS = {"name", "sector", "market_category"}

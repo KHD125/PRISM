@@ -86,7 +86,8 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
 from ui.ui_discovery import render_discovery_sidebar, clear_all_filters, keep_selected
 from ui.ui_scanner import _SCANNER_HEADER_TIPS
 from ui.ui_components import _RAW_GLOSSARY
-from ui.ui_group_views import MEASURES, SOURCE_COLUMNS, VIEW_MEASURES, VIEWS, group_measures
+from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERSHIP_NOTE, SOURCE_COLUMNS,
+                               VIEW_MEASURES, VIEWS, group_measures)
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
@@ -645,6 +646,10 @@ with tabs[1]:
         "📈 Technical": ["name","close_price","dist_to_vstop","momentum_score","d49_momentum_quality",
                          "rsi_14d","dist_52wh","breakout_score","d48_breakout_readiness",
                          "crs_52w","weinstein_stage","smart_money_flow","tsunami_signal","vstop_green"],
+        # 👥 Ownership (2026-10-05): each stake sits directly BEFORE its change, so level and move read
+        # in one glance. Promoters rarely move in a quarter (68% flat), so theirs is the 1-year change.
+        "👥 Ownership": ["name","promoter_holdings","change_promoter_1y","pledged_percentage",
+                         "fii_holdings","change_fii_lq","dii_holdings","change_dii_lq","smart_money_flow"],
     }
     _DS_SORTS = {
         "Score ↓":    ("composite_score", False),
@@ -705,6 +710,8 @@ with tabs[1]:
             "Sort", list(_DS_SORTS.keys()),
             key="ds_sort", label_visibility="collapsed",
         )
+    if ds_view == OWNERSHIP:
+        st.caption(OWNERSHIP_NOTE)
 
     # ── Filter + sort ──────────────────────────────────────────────
     ds_df = filt.copy()
@@ -791,6 +798,11 @@ with tabs[1]:
         "debt_to_equity":  ("D/E",      "%.2f"),
         "promoter_holdings":("Promoter","%.1f%%"),
         "pledged_percentage":("Pledged","%.1f%%"),
+        "change_promoter_1y": ("Promoter Δ 1Y", "%+.2fpp"),   # 👥 Ownership: each stake beside its change
+        "fii_holdings":    ("FII",      "%.1f%%"),
+        "change_fii_lq":   ("FII Δ qtr", "%+.2fpp"),
+        "dii_holdings":    ("DII",      "%.1f%%"),
+        "change_dii_lq":   ("DII Δ qtr", "%+.2fpp"),
         "rsi_14d":         ("RSI",      "%.0f"),
         "dist_52wh":       ("52WH Δ",  "%.1f%%"),
         "earnings_yield":  ("E.Yield",  "%.1f%%"),
@@ -882,7 +894,7 @@ with tabs[1]:
             </div>
             """, unsafe_allow_html=True)
 
-        # ── Export — the CURATED columns (the deduped union of all 5 view presets, ~40 meaningful
+        # ── Export — the CURATED columns (the deduped union of every view preset, ~50 meaningful
         # cols) instead of the ~500 raw internal columns (rf_/cat_/vqs_/proxies). Rows are the
         # searched/sorted ds_df; the column set is auto-derived from _DS_VIEWS so it never drifts,
         # and it's ~10x smaller to serialize on every rerun. ──
@@ -1434,7 +1446,7 @@ def _render_market_pulse():
           "Momentum and against Count.")
 
     # 🔭 COLUMN VIEWS (2026-10-05) — 📈 Sectors and 🏭 Industry show one view at a time, the Deep
-    # Scanner's five. What each measure is and how a group is summarised lives in ONE place,
+    # Scanner's own. What each measure is and how a group is summarised lives in ONE place,
     # ui/ui_group_views.py; these two only lay it out, once, for both tables.
     # Pinned in tests/test_market_pulse_views.py.
     # ONE bar width for every 0-100 bar in both tables. Streamlit's default (~150px a bar) pushed the
@@ -2097,7 +2109,7 @@ def _render_market_pulse():
             f"(most-investable first). Capital-cycle phase is named below: 🔥 hot (over-investing — "
             f"caution) · ❄️ starved (under-invested — opportunity). A sector average can hide up to "
             f"<strong>50 points</strong> of industry dispersion — see 🏭 Industry for the split. "
-            f"Switch the <strong>Column View</strong> to see the sectors from five sides — raw ratios "
+            f"Switch the <strong>Column View</strong> to see the sectors from another side — raw ratios "
             f"as medians, yes/no measures as shares of the sector's stocks.</div>",
             unsafe_allow_html=True,
         )
@@ -2184,9 +2196,11 @@ def _render_market_pulse():
             _sec_order = [c for c in ["stocks", "pct_qualify", "avg_composite", "pct_tier",
                                       "avg_improvement", "avg_momentum"]
                           if c in _sec_stats.columns]
-            # 🔭 One view at a time — the Deep Scanner's five. A DISPLAY choice, not a filter: the 🧹
+            # 🔭 One view at a time — the Deep Scanner's own. A DISPLAY choice, not a filter: the 🧹
             # Clear above never resets it, and it never re-ranks (the sort is fixed above).
             _sec_view = st.pills("Column View", list(VIEWS), default="🏆 Core", key="mp_sec_view")
+            if _sec_view == OWNERSHIP:
+                st.caption(OWNERSHIP_GROUP_NOTE)
             _sec_show = _mp_view_columns(_sec_view, _sec_order, ["stocks", "pct_qualify"], [], _sec_stats)
             st.dataframe(
                 _sec_stats[_sec_show].reset_index(),
@@ -2555,9 +2569,11 @@ def _render_market_pulse():
                                           "avg_improvement", "avg_momentum",
                                           "dom_sector"]
                               if c in _ind_stats.columns]
-                # 🔭 The same five views as 📈 Sectors. Every view keeps Count and Δ vs Sector — the
+                # 🔭 The same views as 📈 Sectors. Every view keeps Count and Δ vs Sector — the
                 # ranking — up front, and the sector last.
                 _ind_view = st.pills("Column View", list(VIEWS), default="🏆 Core", key="mp_ind_view")
+                if _ind_view == OWNERSHIP:
+                    st.caption(OWNERSHIP_GROUP_NOTE)
                 _ind_show = _mp_view_columns(_ind_view, _ind_order, ["stocks", "delta_vs_sector"],
                                              ["dom_sector"], _ind_stats)
                 st.dataframe(

@@ -2,8 +2,8 @@
 test_market_pulse_views.py
 ==========================
 Contract for the column VIEWS on Market Pulse → 📈 Sectors and 🏭 Industry (2026-10-05):
-🏆 Core · 📊 Quality · 💰 Valuation · 🔬 Forensic · 📈 Technical — the Deep Scanner's five, so there
-is one vocabulary in the app.
+🏆 Core · 📊 Quality · 💰 Valuation · 🔬 Forensic · 📈 Technical · 👥 Ownership — the Deep Scanner's
+views, so there is one vocabulary in the app.
 
 WHY. Both tables had outgrown the screen: at a 1536px viewport Sectors carried 1,292px of content in
 995px and Industry 1,567px, so Momentum, Valuation and the dominant sector sat behind a sideways
@@ -29,6 +29,10 @@ WHAT IS PINNED, each a way this breaks silently:
      with Momentum), breakout score (0.90 with distance from the high), the median 52-week RS
      (0.85 with % above the 200-day average — found by THIS file's live test, which the first
      measurement never paired), dividend yield and pledge (median 0 almost everywhere).
+  7. 👥 OWNERSHIP (2026-10-05), in all three places: each group measure on a toy where every column
+     carries an unknown; net breadth = % raised − % cut among companies WITH a reading; the note that
+     shareholding is filed quarterly shows with the view and only with it; per stock, each stake sits
+     beside its change, changes read in percentage points, and the tips are the glossary's own.
 
 Run with: pytest tests/test_market_pulse_views.py -v
 """
@@ -48,7 +52,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ui.ui_group_views import MEASURES, SOURCE_COLUMNS, VIEW_MEASURES, VIEWS, _per_stock, group_measures
+from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERSHIP_NOTE, SOURCE_COLUMNS,
+                                VIEW_MEASURES, VIEWS, _per_stock, group_measures)
 
 _APP = os.path.join(os.path.dirname(__file__), "..", "app.py")
 SRC = _io.open(_APP, encoding="utf-8").read()
@@ -156,7 +161,7 @@ def test_the_red_flag_total_is_read_from_config():
 
 
 def test_the_views_are_the_deep_scanner_views():
-    """One vocabulary in the app: same five names, same order, as the Deep Scanner's Column View."""
+    """One vocabulary in the app: same names, same order, as the Deep Scanner's Column View."""
     ds = next(n.value for n in ast.walk(TREE) if isinstance(n, ast.Assign)
               and any(isinstance(t, ast.Name) and t.id == "_DS_VIEWS" for t in n.targets))
     assert tuple(k.value for k in ds.keys) == VIEWS
@@ -422,3 +427,109 @@ def test_a_share_never_leaves_out_a_stock_the_engine_flagged(live, key):
     dropped = flagged & v.isna()
     assert not dropped.any(), f"{key} leaves out {int(dropped.sum())} stocks the engine DID flag"
     assert v.notna().mean() >= 0.85, f"{key} judges only {v.notna().mean():.0%} of the universe"
+
+
+# ── 7. 👥 Ownership ─────────────────────────────────────────────────────────────────────────────
+def _own():
+    """One group of five companies. Every column carries one unknown, so 'an unknown is not a no'
+    is tested on each measure, and the changes carry a raise, a cut and a flat quarter."""
+    return pd.DataFrame({
+        "sector":             ["A"] * 5,
+        "promoter_holdings":  [10.0, 60.0, 70.0, 65.0, np.nan],
+        "pledged_percentage": [0.0, 4.5, np.nan, 0.0, 0.0],
+        "fii_holdings":       [2.0, 10.0, 1.0, 0.0, 3.0],
+        "dii_holdings":       [3.0, np.nan, 1.0, 0.0, 4.0],
+        "change_fii_lq":      [0.5, 0.1, -0.2, 0.0, np.nan],
+        "change_dii_lq":      [-0.3, -0.1, np.nan, 0.0, 0.2],
+    })
+
+
+def test_promoter_holding_is_summarised_by_its_median():
+    assert group_measures(_own(), "sector").loc["A", "grp_promoter"] == 62.5, (
+        "median of 10 / 60 / 70 / 65 — the mean is 51.25")
+
+
+def test_pledged_counts_any_pledge_among_companies_with_data():
+    assert group_measures(_own(), "sector").loc["A", "grp_pledged"] == 25.0, (
+        "1 of the 4 companies with pledge data — 20 would count the unknown as 'no pledge'")
+
+
+def test_institutions_need_both_the_fii_and_the_dii_stake():
+    assert group_measures(_own(), "sector").loc["A", "grp_institutions"] == 3.5, (
+        "median of 5 / 2 / 0 / 7 — a company with no DII figure has no combined stake; 5.0 would "
+        "mean its FII stake alone was read as the institutions' whole holding")
+
+
+def test_net_breadth_is_raised_minus_cut_among_companies_with_a_reading():
+    g = group_measures(_own(), "sector")
+    assert g.loc["A", "grp_fii_net"] == 25.0, (
+        "(2 raised - 1 cut) / 4 with a reading: 20 counts the blank as flat, 33 drops the flat "
+        "quarter, 50 is the raised share alone, 0.25 forgot the percentage")
+    assert g.loc["A", "grp_dii_net"] == -25.0
+
+
+def test_the_ownership_view_carries_the_agreed_five():
+    assert VIEW_MEASURES[OWNERSHIP] == ("grp_promoter", "grp_pledged", "grp_institutions",
+                                        "grp_fii_net", "grp_dii_net")
+
+
+def test_every_number_measure_declares_its_width():
+    missing = sorted(k for k, m in MEASURES.items() if not m["bar"] and "width" not in m)
+    assert not missing, f"number columns without a width raise a KeyError on render: {missing}"
+
+
+_NOTE_SITES = {"deep scanner": ("ds_view", "OWNERSHIP_NOTE"),
+               "sectors": ("_sec_view", "OWNERSHIP_GROUP_NOTE"),
+               "industry": ("_ind_view", "OWNERSHIP_GROUP_NOTE")}
+
+
+@pytest.mark.parametrize("site", sorted(_NOTE_SITES))
+def test_the_ownership_view_says_its_data_is_quarterly(site):
+    """Shareholding is filed quarterly, so the view says so beside the table — never presented as
+    this week's trading. Exactly one `if <view> == OWNERSHIP:` per site whose whole body is the
+    caption: it shows with the view and only with it (`if False and ...` is not that shape)."""
+    var, note = _NOTE_SITES[site]
+    hits = [n for n in ast.walk(TREE) if isinstance(n, ast.If) and isinstance(n.test, ast.Compare)
+            and ast.unparse(n.test) == f"{var} == OWNERSHIP"]
+    assert len(hits) == 1, f"{site}: expected one `if {var} == OWNERSHIP:`, found {len(hits)}"
+    body = [ast.unparse(x) for x in hits[0].body]
+    assert body == [f"st.caption({note})"], f"{site}: the Ownership branch shows {body}"
+
+
+def test_the_notes_say_what_the_numbers_are():
+    assert "filed quarterly" in OWNERSHIP_NOTE and "latest filed quarter" in OWNERSHIP_NOTE
+    assert OWNERSHIP_GROUP_NOTE.startswith(OWNERSHIP_NOTE), "the tables extend the shared note, never fork it"
+    assert "companies, not rupees" in OWNERSHIP_GROUP_NOTE
+    for k in ("grp_fii_net", "grp_dii_net"):
+        assert "companies, not rupees" in MEASURES[k]["help"] and "−100" in MEASURES[k]["help"], k
+
+
+def _ds_dict(name):
+    node = next(n.value for n in ast.walk(TREE) if isinstance(n, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == name for t in n.targets))
+    return dict(zip([k.value for k in node.keys], node.values))
+
+
+def test_the_deep_scanner_shows_each_stake_beside_its_change():
+    v = [e.value for e in _ds_dict("_DS_VIEWS")[OWNERSHIP].elts]
+    assert v[0] == "name" and "pledged_percentage" in v and "smart_money_flow" in v
+    for level, move in [("promoter_holdings", "change_promoter_1y"), ("fii_holdings", "change_fii_lq"),
+                        ("dii_holdings", "change_dii_lq")]:
+        assert v.index(move) == v.index(level) + 1, f"{move} must sit directly after {level}"
+
+
+def test_ownership_changes_read_in_percentage_points():
+    cfg = {k: (v.elts[0].value, v.elts[1].value) for k, v in _ds_dict("_num_fmt").items()}
+    for c in ("change_promoter_1y", "change_fii_lq", "change_dii_lq"):
+        label, f = cfg[c]
+        assert f.endswith("pp") and "Δ" in label, f"{c} is a change in percentage points: {label!r} {f!r}"
+    for c in ("fii_holdings", "dii_holdings"):
+        assert cfg[c][1].endswith("%%"), f"{c} is a stake in %"
+
+
+def test_the_ownership_tips_are_the_glossarys_own():
+    from ui.ui_components import _RAW_GLOSSARY
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    for col, key in [("change_promoter_1y", "Promoter 1Y Δ"), ("fii_holdings", "FII %"),
+                     ("change_fii_lq", "FII Chg"), ("dii_holdings", "DII %"), ("change_dii_lq", "DII Chg")]:
+        assert _SCANNER_HEADER_TIPS.get(col) == _RAW_GLOSSARY[key], f"{col} must read the glossary's {key!r}"
