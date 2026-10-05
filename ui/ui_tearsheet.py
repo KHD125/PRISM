@@ -883,8 +883,9 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         return (f"OPM {_cmp:.1f}% vs 5Y median {float(_o5):.1f}%"
                 f"  ·  deviation {_dev:.1f}%  ·  threshold: >30%")
     if rf_col == "rf_high_accruals":
-        # engine (forensic_engine ~L311): (PAT − OCF) / avg_total_assets > 0.05
-        _pat_a = stock.get("pat"); _ocf_a = stock.get("operating_cash_flow")
+        # engine (forensic_engine rf_high_accruals): (PAT − OCF) / avg_total_assets > 0.05, with the
+        # PAT of the CASH-FLOW year — the same figure the flag was computed from.
+        _pat_a = stock.get("pat_cf_year", stock.get("pat")); _ocf_a = stock.get("operating_cash_flow")
         _ta = stock.get("total_assets"); _ta1 = stock.get("total_assets_1yb")
         if pd.isna(_pat_a) or pd.isna(_ocf_a) or pd.isna(_ta):
             return ""
@@ -892,15 +893,20 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         if _avg_ta <= 0:
             return ""
         _acc = (float(_pat_a) - float(_ocf_a)) / _avg_ta * 100.0
+        _yr_a = (" (last year's PAT — the latest cash flow is a year older)"
+                 if stock.get("cf_year_lag") == 1 else "")
         return (f"accruals: {_acc:.1f}% of assets  ·  threshold: >5%"
-                f"  ·  PAT ₹{float(_pat_a):,.0f}cr vs OCF ₹{float(_ocf_a):,.0f}cr")
+                f"  ·  PAT ₹{float(_pat_a):,.0f}cr vs OCF ₹{float(_ocf_a):,.0f}cr{_yr_a}")
     if rf_col == "rf_low_fcf_ebitda":
         # engine (~L320): FCF / EBITDA < 0.30, only when EBITDA > 0
-        _fcf_e, _ebd = stock.get("free_cash_flow"), stock.get("ebitda")
+        # EBITDA of the CASH-FLOW year — the figure the flag divided by.
+        _fcf_e, _ebd = stock.get("free_cash_flow"), stock.get("ebitda_cf_year", stock.get("ebitda"))
         if pd.isna(_fcf_e) or pd.isna(_ebd) or float(_ebd) <= 0:
             return ""
+        _yr_e = (" (last year's EBITDA — the latest cash flow is a year older)"
+                 if stock.get("cf_year_lag") == 1 else "")
         return (f"FCF/EBITDA: {100.0 * float(_fcf_e) / float(_ebd):.0f}%  ·  threshold: <30%"
-                f"  ·  FCF ₹{float(_fcf_e):,.0f}cr vs EBITDA ₹{float(_ebd):,.0f}cr")
+                f"  ·  FCF ₹{float(_fcf_e):,.0f}cr vs EBITDA ₹{float(_ebd):,.0f}cr{_yr_e}")
     if rf_col == "rf_debt_ebitda_high":
         # engine (~L384): debt / EBITDA > 5.0, non-financials only
         _dbt, _ebd2 = stock.get("debt"), stock.get("ebitda")

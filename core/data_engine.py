@@ -319,6 +319,54 @@ def _safe_numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors='coerce')
 
 
+# ── CASH-FLOW YEAR (2026-10-05) ─────────────────────────────────────────────────────────────────
+# The vendor rolls the P&L to a new fiscal year months before the cash-flow statement and the balance
+# sheet (2026: profit/revenue rolled June→August, OCF/assets still the old year in October). Its own
+# ratios are each computed inside ONE year, so they reveal which year the statements are on. A ratio
+# reproduces its source figures up to rounding — best-match residual under 0.5% relative on 98% of
+# stocks, ratios printed to two decimals (±0.005) — so these are the bounds inside which two
+# candidate years cannot be told apart.
+_YEAR_MATCH_REL = 0.005
+_YEAR_MATCH_ABS = 0.01
+
+
+def cash_flow_year_lag(df: pd.DataFrame) -> pd.Series:
+    """1.0 where the cash-flow statement is one fiscal year BEHIND the P&L, 0.0 where both are the
+    same year, NaN where the data cannot tell.
+
+    Evidence, strongest first — each a vendor ratio computed inside one year, matched against the
+    current and the 1-year-back P&L figure:
+      1. CFO / PAT     — cash flow against profit: the question itself.
+      2. CFO / EBITDA  — the same question; agrees with 1 on 100% of stocks where both decide.
+      3. ROA = PAT / total assets — the balance sheet's year, used only where both cash ratios are
+         silent: a loss year (no positive denominator), zero cash flow, or a ratio the vendor left
+         blank (24% of rows in the June 2026 vintage). Cash flow and balance sheet roll together —
+         98% agreement on 2026-10-05, pinned by tests/test_cash_flow_year_basis.py.
+    A source counts only when exactly one year reproduces its ratio AND the two years' predictions are
+    far enough apart to tell. No evidence → NaN, and callers keep the current figures: the statements
+    are taken as aligned, which is what they always were before a roll. Nothing names a year, so this
+    switches itself off when the vendor rolls the cash-flow statement.
+    """
+    _nan = pd.Series(np.nan, index=df.index)
+    num = lambda c: _safe_numeric(df[c]) if c in df.columns else _nan
+
+    def _pct(n, d):                       # 100 × n / d, guarded per §5 (denominator > 0)
+        return pd.Series(np.where(d > 0.0, 100.0 * n / d.where(d > 0.0), np.nan), index=df.index)
+
+    def _verdict(ratio, cur, prev):
+        tol = np.maximum(_YEAR_MATCH_ABS, _YEAR_MATCH_REL * ratio.abs())
+        hit_cur, hit_prev = (cur - ratio).abs() <= tol, (prev - ratio).abs() <= tol
+        apart = (cur - prev).abs() > tol
+        return pd.Series(np.select([apart & hit_prev & ~hit_cur, apart & hit_cur & ~hit_prev],
+                                   [1.0, 0.0], np.nan), index=df.index)
+
+    ocf, ta = num("operating_cash_flow"), num("total_assets")
+    by_pat = _verdict(num("cfo_to_pat"), _pct(ocf, num("pat")), _pct(ocf, num("pat_1yb")))
+    by_ebitda = _verdict(num("cfo_to_ebitda"), _pct(ocf, num("ebitda")), _pct(ocf, num("ebitda_1yb")))
+    by_roa = _verdict(num("roa"), _pct(num("pat"), ta), _pct(num("pat_1yb"), ta))
+    return by_pat.fillna(by_ebitda).fillna(by_roa)
+
+
 def _kendall_tau_cols(df: pd.DataFrame, cols: list) -> pd.Series:
     """Trajectory consistency via pairwise-sign Kendall's tau across an ordered (oldest→newest)
     ladder of level columns. Loops over COLUMN pairs only (O(k²), k≈6) — every operation inside
@@ -1232,6 +1280,18 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["depreciation"]     = (_ebitda_da.fillna(np.nan)     - _ebit_da).clip(lower=0)
     df["depreciation_1yb"] = (_ebitda_1yb_da.fillna(np.nan) - _ebit_1yb_da).clip(lower=0)
 
+    # ── P&L FIGURES OF THE CASH-FLOW YEAR (2026-10-05) ──
+    # Every comparison of profit with cash flow reads these, never the raw current columns: while the
+    # vendor's cash-flow statement lags its P&L by a year (cash_flow_year_lag == 1) they are LAST year's
+    # PAT / EBITDA / depreciation, otherwise the current ones. Profit divided by the BALANCE SHEET does
+    # not use them — that is profit over opening capital, a deliberate definition.
+    df["cf_year_lag"] = cash_flow_year_lag(df)
+    _cf_behind = df["cf_year_lag"].eq(1.0)
+    df["pat_cf_year"] = _safe_numeric(df.get("pat", pd.Series(np.nan, index=df.index))).where(
+        ~_cf_behind, _safe_numeric(df.get("pat_1yb", pd.Series(np.nan, index=df.index))))
+    df["ebitda_cf_year"] = _ebitda_da.where(~_cf_behind, _ebitda_1yb_da)
+    df["depreciation_cf_year"] = df["depreciation"].where(~_cf_behind, df["depreciation_1yb"])
+
     # dep_rate: D&A as percentage of gross fixed assets (scale-invariant)
     # Used in Schilit Signal 6 (forensic_engine.py): if fixed assets grow but dep_rate falls,
     # management has extended accounting useful lives to reduce D&A expense and inflate EBIT/PAT.
@@ -1270,7 +1330,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         _fa_1yb = _safe_numeric(df.get("fixed_assets_1yb", pd.Series(np.nan, index=df.index)))
         _cwip = _safe_numeric(df.get("cwip", pd.Series(np.nan, index=df.index)))
         _cwip_1yb = _safe_numeric(df.get("cwip_1yb", pd.Series(np.nan, index=df.index)))
-        _dep = _safe_numeric(df.get("depreciation", pd.Series(np.nan, index=df.index)))
+        # Depreciation of the CASH-FLOW year: the additions above are that year's balance-sheet change
+        # and the result is subtracted from that year's OCF (the vendor rolls the P&L first).
+        _dep = _safe_numeric(df.get("depreciation_cf_year", pd.Series(np.nan, index=df.index)))
         _net_capex_chg = (_fa - _fa_1yb).fillna(0.0) + (_cwip - _cwip_1yb).fillna(0.0)
         df["capex_est"] = np.where(
             _dep.notna(),
@@ -1310,6 +1372,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     _ncf_1y = df.get("ncf_1yb",             _cf_nan)
     # Income statement raw columns — absent when Income Statement tab fails to load
     _pat     = df.get("pat",     _cf_nan)
+    _pat_cf  = df["pat_cf_year"]        # PAT of the cash-flow year — for every profit-vs-cash comparison
     _pat_1yb = df.get("pat_1yb", _cf_nan)
     _pat_2yb = df.get("pat_2yb", _cf_nan)
     _pat_3yb = df.get("pat_3yb", _cf_nan)
@@ -1354,8 +1417,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         (_ncf > 0) & (_ncf_1y > 0)
     ).astype(int)
     df["fcf_quality"] = np.where(
-        _pat.notna() & (_pat.abs() > 0),
-        _fcf / _pat.abs(),
+        _pat_cf.notna() & (_pat_cf.abs() > 0),
+        _fcf / _pat_cf.abs(),
         np.nan
     )
     
@@ -2528,8 +2591,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Guard BOTH sides (fixed 2026-08-23): the PAT-only guard let a NaN FCF numerator
     # print "FCF covers 0% of PAT" for 24 live rows — a measured-looking verdict on a hole.
     df["d28_fcf_to_pat_pct"] = np.where(
-        _pat.notna() & (_pat.abs() > 0) & _fcf.notna(),
-        _fcf / _pat.abs() * 100,
+        _pat_cf.notna() & (_pat_cf.abs() > 0) & _fcf.notna(),
+        _fcf / _pat_cf.abs() * 100,
         np.nan
     )
 
@@ -4191,10 +4254,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # across every market studied. The single most powerful forensic quality signal.
     # Units: PAT, OCF, Total_Assets all in Crores → ratio is dimensionless (correct).
     # No financial sector exclusion: accruals ratio is informative for all sectors.
+    # PAT of the cash-flow year: profit and OCF must be the same year's (cash_flow_year_lag).
     df["accruals_ratio"] = np.where(
         df["total_assets"].notna() & (df["total_assets"] > 0) &
-        _pat.notna() & _ocf.notna(),
-        (_pat - _ocf) / df["total_assets"],
+        _pat_cf.notna() & _ocf.notna(),
+        (_pat_cf - _ocf) / df["total_assets"],
         np.nan
     )
     # accruals_clean: earnings are fully cash-backed (accruals ≤ 0)

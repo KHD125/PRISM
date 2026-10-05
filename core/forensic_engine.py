@@ -85,6 +85,9 @@ def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
     _roe_1yb = df.get("roe_1yb",             _nan)
     _ocf     = df.get("operating_cash_flow", _nan)
     _pat     = df.get("pat",                 _nan)
+    # F4 compares profit with cash flow, so it reads the PAT of the CASH-FLOW year (data_engine
+    # cash_flow_year_lag): the vendor rolls the P&L a year before the cash-flow statement.
+    _pat_cf  = df.get("pat_cf_year",         _pat)
     _de      = df.get("debt_to_equity",      _nan)
     _de_1yb  = df.get("debt_to_equity_1yb",  _nan)
     _cr      = df.get("current_ratio",       _nan)
@@ -112,7 +115,7 @@ def compute_piotroski_fscore(df: pd.DataFrame) -> pd.DataFrame:
 
     # F4: Accrual quality — OCF > PAT confirms earnings are cash-backed
     df["f_accrual_quality"] = np.where(
-        _ocf.notna() & _pat.notna(), (_ocf > _pat).astype(int), 0
+        _ocf.notna() & _pat_cf.notna(), (_ocf > _pat_cf).astype(int), 0
     )
 
     # F5: Leverage declining — D/E decreasing YoY
@@ -337,18 +340,23 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
     # artificially inflated by late-year acquisitions, masking accrual manipulation.
     _ta_1yb = df.get("total_assets_1yb", pd.Series(np.nan, index=df.index)).fillna(df["total_assets"].fillna(0))
     avg_ta = (df["total_assets"].fillna(0) + _ta_1yb) / 2.0
+    # PAT of the CASH-FLOW year (data_engine cash_flow_year_lag) — never this year's profit against
+    # last year's cash, which made every growing company look accrual-heavy.
+    _pat_cfy = df.get("pat_cf_year", df["pat"])
     df["rf_high_accruals"] = np.where(
-        df["pat"].notna() & df["operating_cash_flow"].notna() & (avg_ta > 0),
-        (((df["pat"] - df["operating_cash_flow"]) / avg_ta) > 0.05).astype(int),
+        _pat_cfy.notna() & df["operating_cash_flow"].notna() & (avg_ta > 0),
+        (((_pat_cfy - df["operating_cash_flow"]) / avg_ta) > 0.05).astype(int),
         0
     )
 
     # 15. FCF/EBITDA below threshold (Malik Shenanigan #5 — EBITDA misleads)
     # When FCF/EBITDA < 30%, EBITDA is significantly overstating true cash earnings.
     # FCF and EBITDA are both in Crores — ratio is dimensionless. Only flag when EBITDA > 0.
+    # EBITDA of the CASH-FLOW year — FCF is that year's (data_engine cash_flow_year_lag).
+    _ebitda_cfy = df.get("ebitda_cf_year", df["ebitda"])
     df["rf_low_fcf_ebitda"] = np.where(
-        df["free_cash_flow"].notna() & df["ebitda"].notna() & (df["ebitda"] > 0),
-        ((df["free_cash_flow"] / df["ebitda"]) < 0.30).astype(int),
+        df["free_cash_flow"].notna() & _ebitda_cfy.notna() & (_ebitda_cfy > 0),
+        ((df["free_cash_flow"] / _ebitda_cfy) < 0.30).astype(int),
         0
     )
 
@@ -584,12 +592,14 @@ def compute_red_flags(df: pd.DataFrame) -> pd.DataFrame:
         "Logistics",
     ]
     _in_lease_sector = df.get("sector", pd.Series("", index=df.index)).fillna("").isin(_lease_sectors)
-    _ebitda_vals     = df.get("ebitda", pd.Series(np.nan, index=df.index)).fillna(0)
+    # EBITDA of the CASH-FLOW year: it is set against that year's OCF (cash_flow_year_lag).
+    _ebitda_lease    = df.get("ebitda_cf_year", df.get("ebitda", pd.Series(np.nan, index=df.index)))
+    _ebitda_vals     = _ebitda_lease.fillna(0)
     _ocf_vals        = df.get("operating_cash_flow", pd.Series(np.nan, index=df.index)).fillna(0)
     _ebitda_cfo_gap  = _ebitda_vals - _ocf_vals
     df["rf_lease_inflation"] = np.where(
         _in_lease_sector
-        & df.get("ebitda", pd.Series(np.nan, index=df.index)).notna()
+        & _ebitda_lease.notna()
         & df.get("operating_cash_flow", pd.Series(np.nan, index=df.index)).notna()
         & (_ebitda_vals > 0)
         & (_ebitda_cfo_gap > _ebitda_vals * 0.30),
