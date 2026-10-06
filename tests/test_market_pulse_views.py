@@ -368,13 +368,18 @@ def test_the_measure_headers_are_built_once_from_the_registry():
 
 
 @pytest.mark.parametrize("table", sorted(TABLES))
-def test_the_name_column_is_pinned(table):
+def test_the_name_column_is_never_faded(table):
+    """Repointed 2026-10-06: the name column WAS pinned so a sideways scroll kept it, and Streamlit draws
+    every pinned column faded, so the sector / industry name read grey (tests/test_no_faded_columns.py).
+    Every view fits a 1536px screen, so the name stays in view unpinned; this pins the header and that
+    the name and Count columns are never pinned again."""
     t = TABLES[table]
-    v = dict(zip([k.value if isinstance(k, ast.Constant) else None for k in _cfg(table).keys],
-                 _cfg(table).values))[t["key"]]
+    cfg = dict(zip([k.value if isinstance(k, ast.Constant) else None for k in _cfg(table).keys], _cfg(table).values))
+    v = cfg[t["key"]]
     assert ast.unparse(v.args[0]) == repr(t["name_hdr"]), f"{table}: name header changed"
-    assert any(k.arg == "pinned" and ast.unparse(k.value) == "True" for k in v.keywords), (
-        f"{table}: the {t['name_hdr']} column scrolls away — in a five-view table you lose which row is which")
+    for col in (t["key"], "stocks"):
+        assert not any(k.arg == "pinned" for k in cfg[col].keywords), (
+            f"{table}: {col} is pinned again, and Streamlit draws pinned columns faded (grey)")
 
 
 @pytest.mark.parametrize("table", sorted(TABLES))

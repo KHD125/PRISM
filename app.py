@@ -663,8 +663,8 @@ with tabs[1]:
 
     # ── Column view presets ────────────────────────────────────────
     # 📌 Rebuilt 2026-10-05 after measuring them at a 1536px laptop width: every view LEADS with
-    # Rank · Stock (pinned below), so a sideways scroll never loses the row and Rank — the Score
-    # order exactly — shows where a stock stands in every view. Every column has a set width (_DS_W)
+    # Rank · Stock (configured below), so Rank — the Score order exactly — shows where a stock stands
+    # in every view. Every column has a set width (_DS_W)
     # and every view fits the screen with the sidebar open. Taken out as measured repeats: Forensic
     # Score (an exact copy of the red-flag count, -1.00), Piotroski and CFO/PAT from Quality (both
     # live in Forensic), the 52-week-high distance (-0.95 with Breakout), VSTOP (identical to
@@ -820,17 +820,18 @@ with tabs[1]:
 
     # ── Column config ──────────────────────────────────────────────
     _CC: dict = {}
-    # 📌 THE SPINE (2026-10-05): Rank · Stock lead every view and stay PINNED, so a sideways scroll
-    # never loses which stock a row is or where it ranks. Configured ONLY here — a later label map
-    # would overwrite the pin (tests/test_deep_scanner_views.py).
+    # 📌 THE SPINE (2026-10-05): Rank · Stock lead every view. NOT pinned (2026-10-06): Streamlit draws
+    # a pinned column faded, which made the stock name the dimmest text in the table, and every view
+    # fits the screen, so the spine stays in view anyway (tests/test_no_faded_columns.py). Configured
+    # ONLY here — a later label map would overwrite it (tests/test_deep_scanner_views.py).
     _DS_SPINE = {"rank": "Rank", "name": "Stock"}
     for _sp, _sl in _DS_SPINE.items():
         if _sp in _display_df.columns:
             _CC[_sp] = (st.column_config.NumberColumn(_sl, help=_SCANNER_HEADER_TIPS.get(_sp), format="%.0f",
-                                                      width=_DS_W.get(_sp), pinned=True)
+                                                      width=_DS_W.get(_sp))
                         if _sp == "rank" else
                         st.column_config.TextColumn(_sl, help=_SCANNER_HEADER_TIPS.get(_sp),
-                                                    width=_DS_W.get(_sp), pinned=True))
+                                                    width=_DS_W.get(_sp)))
     # Every column takes its width from _DS_W (above the tab block): Streamlit's defaults — ~150px a
     # score bar, text sized to its longest cell — pushed the views off a 1536px laptop screen.
     # Score BARS for the headline scores only — Quality's parts and Governance read as numbers
@@ -2288,8 +2289,8 @@ def _render_market_pulse():
                     # "sector" on screen. The 2026-08-30 header-vocabulary pass missed it because
                     # its scan only inspects columns that HAVE a column_config entry, so a column
                     # with none was invisible to it. Found in the browser 2026-08-31.
-                    "sector":        st.column_config.TextColumn("Sector", width=180, pinned=True),
-                    "stocks":        st.column_config.NumberColumn("Count", format="%.0f", pinned=True),
+                    "sector":        st.column_config.TextColumn("Sector", width=180),
+                    "stocks":        st.column_config.NumberColumn("Count", format="%.0f"),
                     "pct_qualify":   st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%", width=_MP_BAR_W,
                                        help="Share of the sector's stocks that clear all hard gates — its quality breadth. "
                                             "SCALE-FREE, not statistically robust: a percentage stops big sectors "
@@ -2660,8 +2661,8 @@ def _render_market_pulse():
                 st.dataframe(
                     _ind_stats[_ind_show].reset_index(),
                     column_config={
-                        "industry":       st.column_config.TextColumn("Industry", width=180, pinned=True),
-                        "stocks":         st.column_config.NumberColumn("Count", format="%.0f", pinned=True,
+                        "industry":       st.column_config.TextColumn("Industry", width=180),
+                        "stocks":         st.column_config.NumberColumn("Count", format="%.0f",
                                             help="Read every percentage on this row against this number first."),
                         "pct_qualify":    st.column_config.ProgressColumn("% Qualify", min_value=0, max_value=100, format="%.0f%%", width=_MP_BAR_W,
                                             help="Share of the industry's stocks clearing all hard gates. SCALE-FREE, "

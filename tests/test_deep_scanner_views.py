@@ -12,8 +12,8 @@ app at a 1536px laptop width (the user's screen):
   - only Core showed Rank or Score, so switching views lost where a stock stands.
 
 WHAT IS PINNED
-  1. Every view leads with Rank · Stock, and both are PINNED, so a sideways scroll never loses which
-     stock a row is or where it ranks. Rank IS the Score order (the engine re-derives it from the
+  1. Every view leads with Rank · Stock (unpinned since 2026-10-06: Streamlit draws pinned columns
+     faded, and every view fits the screen, so they stay in view anyway). Rank IS the Score order (the engine re-derives it from the
      post-penalty composite — pinned by test_rank_tracks_post_penalty_composite), so the default
      sort reads in every view without a Score bar in each.
   2. Whatever the table is sorted by is on screen: a view that lacks the sorted column gets it right
@@ -82,7 +82,10 @@ def test_every_view_leads_with_rank_and_stock():
         assert cols[:2] == ["rank", "name"], f"{view} leads with {cols[:2]}, not Rank · Stock"
 
 
-def test_rank_and_stock_are_pinned_and_configured_once():
+def test_rank_and_stock_are_configured_once_and_never_faded():
+    """Repointed 2026-10-06: the spine was PINNED, and Streamlit draws pinned columns faded, so Rank and
+    Stock read grey (tests/test_no_faded_columns.py). Every view fits the screen, so they stay in view
+    unpinned; what this pins now is that they are configured ONCE and never pinned again."""
     spine = {k: v.value for k, v in _dict("_DS_SPINE").items()}
     assert spine == {"rank": "Rank", "name": "Stock"}
     block = _ds_block()
@@ -90,9 +93,9 @@ def test_rank_and_stock_are_pinned_and_configured_once():
     assert len(loop) == 1, "the spine's columns must be configured from _DS_SPINE"
     calls = [c for c in ast.walk(loop[0]) if isinstance(c, ast.Call)
              and ast.unparse(c.func).startswith("st.column_config.")]
-    assert calls and all(any(k.arg == "pinned" and ast.unparse(k.value) == "True" for k in c.keywords)
-                         for c in calls), "Rank and Stock must be pinned — a sideways scroll would lose the row"
-    # No other label map may configure them again: a later loop would overwrite the pinned config.
+    assert len(calls) == 2 and not any(k.arg == "pinned" for c in calls for k in c.keywords), (
+        "Rank and Stock must not be pinned: Streamlit draws pinned columns faded, the name turns grey")
+    # No other label map may configure them again: a later loop would overwrite this config.
     others = [ast.unparse(d)[:60] for d in ast.walk(block) if isinstance(d, ast.Dict) and d.keys
               and any(isinstance(k, ast.Constant) and k.value in ("rank", "name") for k in d.keys)
               and not all(isinstance(v, ast.List) for v in d.values)]
