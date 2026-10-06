@@ -90,10 +90,6 @@ from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERS
                                VIEW_MEASURES, VIEWS, group_measures)
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
-from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS as SCAN_LIQUIDITY_STEPS,
-                         TABLE_COLUMNS as SCAN_TABLE_COLUMNS, card_html as scan_card_html,
-                         latest_label as scan_latest_label, load_records as load_scan_records,
-                         record_state as scan_record_state, scan_table, table_config as scan_table_config)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS,
@@ -505,7 +501,7 @@ render_metric_strip([
 # ═══════════════════════════════════════════════════════════════
 # TABS
 # ═══════════════════════════════════════════════════════════════
-tabs = st.tabs(["🏠 Discovery", "🎯 Scans", "🔍 Deep Scanner", "🔬 The Tear-Sheet", "🌊 Market Pulse", "⚙️ Config", "📖 Reference"])
+tabs = st.tabs(["🏠 Discovery", "🔍 Deep Scanner", "🔬 The Tear-Sheet", "🌊 Market Pulse", "⚙️ Config", "📖 Reference"])
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 1: DISCOVERY DASHBOARD
@@ -628,93 +624,7 @@ with tabs[0]:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 2: SCANS
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ── 🎯 Scans (2026-10-06) ─────────────────────────────────────────────────────────────────────────
-# Measured stock lists, one definition each (ui/ui_scans.py): each card shows its own record from the
-# saved snapshots (ui/scan_records.json, written by tools/scan_records.py), and the list reads the
-# WHOLE market — never the sidebar's `filt` — so it is exactly what that record measured. Display and
-# recipes live in the module; app.py owns the scan choice, the liquidity floor and the row click
-# (tests/test_scans.py).
-def _pick_scan(key):
-    st.session_state["scan_sel"] = key
-
-
-with tabs[1]:
-    _sc_recs = load_scan_records()
-    _sc_keys = [s["key"] for s in SCANS]
-    if st.session_state.get("scan_sel") not in _sc_keys:
-        st.session_state["scan_sel"] = _sc_keys[0]
-    _sc_sel = next(s for s in SCANS if s["key"] == st.session_state["scan_sel"])
-    _sc_latest = scan_latest_label(_sc_recs)
-    _sc_counts = {s["key"]: int(s["mask"](df).sum()) for s in SCANS}
-    st.markdown(
-        "<div class='sec-cap'>Stock lists PRISM has measured. Each card shows how its stocks did against "
-        "the market on the saved snapshots: provisional, short windows, re-measured after every snapshot. "
-        "A list narrows the market; the decision stays yours.</div>", unsafe_allow_html=True)
-    for _sc_col, _sc in zip(st.columns(len(SCANS)), SCANS):
-        with _sc_col:
-            _sc_state, _sc_rec = scan_record_state(_sc_recs, _sc)
-            _sc_on = _sc["key"] == _sc_sel["key"]
-            st.markdown(scan_card_html(_sc, _sc_counts[_sc["key"]], _sc_state, _sc_rec, _sc_on, _sc_latest),
-                        unsafe_allow_html=True)
-            st.button("✓ Showing" if _sc_on else "Show list", key=f"scan_open_{_sc['key']}",
-                      on_click=_pick_scan, args=(_sc["key"],),
-                      type="primary" if _sc_on else "secondary", width="stretch")
-    with st.expander(f"🔬 Being measured ({len(SCAN_CANDIDATES)}) — not scans yet; December's review decides",
-                     expanded=False):
-        st.markdown("\n".join(f"- **{_n}** — {_r}" for _n, _r in SCAN_CANDIDATES))
-    _sc_lc, _ = st.columns([2, 5])
-    with _sc_lc:
-        _sc_min = st.selectbox(
-            "Min. average daily traded value", SCAN_LIQUIDITY_STEPS, key="scan_liq",
-            format_func=lambda v: "Any" if v is None else f"₹{v:g} Cr a day",
-            help="Your preference, not part of the record: the record counts every match. "
-                 "Average daily traded value over 20 days (average volume × price).")
-    if len(filt) < len(df):
-        st.caption("Scans read the whole market, not your sidebar filters, so each list is exactly what "
-                   "its record measured.")
-    _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
-    _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
-    _sc_tbl = scan_table(df, _sc_sel, members_at_latest=_sc_members, min_cr=_sc_min)
-    _sc_total = _sc_counts[_sc_sel["key"]]
-    if _sc_tbl.empty:
-        st.info("No stock matches this scan today." if _sc_total == 0 else
-                f"None of the {_sc_total:,} matches clears the traded-value floor — choose a lower one.")
-    else:
-        _sc_of = f" of {_sc_total:,}" if len(_sc_tbl) < _sc_total else ""
-        _sc_new = f" · 🆕 = not in the scan on {_sc_latest}" if _sc_members is not None and _sc_latest else ""
-        st.caption(f"{len(_sc_tbl):,}{_sc_of} stocks · sorted by PRISM Rank for reading (inside this scan the "
-                   f"top of the Rank showed no edge over the rest, so every match is the scan){_sc_new} · "
-                   f"click a row to open its Tear-Sheet")
-        _sc_pick = st.dataframe(
-            _sc_tbl, column_config=scan_table_config(_sc_latest), column_order=list(SCAN_TABLE_COLUMNS),
-            hide_index=True, width="stretch", height=min(560, 38 + 35 * len(_sc_tbl)),
-            on_select="rerun", selection_mode="single-row",
-            key=f"scan_tbl_{_sc_sel['key']}_{_sc_min}")
-        _sc_rows = _sc_pick.selection.rows if _sc_pick and hasattr(_sc_pick, "selection") else []
-        if _sc_rows:
-            _sc_name = _sc_tbl.iloc[_sc_rows[0]]["name"]
-            # This tab renders BEFORE the Tear-Sheet's stock selectbox, so the key is set directly (the
-            # Deep Scanner pattern). The staged _pending_xray + st.rerun() of QGLP/Tsunami is for tabs
-            # rendered AFTER that widget; here the staged key is consumed further down the script, so it
-            # would rerun forever. Set only when the pick CHANGES, so a row left selected never overrides
-            # a stock chosen later in the Tear-Sheet itself (tests/test_scans.py).
-            _sc_sig = f"{_sc_sel['key']}|{_sc_min}|{_sc_name}"
-            if st.session_state.get("_scan_last_pick") != _sc_sig:
-                st.session_state["_scan_last_pick"] = _sc_sig
-                st.session_state["xray_stock"] = _sc_name
-            st.markdown(f"""
-            <div style="padding:9px 14px;margin-top:8px;background:rgba(228,179,65,0.07);
-                 border:1px solid rgba(228,179,65,0.3);border-radius:8px;font-size:0.8rem;">
-              🔬 <strong style="color:{COLORS['text_primary']};">{_html.escape(str(_sc_name))}</strong>
-              set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
-            </div>
-            """, unsafe_allow_html=True)
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 3: DEEP SCANNER
+# TAB 2: DEEP SCANNER
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Deep Scanner column widths, px (2026-10-05). EVERY column a view can show has one, so a view's width
 # is arithmetic the tests can check instead of whatever Streamlit's auto-size picks — auto-sized text
@@ -749,7 +659,7 @@ _DS_W = {
     "result_when": 95,
 }
 
-with tabs[2]:
+with tabs[1]:
 
     # ── Column view presets ────────────────────────────────────────
     # 📌 Rebuilt 2026-10-05 after measuring them at a 1536px laptop width: every view LEADS with
@@ -1076,9 +986,9 @@ with tabs[2]:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 4: THE TEAR-SHEET
+# TAB 3: THE TEAR-SHEET
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-with tabs[3]:
+with tabs[2]:
     all_stock_names = df["name"].dropna().tolist()
     if not all_stock_names:
         st.info("No stocks available. Check your data source.")
@@ -1493,7 +1403,7 @@ with tabs[3]:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 5: MARKET PULSE
+# TAB 4: MARKET PULSE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # FRAGMENT (2026-08-29): Market Pulse is market-wide BY DEFAULT — it reads the module-level `df`
 # unless the 🎯 scope checkbox is ticked, which points every lens (never the vitals band) at
@@ -3026,12 +2936,12 @@ def _render_market_pulse():
                             st.session_state["_pending_xray"] = _mv_picked
                             st.rerun()
 
-with tabs[4]:
+with tabs[3]:
     _render_market_pulse()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 6: CONFIGURATION
+# TAB 5: CONFIGURATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # NEVER FRAGMENT THIS TAB. cfg_mode is "the one control that re-ranks the universe": the TOP of
 # this script reads st.session_state["cfg_mode"] to build the scored frame. Inside a fragment,
@@ -3039,7 +2949,7 @@ with tabs[4]:
 # every tab would show STALE RANKINGS under a control that claims to re-rank. A state-of-the-art
 # audit proposed fragmenting this tab as a speedup on 2026-08-29; rejected for exactly this
 # reason (pinned by test_market_pulse_tabs).
-with tabs[5]:
+with tabs[4]:
     st.markdown(f"<div class='sec-head'>⚙️ System Configuration — The Engine Rulebook</div>", unsafe_allow_html=True)
     st.markdown(
         f"<div class='sec-cap'>The live scoring control, then a read-only view of the "
@@ -3415,7 +3325,7 @@ with tabs[5]:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TAB 7: REFERENCE — searchable glossary (renders the _RAW_GLOSSARY single source, count shown live)
+# TAB 6: REFERENCE — searchable glossary (renders the _RAW_GLOSSARY single source, count shown live)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # FRAGMENT (2026-08-29): fully self-contained — static dicts + its own search box; a glossary
 # search previously cost a full-app rerun per submit.
@@ -3516,5 +3426,5 @@ def _render_reference():
             _show_wcs("")
 
 
-with tabs[6]:
+with tabs[5]:
     _render_reference()

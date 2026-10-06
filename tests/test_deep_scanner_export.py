@@ -1,4 +1,4 @@
-"""Contract for the Deep Scanner CSV export — the 📥 download button in app.py's Deep Scanner tab.
+"""Contract for the Deep Scanner CSV export — the 📥 download button in app.py `with tabs[1]:`.
 Pins two regressions the 2026-06-20 audit surfaced:
 
   1. The export must encode via ui_export._to_csv_bytes (UTF-8 BOM) so its emoji decision-columns
@@ -22,16 +22,8 @@ _APP = Path(__file__).resolve().parent.parent / "app.py"
 _DATA_DIR = Path(__file__).resolve().parent.parent / "Other Resources" / "CSV Data"
 
 
-def _tab_position(tree, label):
-    """The tab's position in app.py's own st.tabs([...]) list, found by its LABEL — so a tab inserted
-    before it (🎯 Scans became tab 2 on 2026-10-06) cannot leave this test reading the wrong body."""
-    call = next(n.value for n in tree.body if isinstance(n, ast.Assign)
-                and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "tabs")
-    return [e.value for e in call.args[0].elts].index(label)
-
-
 def _deep_scanner_block(tree):
-    """The Deep Scanner's `with tabs[i]:` With-node (i found by its label) — scopes the search to this tab so it can't pick
+    """The `with tabs[1]:` (Deep Scanner) With-node — scopes the search to this tab so it can't pick
     up a download_button from an unrelated tab (the Tear-Sheet and sidebar each have their own)."""
     for node in ast.walk(tree):
         if isinstance(node, ast.With):
@@ -39,8 +31,7 @@ def _deep_scanner_block(tree):
                 ctx = item.context_expr
                 if (isinstance(ctx, ast.Subscript) and isinstance(ctx.value, ast.Name)
                         and ctx.value.id == "tabs"
-                        and isinstance(ctx.slice, ast.Constant)
-                        and ctx.slice.value == _tab_position(tree, "🔍 Deep Scanner")):
+                        and isinstance(ctx.slice, ast.Constant) and ctx.slice.value == 1):
                     return node
     return None
 
@@ -60,7 +51,7 @@ def test_export_encodes_through_bom_helper():
     """The Deep Scanner export must hand download_button bytes from _to_csv_bytes (UTF-8 BOM), not a
     bare DataFrame.to_csv() — otherwise its emoji decision-columns mojibake when opened in Excel."""
     block = _deep_scanner_block(ast.parse(_APP.read_text(encoding="utf-8"), filename="app.py"))
-    assert block is not None, "could not locate the Deep Scanner's tab block in app.py"
+    assert block is not None, "could not locate the `with tabs[1]:` Deep Scanner block in app.py"
     data = _download_button_data_kw(block)
     assert data is not None, "Deep Scanner download_button has no data= keyword"
     assert (isinstance(data, ast.Call) and isinstance(data.func, ast.Name)

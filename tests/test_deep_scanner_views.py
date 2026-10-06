@@ -63,23 +63,14 @@ SORTS = {k: v.elts[0].value for k, v in _dict("_DS_SORTS").items()}
 WITNESS = {"composite_score": "rank", "result_age_days": "result_when"}
 
 
-def _tab_position(tree, label):
-    """The tab's position in app.py's own st.tabs([...]) list, found by its LABEL — so a tab inserted
-    before it (🎯 Scans became tab 2 on 2026-10-06) cannot leave this test reading the wrong body."""
-    call = next(n.value for n in tree.body if isinstance(n, ast.Assign)
-                and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "tabs")
-    return [e.value for e in call.args[0].elts].index(label)
-
-
 def _ds_block():
-    """The Deep Scanner's `with tabs[i]:` node (i found by its label) — label checks are scoped to it."""
+    """The `with tabs[1]:` (Deep Scanner) node — label checks are scoped to it."""
     for n in ast.walk(TREE):
         if isinstance(n, ast.With):
             for item in n.items:
                 c = item.context_expr
                 if (isinstance(c, ast.Subscript) and isinstance(c.value, ast.Name) and c.value.id == "tabs"
-                        and isinstance(c.slice, ast.Constant)
-                        and c.slice.value == _tab_position(TREE, "🔍 Deep Scanner")):
+                        and isinstance(c.slice, ast.Constant) and c.slice.value == 1):
                     return n
     raise AssertionError("Deep Scanner block not found")
 
