@@ -127,8 +127,9 @@ def test_market_pulse_is_a_fragment_called_in_its_tab():
     i = src.index("def _render_market_pulse():")
     deco = src[:i].rstrip().splitlines()[-1]
     assert deco.strip() == "@st.fragment", "Market Pulse lost its @st.fragment decorator"
-    assert "with tabs[3]:" + chr(10) + "    _render_market_pulse()" in src, (
-        "the fragment is no longer called in tab 3")
+    # Positions shifted by one on 2026-10-06 when 🎯 Scans became tab 2.
+    assert "with tabs[4]:" + chr(10) + "    _render_market_pulse()" in src, (
+        "the fragment is no longer called in its tab")
 
 
 def test_reference_is_a_fragment_called_in_its_tab():
@@ -136,7 +137,7 @@ def test_reference_is_a_fragment_called_in_its_tab():
     i = src.index("def _render_reference():")
     deco = src[:i].rstrip().splitlines()[-1]
     assert deco.strip() == "@st.fragment", "Reference lost its @st.fragment decorator"
-    assert "with tabs[5]:" + chr(10) + "    _render_reference()" in src
+    assert "with tabs[6]:" + chr(10) + "    _render_reference()" in src
 
 
 def test_config_tab_is_never_fragmented():
@@ -145,7 +146,7 @@ def test_config_tab_is_never_fragmented():
     and every tab would show STALE RANKINGS. A 2026-08-29 audit proposed fragmenting Config as a
     speedup; rejected for exactly this reason — this pin keeps it rejected."""
     src = _app_src()
-    cfg = src[src.index("# TAB 5: CONFIGURATION"):src.index("# TAB 6: REFERENCE")]
+    cfg = src[src.index("# TAB 6: CONFIGURATION"):src.index("# TAB 7: REFERENCE")]
     assert "@st.fragment" not in cfg, (
         "Config was fragmented — cfg_mode changes will no longer recompute the scored frame"
     )
@@ -157,7 +158,7 @@ def test_config_tab_is_never_fragmented():
 def _movers_block():
     src = _app_src()
     i = src.index("with _mp_tabs[6]:")
-    return src, src[i:src.index("with tabs[3]:", i)]
+    return src, src[i:src.index("with tabs[4]:", i)]
 
 
 def test_movers_is_the_appended_seventh_tab_and_stateless_where_it_should_be():

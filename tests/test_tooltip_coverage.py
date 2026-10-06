@@ -337,8 +337,16 @@ def test_every_scanner_preset_column_has_header_tip():
     assert not missing, f"Deep Scanner preset columns with no header tooltip: {missing}"
 
 
+def _tab_position(tree, label):
+    """The tab's position in app.py's own st.tabs([...]) list, found by its LABEL — so a tab inserted
+    before it (🎯 Scans became tab 2 on 2026-10-06) cannot leave this test reading the wrong body."""
+    call = next(n.value for n in tree.body if isinstance(n, ast.Assign)
+                and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "tabs")
+    return [e.value for e in call.args[0].elts].index(label)
+
+
 def _deep_scanner_block(tree):
-    """The `with tabs[1]:` (Deep Scanner) With-node — scopes label extraction to this tab so it can't
+    """The Deep Scanner's `with tabs[i]:` With-node (i found by its label) — scopes label extraction to this tab so it can't
     pick up a same-named key from an unrelated dict elsewhere in app.py."""
     for node in ast.walk(tree):
         if isinstance(node, ast.With):
@@ -346,7 +354,8 @@ def _deep_scanner_block(tree):
                 ctx = item.context_expr
                 if (isinstance(ctx, ast.Subscript) and isinstance(ctx.value, ast.Name)
                         and ctx.value.id == "tabs"
-                        and isinstance(ctx.slice, ast.Constant) and ctx.slice.value == 1):
+                        and isinstance(ctx.slice, ast.Constant)
+                        and ctx.slice.value == _tab_position(tree, "🔍 Deep Scanner")):
                     return node
     return None
 
@@ -373,7 +382,7 @@ def test_deep_scanner_columns_have_friendly_headers():
     exempt); this pins HEADER LABELS (identity cols included — a bare 'sector' header looks unfinished)."""
     app_src = (Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8")
     block = _deep_scanner_block(ast.parse(app_src, filename="app.py"))
-    assert block is not None, "could not locate the `with tabs[1]:` Deep Scanner block in app.py"
+    assert block is not None, "could not locate the Deep Scanner's tab block in app.py"
     labeled = _ds_labeled_columns(block)
     raw = sorted(c for c in _DS_VIEW_COLS if c not in labeled)
     assert not raw, (

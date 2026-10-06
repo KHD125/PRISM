@@ -70,3 +70,17 @@ def test_movers_uses_no_banned_streamlit_widgets():
         "(stateless like the tear-sheet; app.py owns the picker + button). Offending calls:\n  "
         + "\n  ".join(f"line {ln}: st.{attr}(...)" for ln, attr in hits)
     )
+
+
+# ui_scans.py (2026-10-06) follows the same contract: it holds the recipes, the records and the
+# display; the scan choice, the liquidity floor and the row click live in app.py.
+_SCANS = os.path.join(os.path.dirname(__file__), "..", "ui", "ui_scans.py")
+
+
+def test_scans_uses_no_banned_streamlit_widgets():
+    hits = _banned_st_calls(_SCANS)
+    assert hits == [], (
+        "ui/ui_scans.py must contain no state-mutating widgets or st.columns/st.metric "
+        "(app.py owns the scan buttons and the liquidity floor). Offending calls:\n  "
+        + "\n  ".join(f"line {ln}: st.{attr}(...)" for ln, attr in hits)
+    )
