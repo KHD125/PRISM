@@ -75,13 +75,17 @@ def _cols(src, var):
     ("_ts_cols", {"rank", "name", "verdict_direction", "sector", "market_category", "market_cap",
                   "composite_score", "quality_score", "momentum_score", "piotroski_fscore",
                   "smart_money_flow", "buy_zone_label"}),
-    ("_q_cols", {"rank", "name", "verdict_direction", "red_flag_count", "sector", "market_cap",
+    # QGLP lost MCap and Smart Money on 2026-10-06, a conscious change with the user's approval, so
+    # the table fits a 1536px laptop screen (test_the_qglp_table_fits_a_laptop_screen). Both stay
+    # on the tear-sheet, and Smart Money in the Deep Scanner's Ownership view; nothing is lost from PRISM.
+    ("_q_cols", {"rank", "name", "verdict_direction", "red_flag_count", "sector",
                  "qglp_score", "qglp_quality", "qglp_growth", "qglp_longevity", "qglp_price",
-                 "smart_money_flow", "buy_zone_label"}),
+                 "buy_zone_label"}),
 ])
 def test_the_reorder_dropped_no_column(src, var, expected):
     """The fix was ORDER. If a column ever disappears, that is a different change and needs its
-    own justification -- a layout problem must not be solved by destroying information."""
+    own justification -- a layout problem must not be solved by destroying information. (QGLP's
+    2026-10-06 cut is that justification: see the comment on its case.)"""
     got = set(_cols(src, var))
     assert got == expected, (
         f"{var} changed membership.\n  removed: {sorted(expected - got)}\n  added: {sorted(got - expected)}"
@@ -101,6 +105,45 @@ def test_qglp_legs_come_before_the_wide_context_columns(src):
             f"'{ctx}' sits at position {cols.index(ctx)}, before the QGLP legs end at {last_leg}. "
             f"It is one of the widest columns in the frame and will push qglp_price off-screen."
         )
+
+
+# Measured 2026-10-05/06 in the browser at 1536px with the sidebar open: a Market Pulse grid is
+# 1,074px wide and a row-selecting table's content is its set widths plus 44px.
+_GRID_PX, _ROW_SELECTOR_PX = 1074, 44
+
+
+def _qglp_config(src):
+    """{column: its st.column_config call} for the QGLP table, read from app.py's AST."""
+    import ast
+    tree = ast.parse(src)
+    call = next(n.value for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                and ast.unparse(n.targets[0]) == "_q_sel")
+    cfg = next(k.value for k in call.keywords if k.arg == "column_config")
+    return {k.value: v for k, v in zip(cfg.keys, cfg.values)}
+
+
+def test_the_qglp_table_fits_a_laptop_screen(src):
+    """2026-10-06: the QGLP table overflowed a 1536px screen by ~400px. Every column it shows has a
+    set width (an auto-sized text column grows to its longest cell) and the widths fit."""
+    cfg = _qglp_config(src)
+    widths = {}
+    for c in _cols(src, "_q_cols"):
+        assert c in cfg, f"QGLP shows '{c}' with no column config"
+        w = [k.value.value for k in cfg[c].keywords if k.arg == "width"]
+        assert w and isinstance(w[0], int), f"QGLP '{c}' has no set pixel width"
+        widths[c] = w[0]
+    need = sum(widths.values()) + _ROW_SELECTOR_PX
+    assert need <= _GRID_PX, f"the QGLP table needs {need}px: {need - _GRID_PX}px off a laptop screen"
+
+
+def test_qglp_legs_read_as_numbers_beside_the_qglp_bar(src):
+    """The QGLP score is the bar; its four legs read as numbers beside it (the Deep Scanner's
+    Quality-view rule). Five bars side by side are what pushed the table off the screen."""
+    cfg = _qglp_config(src)
+    kind = {c: cfg[c].func.attr for c in cfg}
+    assert kind["qglp_score"] == "ProgressColumn", "the QGLP score lost its bar"
+    legs = ["qglp_quality", "qglp_growth", "qglp_longevity", "qglp_price"]
+    assert all(kind[c] == "NumberColumn" for c in legs), {c: kind[c] for c in legs}
 
 
 def test_tsunami_evidence_comes_before_the_wide_context_columns(src):

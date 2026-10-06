@@ -1845,32 +1845,32 @@ def _render_market_pulse():
                 # in the frame ("Infrastructure Developers & Operators") — sat at position 5. It shoved
                 # qglp_price, the "P" in QGLP, off-screen entirely. A tab showcasing a four-leg
                 # framework was showing one and a half legs.
-                # Nothing is REMOVED (the table scrolls, so every column is still reachable) — the
-                # framework's own components simply come before the context columns now.
+                # FITS A LAPTOP SCREEN since 2026-10-06 (it overflowed 1536px by ~400px): every column
+                # has a set width summing to 1,030px, the four legs read as NUMBERS beside the QGLP bar
+                # (the Deep Scanner's Quality-view rule), Buy Zone (is it a buy now?) precedes Sector,
+                # and MCap and Smart Money left with the user's approval — both stay on the tear-sheet,
+                # Smart Money also in the Deep Scanner's Ownership view (tests/test_market_pulse_columns.py).
                 _q_cols = [c for c in ["rank","name","verdict_direction","red_flag_count",
                                        "qglp_score","qglp_quality","qglp_growth","qglp_longevity","qglp_price",
-                                       "sector","market_cap","smart_money_flow","buy_zone_label"]
+                                       "buy_zone_label","sector"]
                            if c in _mp_qglp.columns]
                 _q_sel = st.dataframe(
                     _mp_qglp[_q_cols].reset_index(drop=True),
                     column_config={
-                        "verdict_direction": st.column_config.TextColumn("Soundness", help="The engine's overall SOUND / MIXED / FLAWED gate — most QGLP passers are MIXED/FLAWED on valuation, so this surfaces the few that are buyable now."),
-                        # width="small" on the five legs + the name column: reordering alone left
-                        # Longevity and Price/PEG off-screen at a 1793px viewport (verified in the
-                        # browser). The legs need room for a bar and 2-3 digits, nothing more, and
-                        # `name` is the widest text column in the frame.
-                        "name":           st.column_config.TextColumn("Stock", width="medium"),
-                        "sector":         st.column_config.TextColumn("Sector"),
-                        "smart_money_flow": st.column_config.TextColumn("Smart Money"),
-                        "buy_zone_label": st.column_config.TextColumn("Buy Zone"),
-                        "qglp_score":     st.column_config.ProgressColumn("QGLP",      min_value=0, max_value=100, format="%.0f", width="small"),
-                        "qglp_quality":   st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f", width="small"),
-                        "qglp_growth":    st.column_config.ProgressColumn("Growth",    min_value=0, max_value=100, format="%.0f", width="small"),
-                        "qglp_longevity": st.column_config.ProgressColumn("Longevity", min_value=0, max_value=100, format="%.0f", width="small"),
-                        "qglp_price":     st.column_config.ProgressColumn("Price/PEG", min_value=0, max_value=100, format="%.0f", width="small"),
-                        "red_flag_count": st.column_config.NumberColumn("🚩 Flags",    format="%.0f", help="Forensic red flags raised (0 = clean). QGLP gates on quality/growth, NOT forensics — so this is the risk check the screen itself doesn't do."),
-                        "market_cap":     st.column_config.NumberColumn("MCap ₹Cr",    format="%.0f"),
-                        "rank":           st.column_config.NumberColumn("Rank",         format="%.0f",
+                        "verdict_direction": st.column_config.TextColumn("Soundness", width=90, help="The engine's overall SOUND / MIXED / FLAWED gate — most QGLP passers are MIXED/FLAWED on valuation, so this surfaces the few that are buyable now."),
+                        # Set widths, 1,030px in all (the grid is 1,074px at 1536px, less 44px for
+                        # the row-selection column); text wider than its column is cut, as in the
+                        # Deep Scanner.
+                        "name":           st.column_config.TextColumn("Stock", width=180),
+                        "sector":         st.column_config.TextColumn("Sector", width=105),
+                        "buy_zone_label": st.column_config.TextColumn("Buy Zone", width=120),
+                        "qglp_score":     st.column_config.ProgressColumn("QGLP",      min_value=0, max_value=100, format="%.0f", width=105),
+                        "qglp_quality":   st.column_config.NumberColumn("Quality",   format="%.0f", width=65),
+                        "qglp_growth":    st.column_config.NumberColumn("Growth",    format="%.0f", width=65),
+                        "qglp_longevity": st.column_config.NumberColumn("Longevity", format="%.0f", width=85),
+                        "qglp_price":     st.column_config.NumberColumn("Price/PEG", format="%.0f", width=85),
+                        "red_flag_count": st.column_config.NumberColumn("🚩 Flags",    format="%.0f", width=75, help="Forensic red flags raised (0 = clean). QGLP gates on quality/growth, NOT forensics — so this is the risk check the screen itself doesn't do."),
+                        "rank":           st.column_config.NumberColumn("Rank",         format="%.0f", width=55,
                                             help="PRISM's overall rank, and the table's order: QGLP decides "
                                                  "who is listed, PRISM's score decides the order. Among QGLP "
                                                  "passers the QGLP score did not predict returns in the test "
