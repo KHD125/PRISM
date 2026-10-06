@@ -1543,7 +1543,11 @@ def _render_market_pulse():
     # ── Pre-compute section datasets ───────────────────────────────
     _mp_ts   = (_mp_df[_mp_df["tsunami_signal"] == 1].sort_values("composite_score", ascending=False)
                 if "tsunami_signal" in _mp_df.columns else _mp_df.iloc[:0])
-    _mp_qglp = (_mp_df[_mp_df["qglp_pass"] == 1].sort_values("qglp_score", ascending=False)
+    # QGLP decides WHO is listed; PRISM's rank decides the ORDER (2026-10-06). Among QGLP passers the
+    # QGLP score did not predict returns in any of the test windows (rank-IC -0.14 to +0.01) while
+    # PRISM's score did in every one (+0.03 to +0.12); sorted by QGLP score, the tab opened on stocks
+    # ranked ~1,000-2,300 (tests/test_market_pulse_lens_order.py). The QGLP column still sorts on click.
+    _mp_qglp = (_mp_df[_mp_df["qglp_pass"] == 1].sort_values("rank")
                 if "qglp_pass" in _mp_df.columns else _mp_df.iloc[:0])
 
     # ── Market-state Pulse band (breadth-led market vitals — what the tab's name promises) ──────
@@ -1866,7 +1870,11 @@ def _render_market_pulse():
                         "qglp_price":     st.column_config.ProgressColumn("Price/PEG", min_value=0, max_value=100, format="%.0f", width="small"),
                         "red_flag_count": st.column_config.NumberColumn("🚩 Flags",    format="%.0f", help="Forensic red flags raised (0 = clean). QGLP gates on quality/growth, NOT forensics — so this is the risk check the screen itself doesn't do."),
                         "market_cap":     st.column_config.NumberColumn("MCap ₹Cr",    format="%.0f"),
-                        "rank":           st.column_config.NumberColumn("Rank",         format="%.0f"),
+                        "rank":           st.column_config.NumberColumn("Rank",         format="%.0f",
+                                            help="PRISM's overall rank, and the table's order: QGLP decides "
+                                                 "who is listed, PRISM's score decides the order. Among QGLP "
+                                                 "passers the QGLP score did not predict returns in the test "
+                                                 "windows; PRISM's score did. Click the QGLP header to sort by it."),
                     },
                     width="stretch",
                     height=min(500, 80 + len(_mp_qglp) * 35 + 40),
@@ -1906,9 +1914,15 @@ def _render_market_pulse():
                         "Blue Chip Quality", "MOSL Wealth Creator", "Bruised Blue Chip 29"]
         _tok = _mp_df.get("frameworks_passed", pd.Series("", index=_mp_df.index)).fillna("").astype(str).map(
             lambda _s: {t.strip() for t in re.split(r"\s*,\s*", _s) if t.strip()})
+        # RAREST LENS FIRST (2026-10-06): the Lenses cell is cut off at the table's edge on ~30% of
+        # rows, and in the list's own order the common lenses (Economic Moat, Consistent, QGLP) led
+        # while the rare ones that say the most (Blue Chip Quality, MOSL Wealth Creator) fell off it.
+        # Rarity is counted over the stocks being scanned; sorted() is stable, so a tie keeps the
+        # list's order. The count column says how many (tests/test_market_pulse_lens_order.py).
+        _mosl_order = sorted(_MOSL_LENSES, key=lambda m: int(_tok.map(lambda t: m in t).sum()))
         _mosl = _mp_df.copy()
         _mosl["mosl_n"] = _tok.map(lambda t: sum(1 for m in _MOSL_LENSES if m in t))
-        _mosl["mosl_hits"] = _tok.map(lambda t: " · ".join(m for m in _MOSL_LENSES if m in t))
+        _mosl["mosl_hits"] = _tok.map(lambda t: " · ".join(m for m in _mosl_order if m in t))
         # >=2 because ONE lens is not convergence -- the tab's whole claim is that independent
         # studies from the same house agree.
         _mosl = _mosl[_mosl["mosl_n"] >= 2].sort_values(
