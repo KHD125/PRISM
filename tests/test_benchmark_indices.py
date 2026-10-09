@@ -101,16 +101,11 @@ def test_the_merge_gives_exactly_the_frame_it_gives_without_the_index_rows():
 
 
 def test_the_set_aside_runs_before_anything_reads_sector_or_name():
-    """It must precede the dual-listing collapse (reads name) and the taxonomy (reads sector).
-
-    This repo (KHD125/PRISM) has no taxonomy step — canonicalize_taxonomy lives on khd343/Prism only —
-    so that leg is checked only where the step exists."""
+    """It must precede the dual-listing collapse (reads name) and the taxonomy (reads sector)."""
     import inspect
     src = inspect.getsource(de.merge_datasets)
-    order = [src.index("_set_aside_benchmarks("), src.index("_collapse_dual_listings(")]
-    if "canonicalize_taxonomy(" in src:
-        order.append(src.index("canonicalize_taxonomy("))
-    assert order == sorted(order)
+    assert src.index("_set_aside_benchmarks(") < src.index("_collapse_dual_listings(") < src.index(
+        "canonicalize_taxonomy(")
 
 
 def test_no_real_stock_is_bare_in_the_local_data():
